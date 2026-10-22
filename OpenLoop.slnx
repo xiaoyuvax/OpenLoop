@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenLoop.App/OpenLoop.App.csproj" />
+    <Project Path="src/OpenLoop.Core/OpenLoop.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenLoop.Core.Tests/OpenLoop.Core.Tests.csproj" />
+  </Folder>
+  <Project Path="../ChatFlow/ChatFlow/ChatFlow.csproj" />
+</Solution>

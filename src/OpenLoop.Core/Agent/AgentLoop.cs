@@ -1,0 +1,489 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using OpenLoop.Core.Messages;
+using OpenLoop.Core.Reasoning;
+using OpenLoop.Core.Tools;
+
+namespace OpenLoop.Core.Agent
+{
+    /// <summary>
+    /// Agent 主循环（文本协议工具调用）：构建消息 → 补全 → 解析工具块 → 执行 → 结果回填 → 继续，
+    /// 直到模型给出最终答案或步数预算耗尽。
+    /// 不认识工作目录、模型、账本；这些都由构造方注入。
+    /// </summary>
+    public sealed class AgentLoop
+    {
+        private readonly ToolRegistry _tools;
+        private readonly IReasoner _reasoner;
+        private readonly AgentPolicy _policy;
+        private readonly Action<AgentStepRecord> _onStep;
+        private readonly Action<string, Dictionary<string, object>> _onToolStart;
+        private readonly Func<string, bool> _confirmContinue;
+
+        public AgentLoop(
+            ToolRegistry tools,
+            IReasoner reasoner,
+            AgentPolicy policy = null,
+            Action<AgentStepRecord> onStep = null,
+            Action<string, Dictionary<string, object>> onToolStart = null,
+            Func<string, bool> confirmContinue = null)
+        {
+            _tools = tools ?? throw new ArgumentNullException(nameof(tools));
+            _reasoner = reasoner ?? throw new ArgumentNullException(nameof(reasoner));
+            _policy = policy ?? new AgentPolicy();
+            _onStep = onStep;
+            _onToolStart = onToolStart;
+            _confirmContinue = confirmContinue;
+        }
+
+        public string BuildSystemPrompt(string role = null, IReadOnlyList<string> rules = null, string instructions = null)
+            => SystemPromptBuilder.Build(_tools.Tools, Math.Clamp(_policy.MaxSteps, 1, 100), role, rules, instructions);
+
+        /// <summary>
+        /// 执行一次完整任务。history 为既有对话（不含本次用户消息），userMessage 为本次请求。
+        /// contextLimit &gt; 0 时，每轮补全前估算占用，超阈值即压缩较早消息（system 不动）。
+        /// shouldStop = 软停止：只在每轮开始前检查，进行中的调用绝不被打断。
+        /// </summary>
+        public async Task<AgentRunResult> RunAsync(
+            IReadOnlyList<LlmMessage> history, string userMessage,
+            CancellationToken ct = default, int contextLimit = 0, Func<bool> shouldStop = null,
+            Action<string> onDelta = null)
+        {
+            int maxSteps = Math.Clamp(_policy.MaxSteps, 1, 100);
+            var result = new AgentRunResult();
+            var messages = new List<LlmMessage>(history ?? [])
+            {
+                new LlmMessage("user", userMessage)
+            };
+
+            string lastSignature = null;
+            int repeatStreak = 0;
+            int explorationStreak = 0;
+            int malformedRetries = 0;
+            bool promiseNudged = false;
+            bool claimNudged = false;
+            bool anyToolSucceeded = false;
+
+            for (int step = 1; step <= maxSteps; step++)
+            {
+                if (shouldStop?.Invoke() == true)
+                {
+                    result.StoppedByUser = true;
+                    return result;
+                }
+                ct.ThrowIfCancellationRequested();
+
+                if (contextLimit > 0
+                    && AgentContext.EstimateTokens(messages) >= contextLimit * _policy.CompressAt)
+                {
+                    var compressed = await CompressMessagesAsync(messages, ct);
+                    if (compressed != null)
+                    {
+                        messages = compressed;
+                        result.Compressed = true;
+                    }
+                }
+
+                var completion = onDelta != null && _reasoner is IStreamingReasoner streaming
+                    ? await streaming.StreamAsync(messages, onDelta, ct)
+                    : await _reasoner.CompleteAsync(messages, ct);
+                string content = completion?.Content;
+                if (completion?.Cost is decimal cost) result.ChatCost = (result.ChatCost ?? 0m) + cost;
+                if (completion?.TokensIn is int contextTokens) result.ContextTokens = contextTokens;
+
+                // 无工具块 → 最终答案
+                if (!AgentToolCallParser.TryParse(content, out var call))
+                {
+                    if (AgentToolCallParser.LooksLikeToolCallAttempt(content))
+                    {
+                        if (_policy.MalformedRetry && malformedRetries < _policy.MaxMalformedRetries && step < maxSteps)
+                        {
+                            malformedRetries++;
+                            messages.Add(new LlmMessage("assistant", content));
+                            messages.Add(new LlmMessage("user",
+                                "tool-result: {\"ok\":false,\"error\":\"工具调用格式无效，JSON 无法解析。请重新输出一行合法 JSON（可跨行），格式：tool-call: {\\\"tool\\\":\\\"工具名\\\",\\\"args\\\":{...}}。\"}"));
+                            continue;
+                        }
+                        result.FinalAnswer =
+                            "⚠ 模型多次输出无法解析的工具调用（JSON 格式错误），已停止本次执行。请重试或更换模型。";
+                        return result;
+                    }
+
+                    // 谎报完成护栏
+                    if (_policy.ClaimGuard && !claimNudged && !anyToolSucceeded && step < maxSteps
+                        && LooksLikeCompletionClaim(content))
+                    {
+                        claimNudged = true;
+                        messages.Add(new LlmMessage("assistant", content));
+                        messages.Add(new LlmMessage("user",
+                            "（系统提示）你这条回复声称已经完成了某个操作，但本轮没有任何工具成功执行。不要谎报完成：需要执行就输出一行 tool-call: {\"tool\":\"工具名\",\"args\":{...}}；确实不需要工具（纯回答/说明）就重写答案，明确说明「未执行任何操作」，且不要再出现「已写入/已修改/已完成」这类说法。"));
+                        continue;
+                    }
+
+                    // 占位话术护栏
+                    if (_policy.PromiseGuard && !promiseNudged && step < maxSteps && LooksLikeActionPromise(content))
+                    {
+                        promiseNudged = true;
+                        messages.Add(new LlmMessage("assistant", content));
+                        messages.Add(new LlmMessage("user",
+                            "（系统提示）你上一条只是说明将要执行某事，但没有实际调用工具。若仍需执行操作，请立即输出一行 tool-call: {\"tool\":\"工具名\",\"args\":{...}}；若已全部完成，请直接给出最终结果，不要回复「请稍候」这类占位说明。"));
+                        continue;
+                    }
+
+                    result.FinalAnswer = content?.Trim();
+                    return result;
+                }
+
+                // 执行工具
+                var stepWatch = System.Diagnostics.Stopwatch.StartNew();
+                AgentToolResult toolResult;
+                _onToolStart?.Invoke(call.Tool, call.Args);
+                try
+                {
+                    toolResult = await _tools.ExecuteAsync(call.Tool, call.Args, ct);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    toolResult = AgentToolResult.Failure($"工具执行异常：{ex.Message}");
+                }
+
+                // 参数类错误自愈
+                var effectiveArgs = call.Args;
+                string repairNote = null;
+                if (_policy.ArgRepair && !toolResult.Ok && step < maxSteps && IsParameterError(toolResult.Error)
+                    && TryRepairArgs(call.Args, toolResult.Error, out var repairedArgs, out string fixedDesc))
+                {
+                    string firstError = toolResult.Error;
+                    effectiveArgs = repairedArgs;
+                    _onToolStart?.Invoke(call.Tool, repairedArgs);
+                    try
+                    {
+                        toolResult = await _tools.ExecuteAsync(call.Tool, repairedArgs, ct);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        toolResult = AgentToolResult.Failure($"工具执行异常：{ex.Message}");
+                    }
+                    repairNote = toolResult.Ok
+                        ? $"（参数自动修正后重试成功：{fixedDesc}）"
+                        : $"（参数自动修正后重试仍失败：{fixedDesc}；原始错误：{Truncate(firstError, 300)}）";
+                }
+                stepWatch.Stop();
+
+                string dataOut = null;
+                string errorOut = null;
+                if (toolResult.Ok)
+                {
+                    anyToolSucceeded = true;
+                    dataOut = Truncate(toolResult.Data, _policy.ToolResultLimit);
+                    if (repairNote != null) dataOut = repairNote + "\n" + dataOut;
+                }
+                else
+                {
+                    errorOut = repairNote != null ? repairNote + "\n" + toolResult.Error : toolResult.Error;
+                    if (IsParameterError(errorOut)) errorOut += ParameterHint(call.Tool);
+                }
+
+                string payload = toolResult.Ok
+                    ? JsonSerializer.Serialize(new { ok = true, data = dataOut }, ToolResultJson)
+                    : JsonSerializer.Serialize(new { ok = false, error = errorOut }, ToolResultJson);
+                string full = $"tool-result: {payload}";
+
+                var record = new AgentStepRecord
+                {
+                    Index = step,
+                    Tool = call.Tool,
+                    ArgsSummary = SummarizeArgs(effectiveArgs),
+                    ArgsFull = FormatArgsDetailed(effectiveArgs),
+                    Ok = toolResult.Ok,
+                    Summary = Truncate(toolResult.Ok ? dataOut : errorOut, 160),
+                    FullResult = full,
+                    ResultFull = Truncate(toolResult.Ok ? dataOut : errorOut, 20000),
+                    ArgsRepaired = repairNote != null,
+                    DurationMs = stepWatch.ElapsedMilliseconds
+                };
+                result.Steps.Add(record);
+                _onStep?.Invoke(record);
+
+                // 无进展护栏
+                string signature = SignatureOf(call.Tool, effectiveArgs);
+                repeatStreak = signature == lastSignature ? repeatStreak + 1 : 1;
+                lastSignature = signature;
+                explorationStreak = _tools.Find(call.Tool)?.IsReadOnly == true ? explorationStreak + 1 : 0;
+
+                if (_policy.RepeatCallGuard && repeatStreak >= Math.Max(2, _policy.MaxRepeatCalls))
+                {
+                    result.FinalAnswer =
+                        $"检测到连续 {repeatStreak} 次完全相同的工具调用（{call.Tool}），判定为无进展，已停止以免空转。" +
+                        "请补充信息或调整目标后重试。";
+                    return result;
+                }
+                if (_policy.ExplorationGuard && explorationStreak >= Math.Max(2, _policy.MaxExplorationSteps))
+                {
+                    string guardText =
+                        $"已连续 {explorationStreak} 步只读侦察、未产生任何写操作，可能是在原地打转。\n\n" +
+                        "「是」= 允许再继续执行（护栏计数清零）；「否」= 立即停止。";
+                    if (step >= maxSteps || _confirmContinue == null || !_confirmContinue(guardText))
+                    {
+                        result.FinalAnswer =
+                            $"连续 {explorationStreak} 步仅执行只读侦察、未产生任何写操作，判定为在原地打转，已停止。" +
+                            "请给出更明确的目标或参数（例如具体文件、目录或要执行的动作）。";
+                        return result;
+                    }
+                    explorationStreak = 0;
+                }
+
+                // 回填
+                messages.Add(new LlmMessage("assistant", content));
+                messages.Add(new LlmMessage("user", full));
+
+                if (step == maxSteps)
+                {
+                    result.BudgetExhausted = true;
+                    result.FinalAnswer = $"已达单次任务步数上限（{maxSteps} 步）。已执行的步骤：\n"
+                        + string.Join("\n", result.Steps.Select(s => $"{s.Index}. {s.Tool}({s.ArgsSummary}) → {(s.Ok ? "成功" : "失败")}"));
+                    return result;
+                }
+            }
+
+            return result;
+        }
+
+        private static readonly string[] ActionPromiseSignals =
+        [
+            "请稍候", "稍等", "马上", "正在", "即将", "稍后",
+            "收到", "我将", "我会", "我来", "接下来", "下面我", "现在我",
+            "开始处理", "继续编辑", "重改", "重出",
+            "先查", "查一下", "查查",
+            "one moment", "wait a moment", "just a moment", "please wait"
+        ];
+
+        internal static bool LooksLikeActionPromise(string content)
+        {
+            if (string.IsNullOrWhiteSpace(content)) return false;
+            foreach (string signal in ActionPromiseSignals)
+                if (content.Contains(signal, StringComparison.OrdinalIgnoreCase)) return true;
+            string tail = content.TrimEnd();
+            foreach (char c in new[] { '，', ':', '：', ',', '、', '；' })
+                if (tail.EndsWith(c)) return true;
+            return false;
+        }
+
+        private static readonly string[] CompletionClaimSignals =
+        [
+            "已生成", "已保存", "已打开", "已创建", "已删除", "已移动", "已重命名", "已提交", "已写入", "已修改",
+            "生成成功", "保存成功", "打开成功", "已重新生成", "已重新打开",
+            "successfully generated", "successfully saved", "successfully created", "has been saved", "has been generated"
+        ];
+
+        internal static bool LooksLikeCompletionClaim(string content)
+        {
+            if (string.IsNullOrWhiteSpace(content)) return false;
+            foreach (string signal in CompletionClaimSignals)
+                if (content.Contains(signal, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private async Task<List<LlmMessage>> CompressMessagesAsync(List<LlmMessage> messages, CancellationToken ct)
+        {
+            var (head, middle, tail) = AgentContext.SplitForCompression(messages, AgentContext.KeepRecentMessages);
+            if (middle.Count == 0) return null;
+            string summary;
+            try
+            {
+                var completion = await _reasoner.CompleteAsync(
+                    [new LlmMessage("user", AgentContext.SummaryInstruction + AgentContext.RenderForSummary(middle))], ct);
+                summary = completion?.Content?.Trim();
+            }
+            catch
+            {
+                return null;
+            }
+            if (string.IsNullOrWhiteSpace(summary)) return null;
+            var rebuilt = new List<LlmMessage>(head)
+            {
+                new LlmMessage("user", AgentContext.SummaryPrefix + summary)
+            };
+            rebuilt.AddRange(tail);
+            return rebuilt;
+        }
+
+        internal static string SummarizeArgs(Dictionary<string, object> args)
+        {
+            if (args == null || args.Count == 0) return "";
+            return string.Join(", ", args.Select(kv => $"{kv.Key}={Truncate(kv.Value?.ToString() ?? "null", 40)}"));
+        }
+
+        internal static string SignatureOf(string tool, Dictionary<string, object> args)
+        {
+            if (args == null || args.Count == 0) return tool;
+            var sb = new StringBuilder(tool);
+            sb.Append('\u0001');
+            foreach (var kv in args.OrderBy(k => k.Key, StringComparer.Ordinal))
+                sb.Append(kv.Key).Append('=').Append(kv.Value?.ToString() ?? "null").Append('\u0002');
+            return sb.ToString();
+        }
+
+        internal static string FormatArgsDetailed(Dictionary<string, object> args)
+        {
+            if (args == null || args.Count == 0) return "";
+            var parts = new List<string>();
+            foreach (var kv in args)
+            {
+                string v = kv.Value switch
+                {
+                    null => "null",
+                    JsonElement je => je.ValueKind == JsonValueKind.Object
+                        ? MapKeys(je.EnumerateObject().Select(p => p.Name), je.EnumerateObject().Count())
+                        : Truncate(je.ToString(), 400),
+                    System.Collections.IDictionary d => MapKeys(d.Keys.Cast<object>().Select(k => k?.ToString() ?? ""), d.Count),
+                    string s => Truncate(s, 400),
+                    _ => Truncate(kv.Value.ToString(), 400)
+                };
+                parts.Add($"{kv.Key}={v}");
+            }
+            return string.Join(", ", parts);
+        }
+
+        private static string MapKeys(IEnumerable<string> keys, int total)
+        {
+            var names = keys.Where(k => !string.IsNullOrEmpty(k)).Take(5).ToList();
+            if (names.Count == 0) return $"{{共 {total} 项}}";
+            string s = string.Join(", ", names);
+            return total > names.Count ? $"{{{s}, …共 {total} 项}}" : $"{{{s}}}";
+        }
+
+        private static readonly string[] NonParameterErrors =
+        [
+            "401", "403", "unauthorized", "forbidden", "api key", "apikey", "密钥",
+            "quota", "rate limit", "429", "insufficient", "余额", "额度",
+            "timeout", "timed out", "超时", "network", "connection", "网络", "dns"
+        ];
+
+        private static readonly JsonSerializerOptions ToolResultJson = new()
+        {
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
+        private static readonly string[] ParameterErrorSignals =
+        [
+            "400", "422", "bad request", "unprocessable", "invalid", "_errors",
+            "expected ", "received null", "unknown parameter", "unexpected parameter",
+            "missing", "required", "参数", "非法", "不合法", "字段"
+        ];
+
+        internal static bool IsParameterError(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error)) return false;
+            string e = error.ToLowerInvariant();
+            foreach (string noise in NonParameterErrors)
+                if (e.Contains(noise, StringComparison.Ordinal)) return false;
+            foreach (string signal in ParameterErrorSignals)
+                if (e.Contains(signal, StringComparison.Ordinal)) return true;
+            return false;
+        }
+
+        internal static bool TryRepairArgs(
+            Dictionary<string, object> args, string error,
+            out Dictionary<string, object> repaired, out string note)
+        {
+            repaired = null;
+            note = null;
+            if (args == null || args.Count == 0) return false;
+
+            var next = new Dictionary<string, object>(args);
+            var fixes = new List<string>();
+
+            foreach (string key in args.Where(kv => IsEmptyArg(kv.Value)).Select(kv => kv.Key).ToList())
+                if (next.Remove(key)) fixes.Add($"移除空参数 {key}");
+
+            string expected = ExpectedType(error);
+            if (expected != null)
+            {
+                foreach (string key in args.Keys.Where(k => error?.Contains($"\"{k}\"", StringComparison.Ordinal) == true).ToList())
+                {
+                    if (!next.TryGetValue(key, out var value) || value == null || MatchesType(value, expected)) continue;
+                    object coerced = CoerceTo(value, expected);
+                    if (coerced == null) continue;
+                    next[key] = coerced;
+                    fixes.Add($"{key} 按 {expected} 修正");
+                }
+            }
+
+            if (fixes.Count == 0) return false;
+            repaired = next;
+            note = string.Join("；", fixes);
+            return true;
+        }
+
+        private static bool IsEmptyArg(object value) => value switch
+        {
+            null => true,
+            string s => string.IsNullOrWhiteSpace(s),
+            JsonElement je => je.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+                || (je.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(je.GetString())),
+            _ => false
+        };
+
+        internal static string ExpectedType(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error)) return null;
+            var m = Regex.Match(error, @"Expected\s+(string|number|integer|boolean|bool|array|object)", RegexOptions.IgnoreCase);
+            if (!m.Success) return null;
+            string t = m.Groups[1].Value.ToLowerInvariant();
+            return t == "bool" ? "boolean" : t;
+        }
+
+        private static bool MatchesType(object value, string expected) => expected switch
+        {
+            "string" => value is string || value is JsonElement { ValueKind: JsonValueKind.String },
+            "number" or "integer" => value is long or int or double or float or decimal
+                || value is JsonElement { ValueKind: JsonValueKind.Number },
+            "boolean" => value is bool
+                || value is JsonElement { ValueKind: JsonValueKind.True or JsonValueKind.False },
+            _ => true
+        };
+
+        private static object CoerceTo(object value, string expected)
+        {
+            string raw = value switch
+            {
+                string s => s,
+                bool b => b ? "true" : "false",
+                JsonElement je => je.ValueKind == JsonValueKind.String ? je.GetString() : je.GetRawText(),
+                _ => value?.ToString()
+            };
+            if (raw == null) return null;
+            switch (expected)
+            {
+                case "string": return raw;
+                case "number": return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) ? d : null;
+                case "integer": return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out long l) ? l : null;
+                case "boolean":
+                    if (bool.TryParse(raw, out bool b2)) return b2;
+                    if (raw == "1") return true;
+                    if (raw == "0") return false;
+                    return null;
+                default: return null;
+            }
+        }
+
+        private string ParameterHint(string toolName)
+        {
+            var tool = _tools.Find(toolName);
+            return string.IsNullOrWhiteSpace(tool?.ParamsSchema)
+                ? "\n（参数不被接受：请按工具说明修正参数后重试，不要原样重复调用。）"
+                : $"\n（参数不被接受：请按该工具的参数说明修正后重试，不要原样重复调用——{Truncate(tool.ParamsSchema, 600)}）";
+        }
+
+        internal static string Truncate(string text, int max)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            return text.Length <= max ? text : text[..max] + $"…（截断，共 {text.Length} 字符）";
+        }
+    }
+}
