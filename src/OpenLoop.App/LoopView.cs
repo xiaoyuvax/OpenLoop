@@ -5,6 +5,7 @@ using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.Loop;
 using OpenLoop.Core.Reasoning;
+using OpenLoop.Core.Skills;
 using OpenLoop.Core.Store;
 using OpenLoop.Core.Tools;
 using OpenLoop.Core.Safety;
@@ -52,6 +53,9 @@ namespace OpenLoop.App
             set => _txtInput.Text = value;
         }
 
+        /// <summary>会话语境（由宿主注入）：调查卡插到哪个会话、锚定第几轮。</summary>
+        public Func<(string Id, int Turn)> SessionTarget { get; set; }
+
         internal void Initialize(string workspace, Func<AppSettings> settings)
         {
             _workspace = workspace ?? "";
@@ -67,7 +71,8 @@ namespace OpenLoop.App
             _book.ReplaceAll(ChatStore.Load(_workspace, "loop"), null);
             _chat.PlaceholderText = Localization.T("NoMessages");
             _chat.Bind(_book);
-            _lblSub.Text = $"工作区 · {_workspace}";
+            _lblSub.Text = "工作区 · " + UiStyle.ShortPath(_workspace);
+            _tips.SetToolTip(_lblSub, _workspace);
             _chat.ScrollToEnd();
 
             ModelCatalog.Changed += OnCatalogChanged;
@@ -113,8 +118,9 @@ namespace OpenLoop.App
                 return;
             }
 
-            string baseUrl = settings.BaseUrl?.Trim() ?? "";
             string model = _model?.Trim() ?? "";
+            var (baseUrl, apiKey) = settings.EndpointFor(model);
+            baseUrl = baseUrl?.Trim() ?? "";
             if (baseUrl.Length == 0 || model.Length == 0)
             {
                 Notify("缺少配置", "请先在设置里填写接口地址、模型。", error: true);
@@ -122,10 +128,14 @@ namespace OpenLoop.App
             }
 
             var scope = new WorkspaceScope(_workspace);
-            var tools = ToolRegistry.Workspace(scope, ApproveCommand);
+            var skillCatalog = SkillCatalog.Load(_workspace);
+            var skills = ActiveSkills(skillCatalog, out var skillProblems);
+            var loopTools = ToolRegistry.Loop(scope, _workspace, ApproveCommand, skills);
+            var tools = new ToolRegistry(loopTools.Tools.Concat(
+                [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
             string checkpoint = Snapshots.Create(_workspace, "loop");
             if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
-            var reasoner = new OpenAiCompatibleReasoner(baseUrl, model, ResolveKey(), _effort);
+            var reasoner = new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort);
             var policy = new AgentPolicy { MaxSteps = 12 };
 
             TraceWriter trace;
@@ -150,6 +160,7 @@ namespace OpenLoop.App
             _txtInput.Clear();
             SetRunning(true);
             _lblStatus.Text = "状态: 运行中";
+            trace.SkillSet(skills, skillProblems);
             trace.Message("user", text);
 
             _streamBuffer.Clear();
@@ -191,10 +202,16 @@ namespace OpenLoop.App
                         RefreshChat();
                     });
                 },
-                confirmContinue: AskOnUi);
+                confirmContinue: AskOnUi,
+                skills: skills);
 
-            history.Insert(0, new LlmMessage("system",
-                loop.BuildSystemPrompt(LoopPrompt.Role, LoopPrompt.Rules, AgentsInstructions.Load(_workspace))));
+            string systemPrompt = loop.BuildSystemPrompt(
+                LoopPrompt.Role, LoopPrompt.Rules,
+                settings.UseAgentsMd
+                    ? AgentsInstructions.Load(_workspace, AppSettings.GlobalAgentsPath)
+                    : null);
+            history.Insert(0, new LlmMessage("system", systemPrompt));
+            trace.SystemPrompt(systemPrompt);
 
             _cts = new CancellationTokenSource();
             var ct = _cts.Token;
@@ -208,11 +225,11 @@ namespace OpenLoop.App
 
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
-                turn.AssistantText = CleanAnswer(result.FinalAnswer);
+                turn.AssistantText = CleanAnswer(result.FinalAnswer, result.FinishReason);
                 trace.Message("assistant", turn.AssistantText);
 
                 outcome = result.BudgetExhausted ? "budget" : result.StoppedByUser ? "stopped" : "ok";
-                trace.Finish(outcome, turn.AssistantText, result.ChatCost);
+                trace.Finish(outcome, turn.AssistantText, result.ChatCost, result.Guards);
                 _lblStatus.Text = $"状态: {outcome} · {result.Steps.Count} 步 · 成本 {(result.ChatCost?.ToString("0.0000") ?? "—")}";
             }
             catch (OperationCanceledException)
@@ -246,15 +263,44 @@ namespace OpenLoop.App
             }
         }
 
-        private static string CleanAnswer(string text)
+        private static string CleanAnswer(string text, string finishReason = null)
         {
-            string clean = LlmTextSanitizer.StripSafetyLines(text ?? "");
-            return clean.Length == 0 && !string.IsNullOrWhiteSpace(text)
-                ? "（模型只返回了安全判定，没有正文，请重试）"
-                : clean;
+            string raw = text ?? "";
+            string clean = LlmTextSanitizer.StripSafetyLines(raw).Trim();
+            if (clean.Length > 0) return clean;
+
+            bool blocked = finishReason != null
+                && (finishReason.Contains("content_filter", StringComparison.OrdinalIgnoreCase)
+                    || finishReason.Contains("refusal", StringComparison.OrdinalIgnoreCase)
+                    || finishReason.Contains("blocked", StringComparison.OrdinalIgnoreCase));
+            string head = blocked
+                ? Localization.T("EmptyBlocked")
+                : LlmTextSanitizer.IsSafetyOnly(raw)
+                    ? Localization.T("EmptySafetyOnly")
+                    : Localization.T("EmptyNoBody");
+            if (raw.Trim().Length == 0) return head;
+
+            string detail = raw.Trim();
+            if (detail.Length > 800) detail = detail[..800] + "…";
+            return head + "\n\n" + Localization.T("RawResponse") + "\n```\n" + detail + "\n```";
         }
 
-        private string ResolveKey() => AppSettings.ResolveKey(_settings());
+        public void NoteSurveyAnswer(string workspace, string title, string summary)
+        {
+            if (!string.Equals(workspace, _workspace, StringComparison.OrdinalIgnoreCase)) return;
+            void Apply()
+            {
+                _book.AddTurn(new ChatTurn
+                {
+                    User = new ChatMessage("user", $"[调查回答] 「{title}」：{summary}")
+                });
+                ChatStore.Save(_workspace, _book.Turns, "loop");
+                RefreshChat();
+                _chat.ScrollToEnd();
+            }
+            if (IsDisposed || !IsHandleCreated) return;
+            if (InvokeRequired) BeginInvoke(new Action(Apply)); else Apply();
+        }
 
         private List<LlmMessage> BuildHistory()
         {
@@ -321,16 +367,43 @@ namespace OpenLoop.App
             Persist(s => s.ReasoningEffort = _effort);
         }
 
-        private void OnSendClick(object sender, EventArgs e) => SendAsync();
+        private void Submit()
+        {
+            if (_running)
+            {
+                Stop();
+                return;
+            }
+            SendAsync();
+        }
 
-        private void OnStop(object sender, EventArgs e) => Stop();
+        private void OnSendClick(object sender, EventArgs e) => Submit();
 
         private void OnInputKeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter && e.Control)
             {
                 e.SuppressKeyPress = true;
-                SendAsync();
+                Submit();
+            }
+        }
+
+        private IReadOnlyList<SkillInfo> ActiveSkills(
+            IReadOnlyList<SkillInfo> catalog, out IReadOnlyList<string> problems)
+        {
+            problems = [];
+            try
+            {
+                var ledger = Ledger.Open(_workspace);
+                ledger.EnsureInitialized();
+                SkillCatalog.RegisterFeatures(ledger, catalog);
+                var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
+                return SkillCatalog.Active(ledger.Current, features, catalog, out problems);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("读取技能激活集失败：" + ex.Message);
+                return [];
             }
         }
 
@@ -351,8 +424,11 @@ namespace OpenLoop.App
         private void SetRunning(bool running)
         {
             _running = running;
-            _btnSend.Enabled = !running;
-            _btnStop.Enabled = running;
+            _btnSend.Text = Localization.T(running ? "Stop" : "Send");
+            _btnSend.IconSvg = UiIcons.Of(running ? UiIcons.Stop : UiIcons.Send,
+                running ? UiStyle.Error : Color.White);
+            _btnSend.Type = running ? AntdUI.TTypeMini.Error : AntdUI.TTypeMini.Primary;
+            _btnSend.Ghost = running;
             _txtInput.Enabled = !running;
         }
 

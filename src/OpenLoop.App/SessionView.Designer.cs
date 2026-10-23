@@ -15,6 +15,11 @@ namespace OpenLoop.App
         private ChatFlow.ChatFlowControl _chat;
         private TableLayoutPanel _side;
         private AntdUI.Segmented _sideTabs;
+        private AntdUI.Button _btnPendingSurveys;
+        private Panel _agentHost;
+        private AntdUI.Button _btnAgentBack;
+        private AntdUI.Label _lblAgentTitle;
+        private ChatFlow.ChatFlowControl _agentChat;
         private Panel _sideHost;
         private FlowLayoutPanel _loopFlow;
         private FlowLayoutPanel _detailFlow;
@@ -29,15 +34,18 @@ namespace OpenLoop.App
         private AntdUI.Label _lblTrace;
         private AntdUI.Label _lblCost;
         private AntdUI.Label _lblStatus;
+        private AntdUI.Button _btnDrafts;
+        private AntdUI.Button _btnReport;
         private AntdUI.Button _btnEvolve;
         private AntdUI.Button _btnRollback;
+        private AntdUI.Button _btnRule;
         private TableLayoutPanel _inputArea;
         private AntdUI.Input _txtInput;
         private TableLayoutPanel _toolbar;
         private FlowLayoutPanel _toolbarLeft;
         private AntdUI.Segmented _modeControl;
-        private AntdUI.Button _btnStop;
         private FlowLayoutPanel _toolbarRight;
+        private AntdUI.Select _selProvider;
         private AntdUI.Select _selModel;
         private AntdUI.Select _selEffort;
         private AntdUI.Switch _freeSwitch;
@@ -45,9 +53,13 @@ namespace OpenLoop.App
         private AntdUI.Progress _ctx;
         private AntdUI.Button _btnSend;
         private AntdUI.Label _lblPath;
+        private ToolTip _tips;
+
+        internal void DetachSurveyEvents() => OpenLoop.Core.Store.SurveyStore.Changed -= OnSurveyChanged;
 
         protected override void Dispose(bool disposing)
         {
+            if (disposing) _tips?.Dispose();
             if (disposing && (components != null)) components.Dispose();
             base.Dispose(disposing);
         }
@@ -55,6 +67,7 @@ namespace OpenLoop.App
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
+            _tips = new ToolTip();
 
             _root = new TableLayoutPanel();
             _header = new TableLayoutPanel();
@@ -69,6 +82,11 @@ namespace OpenLoop.App
             _sideTabs = new AntdUI.Segmented();
             _sideHost = new Panel();
             _loopFlow = new FlowLayoutPanel();
+            _btnPendingSurveys = new AntdUI.Button();
+            _agentHost = new Panel();
+            _btnAgentBack = new AntdUI.Button();
+            _lblAgentTitle = new AntdUI.Label();
+            _agentChat = new ChatFlow.ChatFlowControl();
             _detailFlow = new FlowLayoutPanel();
             _btnOpenLoop = new AntdUI.Button();
             _lblDModel = new AntdUI.Label();
@@ -81,15 +99,18 @@ namespace OpenLoop.App
             _lblTrace = new AntdUI.Label();
             _lblCost = new AntdUI.Label();
             _lblStatus = new AntdUI.Label();
+            _btnDrafts = new AntdUI.Button();
+            _btnReport = new AntdUI.Button();
             _btnEvolve = new AntdUI.Button();
             _btnRollback = new AntdUI.Button();
+            _btnRule = new AntdUI.Button();
             _inputArea = new TableLayoutPanel();
             _txtInput = new AntdUI.Input();
             _toolbar = new TableLayoutPanel();
             _toolbarLeft = new FlowLayoutPanel();
             _modeControl = new AntdUI.Segmented();
-            _btnStop = new AntdUI.Button();
             _toolbarRight = new FlowLayoutPanel();
+            _selProvider = new AntdUI.Select();
             _selModel = new AntdUI.Select();
             _freeSwitch = new AntdUI.Switch();
             _lblFree = new AntdUI.Label();
@@ -176,7 +197,36 @@ namespace OpenLoop.App
             _chat.Dock = DockStyle.Fill;
             _chat.BackColor = UiStyle.Surface;
             _chat.Margin = new Padding(0);
+            _chat.ChatFont = new Font("Microsoft YaHei UI", 9F);
             _upperSplit.Panel1.Controls.Add(_chat);
+
+            _agentHost.Dock = DockStyle.Fill;
+            _agentHost.Visible = false;
+            _agentHost.BackColor = UiStyle.Page;
+            _agentHost.Padding = new Padding(0);
+
+            _agentChat.Dock = DockStyle.Fill;
+            _agentChat.ChatFont = new Font("Microsoft YaHei UI", 9F);
+            _agentHost.Controls.Add(_agentChat);
+
+            _lblAgentTitle.Dock = DockStyle.Top;
+            _lblAgentTitle.Height = 28;
+            _lblAgentTitle.Text = "";
+            _lblAgentTitle.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
+            _lblAgentTitle.TextAlign = ContentAlignment.MiddleLeft;
+            _agentHost.Controls.Add(_lblAgentTitle);
+
+            _btnAgentBack.Dock = DockStyle.Top;
+            _btnAgentBack.Height = 32;
+            _btnAgentBack.Text = Localization.T("AgentBack");
+            _btnAgentBack.Type = AntdUI.TTypeMini.Default;
+            _btnAgentBack.Ghost = true;
+            _btnAgentBack.Radius = 8;
+            _btnAgentBack.Width = 120;
+            _btnAgentBack.Click += OnAgentBack;
+            _agentHost.Controls.Add(_btnAgentBack);
+
+            _upperSplit.Panel1.Controls.Add(_agentHost);
 
             _side.Dock = DockStyle.Fill;
             _side.ColumnCount = 1;
@@ -216,6 +266,8 @@ namespace OpenLoop.App
             _lblDef.Font = new Font("Segoe UI", 9F);
             _lblDef.ForeColor = UiStyle.Muted;
             _lblDef.Margin = new Padding(0, 0, 0, 8);
+            _lblDef.Cursor = Cursors.Hand;
+            _lblDef.Click += OnShowDefinitions;
 
             _lblTasks.AutoSize = true;
             _lblTasks.MaximumSize = new Size(260, 0);
@@ -223,13 +275,20 @@ namespace OpenLoop.App
             _lblTasks.Font = new Font("Segoe UI", 9F);
             _lblTasks.ForeColor = UiStyle.Muted;
             _lblTasks.Margin = new Padding(0, 0, 0, 8);
+            _lblTasks.Cursor = Cursors.Hand;
+            _lblTasks.Click += OnShowTasks;
 
-            _lblTrace.AutoSize = true;
-            _lblTrace.MaximumSize = new Size(260, 0);
+            _lblTrace.AutoSize = false;
+            _lblTrace.Width = 236;
+            _lblTrace.Height = 18;
+            _lblTrace.TextMultiLine = true;
+            _lblTrace.ShowTooltip = false;
             _lblTrace.Text = "trace: —";
             _lblTrace.Font = new Font("Segoe UI", 9F);
             _lblTrace.ForeColor = UiStyle.Muted;
             _lblTrace.Margin = new Padding(0, 0, 0, 8);
+            _lblTrace.Cursor = Cursors.Hand;
+            _lblTrace.Click += OnOpenTrace;
 
             _lblCost.AutoSize = true;
             _lblCost.Text = Localization.T("Cost") + ": —";
@@ -243,6 +302,24 @@ namespace OpenLoop.App
             _lblStatus.Font = new Font("Segoe UI", 9F);
             _lblStatus.ForeColor = UiStyle.Text;
             _lblStatus.Margin = new Padding(0, 0, 0, 16);
+
+            _btnDrafts.Name = "btnDrafts";
+            _btnDrafts.Text = Localization.T("TaskDrafts");
+            _btnDrafts.Radius = 8;
+            _btnDrafts.Height = 34;
+            _btnDrafts.Width = 236;
+            _btnDrafts.IconSvg = UiIcons.Of(UiIcons.Plus, UiStyle.Text);
+            _btnDrafts.Margin = new Padding(0, 0, 0, 8);
+            _btnDrafts.Click += OnOpenDrafts;
+
+            _btnReport.Name = "btnReport";
+            _btnReport.Text = Localization.T("EvalReports");
+            _btnReport.Radius = 8;
+            _btnReport.Height = 34;
+            _btnReport.Width = 236;
+            _btnReport.IconSvg = UiIcons.Of(UiIcons.List, UiStyle.Text);
+            _btnReport.Margin = new Padding(0, 0, 0, 8);
+            _btnReport.Click += OnOpenReports;
 
             _btnEvolve.Name = "btnEvolve";
             _btnEvolve.Text = Localization.T("Evolve");
@@ -261,6 +338,15 @@ namespace OpenLoop.App
             _btnRollback.IconSvg = UiIcons.Of(UiIcons.Undo, UiStyle.Text);
             _btnRollback.Margin = new Padding(0, 0, 0, 4);
             _btnRollback.Click += OnRollback;
+
+            _btnRule.Name = "btnRule";
+            _btnRule.Text = "新增规则";
+            _btnRule.Radius = 8;
+            _btnRule.Height = 34;
+            _btnRule.Width = 236;
+            _btnRule.IconSvg = UiIcons.Of(UiIcons.Plus, UiStyle.Text);
+            _btnRule.Margin = new Padding(0, 0, 0, 4);
+            _btnRule.Click += OnAddRule;
 
             _btnOpenLoop.Name = "btnOpenLoop";
             _btnOpenLoop.Text = Localization.T("OpenLoopChat");
@@ -303,13 +389,27 @@ namespace OpenLoop.App
             _lblDStatus.MaximumSize = new Size(260, 0);
             _lblDStatus.Margin = new Padding(0, 0, 0, 8);
 
+            _btnPendingSurveys.Text = "待答 0";
+            _btnPendingSurveys.Type = AntdUI.TTypeMini.Primary;
+            _btnPendingSurveys.Ghost = true;
+            _btnPendingSurveys.Radius = 8;
+            _btnPendingSurveys.Width = 120;
+            _btnPendingSurveys.Height = 30;
+            _btnPendingSurveys.Margin = new Padding(0, 0, 0, 8);
+            _btnPendingSurveys.Visible = false;
+            _btnPendingSurveys.Click += OnOpenPendingSurveys;
+
+            _loopFlow.Controls.Add(_btnPendingSurveys);
             _loopFlow.Controls.Add(_lblDef);
             _loopFlow.Controls.Add(_lblTasks);
             _loopFlow.Controls.Add(_lblTrace);
             _loopFlow.Controls.Add(_lblCost);
             _loopFlow.Controls.Add(_lblStatus);
+            _loopFlow.Controls.Add(_btnDrafts);
+            _loopFlow.Controls.Add(_btnReport);
             _loopFlow.Controls.Add(_btnEvolve);
             _loopFlow.Controls.Add(_btnRollback);
+            _loopFlow.Controls.Add(_btnRule);
             _loopFlow.Controls.Add(_btnOpenLoop);
 
             _detailFlow.Controls.Add(_lblDModel);
@@ -329,13 +429,12 @@ namespace OpenLoop.App
             // input area
             _inputArea.Dock = DockStyle.Fill;
             _inputArea.ColumnCount = 1;
-            _inputArea.RowCount = 3;
+            _inputArea.RowCount = 2;
             _inputArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _inputArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            _inputArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
-            _inputArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+            _inputArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
             _inputArea.BackColor = UiStyle.Page;
-            _inputArea.Padding = new Padding(16, 8, 16, 6);
+            _inputArea.Padding = new Padding(16, 4, 16, 2);
 
             _txtInput.Name = "txtInput";
             _txtInput.Dock = DockStyle.Fill;
@@ -353,7 +452,7 @@ namespace OpenLoop.App
             _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            _toolbar.Margin = new Padding(0, 6, 0, 0);
+            _toolbar.Margin = new Padding(0, 4, 0, 0);
 
             _toolbarLeft.Dock = DockStyle.Fill;
             _toolbarLeft.FlowDirection = FlowDirection.LeftToRight;
@@ -361,7 +460,7 @@ namespace OpenLoop.App
             _toolbarLeft.Margin = new Padding(0);
 
             _modeControl.Name = "mode";
-            _modeControl.Height = 34;
+            _modeControl.Height = 30;
             _modeControl.Width = 300;
             _modeControl.Margin = new Padding(0, 0, 8, 0);
             _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("ModeTask") });
@@ -370,20 +469,21 @@ namespace OpenLoop.App
             _modeControl.SelectIndex = 0;
             _modeControl.SelectIndexChanged += OnModeChanged;
 
-            _btnStop.Name = "btnStop";
-            _btnStop.Text = Localization.T("Stop");
-            _btnStop.Type = AntdUI.TTypeMini.Error;
-            _btnStop.Ghost = true;
-            _btnStop.Radius = 8;
-            _btnStop.Height = 34;
-            _btnStop.Width = 76;
-            _btnStop.IconSvg = UiIcons.Of(UiIcons.Stop, UiStyle.Error);
-            _btnStop.Enabled = false;
-            _btnStop.Margin = new Padding(0);
-            _btnStop.Click += OnStop;
-
             _toolbarLeft.Controls.Add(_modeControl);
-            _toolbarLeft.Controls.Add(_btnStop);
+
+            _lblPath.Name = "lblPath";
+            _lblPath.AutoSize = false;
+            _lblPath.Width = 220;
+            _lblPath.Height = 30;
+            _lblPath.Text = "";
+            _lblPath.Font = new Font("Segoe UI", 8.5F);
+            _lblPath.ForeColor = UiStyle.Muted;
+            _lblPath.PrefixSvg = UiIcons.Of(UiIcons.Folder, UiStyle.Muted);
+            _lblPath.TextAlign = ContentAlignment.MiddleLeft;
+            _lblPath.AutoEllipsis = true;
+            _lblPath.IconGap = 6;
+            _lblPath.Margin = new Padding(6, 0, 0, 0);
+            _toolbarLeft.Controls.Add(_lblPath);
 
             _toolbarRight.Dock = DockStyle.Fill;
             _toolbarRight.FlowDirection = FlowDirection.RightToLeft;
@@ -391,9 +491,17 @@ namespace OpenLoop.App
             _toolbarRight.AutoSize = true;
             _toolbarRight.Margin = new Padding(0);
 
+            _selProvider.Name = "selProvider";
+            _selProvider.Width = 160;
+            _selProvider.Height = 30;
+            _selProvider.Radius = 8;
+            _selProvider.PlaceholderText = Localization.T("Provider");
+            _selProvider.Margin = new Padding(6, 0, 0, 0);
+            _selProvider.SelectedValueChanged += OnProviderChanged;
+
             _selModel.Name = "selModel";
-            _selModel.Width = 290;
-            _selModel.Height = 34;
+            _selModel.Width = 260;
+            _selModel.Height = 30;
             _selModel.Radius = 8;
             _selModel.PlaceholderText = "模型";
             _selModel.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
@@ -404,7 +512,7 @@ namespace OpenLoop.App
             _freeSwitch.Width = 40;
             _freeSwitch.Height = 22;
             _freeSwitch.Checked = true;
-            _freeSwitch.Margin = new Padding(10, 6, 0, 0);
+            _freeSwitch.Margin = new Padding(10, 4, 0, 0);
             _freeSwitch.CheckedChanged += OnFreeToggle;
 
             _lblFree.Name = "lblFree";
@@ -412,11 +520,11 @@ namespace OpenLoop.App
             _lblFree.Text = Localization.T("FreeOnly");
             _lblFree.Font = new Font("Segoe UI", 9F);
             _lblFree.ForeColor = UiStyle.Muted;
-            _lblFree.Margin = new Padding(0, 9, 4, 0);
+            _lblFree.Margin = new Padding(0, 7, 4, 0);
 
             _selEffort.Name = "selEffort";
             _selEffort.Width = 128;
-            _selEffort.Height = 34;
+            _selEffort.Height = 30;
             _selEffort.Radius = 8;
             _selEffort.PrefixSvg = UiIcons.Of(UiIcons.Effort, UiStyle.Muted);
             _selEffort.Margin = new Padding(6, 0, 0, 0);
@@ -440,8 +548,8 @@ namespace OpenLoop.App
             _btnSend.Text = Localization.T("Send");
             _btnSend.Type = AntdUI.TTypeMini.Primary;
             _btnSend.Radius = 8;
-            _btnSend.Width = 104;
-            _btnSend.Height = 34;
+            _btnSend.Width = 96;
+            _btnSend.Height = 30;
             _btnSend.IconSvg = UiIcons.Of(UiIcons.Send, Color.White);
             _btnSend.Margin = new Padding(0);
             _btnSend.Click += OnSendClick;
@@ -449,26 +557,15 @@ namespace OpenLoop.App
             _toolbarRight.Controls.Add(_btnSend);
             _toolbarRight.Controls.Add(_selEffort);
             _toolbarRight.Controls.Add(_selModel);
+            _toolbarRight.Controls.Add(_selProvider);
             _toolbarRight.Controls.Add(_freeSwitch);
             _toolbarRight.Controls.Add(_lblFree);
 
             _toolbar.Controls.Add(_toolbarLeft, 0, 0);
             _toolbar.Controls.Add(_toolbarRight, 1, 0);
 
-            _lblPath.Name = "lblPath";
-            _lblPath.Dock = DockStyle.Fill;
-            _lblPath.Text = "";
-            _lblPath.Font = new Font("Segoe UI", 8.5F);
-            _lblPath.ForeColor = UiStyle.Muted;
-            _lblPath.PrefixSvg = UiIcons.Of(UiIcons.Folder, UiStyle.Muted);
-            _lblPath.TextAlign = ContentAlignment.MiddleLeft;
-            _lblPath.AutoEllipsis = true;
-            _lblPath.IconGap = 6;
-            _lblPath.Margin = new Padding(2, 0, 0, 0);
-
             _inputArea.Controls.Add(_txtInput, 0, 0);
             _inputArea.Controls.Add(_toolbar, 0, 1);
-            _inputArea.Controls.Add(_lblPath, 0, 2);
             _mainSplit.Panel2.Controls.Add(_inputArea);
 
             _root.Controls.Add(_header, 0, 0);

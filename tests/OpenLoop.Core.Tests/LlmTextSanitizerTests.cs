@@ -18,4 +18,13 @@ public sealed class LlmTextSanitizerTests
         const string text = "The safety check passed.\n模型的安全性由供应商负责。";
         Assert.Equal(text, LlmTextSanitizer.StripSafetyLines(text));
     }
+
+    [Fact]
+    public void DetectsSafetyOnlyPayload()
+    {
+        Assert.True(LlmTextSanitizer.IsSafetyOnly("User Safety: safe\nResponse Safety: unsafe"));
+        Assert.True(LlmTextSanitizer.IsSafetyOnly("  response safety: safe  "));
+        Assert.False(LlmTextSanitizer.IsSafetyOnly("正文\nUser Safety: safe"));
+        Assert.False(LlmTextSanitizer.IsSafetyOnly(""));
+    }
 }

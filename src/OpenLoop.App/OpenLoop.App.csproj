@@ -20,9 +20,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenLoop.Core\OpenLoop.Core.csproj" />
-    <ProjectReference Include="..\..\..\ChatFlow\ChatFlow\ChatFlow.csproj" />
-    <ProjectReference Include="..\..\..\PuppetCore\Puppet.Core\Puppet.Core.csproj" />
-    <ProjectReference Include="..\..\..\PuppetCore\Puppet.Core.WinForms\Puppet.Core.WinForms.csproj" />
+    <PackageReference Include="ChatFlow" Version="0.1.4" />
+    <PackageReference Include="Puppet.Core" Version="1.6.1" />
+    <PackageReference Include="Puppet.Core.WinForms" Version="1.6.1" />
   </ItemGroup>
 
   <ItemGroup>

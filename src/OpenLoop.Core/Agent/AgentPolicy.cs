@@ -17,6 +17,9 @@ namespace OpenLoop.Core.Agent
 
         public bool ClaimGuard { get; set; } = true;
         public bool PromiseGuard { get; set; } = true;
+
+        /// <summary>「将要执行但未调用工具」的最大纠正次数（超过即按最终答案收尾）。</summary>
+        public int MaxPromiseNudges { get; set; } = 2;
         public bool ArgRepair { get; set; } = true;
         public bool MalformedRetry { get; set; } = true;
         public int MaxMalformedRetries { get; set; } = 2;

@@ -20,5 +20,16 @@ namespace OpenLoop.App
             Application.Run(form);
             AppLog.Info("OpenLoop 退出");
         }
-    }
+        private static void Dump(string kind, Exception ex)
+        {
+            try
+            {
+                string dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenLoop");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(Path.Combine(dir, "crash.log"),
+                    $"[{DateTime.Now:O}] {kind}\n{ex}\n\n");
+            }
+            catch { }
+        }    }
 }

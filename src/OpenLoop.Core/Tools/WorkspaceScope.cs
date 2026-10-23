@@ -1,3 +1,5 @@
+using OpenLoop.Core.Safety;
+
 namespace OpenLoop.Core.Tools
 {
     /// <summary>
@@ -11,13 +13,42 @@ namespace OpenLoop.Core.Tools
                 ? StringComparison.OrdinalIgnoreCase
                 : StringComparison.Ordinal;
 
-        public WorkspaceScope(string root)
+        private readonly string[] _denied;
+        private readonly bool _unrestricted;
+
+        /// <param name="denied">相对 root 的受保护子路径；默认保护运行态证据 <c>.openloop</c>。</param>
+        /// <param name="unrestricted">完全许可：不限制路径边界，也不过滤受保护子目录（仅交互 Worker 使用）。</param>
+        public WorkspaceScope(string root, IEnumerable<string> denied = null, bool unrestricted = false)
         {
             if (string.IsNullOrWhiteSpace(root)) throw new ArgumentException("工作目录不能为空", nameof(root));
             Root = RealPath(Path.GetFullPath(root));
+            _unrestricted = unrestricted;
+            _denied = unrestricted
+                ? []
+                : (denied ?? [".openloop"])
+                    .Where(d => !string.IsNullOrWhiteSpace(d))
+                    .Select(d => RealPath(Path.Combine(Root, d)))
+                    .ToArray();
         }
 
+        public bool Unrestricted => _unrestricted;
+
+        /// <summary>可选的文件写入撤销队列；write_file 写入前记录旧内容。</summary>
+        public FileUndoLog Undo { get; set; }
+
         public string Root { get; }
+
+        public bool IsDenied(string path)
+        {
+            if (string.IsNullOrEmpty(path) || _denied.Length == 0) return false;
+            string full = RealPath(Path.GetFullPath(path));
+            foreach (string denied in _denied)
+            {
+                if (full.Equals(denied, PathComparison)) return true;
+                if (full.StartsWith(denied + Path.DirectorySeparatorChar, PathComparison)) return true;
+            }
+            return false;
+        }
 
         public bool TryResolve(string path, out string full, out string error)
         {
@@ -40,9 +71,17 @@ namespace OpenLoop.Core.Tools
                 ? Root
                 : Root + Path.DirectorySeparatorChar;
 
-            if (!full.Equals(Root, PathComparison) && !full.StartsWith(rootWithSep, PathComparison))
+            if (!_unrestricted
+                && !full.Equals(Root, PathComparison) && !full.StartsWith(rootWithSep, PathComparison))
             {
                 error = $"路径越界：{path} 不在工作目录内";
+                full = null;
+                return false;
+            }
+
+            if (!_unrestricted && IsDenied(full))
+            {
+                error = $"路径受保护（运行态证据）：{path}";
                 full = null;
                 return false;
             }

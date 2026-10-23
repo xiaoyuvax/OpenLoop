@@ -124,6 +124,31 @@ public sealed class GateTests : IDisposable
     }
 
     [Fact]
+    public async Task Gate_writes_human_readable_report()
+    {
+        var ledger = NewLedger();
+        var tasks = AddTasks("a", "b");
+        var baseline = ledger.Current;
+        var candidate = Narrow(baseline, FeatureCatalog.Claim);
+        var runner = new FakeRunner((task, version) => version == 2 || task.Id == "a");
+        var gate = new Gate(ledger, tasks, Map(ledger), runner);
+
+        var report = await gate.EvaluateAsync(baseline, candidate);
+
+        Assert.NotNull(report.ReportPath);
+        string dir = Path.Combine(_root, report.ReportPath);
+        Assert.True(File.Exists(Path.Combine(dir, "report.json")));
+        string markdown = File.ReadAllText(Path.Combine(dir, "report.md"));
+        Assert.Contains("逐题对比", markdown);
+        Assert.Contains("| a |", markdown);
+        Assert.Contains("采纳", markdown);
+
+        var saved = Assert.Single(EvalReportStore.List(_root));
+        Assert.Equal(report.CandidatePassed, saved.CandidatePassed);
+        Assert.Equal(1, saved.Tasks[0].CandidateSteps);
+    }
+
+    [Fact]
     public async Task Gate_keeps_incumbent_on_tie()
     {
         var ledger = NewLedger();
@@ -297,6 +322,18 @@ public sealed class GateTests : IDisposable
         var garbage = new ScriptedReasoner("没有 JSON");
         var none = await new LoopAgent(garbage).ProposeAsync(packet, ledger.Current, features);
         Assert.Contains("没有 JSON", none.Error);
+    }
+
+    [Fact]
+    public void BuildPacket_includes_rule_text_for_proposer()
+    {
+        var ledger = NewLedger();
+        var rule = ledger.AddRule("先读再写", "修改前先读文件。");
+
+        string packet = new LoopAgent(new ScriptedReasoner("{}")).BuildPacket(ledger);
+
+        Assert.Contains(rule.Id, packet);
+        Assert.Contains("修改前先读文件。", packet);
     }
 
     [Fact]

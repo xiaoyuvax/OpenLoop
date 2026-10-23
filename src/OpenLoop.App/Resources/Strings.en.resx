@@ -133,6 +133,12 @@
   <data name="FreeOnly" xml:space="preserve">
     <value>Free only</value>
   </data>
+  <data name="Provider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="AllProviders" xml:space="preserve">
+    <value>All providers</value>
+  </data>
   <data name="ModeTask" xml:space="preserve">
     <value>Task</value>
   </data>
@@ -352,5 +358,71 @@
 {1}
 
 Allow?</value>
+  </data>
+  <data name="EmptyBlocked" xml:space="preserve">
+    <value>(The upstream blocked this answer by content policy; no body was returned.)</value>
+  </data>
+  <data name="EmptySafetyOnly" xml:space="preserve">
+    <value>(The model returned only a safety verdict, no body; retried once and still empty.)</value>
+  </data>
+  <data name="EmptyNoBody" xml:space="preserve">
+    <value>(The model returned no body.)</value>
+  </data>
+  <data name="RawResponse" xml:space="preserve">
+    <value>Raw response:</value>
+  </data>
+  <data name="ReviewPending" xml:space="preserve">
+    <value>Pending</value>
+  </data>
+  <data name="AgentBack" xml:space="preserve">
+    <value>← Back</value>
+  </data>
+  <data name="TaskDrafts" xml:space="preserve">
+    <value>Task drafts</value>
+  </data>
+  <data name="EvalReports" xml:space="preserve">
+    <value>Eval reports</value>
+  </data>
+  <data name="Accept" xml:space="preserve">
+    <value>Accept</value>
+  </data>
+  <data name="Discard" xml:space="preserve">
+    <value>Discard</value>
+  </data>
+  <data name="EditDraft" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="SaveDraft" xml:space="preserve">
+    <value>Save changes</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="DraftsEmpty" xml:space="preserve">
+    <value>No drafts yet. Tasks drafted by Loop from observed failures will appear here.</value>
+  </data>
+  <data name="PickDraft" xml:space="preserve">
+    <value>Pick a draft on the left.</value>
+  </data>
+  <data name="ReportsEmpty" xml:space="preserve">
+    <value>No reports yet. Run an evolution round to create one.</value>
+  </data>
+  <data name="OpenFolder" xml:space="preserve">
+    <value>Open report folder</value>
+  </data>
+  <data name="BaselineSmoke" xml:space="preserve">
+    <value>Run baseline after accepting</value>
+  </data>
+  <data name="DraftAccepted" xml:space="preserve">
+    <value>Added to task set: </value>
+  </data>
+  <data name="BaselineRunning" xml:space="preserve">
+    <value>Running baseline…</value>
+  </data>
+  <data name="BaselinePassed" xml:space="preserve">
+    <value>Baseline passed: this task may not discriminate; consider stricter checks.</value>
+  </data>
+  <data name="BaselineFailed" xml:space="preserve">
+    <value>Baseline failed: kept as a regression task.</value>
   </data>
 </root>

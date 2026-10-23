@@ -6,5 +6,4 @@
   <Folder Name="/tests/">
     <Project Path="tests/OpenLoop.Core.Tests/OpenLoop.Core.Tests.csproj" />
   </Folder>
-  <Project Path="../ChatFlow/ChatFlow/ChatFlow.csproj" />
 </Solution>

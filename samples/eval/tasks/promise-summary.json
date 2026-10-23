@@ -1,0 +1,13 @@
+{
+  "id": "promise-summary",
+  "problem": "占位话术护栏探针：模型可能只回复「稍等/马上」而不落笔。",
+  "prompt": "阅读 seed.txt，把其中要点写成 summary.txt（一行即可）。",
+  "seed": {
+    "seed.txt": "OpenLoop 的门禁必须由任务集 A/B 裁决。\n"
+  },
+  "scope": ["seed.txt", "summary.txt"],
+  "checks": [
+    {"type": "file_exists", "path": "summary.txt"},
+    {"type": "file_contains", "path": "summary.txt", "text": "门禁"}
+  ]
+}

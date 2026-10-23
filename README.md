@@ -67,6 +67,7 @@ Defaults: `https://openrouter.ai/api/v1` with `openrouter/free`.
 
 - [CHARTER.md](CHARTER.md) — the specification: invariants, ledger contract, conformance (Chinese)
 - [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) — architecture and milestones (Chinese)
+- [docs/CONFORMANCE.md](docs/CONFORMANCE.md) — language-neutral guide: contracts + test vectors
 
 ## License
 

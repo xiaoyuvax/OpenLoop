@@ -10,7 +10,7 @@ namespace OpenLoop.Core.Store
     public sealed class EvalTask
     {
         public string Id { get; init; }
-        public string Problem { get; init; }
+        public string Problem { get; set; }
         public string Prompt { get; init; }
         public string Source { get; init; } = "user";
         public Dictionary<string, string> Seed { get; init; } = [];
@@ -64,7 +64,7 @@ namespace OpenLoop.Core.Store
                 Validate(task, file);
                 if (!ids.Add(task.Id))
                     throw new InvalidDataException($"任务 id 重复：{task.Id}");
-                tasks.Add(Normalize(task));
+                tasks.Add(NormalizeTask(task));
             }
             return new TaskSet(tasks);
         }
@@ -95,10 +95,16 @@ namespace OpenLoop.Core.Store
 
         private static void Validate(EvalTask task, string file)
         {
-            if (task == null) throw new InvalidDataException($"任务文件为空：{file}");
-            if (string.IsNullOrWhiteSpace(task.Id)) throw new InvalidDataException($"任务缺少 id：{file}");
-            if (string.IsNullOrWhiteSpace(task.Prompt)) throw new InvalidDataException($"任务缺少 prompt：{file}");
-            if (task.Checks is not { Count: > 0 }) throw new InvalidDataException($"任务缺少 checks：{file}");
+            ValidateTask(task, file);
+        }
+
+        /// <summary>草稿入库与题集加载共用同一套字段校验；不通过抛 InvalidDataException。</summary>
+        public static void ValidateTask(EvalTask task, string label = "task")
+        {
+            if (task == null) throw new InvalidDataException($"任务文件为空：{label}");
+            if (string.IsNullOrWhiteSpace(task.Id)) throw new InvalidDataException($"任务缺少 id：{label}");
+            if (string.IsNullOrWhiteSpace(task.Prompt)) throw new InvalidDataException($"任务缺少 prompt：{label}");
+            if (task.Checks is not { Count: > 0 }) throw new InvalidDataException($"任务缺少 checks：{label}");
 
             foreach (var check in task.Checks)
             {
@@ -112,7 +118,7 @@ namespace OpenLoop.Core.Store
             }
         }
 
-        private static EvalTask Normalize(EvalTask task) => new()
+        public static EvalTask NormalizeTask(EvalTask task) => new()
         {
             Id = task.Id,
             Problem = task.Problem,

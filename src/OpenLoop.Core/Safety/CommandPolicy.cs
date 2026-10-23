@@ -61,6 +61,9 @@ namespace OpenLoop.Core.Safety
             if (ShellNames.Contains(exe))
                 return new CommandVerdict(CommandRisk.Risky, $"shell 解释器：{exe}");
 
+            if (argv.Any(a => a.Contains(".openloop", StringComparison.OrdinalIgnoreCase)))
+                return new CommandVerdict(CommandRisk.Risky, "涉及受保护的运行态目录 .openloop");
+
             if (exe == "dd")
             {
                 foreach (string arg in argv.Skip(1))

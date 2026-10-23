@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Encodings.Web;
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
+using OpenLoop.Core.Skills;
 
 namespace OpenLoop.Core.Trace
 {
@@ -15,12 +16,14 @@ namespace OpenLoop.Core.Trace
     {
         private static readonly JsonSerializerOptions LineJson = new()
         {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
 
         private static readonly JsonSerializerOptions PrettyJson = new()
         {
             WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
 
@@ -33,6 +36,10 @@ namespace OpenLoop.Core.Trace
 
         private StreamWriter _messages;
         private StreamWriter _steps;
+        private IReadOnlyList<SkillInfo> _skills;
+        private IReadOnlyList<string> _skillProblems;
+        private string _systemPromptHash;
+        private int _systemPromptChars;
         private bool _finished;
 
         private TraceWriter(string directory, string workspace, string model, string tag, string prompt)
@@ -59,6 +66,20 @@ namespace OpenLoop.Core.Trace
             string id = $"T-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}"[..24];
             string directory = Path.Combine(workspaceRoot, ".openloop", "traces", id);
             return new TraceWriter(directory, workspaceRoot, model, tag, prompt);
+        }
+
+        /// <summary>记录本次运行可见的技能、内容哈希与解析问题（用于回指与归因）。</summary>
+        public void SkillSet(IReadOnlyList<SkillInfo> skills, IReadOnlyList<string> problems = null)
+        {
+            _skills = skills;
+            _skillProblems = problems;
+        }
+
+        /// <summary>记录实际注入的系统提示词指纹（原文可能含用户约定，不落盘）。</summary>
+        public void SystemPrompt(string prompt)
+        {
+            _systemPromptHash = SystemPromptBuilder.Fingerprint(prompt);
+            _systemPromptChars = prompt?.Length ?? 0;
         }
 
         public void Message(LlmMessage message) => Message(message?.Role, message?.Content);
@@ -93,7 +114,7 @@ namespace OpenLoop.Core.Trace
             }
         }
 
-        public void Finish(string outcome, string finalAnswer, decimal? cost = null)
+        public void Finish(string outcome, string finalAnswer, decimal? cost = null, AgentGuardStats guards = null)
         {
             lock (_gate)
             {
@@ -120,7 +141,12 @@ namespace OpenLoop.Core.Trace
                     cost,
                     outcome,
                     messages = MessageCount,
-                    steps = StepCount
+                    steps = StepCount,
+                    skills = (_skills ?? []).Select(s => new { name = s.Name, sha256 = s.Sha256, source = s.Source }).ToArray(),
+                    skillProblems = _skillProblems ?? [],
+                    guards = guards ?? new AgentGuardStats(),
+                    systemPrompt = new { sha256 = _systemPromptHash, chars = _systemPromptChars },
+                    binary = RuntimeInfo.Version
                 };
                 File.WriteAllText(Path.Combine(DirectoryPath, "run.json"),
                     JsonSerializer.Serialize(run, PrettyJson), new UTF8Encoding(false));

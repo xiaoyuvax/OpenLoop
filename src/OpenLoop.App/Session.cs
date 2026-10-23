@@ -29,10 +29,14 @@ namespace OpenLoop.App
 
         public string StepsText => Steps == 0 ? "—" : Steps.ToString();
 
+        /// <summary>用户重命名后覆盖默认标题；空值回退到工作目录名。</summary>
+        public string CustomTitle { get; set; }
+
         public string Title
         {
             get
             {
+                if (!string.IsNullOrWhiteSpace(CustomTitle)) return CustomTitle.Trim();
                 string name = "";
                 try
                 {

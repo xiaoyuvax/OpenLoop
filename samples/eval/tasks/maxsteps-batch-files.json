@@ -1,0 +1,20 @@
+{
+  "id": "maxsteps-batch-files",
+  "problem": "步数上限探针：批量创建 8 个文件需要约 9 步，MaxSteps 过低会中途截断。",
+  "prompt": "在工作区创建 8 个文件：f01.txt 到 f08.txt。每个文件只写它自己的编号（例如 f03.txt 的内容是 3）。全部创建完后再回复。",
+  "seed": {},
+  "scope": [
+    "f01.txt", "f02.txt", "f03.txt", "f04.txt", "f05.txt",
+    "f06.txt", "f07.txt", "f08.txt"
+  ],
+  "checks": [
+    {"type": "file_equals", "path": "f01.txt", "text": "1"},
+    {"type": "file_equals", "path": "f02.txt", "text": "2"},
+    {"type": "file_equals", "path": "f03.txt", "text": "3"},
+    {"type": "file_equals", "path": "f04.txt", "text": "4"},
+    {"type": "file_equals", "path": "f05.txt", "text": "5"},
+    {"type": "file_equals", "path": "f06.txt", "text": "6"},
+    {"type": "file_equals", "path": "f07.txt", "text": "7"},
+    {"type": "file_equals", "path": "f08.txt", "text": "8"}
+  ]
+}

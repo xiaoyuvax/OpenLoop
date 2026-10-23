@@ -1,6 +1,6 @@
 # OpenLoop 实施方案
 
-> 对应 `CHARTER.md` charter/2。本文是实现计划，不是规范。
+> 对应 `CHARTER.md` charter/3。本文是实现计划，不是规范。
 > 范围：M1（可工作的通用 WinForms agent，含共用对话控件抽取）。M2/M3 只列形状。
 > 未完成工作与跨机器交接见 `docs/PLAN-NEXT.md`。
 
@@ -434,6 +434,20 @@ public sealed class AgentPolicy
 }
 ```
 
+**护栏观测**：`AgentRunResult.Guards` 记录 repeat/exploration/claim/promise/empty/malformed/argRepair/compress 的命中次数，写入 trace 的 `run.json` 和考核运行的 `run.json`（`guards` 字段），只用于评估，不参与决策。`samples/eval/tasks/` 提供四个探针任务（步数、谎报完成、占位话术、只读侦察误停），复制到 `.openloop/eval/tasks/` 后即可参与 A/B。
+
+**提示词归因**：`run.json` 的 `systemPrompt.sha256/chars` 记录实际注入的系统提示指纹（不落原文），`binary` 记录 `RuntimeInfo.Version`，用于区分“提示词变了”还是“二进制变了”。
+
+**规则登记**：`Ledger.AddRule(name, text)` 把用户规则写成休眠特征，id = `rule.<slug>_<sha8(正文)>`，同文重复登记幂等，改字即新 id。Worker 侧栏“新增规则”调用它；启用仍由 Loop 提案 + 门禁 A/B 决定。`LoopAgent` 的构思包含规则正文（截断 400 字），否则它无法判断该启用哪条。
+
+**规则优化**：`RuleAssistant` 用独立系统提示（只润色规则、不执行任务）把用户草稿压成单行祈使句；结果只回填输入框，由用户检查后登记，不自动写入账本或激活集。
+
+**设置（多栏）**：`SettingsForm` 分「普通」「模型」两栏。普通栏管理语言、主题、完全许可（Full Access）与 AGENTS.md 开关；模型栏管理多个 provider（名称、地址、密钥、模型列表），内置 provider 可拉取 `/models`，自定义 provider 手动添加。`AppSettings.EndpointFor(model)` 按模型找到 provider 的地址与密钥；会话模型下拉合并 provider 模型与 OpenRouter 目录。
+
+**完全许可**：关闭路径越界检查、`.openloop` 保护、风险命令审批与子进程环境隔离（格式化/关机等 Denied 命令仍拒绝），因此可直连网络；仅作用于交互 Worker，Loop 与门禁运行保持受限。开启需二次确认。
+
+**AGENTS.md 开关**：关闭后 Worker、Loop、门禁运行都不再注入全局与项目约定。
+
 除新增 `onDelta` 回调外，`AgentLoop` 在 M2/M3 **没有改动**——只换它拿到的 `AgentPolicy`、工具集和提示词。这是 M1b 抽取是否成功的判据。
 
 ---
@@ -475,3 +489,7 @@ public sealed class AgentPolicy
 测试：`tests/OpenLoop.Core.Tests/SafetyTests.cs`（拒绝/风险/安全分类、`..` 与 symlink 逃逸、环境无密钥、argv 执行、快照）。
 
 未做（P1）：Linux 的 bubblewrap/Landlock、Windows 的低完整性令牌/AppContainer、出网限制、内存上限。
+
+### 10.1 子 agent（默认开启）
+
+spawn_agent：独立上下文、受限工具（ead_file/write_file/list_dir/grep，无命令执行、不能再派生）、步数上限 20、超时 3 分钟；只把结论与成本/步数带回父循环。预算按子运行独立计算（父循环的步数上限不包含子运行）。

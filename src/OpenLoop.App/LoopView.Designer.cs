@@ -16,12 +16,13 @@ namespace OpenLoop.App
         private FlowLayoutPanel _toolbarLeft;
         private AntdUI.Select _selModel;
         private AntdUI.Select _selEffort;
-        private AntdUI.Button _btnStop;
         private AntdUI.Button _btnSend;
         private AntdUI.Label _lblStatus;
+        private ToolTip _tips;
 
         protected override void Dispose(bool disposing)
         {
+            if (disposing) _tips?.Dispose();
             if (disposing && (components != null)) components.Dispose();
             base.Dispose(disposing);
         }
@@ -29,6 +30,7 @@ namespace OpenLoop.App
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
+            _tips = new ToolTip();
 
             _root = new TableLayoutPanel();
             _header = new TableLayoutPanel();
@@ -42,7 +44,6 @@ namespace OpenLoop.App
             _toolbarLeft = new FlowLayoutPanel();
             _selModel = new AntdUI.Select();
             _selEffort = new AntdUI.Select();
-            _btnStop = new AntdUI.Button();
             _btnSend = new AntdUI.Button();
             _lblStatus = new AntdUI.Label();
 
@@ -55,7 +56,7 @@ namespace OpenLoop.App
             _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 1F));
             _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190F));
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 170F));
             _root.BackColor = UiStyle.Page;
 
             _header.Dock = DockStyle.Fill;
@@ -91,15 +92,16 @@ namespace OpenLoop.App
 
             _chat.Dock = DockStyle.Fill;
             _chat.BackColor = UiStyle.Surface;
+            _chat.ChatFont = new Font("Microsoft YaHei UI", 9F);
 
             _inputArea.Dock = DockStyle.Fill;
             _inputArea.ColumnCount = 1;
             _inputArea.RowCount = 2;
             _inputArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _inputArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            _inputArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _inputArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
             _inputArea.BackColor = UiStyle.Page;
-            _inputArea.Padding = new Padding(16, 8, 16, 8);
+            _inputArea.Padding = new Padding(16, 4, 16, 4);
 
             _txtInput.Name = "txtInput";
             _txtInput.Dock = DockStyle.Fill;
@@ -117,7 +119,7 @@ namespace OpenLoop.App
             _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            _toolbar.Margin = new Padding(0, 6, 0, 0);
+            _toolbar.Margin = new Padding(0, 4, 0, 0);
 
             _toolbarLeft.Dock = DockStyle.Fill;
             _toolbarLeft.WrapContents = false;
@@ -125,7 +127,7 @@ namespace OpenLoop.App
 
             _selModel.Name = "selModel";
             _selModel.Width = 300;
-            _selModel.Height = 34;
+            _selModel.Height = 30;
             _selModel.Radius = 8;
             _selModel.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
             _selModel.PlaceholderText = "模型";
@@ -134,7 +136,7 @@ namespace OpenLoop.App
 
             _selEffort.Name = "selEffort";
             _selEffort.Width = 128;
-            _selEffort.Height = 34;
+            _selEffort.Height = 30;
             _selEffort.Radius = 8;
             _selEffort.PrefixSvg = UiIcons.Of(UiIcons.Effort, UiStyle.Muted);
             _selEffort.Margin = new Padding(0, 0, 8, 0);
@@ -156,24 +158,12 @@ namespace OpenLoop.App
             _toolbarLeft.Controls.Add(_selEffort);
             _toolbarLeft.Controls.Add(_lblStatus);
 
-            _btnStop.Name = "btnStop";
-            _btnStop.Text = Localization.T("Stop");
-            _btnStop.Type = AntdUI.TTypeMini.Error;
-            _btnStop.Ghost = true;
-            _btnStop.Radius = 8;
-            _btnStop.Width = 76;
-            _btnStop.Height = 34;
-            _btnStop.IconSvg = UiIcons.Of(UiIcons.Stop, UiStyle.Error);
-            _btnStop.Enabled = false;
-            _btnStop.Margin = new Padding(0, 0, 8, 0);
-            _btnStop.Click += OnStop;
-
             _btnSend.Name = "btnSend";
             _btnSend.Text = Localization.T("Send");
             _btnSend.Type = AntdUI.TTypeMini.Primary;
             _btnSend.Radius = 8;
-            _btnSend.Width = 104;
-            _btnSend.Height = 34;
+            _btnSend.Width = 96;
+            _btnSend.Height = 30;
             _btnSend.IconSvg = UiIcons.Of(UiIcons.Send, Color.White);
             _btnSend.Margin = new Padding(0);
             _btnSend.Click += OnSendClick;

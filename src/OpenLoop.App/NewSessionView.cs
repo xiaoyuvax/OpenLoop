@@ -13,10 +13,12 @@ namespace OpenLoop.App
         private const string NewProjectTag = "\u0000new";
 
         private readonly List<string> _projects = new();
+        private AppSettings _settings;
         private string _project = "";
         private string _model = "";
         private string _effort = "";
         private bool _filling;
+        private bool _fillingProviders;
 
         public NewSessionView()
         {
@@ -27,6 +29,7 @@ namespace OpenLoop.App
 
         internal void Initialize(AppSettings settings, IEnumerable<string> projects, string defaultWorkspace)
         {
+            _settings = settings;
             _projects.Clear();
             _projects.AddRange((projects ?? Enumerable.Empty<string>())
                 .Where(p => !string.IsNullOrWhiteSpace(p))
@@ -43,9 +46,39 @@ namespace OpenLoop.App
                 string.Equals(p, defaultWorkspace, StringComparison.OrdinalIgnoreCase)) ??
                 _projects.FirstOrDefault() ?? "";
 
+            FillProviders();
             FillModels();
             SelectEffort(_effort);
             FillProjects();
+        }
+
+        private void FillProviders()
+        {
+            _fillingProviders = true;
+            try
+            {
+                _selProvider.Items.Clear();
+                _selProvider.Items.Add(new AntdUI.SelectItem(Localization.T("AllProviders")) { Tag = null });
+                foreach (var provider in _settings?.Providers ?? [])
+                {
+                    _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
+                    {
+                        Tag = provider,
+                        SubText = provider.Kind
+                    });
+                }
+                _selProvider.SelectedIndex = 0;
+            }
+            finally
+            {
+                _fillingProviders = false;
+            }
+        }
+
+        private void OnProviderChanged(object sender, AntdUI.ObjectNEventArgs e)
+        {
+            if (_filling || _fillingProviders) return;
+            FillModels();
         }
 
         private void FillModels()
@@ -54,25 +87,29 @@ namespace OpenLoop.App
             try
             {
                 _selModel.Items.Clear();
-                var models = ModelCatalog.All.Where(m => m.IsFree).ToList();
-                if (models.Count == 0) models = ModelCatalog.All.ToList();
+                var provider = _selProvider.SelectedValue as ProviderConfig;
+                var models = ModelChoices.FilterByProvider(
+                    ModelChoices.Build(_settings, onlyFree: true), provider);
 
                 foreach (var model in models)
                     _selModel.Items.Add(new AntdUI.SelectItem(model.Name)
                     {
                         Tag = model.Id,
-                        IconSvg = UiIcons.Dot(UiStyle.Success),
-                        SubText = "免费"
+                        IconSvg = model.IsFree ? UiIcons.Dot(UiStyle.Success) : null,
+                        SubText = model.IsFree ? "免费" : null
                     });
 
-                if (models.All(m => m.Id != _model))
+                if (provider == null && models.All(m => m.Id != _model))
                 {
                     var current = ModelCatalog.All.FirstOrDefault(m => m.Id == _model);
                     if (!string.IsNullOrWhiteSpace(_model))
                         _selModel.Items.Add(new AntdUI.SelectItem(current?.Name ?? _model) { Tag = _model });
-                    else if (_selModel.Items.Count > 0)
-                        _model = (_selModel.Items[0] as AntdUI.SelectItem)?.Tag as string ?? "";
                 }
+
+                if (provider != null && models.All(m => m.Id != _model))
+                    _model = models.FirstOrDefault()?.Id ?? "";
+                else if (string.IsNullOrWhiteSpace(_model) && models.Count > 0)
+                    _model = models[0].Id;
 
                 _selModel.SelectedValue = _model;
             }

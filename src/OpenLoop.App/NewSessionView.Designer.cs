@@ -13,6 +13,7 @@ namespace OpenLoop.App
         private AntdUI.Input _txtInput;
         private TableLayoutPanel _toolbar;
         private FlowLayoutPanel _toolbarLeft;
+        private AntdUI.Select _selProvider;
         private AntdUI.Select _selModel;
         private AntdUI.Select _selEffort;
         private AntdUI.Button _btnSend;
@@ -40,6 +41,7 @@ namespace OpenLoop.App
             _txtInput = new AntdUI.Input();
             _toolbar = new TableLayoutPanel();
             _toolbarLeft = new FlowLayoutPanel();
+            _selProvider = new AntdUI.Select();
             _selModel = new AntdUI.Select();
             _selEffort = new AntdUI.Select();
             _btnSend = new AntdUI.Button();
@@ -126,8 +128,16 @@ namespace OpenLoop.App
             _toolbarLeft.WrapContents = false;
             _toolbarLeft.Margin = new Padding(0);
 
+            _selProvider.Name = "selProvider";
+            _selProvider.Width = 160;
+            _selProvider.Height = 34;
+            _selProvider.Radius = 8;
+            _selProvider.PlaceholderText = Localization.T("Provider");
+            _selProvider.Margin = new Padding(0, 0, 8, 0);
+            _selProvider.SelectedValueChanged += OnProviderChanged;
+
             _selModel.Name = "selModel";
-            _selModel.Width = 320;
+            _selModel.Width = 280;
             _selModel.Height = 34;
             _selModel.Radius = 8;
             _selModel.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
@@ -146,6 +156,7 @@ namespace OpenLoop.App
             _selEffort.Items.Add(new AntdUI.SelectItem("高") { Tag = "high" });
             _selEffort.SelectedIndex = 0;
 
+            _toolbarLeft.Controls.Add(_selProvider);
             _toolbarLeft.Controls.Add(_selModel);
             _toolbarLeft.Controls.Add(_selEffort);
 

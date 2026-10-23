@@ -54,7 +54,11 @@ namespace OpenLoop.Core.Loop
 
             sb.AppendLine("# 特征目录（id · 它解决什么问题）");
             foreach (var feature in features)
+            {
                 sb.Append("- ").Append(feature.Id).Append(" · ").AppendLine(feature.Problem);
+                if (feature.Kind == "rule" && feature.Payload.ValueKind == JsonValueKind.String)
+                    sb.Append("  规则正文：").AppendLine(Trim(feature.Payload.GetString(), 400));
+            }
             sb.AppendLine();
 
             var dormant = features.Where(f => !enabled.Contains(f.Id)).ToList();

@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using OpenLoop.Core.Skills;
 using OpenLoop.Core.Tools;
 
 namespace OpenLoop.Core.Agent
@@ -11,7 +13,8 @@ namespace OpenLoop.Core.Agent
     {
         public static string Build(
             IReadOnlyList<ITool> tools, int maxSteps, string role = null,
-            IEnumerable<string> rules = null, string instructions = null)
+            IEnumerable<string> rules = null, string instructions = null,
+            IReadOnlyList<SkillInfo> skills = null)
         {
             var sb = new StringBuilder();
 
@@ -41,6 +44,22 @@ namespace OpenLoop.Core.Agent
                     sb.Append("  参数: ").AppendLine(t.ParamsSchema);
             }
             sb.AppendLine();
+
+            var activeSkills = skills?.Where(s => !string.IsNullOrWhiteSpace(s?.Name)).ToList();
+            if (activeSkills is { Count: > 0 })
+            {
+                sb.AppendLine("# 可用技能");
+                foreach (var skill in activeSkills)
+                {
+                    sb.Append("- ").Append(skill.Name);
+                    if (!string.IsNullOrWhiteSpace(skill.Description))
+                        sb.Append(": ").Append(skill.Description);
+                    sb.AppendLine();
+                }
+                sb.AppendLine("需要时调用 read_skill（name）读取做法全文；读取前不要假设技能内容。");
+                sb.AppendLine();
+            }
+
             sb.AppendLine("# 工具调用协议");
             sb.AppendLine("需要使用工具时，输出一行且仅一行（不要包在代码围栏里，不要加解释文字）：");
             sb.AppendLine("tool-call: {\"tool\":\"工具名\",\"args\":{\"参数名\":\"值\"}}");
@@ -60,11 +79,15 @@ namespace OpenLoop.Core.Agent
             if (!string.IsNullOrWhiteSpace(instructions))
             {
                 sb.AppendLine();
-                sb.AppendLine("# 项目约定（AGENTS.md）");
+                sb.AppendLine("# 约定（AGENTS.md）");
                 sb.AppendLine(instructions.Trim());
             }
 
             return sb.ToString();
         }
+
+        /// <summary>完整系统提示词的指纹，用于把一次运行归因到具体提示词。</summary>
+        public static string Fingerprint(string prompt)
+            => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(prompt ?? ""))).ToLowerInvariant();
     }
 }

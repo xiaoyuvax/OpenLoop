@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.Reasoning;
+using OpenLoop.Core.Skills;
 using OpenLoop.Core.Tools;
 
 namespace OpenLoop.Core.Agent
@@ -21,6 +22,7 @@ namespace OpenLoop.Core.Agent
         private readonly Action<AgentStepRecord> _onStep;
         private readonly Action<string, Dictionary<string, object>> _onToolStart;
         private readonly Func<string, bool> _confirmContinue;
+        private readonly IReadOnlyList<SkillInfo> _skills;
 
         public AgentLoop(
             ToolRegistry tools,
@@ -28,7 +30,8 @@ namespace OpenLoop.Core.Agent
             AgentPolicy policy = null,
             Action<AgentStepRecord> onStep = null,
             Action<string, Dictionary<string, object>> onToolStart = null,
-            Func<string, bool> confirmContinue = null)
+            Func<string, bool> confirmContinue = null,
+            IReadOnlyList<SkillInfo> skills = null)
         {
             _tools = tools ?? throw new ArgumentNullException(nameof(tools));
             _reasoner = reasoner ?? throw new ArgumentNullException(nameof(reasoner));
@@ -36,10 +39,12 @@ namespace OpenLoop.Core.Agent
             _onStep = onStep;
             _onToolStart = onToolStart;
             _confirmContinue = confirmContinue;
+            _skills = skills;
         }
 
         public string BuildSystemPrompt(string role = null, IReadOnlyList<string> rules = null, string instructions = null)
-            => SystemPromptBuilder.Build(_tools.Tools, Math.Clamp(_policy.MaxSteps, 1, 100), role, rules, instructions);
+            => SystemPromptBuilder.Build(
+                _tools.Tools, Math.Clamp(_policy.MaxSteps, 1, 100), role, rules, instructions, _skills);
 
         /// <summary>
         /// 执行一次完整任务。history 为既有对话（不含本次用户消息），userMessage 为本次请求。
@@ -62,9 +67,10 @@ namespace OpenLoop.Core.Agent
             int repeatStreak = 0;
             int explorationStreak = 0;
             int malformedRetries = 0;
-            bool promiseNudged = false;
+            int promiseNudges = 0;
             bool claimNudged = false;
             bool anyToolSucceeded = false;
+            bool emptyRetried = false;
 
             for (int step = 1; step <= maxSteps; step++)
             {
@@ -82,7 +88,7 @@ namespace OpenLoop.Core.Agent
                     if (compressed != null)
                     {
                         messages = compressed;
-                        result.Compressed = true;
+                        result.Guards.Compressions++;
                     }
                 }
 
@@ -101,6 +107,7 @@ namespace OpenLoop.Core.Agent
                         if (_policy.MalformedRetry && malformedRetries < _policy.MaxMalformedRetries && step < maxSteps)
                         {
                             malformedRetries++;
+                            result.Guards.MalformedRetries++;
                             messages.Add(new LlmMessage("assistant", content));
                             messages.Add(new LlmMessage("user",
                                 "tool-result: {\"ok\":false,\"error\":\"工具调用格式无效，JSON 无法解析。请重新输出一行合法 JSON（可跨行），格式：tool-call: {\\\"tool\\\":\\\"工具名\\\",\\\"args\\\":{...}}。\"}"));
@@ -116,6 +123,7 @@ namespace OpenLoop.Core.Agent
                         && LooksLikeCompletionClaim(content))
                     {
                         claimNudged = true;
+                        result.Guards.ClaimNudges++;
                         messages.Add(new LlmMessage("assistant", content));
                         messages.Add(new LlmMessage("user",
                             "（系统提示）你这条回复声称已经完成了某个操作，但本轮没有任何工具成功执行。不要谎报完成：需要执行就输出一行 tool-call: {\"tool\":\"工具名\",\"args\":{...}}；确实不需要工具（纯回答/说明）就重写答案，明确说明「未执行任何操作」，且不要再出现「已写入/已修改/已完成」这类说法。"));
@@ -123,16 +131,31 @@ namespace OpenLoop.Core.Agent
                     }
 
                     // 占位话术护栏
-                    if (_policy.PromiseGuard && !promiseNudged && step < maxSteps && LooksLikeActionPromise(content))
+                    if (_policy.PromiseGuard && promiseNudges < _policy.MaxPromiseNudges
+                        && step < maxSteps && LooksLikeActionPromise(content))
                     {
-                        promiseNudged = true;
+                        promiseNudges++;
+                        result.Guards.PromiseNudges++;
                         messages.Add(new LlmMessage("assistant", content));
                         messages.Add(new LlmMessage("user",
                             "（系统提示）你上一条只是说明将要执行某事，但没有实际调用工具。若仍需执行操作，请立即输出一行 tool-call: {\"tool\":\"工具名\",\"args\":{...}}；若已全部完成，请直接给出最终结果，不要回复「请稍候」这类占位说明。"));
                         continue;
                     }
 
+                    // 上游只给安全判定/空正文：自动重试一次，再空才收尾
+                    if (!emptyRetried && step < maxSteps
+                        && LlmTextSanitizer.StripSafetyLines(content ?? "").Trim().Length == 0)
+                    {
+                        emptyRetried = true;
+                        result.Guards.EmptyRetries++;
+                        messages.Add(new LlmMessage("assistant", content ?? ""));
+                        messages.Add(new LlmMessage("user",
+                            "（系统提示）你上一轮没有返回正文（只有安全判定或空内容）。请直接重写完整答案，不要输出安全判定。"));
+                        continue;
+                    }
+
                     result.FinalAnswer = content?.Trim();
+                    result.FinishReason = completion?.FinishReason;
                     return result;
                 }
 
@@ -156,6 +179,7 @@ namespace OpenLoop.Core.Agent
                 if (_policy.ArgRepair && !toolResult.Ok && step < maxSteps && IsParameterError(toolResult.Error)
                     && TryRepairArgs(call.Args, toolResult.Error, out var repairedArgs, out string fixedDesc))
                 {
+                    result.Guards.ArgRepairAttempts++;
                     string firstError = toolResult.Error;
                     effectiveArgs = repairedArgs;
                     _onToolStart?.Invoke(call.Tool, repairedArgs);
@@ -168,6 +192,7 @@ namespace OpenLoop.Core.Agent
                     {
                         toolResult = AgentToolResult.Failure($"工具执行异常：{ex.Message}");
                     }
+                    if (toolResult.Ok) result.Guards.ArgRepairSuccesses++;
                     repairNote = toolResult.Ok
                         ? $"（参数自动修正后重试成功：{fixedDesc}）"
                         : $"（参数自动修正后重试仍失败：{fixedDesc}；原始错误：{Truncate(firstError, 300)}）";
@@ -217,6 +242,7 @@ namespace OpenLoop.Core.Agent
 
                 if (_policy.RepeatCallGuard && repeatStreak >= Math.Max(2, _policy.MaxRepeatCalls))
                 {
+                    result.Guards.RepeatCallStops++;
                     result.FinalAnswer =
                         $"检测到连续 {repeatStreak} 次完全相同的工具调用（{call.Tool}），判定为无进展，已停止以免空转。" +
                         "请补充信息或调整目标后重试。";
@@ -229,11 +255,13 @@ namespace OpenLoop.Core.Agent
                         "「是」= 允许再继续执行（护栏计数清零）；「否」= 立即停止。";
                     if (step >= maxSteps || _confirmContinue == null || !_confirmContinue(guardText))
                     {
+                        result.Guards.ExplorationStops++;
                         result.FinalAnswer =
                             $"连续 {explorationStreak} 步仅执行只读侦察、未产生任何写操作，判定为在原地打转，已停止。" +
                             "请给出更明确的目标或参数（例如具体文件、目录或要执行的动作）。";
                         return result;
                     }
+                    result.Guards.ExplorationContinues++;
                     explorationStreak = 0;
                 }
 
@@ -259,12 +287,23 @@ namespace OpenLoop.Core.Agent
             "收到", "我将", "我会", "我来", "接下来", "下面我", "现在我",
             "开始处理", "继续编辑", "重改", "重出",
             "先查", "查一下", "查查",
-            "one moment", "wait a moment", "just a moment", "please wait"
+            "我继续", "我接着", "然后我", "下一步我", "让我继续",
+            "继续检查", "继续查看", "继续读取", "继续分析", "继续了解", "继续处理",
+            "再看看", "再看一下", "进一步"
         ];
+
+        /// <summary>
+        /// 「要做但还没做」的意图：意图词 + 动作动词（允许中间夹「再/继续/进一步」等）。
+        /// 固定词表容易漏（例如「让我继续检查其他文件」），所以补一条句式规则。
+        /// </summary>
+        private static readonly Regex ActionPromiseRegex = new(
+            @"(?:(?:让我|我将|我会|我来|我继续|我接着|然后我|接下来我?|下一步我?|现在我|下面我)\s*(?:再|继续|进一步|去|先|马上)?\s*(?:检查|查看|读取|读|浏览|分析|阅读|搜索|查找|查|运行|执行|跑|修改|编辑|更新|改|生成|整理|确认|了解|处理)|(?:let me|i'?ll|i will|i'?m going to)\s+(?:continue|check|look|read|examine|review|inspect|analyze|search|run|execute|update|modify|edit))",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         internal static bool LooksLikeActionPromise(string content)
         {
             if (string.IsNullOrWhiteSpace(content)) return false;
+            if (ActionPromiseRegex.IsMatch(content)) return true;
             foreach (string signal in ActionPromiseSignals)
                 if (content.Contains(signal, StringComparison.OrdinalIgnoreCase)) return true;
             string tail = content.TrimEnd();

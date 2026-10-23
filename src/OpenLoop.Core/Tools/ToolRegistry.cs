@@ -1,5 +1,6 @@
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Safety;
+using OpenLoop.Core.Skills;
 
 namespace OpenLoop.Core.Tools
 {
@@ -39,14 +40,37 @@ namespace OpenLoop.Core.Tools
             }
         }
 
-        /// <summary>v0 的五个通用工作目录工具。</summary>
-        public static ToolRegistry Workspace(WorkspaceScope scope, Func<Builtin.CommandRequest, bool> approve = null) => new(
-        [
-            new Builtin.ReadFileTool(scope),
-            new Builtin.WriteFileTool(scope),
-            new Builtin.ListDirTool(scope),
-            new Builtin.GrepTool(scope),
-            new Builtin.RunCommandTool(scope, approve),
-        ]);
+        /// <summary>v0 的五个通用工作目录工具；有技能时追加 read_skill。</summary>
+        public static ToolRegistry Workspace(
+            WorkspaceScope scope, Func<Builtin.CommandRequest, bool> approve = null,
+            IReadOnlyList<SkillInfo> skills = null, bool fullAccess = false)
+            => new(Common(scope, approve, skills, fullAccess));
+
+        /// <summary>Loop 的工具集：通用工具 + 只读证据通道 + 发现落账。</summary>
+        public static ToolRegistry Loop(
+            WorkspaceScope scope, string workspaceRoot, Func<Builtin.CommandRequest, bool> approve = null,
+            IReadOnlyList<SkillInfo> skills = null)
+            => new(Common(scope, approve, skills, fullAccess: false).Concat(
+            [
+                new Builtin.ReadEvidenceTool(workspaceRoot),
+                new Builtin.RecordFindingTool(workspaceRoot),
+                new Builtin.ProposeTaskTool(workspaceRoot),
+            ]));
+
+        private static IEnumerable<ITool> Common(
+            WorkspaceScope scope, Func<Builtin.CommandRequest, bool> approve, IReadOnlyList<SkillInfo> skills,
+            bool fullAccess)
+        {
+            yield return new Builtin.ReadFileTool(scope);
+            yield return new Builtin.WriteFileTool(scope);
+            yield return new Builtin.ListDirTool(scope);
+            yield return new Builtin.GrepTool(scope);
+            yield return new Builtin.RunCommandTool(scope, approve, fullAccess);
+            if (skills is { Count: > 0 })
+            {
+                yield return new Builtin.ReadSkillTool(skills);
+                yield return new Builtin.RunSkillScriptTool(scope.Root, skills, approve, fullAccess);
+            }
+        }
     }
 }

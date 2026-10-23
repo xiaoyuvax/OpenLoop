@@ -36,6 +36,7 @@ namespace OpenLoop.Core.Tools.Builtin
                                                   .OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
                 {
                     ct.ThrowIfCancellationRequested();
+                    if (_scope.IsDenied(entry)) continue;
                     if (count >= MaxEntries) { truncated = true; break; }
                     count++;
 

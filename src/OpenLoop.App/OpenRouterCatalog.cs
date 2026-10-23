@@ -20,10 +20,7 @@ namespace OpenLoop.App
 
     internal static class OpenRouterCatalog
     {
-        private static readonly HttpClient Http = new(new SocketsHttpHandler
-        {
-            UseProxy = false
-        })
+        private static readonly HttpClient Http = new(new SocketsHttpHandler())
         {
             Timeout = TimeSpan.FromSeconds(30)
         };

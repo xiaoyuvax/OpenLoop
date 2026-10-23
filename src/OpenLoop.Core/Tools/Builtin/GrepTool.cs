@@ -80,6 +80,7 @@ namespace OpenLoop.Core.Tools.Builtin
             {
                 ct.ThrowIfCancellationRequested();
                 if (matches >= MaxMatches) { truncated = true; break; }
+                if (_scope.IsDenied(file)) continue;
 
                 if (string.IsNullOrWhiteSpace(glob) && !TextExts.Contains(Path.GetExtension(file))) continue;
 

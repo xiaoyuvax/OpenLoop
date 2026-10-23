@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Puppet.Core;
+using SurveyStore = OpenLoop.Core.Store.SurveyStore;
 
 namespace OpenLoop.App
 {
@@ -19,6 +20,9 @@ namespace OpenLoop.App
 
         public MainForm()
         {
+
+            SurveyStore.Changed += OnSurveyStoreChanged;
+            SurveyStore.Answered += OnSurveyAnswered;
             InitializeComponent();
             Icon = UiIcons.App;
         }
@@ -28,6 +32,7 @@ namespace OpenLoop.App
         string IPuppet.AgentInstanceName => PuppetHost.InstanceName;
 
         private Session Active => (_tabs.SelectedTab as AntdUI.TabPage)?.Tag as Session;
+        private Session Current => Active ?? _lastSession;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int SessionCount => _sessions.Count;
@@ -47,7 +52,35 @@ namespace OpenLoop.App
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ActiveTabText => Active?.Page?.Text ?? "";
+
+        /// <summary>已配置的提供商摘要（A 面自检用）。</summary>
+        public string ProviderSummary => string.Join("; ",
+            _settings.Providers.Select(p => $"{p.Name}|{p.Kind}|{p.BaseUrl}"));
+
+        /// <summary>AntdUI 实际使用的字体（A 面自检用）。</summary>
+        public string UiFont => $"{AntdUI.Config.Font?.Name}|{AntdUI.Config.Font?.SizeInPoints}|{Font.Name}|{Font.SizeInPoints}";
+
         public string Workspace => Active?.Workspace ?? "";
+
+        public string AskDemo(string title)
+        {
+            var tool = new OpenLoop.Core.Tools.Builtin.AskUserTool(
+                Current?.Workspace ?? Workspace, () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1));
+            var args = new OpenLoop.Core.Tools.ToolArgs(new() { ["title"] = title, ["body"] = "它在没读文件的情况下直接改写了配置。", ["dimension"] = "tool_usage" });
+            var r = tool.ExecuteAsync(args, default).GetAwaiter().GetResult();
+            return r.Ok ? r.Data : r.Error;
+        }
+
+        public string SeedAgentDemo() => Current?.View.SeedAgentDemo() ?? "";
+
+        public string OpenAgentView(string id) => Current?.View.OpenAgentView(id) ?? "";
+
+
+        public void AnswerLastSurvey(string summary) => Current?.View.AnswerLastSurvey(summary);
+
+        public string AddDemoSurvey(string title, string body)
+            => Current?.View.AddSurvey(title, body, "choice") ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Mode => Active?.View.Mode ?? "";
@@ -84,6 +117,14 @@ namespace OpenLoop.App
         }
 
         public void ShowSidePage(int index) => Active?.View.ShowSidePage(index);
+
+        public string ProbeTrace(string path)
+        {
+            var view = Active?.View;
+            if (view == null) return "no view";
+            view.SetTraceDebug(path);
+            return view.TraceDebug;
+        }
 
         public void SetModel(string model) => Active?.View.SetModel(model);
 
@@ -138,6 +179,8 @@ namespace OpenLoop.App
             }
 
             _loopView = new LoopView { Dock = DockStyle.Fill };
+            _loopView.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
+            
             _loopView.Initialize(target, () => _settings);
             _loopPage = new AntdUI.TabPage
             {
@@ -188,8 +231,49 @@ namespace OpenLoop.App
             if (_settings.Projects.Count == 0) OpenNewSessionTab("");
             else RefreshOverview();
 
+            RestoreWindowBounds();
             _ = RefreshCatalogAsync();
         }
+
+        /// <summary>恢复上次窗口位置：原屏幕还在就原位启动，不在则回主屏居中（保留尺寸）。</summary>
+        private void RestoreWindowBounds()
+        {
+            int width = _settings.WindowWidth;
+            int height = _settings.WindowHeight;
+            if (width < DipMin || height < DipMin) return;   // 首次运行：用设计器默认
+
+            var saved = new Rectangle(_settings.WindowX, _settings.WindowY, width, height);
+            StartPosition = FormStartPosition.Manual;
+
+            if (Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(saved)))
+            {
+                Bounds = saved;
+            }
+            else
+            {
+                var area = Screen.PrimaryScreen.WorkingArea;
+                Size = new Size(Math.Min(width, area.Width), Math.Min(height, area.Height));
+                Location = new Point(
+                    area.X + (area.Width - Width) / 2,
+                    area.Y + (area.Height - Height) / 2);
+            }
+
+            if (_settings.WindowMaximized) WindowState = FormWindowState.Maximized;
+        }
+
+        private void SaveWindowBounds()
+        {
+            // 最大化时 Bounds 是屏幕尺寸，要存还原后的矩形
+            var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            _settings.WindowX = bounds.X;
+            _settings.WindowY = bounds.Y;
+            _settings.WindowWidth = bounds.Width;
+            _settings.WindowHeight = bounds.Height;
+            _settings.WindowMaximized = WindowState == FormWindowState.Maximized;
+            try { _settings.Save(); } catch (Exception ex) { AppLog.Warn("保存窗口位置失败：" + ex.Message); }
+        }
+
+        private const int DipMin = 200;
 
         private void RefreshOverview() => _overview.RefreshSessions(_sessions, _settings.Projects);
 
@@ -202,6 +286,7 @@ namespace OpenLoop.App
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
+            SaveWindowBounds();
             foreach (var session in _sessions) session.View?.Shutdown();
             PuppetHost.Stop();
         }
@@ -251,6 +336,25 @@ namespace OpenLoop.App
             return session;
         }
 
+        private void OnSurveyStoreChanged(string workspace, string sessionId)
+        {
+            var session = _sessions.FirstOrDefault(s => s.Id == sessionId);
+            if (session?.Page == null) return;
+            void Apply()
+            {
+                int pending = SurveyStore.Load(workspace, sessionId).Count(r => r.State == "pending");
+                session.Page.Text = pending > 0 ? session.Title + "  ●" : session.Title;
+            }
+            if (InvokeRequired) BeginInvoke(new Action(Apply)); else Apply();
+        }
+
+        private void OnSurveyAnswered(string workspace, string sessionId, string surveyId, string summary)
+        {
+            var record = SurveyStore.Load(workspace, sessionId).FirstOrDefault(r => r.Id == surveyId);
+            _loopView?.NoteSurveyAnswer(workspace, record?.Title ?? surveyId, summary);
+            OnSurveyStoreChanged(workspace, sessionId);
+        }
+
         private void ShowSession(Session session)
         {
             if (session == null) return;
@@ -279,7 +383,81 @@ namespace OpenLoop.App
         private bool OnClosingPage(object sender, AntdUI.ClosingPageEventArgs e)
         {
             if (e?.Value != null) CloseTab(e.Value);
-            return false;
+            return true;
+        }
+
+        private void OnTabMouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right) return;
+            var page = _tabs.ContainsTabPage(e.X, e.Y);
+            if (page == null || page == _overviewPage) return;
+
+            var items = new AntdUI.IContextMenuStripItem[]
+            {
+                new AntdUI.ContextMenuStripItem("重命名") { ID = "rename" },
+                new AntdUI.ContextMenuStripItemDivider(),
+                new AntdUI.ContextMenuStripItem("关闭右侧所有页面") { ID = "right" },
+                new AntdUI.ContextMenuStripItem("关闭左侧所有页面") { ID = "left" },
+                new AntdUI.ContextMenuStripItemDivider(),
+                new AntdUI.ContextMenuStripItem("关闭其他页面") { ID = "others" },
+                new AntdUI.ContextMenuStripItem("关闭全部页面") { ID = "all" }
+            };
+
+            AntdUI.ContextMenuStrip.open(_tabs, selected => OnTabMenu(page, selected?.ID), items);
+        }
+
+        private void OnTabMenu(AntdUI.TabPage target, string id)
+        {
+            switch (id)
+            {
+                case "rename": RenameTab(target); break;
+                case "right": CloseRange(target, 1); break;
+                case "left": CloseRange(target, -1); break;
+                case "others": CloseOthers(target); break;
+                case "all": CloseAll(); break;
+            }
+        }
+
+        private void RenameTab(AntdUI.TabPage page)
+        {
+            var input = new AntdUI.Input
+            {
+                Text = page.Text,
+                Width = 320,
+                Height = 34,
+                Radius = 8,
+                BorderWidth = 1
+            };
+            if (AntdUI.Modal.open(this, "重命名", input) != DialogResult.OK) return;
+
+            string name = input.Text?.Trim() ?? "";
+            if (name.Length == 0) return;
+
+            if (page.Tag is Session session) session.CustomTitle = name;
+            page.Text = name;
+            RefreshOverview();
+        }
+
+        private void CloseRange(AntdUI.TabPage target, int direction)
+        {
+            var pages = _tabs.Pages.ToList();
+            int index = pages.IndexOf(target);
+            if (index < 0) return;
+
+            for (int i = index + direction; i >= 0 && i < pages.Count; i += direction)
+                if (pages[i] != _overviewPage) CloseTab(pages[i]);
+        }
+
+        private void CloseOthers(AntdUI.TabPage target)
+        {
+            foreach (var page in _tabs.Pages.ToList())
+                if (page != target && page != _overviewPage) CloseTab(page);
+        }
+
+        private void CloseAll()
+        {
+            foreach (var page in _tabs.Pages.ToList())
+                if (page != _overviewPage) CloseTab(page);
         }
 
         private void OnSelectedTabChanged(object sender, AntdUI.IntEventArgs e)
@@ -397,20 +575,35 @@ namespace OpenLoop.App
 
         private void OpenSettings()
         {
-            using var dialog = new SettingsForm(_settings);
-            if (dialog.ShowDialog(this) != DialogResult.OK) return;
-
-            _settings = dialog.Result;
+            SettingsForm dialog;
             try
             {
-                _settings.Save();
-                AntdUI.Notification.success(this, "设置已保存", "配置写入本地。",
-                    AntdUI.TAlignFrom.TR, null, 2);
+                dialog = new SettingsForm(_settings);
             }
             catch (Exception ex)
             {
-                AppLog.Error("保存设置失败", ex);
-                AntdUI.Notification.error(this, "保存失败", ex.Message, AntdUI.TAlignFrom.TR, null, 4);
+                AppLog.Error("打开设置失败", ex);
+                AntdUI.Notification.error(this, "设置失败", ex.Message, AntdUI.TAlignFrom.TR, null, 6);
+                return;
+            }
+
+            using (dialog)
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                _settings = dialog.Result;
+                try
+                {
+                    _settings.Save();
+                    ModelCatalog.Set(ModelCatalog.All.ToList());
+                    AntdUI.Notification.success(this, "设置已保存", "配置写入本地。",
+                        AntdUI.TAlignFrom.TR, null, 2);
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error("保存设置失败", ex);
+                    AntdUI.Notification.error(this, "保存失败", ex.Message, AntdUI.TAlignFrom.TR, null, 4);
+                }
             }
         }
     }

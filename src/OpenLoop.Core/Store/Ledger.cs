@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -106,6 +107,42 @@ namespace OpenLoop.Core.Store
                 if (FindFeature(feature.Id) != null)
                     throw new InvalidOperationException($"特征 id 已被使用：{feature.Id}（id 永不复用，改内容请新增版本 id）");
                 Append("feature", feature);
+            }
+        }
+
+        /// <summary>
+        /// 登记一条用户规则（不启用）：id 由名字 + 正文哈希决定，同文重复登记幂等。
+        /// 改一个字就是新 id，旧记录不动。
+        /// </summary>
+        public FeatureRecord AddRule(string name, string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("规则正文不能为空", nameof(text));
+            text = text.Trim();
+            string slug = Slug(name);
+            string id = $"rule.{(slug.Length == 0 ? "user" : slug)}_{ShortHash(text)}";
+
+            lock (_gate)
+            {
+                var existing = FindFeature(id);
+                if (existing != null)
+                {
+                    if (existing.Kind == "rule" && existing.Payload.ValueKind == JsonValueKind.String
+                        && string.Equals(existing.Payload.GetString(), text, StringComparison.Ordinal))
+                        return existing;
+                    throw new InvalidOperationException($"特征 id 已被使用：{id}（id 永不复用）");
+                }
+
+                var record = new FeatureRecord
+                {
+                    Id = id,
+                    Kind = "rule",
+                    Problem = string.IsNullOrWhiteSpace(name) ? text : name.Trim(),
+                    Payload = JsonSerializer.SerializeToElement(text),
+                    Source = "user",
+                    CreatedAt = Now()
+                };
+                Append("feature", record);
+                return record;
             }
         }
 
@@ -266,5 +303,21 @@ namespace OpenLoop.Core.Store
         }
 
         private static string Now() => DateTimeOffset.UtcNow.ToString("O");
+
+        private static string ShortHash(string text)
+            => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..8].ToLowerInvariant();
+
+        private static string Slug(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "";
+            var sb = new StringBuilder();
+            foreach (char c in name.Trim().ToLowerInvariant())
+            {
+                if (sb.Length >= 24) break;
+                if (c is >= 'a' and <= 'z' or >= '0' and <= '9') sb.Append(c);
+                else if (c is '_' or '-' or ' ') sb.Append('_');
+            }
+            return sb.ToString().Trim('_');
+        }
     }
 }

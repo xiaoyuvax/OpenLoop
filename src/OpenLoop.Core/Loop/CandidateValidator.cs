@@ -41,6 +41,13 @@ namespace OpenLoop.Core.Loop
                     continue;
                 }
 
+                if (feature.Kind == "skill")
+                {
+                    if (reference.Params is { Count: > 0 })
+                        problems.Add($"{reference.Id} 是技能，不接受参数");
+                    continue;
+                }
+
                 var allowed = AllowedKeys(reference.Id);
                 foreach (string key in reference.Params?.Keys ?? Enumerable.Empty<string>())
                     if (!allowed.Contains(key))

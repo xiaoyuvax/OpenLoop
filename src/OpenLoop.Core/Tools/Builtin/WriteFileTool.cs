@@ -27,6 +27,7 @@ namespace OpenLoop.Core.Tools.Builtin
 
             try
             {
+                _scope.Undo?.Record(full);
                 string dir = Path.GetDirectoryName(full);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
                 File.WriteAllText(full, content, new UTF8Encoding(false));

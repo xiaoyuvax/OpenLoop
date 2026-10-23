@@ -13,10 +13,7 @@ namespace OpenLoop.Core.Reasoning
     /// </summary>
     public sealed class OpenAiCompatibleReasoner : IReasoner, IStreamingReasoner
     {
-        private static readonly HttpClient Http = new(new SocketsHttpHandler
-        {
-            UseProxy = false
-        })
+        private static readonly HttpClient Http = new(new SocketsHttpHandler())
         {
             Timeout = TimeSpan.FromMinutes(10)
         };

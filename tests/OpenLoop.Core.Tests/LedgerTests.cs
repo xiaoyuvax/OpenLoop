@@ -48,6 +48,26 @@ public sealed class LedgerTests : IDisposable
     }
 
     [Fact]
+    public void AddRule_registers_dormant_feature_and_is_idempotent()
+    {
+        var ledger = NewLedger();
+
+        var feature = ledger.AddRule("先读再写", "修改前先读文件。");
+        Assert.StartsWith("rule.user_", feature.Id);
+        Assert.Equal("rule", feature.Kind);
+        Assert.Equal("修改前先读文件。", feature.Payload.GetString());
+        Assert.DoesNotContain(ledger.Current.Features, r => r.Id == feature.Id);
+
+        var again = ledger.AddRule("先读再写", "修改前先读文件。");
+        Assert.Equal(feature.Id, again.Id);
+        Assert.Single(ledger.Features(), f => f.Id == feature.Id);
+
+        var edited = ledger.AddRule("先读再写", "修改前先读文件，再写。");
+        Assert.NotEqual(feature.Id, edited.Id);
+        Assert.Equal(14, ledger.Features().Count);
+    }
+
+    [Fact]
     public void Feature_id_cannot_be_reused()
     {
         var ledger = NewLedger();

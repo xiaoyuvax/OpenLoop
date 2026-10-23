@@ -1,0 +1,14 @@
+{
+  "id": "explore-find-file",
+  "problem": "只读侦察护栏的误停探针：正常任务是读 3 个文件再写答案，不应触发「原地打转」。",
+  "prompt": "在工作区读取 a.txt、b.txt、c.txt，找出包含 needle 的那个文件，并把该文件名写入 answer.txt。",
+  "seed": {
+    "a.txt": "hay\n",
+    "b.txt": "needle\n",
+    "c.txt": "hay\n"
+  },
+  "scope": ["a.txt", "b.txt", "c.txt", "answer.txt"],
+  "checks": [
+    {"type": "file_contains", "path": "answer.txt", "text": "b.txt"}
+  ]
+}

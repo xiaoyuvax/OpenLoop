@@ -6,6 +6,15 @@ namespace OpenLoop.Core.Tests
     public class AgentToolCallParserTests
     {
         [Fact]
+        public void ParsesFancyToolCallBlock()
+        {
+            const string text = "<|tool_call_start|>[read_file(path='BFlatA.cs'), read_file(path='BFlatA.csproj')]<|tool_call_end|>";
+            Assert.True(AgentToolCallParser.TryParse(text, out var call));
+            Assert.Equal("read_file", call.Tool);
+            Assert.Equal("BFlatA.cs", call.Args["path"]);
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt(text));
+        }
+        [Fact]
         public void ParsesSingleLineMarker()
         {
             Assert.True(AgentToolCallParser.TryParse(

@@ -17,6 +17,8 @@ namespace OpenLoop.Core.Safety
                 if (RunGit(workspace, "rev-parse", "--is-inside-work-tree")?.Trim() != "true") return null;
 
                 string sha = RunGit(workspace, "stash", "create", "openloop " + label)?.Trim();
+                if (string.IsNullOrEmpty(sha))
+                    sha = RunGit(workspace, "rev-parse", "HEAD")?.Trim();
                 if (string.IsNullOrEmpty(sha)) return null;
 
                 string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");

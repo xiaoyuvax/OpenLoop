@@ -56,6 +56,8 @@ namespace OpenLoop.Core.Agent
 
             // 3) 其它协议的等价形态：标签式（<tool_call>/<function=x>/<parameter=args>{…}</parameter>）
             //    与 OpenAI 风格 {"name":…,"arguments":{…}}——尽量还原成同一次调用，别白费一次往返
+            if (TryParseToolCallBlock(text, out call)) return true;
+
             if (TryParseTaggedOrOpenAiStyle(text, out call)) return true;
 
             return false;
@@ -82,6 +84,81 @@ namespace OpenLoop.Core.Agent
         /// ② OpenAI 函数调用 JSON（<c>{"name":"x","arguments":{…}}</c>）。
         /// 能凑出「工具名 + 参数对象」就当作一次调用（工具名找不到则视为格式损坏，交由上层纠正）。
         /// </summary>
+        private static bool TryParseToolCallBlock(string text, out AgentToolCall call)
+        {
+            call = null;
+            const string startTag = "<|tool_call_start|>";
+            const string endTag = "<|tool_call_end|>";
+            int start = text.IndexOf(startTag, StringComparison.OrdinalIgnoreCase);
+            if (start < 0) return false;
+            start += startTag.Length;
+            int end = text.IndexOf(endTag, start, StringComparison.OrdinalIgnoreCase);
+            string body = end < 0 ? text[start..] : text[start..end];
+            body = body.Trim().TrimStart('[').TrimEnd(']');
+
+            var m = Regex.Match(body, @"(?<name>[A-Za-z_][\w\.]*)\s*\((?<args>[^()]*)\)");
+            if (!m.Success) return false;
+
+            var args = new Dictionary<string, object>(StringComparer.Ordinal);
+            string argText = m.Groups["args"].Value.Trim();
+            if (argText.Length > 0)
+            {
+                foreach (string part in SplitTopLevel(argText))
+                {
+                    int eq = part.IndexOf('=');
+                    if (eq <= 0) continue;
+                    string key = part[..eq].Trim().Trim('"', '\'');
+                    args[key] = ConvertValue(part[(eq + 1)..].Trim());
+                }
+            }
+
+            call = new AgentToolCall { Tool = m.Groups["name"].Value, Args = args };
+            return true;
+        }
+
+        private static IEnumerable<string> SplitTopLevel(string text)
+        {
+            int depth = 0;
+            bool inString = false;
+            char quote = '\0';
+            int start = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (inString)
+                {
+                    if (c == quote && (i == 0 || text[i - 1] != '\\')) inString = false;
+                    continue;
+                }
+                if (c is '"' or '\'') { inString = true; quote = c; continue; }
+                if (c is '[' or '{' or '(') depth++;
+                else if (c is ']' or '}' or ')') depth--;
+                else if (c == ',' && depth == 0)
+                {
+                    yield return text[start..i];
+                    start = i + 1;
+                }
+            }
+            if (start < text.Length) yield return text[start..];
+        }
+
+        private static object ConvertValue(string raw)
+        {
+            if (raw.Length >= 2 && ((raw[0] == '\'' && raw[^1] == '\'') || (raw[0] == '"' && raw[^1] == '"')))
+                return raw[1..^1].Replace("\\'", "'").Replace("\\\"", "\"");
+            if (bool.TryParse(raw, out bool b)) return b;
+            if (raw.Equals("null", StringComparison.OrdinalIgnoreCase)) return null;
+            if (long.TryParse(raw, out long l)) return l;
+            if (double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double d)) return d;
+            if ((raw.StartsWith('[') && raw.EndsWith(']')) || (raw.StartsWith('{') && raw.EndsWith('}')))
+            {
+                try { using var doc = JsonDocument.Parse(raw.Replace('\'', '"')); return doc.RootElement.Clone(); }
+                catch (JsonException) { }
+            }
+            return raw;
+        }
+
         private static bool TryParseTaggedOrOpenAiStyle(string text, out AgentToolCall call)
         {
             call = null;
@@ -150,7 +227,8 @@ namespace OpenLoop.Core.Agent
             if (modelOutput.Contains("\"tool\"", StringComparison.Ordinal)
                 && modelOutput.Contains("\"args\"", StringComparison.Ordinal)) return true;
             // 其它协议的等价形态（实测模型会自发用这些）：标签式 / OpenAI 函数调用 JSON
-            if (modelOutput.Contains("<tool_call", StringComparison.OrdinalIgnoreCase)
+            if (modelOutput.Contains("<|tool_call_start|>", StringComparison.OrdinalIgnoreCase)
+                || modelOutput.Contains("<tool_call", StringComparison.OrdinalIgnoreCase)
                 || modelOutput.Contains("<parameter", StringComparison.OrdinalIgnoreCase)
                 || modelOutput.Contains("<function", StringComparison.OrdinalIgnoreCase)) return true;
             return modelOutput.Contains("\"name\"", StringComparison.Ordinal)

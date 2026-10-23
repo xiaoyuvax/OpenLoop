@@ -3,6 +3,7 @@ using System.Text.Json;
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.Reasoning;
+using OpenLoop.Core.Skills;
 using OpenLoop.Core.Store;
 using OpenLoop.Core.Tools;
 
@@ -18,16 +19,23 @@ namespace OpenLoop.Core.Loop
         private readonly IReadOnlyDictionary<string, FeatureRecord> _features;
         private readonly string _workspaceRoot;
         private readonly string _evidenceRoot;
+        private readonly string _globalAgentsPath;
+        private readonly bool _useAgentsMd;
+        private readonly IReadOnlyList<SkillInfo> _catalog;
 
         public AgentTaskRunner(
             Func<string, IReasoner> reasonerFor,
             IReadOnlyDictionary<string, FeatureRecord> features,
-            string workspaceRoot, string evidenceRoot)
+            string workspaceRoot, string evidenceRoot, string globalAgentsPath = null,
+            bool useAgentsMd = true)
         {
             _reasonerFor = reasonerFor ?? throw new ArgumentNullException(nameof(reasonerFor));
             _features = features ?? throw new ArgumentNullException(nameof(features));
             _workspaceRoot = Path.GetFullPath(workspaceRoot ?? throw new ArgumentNullException(nameof(workspaceRoot)));
             _evidenceRoot = Path.GetFullPath(evidenceRoot ?? throw new ArgumentNullException(nameof(evidenceRoot)));
+            _globalAgentsPath = globalAgentsPath;
+            _useAgentsMd = useAgentsMd;
+            _catalog = SkillCatalog.Load(_workspaceRoot);
         }
 
         public async Task<TaskOutcome> RunAsync(
@@ -47,13 +55,18 @@ namespace OpenLoop.Core.Loop
                 File.WriteAllText(full, pair.Value ?? "", new UTF8Encoding(false));
             }
 
-            var tools = ToolRegistry.Workspace(scope);
+            var skills = SkillCatalog.Active(activation, _features, _catalog, out var skillProblems);
+            if (skillProblems.Count > 0)
+                throw new InvalidOperationException(
+                    $"任务 {task.Id} 的技能不可用：{string.Join("；", skillProblems)}");
+
+            var tools = ToolRegistry.Workspace(scope, null, skills);
             var loop = new AgentLoop(tools, _reasonerFor(dir),
-                FeatureCatalog.PolicyFrom(activation, _features));
-            var history = new List<LlmMessage>
-            {
-                new("system", loop.BuildSystemPrompt(null, FeatureCatalog.RulesFrom(activation, _features)))
-            };
+                FeatureCatalog.PolicyFrom(activation, _features), skills: skills);
+            string systemPrompt = loop.BuildSystemPrompt(
+                null, FeatureCatalog.RulesFrom(activation, _features),
+                _useAgentsMd ? AgentsInstructions.Load(_workspaceRoot, _globalAgentsPath) : null);
+            var history = new List<LlmMessage> { new("system", systemPrompt) };
 
             var result = await loop.RunAsync(history, task.Prompt, ct, AgentContext.DefaultContextLimit);
             var (passed, detail) = TaskJudge.Evaluate(dir, task.Checks);
@@ -68,7 +81,11 @@ namespace OpenLoop.Core.Loop
                 steps = result.Steps.Count,
                 cost = result.ChatCost,
                 passed,
-                detail
+                detail,
+                skills = skills.Select(s => new { name = s.Name, sha256 = s.Sha256, source = s.Source }).ToArray(),
+                guards = result.Guards,
+                systemPrompt = new { sha256 = SystemPromptBuilder.Fingerprint(systemPrompt), chars = systemPrompt.Length },
+                binary = RuntimeInfo.Version
             }, ReportJson), new UTF8Encoding(false));
 
             return new TaskOutcome
@@ -84,6 +101,7 @@ namespace OpenLoop.Core.Loop
         private static readonly JsonSerializerOptions ReportJson = new()
         {
             WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
 

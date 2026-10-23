@@ -70,6 +70,7 @@ namespace OpenLoop.App
             _btnMenu.Margin = new Padding(0, 10, 6, 10);
             _btnMenu.Ghost = true;
             _btnMenu.Radius = 8;
+            _btnMenu.MaxCount = 20;
             _btnMenu.IconSvg = UiIcons.Of(UiIcons.Menu, UiStyle.Text);
             _btnMenu.SelectedValueChanged += OnMenuSelect;
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuNewSession")) { Tag = "new" });
@@ -135,9 +136,12 @@ namespace OpenLoop.App
             _tabs.Name = "tabs";
             _tabs.Dock = DockStyle.Fill;
             _tabs.Type = AntdUI.TabType.Card;
+            _tabs.Style = new AntdUI.Tabs.StyleCard { Closable = true };
             _tabs.CloseDisposePage = false;
             _tabs.Margin = new Padding(0);
+            _tabs.DragOrder = true;
             _tabs.ClosingPage += OnClosingPage;
+            _tabs.MouseUp += OnTabMouseUp;
             _tabs.SelectedIndexChanged += OnSelectedTabChanged;
 
             _overviewPage.Name = "overviewPage";

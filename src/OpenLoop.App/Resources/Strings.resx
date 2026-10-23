@@ -133,6 +133,12 @@
   <data name="FreeOnly" xml:space="preserve">
     <value>只看免费</value>
   </data>
+  <data name="Provider" xml:space="preserve">
+    <value>提供商</value>
+  </data>
+  <data name="AllProviders" xml:space="preserve">
+    <value>全部提供商</value>
+  </data>
   <data name="ModeTask" xml:space="preserve">
     <value>任务</value>
   </data>
@@ -310,5 +316,71 @@
 {1}
 
 允许执行吗？</value>
+  </data>
+  <data name="EmptyBlocked" xml:space="preserve">
+    <value>（上游以内容策略拦截了本次回答，未返回正文。）</value>
+  </data>
+  <data name="EmptySafetyOnly" xml:space="preserve">
+    <value>（模型只返回了安全判定，没有正文；已自动重试仍为空。）</value>
+  </data>
+  <data name="EmptyNoBody" xml:space="preserve">
+    <value>（模型没有返回正文。）</value>
+  </data>
+  <data name="RawResponse" xml:space="preserve">
+    <value>原始响应：</value>
+  </data>
+  <data name="ReviewPending" xml:space="preserve">
+    <value>待答</value>
+  </data>
+  <data name="AgentBack" xml:space="preserve">
+    <value>← 返回</value>
+  </data>
+  <data name="TaskDrafts" xml:space="preserve">
+    <value>题目候选</value>
+  </data>
+  <data name="EvalReports" xml:space="preserve">
+    <value>评估报告</value>
+  </data>
+  <data name="Accept" xml:space="preserve">
+    <value>采纳</value>
+  </data>
+  <data name="Discard" xml:space="preserve">
+    <value>丢弃</value>
+  </data>
+  <data name="EditDraft" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="SaveDraft" xml:space="preserve">
+    <value>保存修改</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="DraftsEmpty" xml:space="preserve">
+    <value>暂无草稿。Loop 观察到可复现的问题后会起草到这里。</value>
+  </data>
+  <data name="PickDraft" xml:space="preserve">
+    <value>从左侧选择一条草稿。</value>
+  </data>
+  <data name="ReportsEmpty" xml:space="preserve">
+    <value>还没有评估报告。跑一轮演进后生成。</value>
+  </data>
+  <data name="OpenFolder" xml:space="preserve">
+    <value>打开报告目录</value>
+  </data>
+  <data name="BaselineSmoke" xml:space="preserve">
+    <value>采纳后试跑基线</value>
+  </data>
+  <data name="DraftAccepted" xml:space="preserve">
+    <value>已加入题集：</value>
+  </data>
+  <data name="BaselineRunning" xml:space="preserve">
+    <value>正在试跑基线…</value>
+  </data>
+  <data name="BaselinePassed" xml:space="preserve">
+    <value>基线通过：该题区分度可能不足，建议收紧判定条件。</value>
+  </data>
+  <data name="BaselineFailed" xml:space="preserve">
+    <value>基线未通过：已留作回归题。</value>
   </data>
 </root>

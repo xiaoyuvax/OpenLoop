@@ -26,6 +26,15 @@ namespace OpenLoop.App
 
         public static AppTheme Theme { get; private set; } = AppTheme.Light;
 
+        /// <summary>路径只显示末段（盘符根保留原样）；完整路径放 tooltip。</summary>
+        public static string ShortPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return "";
+            string trimmed = path.TrimEnd('\\', '/');
+            string name = Path.GetFileName(trimmed);
+            return string.IsNullOrEmpty(name) ? path : name;
+        }
+
         public static AppTheme Parse(string value) => value?.Trim().ToLowerInvariant() switch
         {
             "dark" => AppTheme.Dark,

@@ -25,8 +25,10 @@ namespace OpenLoop.Core.Safety
             return env;
         }
 
-        public static void Apply(System.Diagnostics.ProcessStartInfo psi)
+        /// <param name="inherit">完全许可模式：不清理环境变量（密钥可能进入子进程）。</param>
+        public static void Apply(System.Diagnostics.ProcessStartInfo psi, bool inherit = false)
         {
+            if (inherit) return;
             psi.Environment.Clear();
             foreach (var (key, value) in Build()) psi.Environment[key] = value;
         }

@@ -1,4 +1,5 @@
 using OpenLoop.Core.Safety;
+using OpenLoop.Core.Store;
 using OpenLoop.Core.Tools;
 using OpenLoop.Core.Tools.Builtin;
 using Xunit;
@@ -68,6 +69,83 @@ public sealed class SafetyTests : IDisposable
             try { Directory.Delete(outside, true); } catch { }
         }
     }
+
+    [Fact]
+    public void Scope_Protects_OpenLoop_Runtime()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".openloop", "traces"));
+        File.WriteAllText(Path.Combine(_root, ".openloop", "ledger.jsonl"), "{}\n");
+
+        var scope = new WorkspaceScope(_root);
+        Assert.False(scope.TryResolve(".openloop/ledger.jsonl", out _, out string error));
+        Assert.Contains("受保护", error);
+        Assert.True(scope.IsDenied(Path.Combine(_root, ".openloop", "traces")));
+        Assert.False(scope.IsDenied(Path.Combine(_root, ".openloopx", "a.txt")));
+    }
+
+    [Fact]
+    public async Task List_And_Grep_Hide_Protected_OpenLoop()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".openloop", "traces"));
+        File.WriteAllText(Path.Combine(_root, ".openloop", "traces", "a.txt"), "secret");
+        File.WriteAllText(Path.Combine(_root, "visible.txt"), "secret");
+
+        var scope = new WorkspaceScope(_root);
+        var list = await new ListDirTool(scope).ExecuteAsync(
+            new ToolArgs(new() { ["recursive"] = true }), CancellationToken.None);
+        Assert.True(list.Ok);
+        Assert.Contains("visible.txt", list.Data);
+        Assert.DoesNotContain(".openloop", list.Data);
+
+        var grep = await new GrepTool(scope).ExecuteAsync(
+            new ToolArgs(new() { ["pattern"] = "secret" }), CancellationToken.None);
+        Assert.True(grep.Ok);
+        Assert.Contains("visible.txt", grep.Data);
+        Assert.DoesNotContain(".openloop", grep.Data);
+    }
+
+    [Fact]
+    public async Task EvidenceTool_Reads_Evidence_But_Not_Eval()
+    {
+        string dir = Path.Combine(_root, ".openloop");
+        Directory.CreateDirectory(Path.Combine(dir, "eval", "tasks"));
+        File.WriteAllText(Path.Combine(dir, "ledger.jsonl"), "{\"id\":\"L1\"}\n");
+        File.WriteAllText(Path.Combine(dir, "eval", "tasks", "t.json"), "{\"id\":\"T1\"}");
+
+        var tool = new ReadEvidenceTool(_root);
+        var ledger = await tool.ExecuteAsync(
+            new ToolArgs(new() { ["path"] = "ledger.jsonl" }), CancellationToken.None);
+        Assert.True(ledger.Ok, ledger.Error);
+        Assert.Contains("L1", ledger.Data);
+
+        var eval = await tool.ExecuteAsync(
+            new ToolArgs(new() { ["path"] = "eval/tasks/t.json" }), CancellationToken.None);
+        Assert.False(eval.Ok);
+        Assert.Contains("受保护", eval.Error);
+    }
+
+    [Fact]
+    public async Task RecordFinding_Appends_To_Journal()
+    {
+        var tool = new RecordFindingTool(_root);
+        var result = await tool.ExecuteAsync(new ToolArgs(new()
+        {
+            ["kind"] = "access",
+            ["severity"] = "warn",
+            ["summary"] = "worker 试图写 .openloop",
+            ["evidence"] = "trace:T-1"
+        }), CancellationToken.None);
+
+        Assert.True(result.Ok, result.Error);
+        string path = FindingsLog.FilePath(_root);
+        Assert.True(File.Exists(path));
+        Assert.Contains("worker 试图写 .openloop", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void Commands_Touching_OpenLoop_Need_Approval()
+        => Assert.Equal(CommandRisk.Risky,
+            CommandPolicy.Classify(["git", "status", ".openloop"]).Risk);
 
     [Fact]
     public void Child_Environment_Has_No_Secrets()

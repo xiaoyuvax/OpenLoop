@@ -12,6 +12,18 @@ namespace OpenLoop.Core.Messages
             @"^\s*(user|response)\s*safety\s*:\s*\S+\s*$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        /// <summary>非空且每一行都是安全判定行。</summary>
+        public static bool IsSafetyOnly(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            foreach (string line in text.Replace("\r\n", "\n").Split('\n'))
+            {
+                if (line.Trim().Length == 0) continue;
+                if (!SafetyLine.IsMatch(line)) return false;
+            }
+            return true;
+        }
+
         public static string StripSafetyLines(string text)
         {
             if (string.IsNullOrEmpty(text)) return text;

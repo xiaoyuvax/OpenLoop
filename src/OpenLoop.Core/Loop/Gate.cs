@@ -1,3 +1,4 @@
+using OpenLoop.Core.Agent;
 using OpenLoop.Core.Store;
 
 namespace OpenLoop.Core.Loop
@@ -24,6 +25,8 @@ namespace OpenLoop.Core.Loop
         public bool CandidatePassed { get; set; }
         public decimal? BaselineCost { get; set; }
         public decimal? CandidateCost { get; set; }
+        public int BaselineSteps { get; set; }
+        public int CandidateSteps { get; set; }
         public string BaselineDetail { get; set; }
         public string CandidateDetail { get; set; }
         public string BaselineEvidence { get; set; }
@@ -48,6 +51,7 @@ namespace OpenLoop.Core.Loop
         public int BaselinePassed { get; set; }
         public int CandidatePassed { get; set; }
         public decimal? Cost { get; set; }
+        public string ReportPath { get; set; }
     }
 
     /// <summary>
@@ -114,6 +118,8 @@ namespace OpenLoop.Core.Loop
                     CandidatePassed = candidateRun.Passed,
                     BaselineCost = baselineRun.Cost,
                     CandidateCost = candidateRun.Cost,
+                    BaselineSteps = baselineRun.Steps,
+                    CandidateSteps = candidateRun.Steps,
                     BaselineDetail = baselineRun.Detail,
                     CandidateDetail = candidateRun.Detail,
                     BaselineEvidence = baselineRun.EvidenceDir,
@@ -168,13 +174,56 @@ namespace OpenLoop.Core.Loop
                     : $"候选 {candidatePassed}/{report.Tasks.Count} < 基线 {baselinePassed}/{report.Tasks.Count}，保留旧版";
             }
 
+            Persist(report);
             return report;
         }
 
-        private static GateReport Fail(GateReport report, string reason)
+        private GateReport Fail(GateReport report, string reason)
         {
             report.Reason = reason;
+            Persist(report);
             return report;
+        }
+
+        private void Persist(GateReport report)
+        {
+            try
+            {
+                var saved = EvalReportStore.Save(_ledger.Workspace, new EvalReport
+                {
+                    Binary = RuntimeInfo.Version,
+                    BaselineVersion = report.BaselineVersion,
+                    CandidateVersion = report.CandidateVersion,
+                    Adopted = report.Adopted,
+                    Reason = report.Reason,
+                    BaselinePassed = report.BaselinePassed,
+                    CandidatePassed = report.CandidatePassed,
+                    Cost = report.Cost,
+                    BuildOk = report.Build?.Ok ?? true,
+                    BuildDetail = report.Build?.Detail,
+                    Conformance = report.Conformance,
+                    Tasks = report.Tasks.Select(t => new EvalReportTask
+                    {
+                        Id = t.TaskId,
+                        Fingerprint = t.Fingerprint,
+                        BaselinePassed = t.BaselinePassed,
+                        CandidatePassed = t.CandidatePassed,
+                        BaselineSteps = t.BaselineSteps,
+                        CandidateSteps = t.CandidateSteps,
+                        BaselineCost = t.BaselineCost,
+                        CandidateCost = t.CandidateCost,
+                        BaselineDetail = t.BaselineDetail,
+                        CandidateDetail = t.CandidateDetail,
+                        BaselineEvidence = t.BaselineEvidence,
+                        CandidateEvidence = t.CandidateEvidence
+                    }).ToList()
+                });
+                report.ReportPath = saved.DirectoryPath;
+            }
+            catch
+            {
+                // 报告写盘失败不影响裁决：账本与证据目录仍在。
+            }
         }
     }
 }
