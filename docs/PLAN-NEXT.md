@@ -37,7 +37,7 @@
 ## 2. 本地化（卫星程序集）— 部分完成
 
 > 已完成：Resources/Strings.resx + Strings.en.resx、Localization.T、AppSettings.Language、☰ 菜单语言切换、外壳/总览/会话工具栏/Loop/新建会话的文案；ChatFlow 新增 PlaceholderText。
-> 剩余：评审 N 道题（M 次运行）… 的量词后缀仍是中文（前缀已翻译）。
+> 全部完成（StatusReviewing 模板已本地化）。
 
 
 **目标**：中文/英文切换，语言随设置保存，重启生效。

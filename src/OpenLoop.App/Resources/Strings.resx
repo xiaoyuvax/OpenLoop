@@ -292,4 +292,7 @@
   <data name="TasksUnit" xml:space="preserve">
     <value>道</value>
   </data>
+  <data name="StatusReviewing" xml:space="preserve">
+    <value>评审 {0} 道题（{1} 次运行）…</value>
+  </data>
 </root>

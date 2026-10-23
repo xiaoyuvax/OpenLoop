@@ -709,7 +709,7 @@ namespace OpenLoop.App
                     return;
                 }
 
-                _lblStatus.Text = Localization.T("Status") + $": 评审 {tasks.Tasks.Count} 道题（{tasks.Tasks.Count * 2} 次运行）…";
+                _lblStatus.Text = Localization.T("Status") + ": " + string.Format(Localization.T("StatusReviewing"), tasks.Tasks.Count, tasks.Tasks.Count * 2);
                 var runner = new AgentTaskRunner(
                     _ => new OpenAiCompatibleReasoner(baseUrl, model, ResolveKey(), _effort),
                     features, workspace, ledger.EvalDir);

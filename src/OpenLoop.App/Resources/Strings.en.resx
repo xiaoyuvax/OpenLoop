@@ -334,4 +334,7 @@
   <data name="TasksUnit" xml:space="preserve">
     <value>tasks</value>
   </data>
+  <data name="StatusReviewing" xml:space="preserve">
+    <value>Reviewing {0} tasks ({1} runs)…</value>
+  </data>
 </root>
