@@ -22,7 +22,7 @@ namespace OpenLoop.App
         public string Theme { get; set; } = "light";
 
         /// <summary>界面语言：zh / en（卫星程序集）。</summary>
-        public string Language { get; set; } = "zh";
+        public string Language { get; set; } = "";
 
         /// <summary>模型下拉默认只列免费模型。</summary>
         public bool OnlyFreeModels { get; set; } = true;

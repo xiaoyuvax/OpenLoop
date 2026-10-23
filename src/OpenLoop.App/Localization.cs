@@ -15,6 +15,9 @@ namespace OpenLoop.App
             catch { return key; }
         }
 
+        private static string SystemLanguage()
+            => CultureInfo.InstalledUICulture.TwoLetterISOLanguageName == "en" ? "en" : "zh";
+
         public static bool IsEnglish =>
             CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "en";
 
@@ -64,10 +67,12 @@ namespace OpenLoop.App
 
         public static void Apply(string language)
         {
-            var culture = string.IsNullOrWhiteSpace(language) ||
-                          language.StartsWith("zh", StringComparison.OrdinalIgnoreCase)
-                ? new CultureInfo("zh-CN")
-                : new CultureInfo("en");
+            string effective = string.IsNullOrWhiteSpace(language)
+                ? SystemLanguage()
+                : language;
+            var culture = effective.StartsWith("en", StringComparison.OrdinalIgnoreCase)
+                ? new CultureInfo("en")
+                : new CultureInfo("zh-CN");
             CultureInfo.CurrentUICulture = culture;
             CultureInfo.DefaultThreadCurrentUICulture = culture;
         }

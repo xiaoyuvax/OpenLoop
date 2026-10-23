@@ -337,4 +337,10 @@
   <data name="StatusReviewing" xml:space="preserve">
     <value>Reviewing {0} tasks ({1} runs)…</value>
   </data>
+  <data name="Steps" xml:space="preserve">
+    <value>steps</value>
+  </data>
+  <data name="MenuLanguageAuto" xml:space="preserve">
+    <value>Language: System</value>
+  </data>
 </root>

@@ -78,6 +78,7 @@ namespace OpenLoop.App
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuThemeLight")) { Tag = "theme-light" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuThemeDark")) { Tag = "theme-dark" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuThemeGrayBlue")) { Tag = "theme-grayblue" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLanguageAuto")) { Tag = "lang-auto" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLanguageZh")) { Tag = "lang-zh" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLanguageEn")) { Tag = "lang-en" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuSettings")) { Tag = "settings" });

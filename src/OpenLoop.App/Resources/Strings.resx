@@ -295,4 +295,10 @@
   <data name="StatusReviewing" xml:space="preserve">
     <value>评审 {0} 道题（{1} 次运行）…</value>
   </data>
+  <data name="Steps" xml:space="preserve">
+    <value>步</value>
+  </data>
+  <data name="MenuLanguageAuto" xml:space="preserve">
+    <value>语言：跟随系统</value>
+  </data>
 </root>

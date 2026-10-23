@@ -54,6 +54,7 @@ namespace OpenLoop.App
             UpdateContext(null);
 
             _lblStatus.TextChanged += OnStatusTextChanged;
+            _loopFlow.SizeChanged += (_, _) => FitLoopLabels();
             ModelCatalog.Changed += OnCatalogChanged;
             Disposed += (_, _) => ModelCatalog.Changed -= OnCatalogChanged;
         }
@@ -310,6 +311,13 @@ namespace OpenLoop.App
             FillModels();
         }
 
+        private void FitLoopLabels()
+        {
+            int width = Math.Max(Dip(120), _loopFlow.ClientSize.Width - Dip(28));
+            foreach (var label in new[] { _lblDef, _lblTasks, _lblTrace, _lblCost, _lblStatus })
+                label.MaximumSize = new Size(width, 0);
+        }
+
         private bool _statusBusy;
 
         private void OnStatusTextChanged(object sender, EventArgs e)
@@ -548,7 +556,7 @@ namespace OpenLoop.App
                 cost = result.ChatCost;
                 trace.Finish(outcome, turn.AssistantText, result.ChatCost);
 
-                _lblCost.Text = Localization.T("Cost") + $": {(result.ChatCost.HasValue ? result.ChatCost.Value.ToString("0.0000") : "—")} · {result.Steps.Count} 步";
+                _lblCost.Text = Localization.T("Cost") + $": {(result.ChatCost.HasValue ? result.ChatCost.Value.ToString("0.0000") : "—")} · {result.Steps.Count} {Localization.T("Steps")}";
                 _lblStatus.Text = Localization.T("Status") + $": {outcome}" + (result.Compressed ? "（上下文已压缩）" : "");
                 UpdateContext(result.ContextTokens);
 

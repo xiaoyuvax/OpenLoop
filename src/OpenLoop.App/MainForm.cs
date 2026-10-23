@@ -366,6 +366,7 @@ namespace OpenLoop.App
                     case "theme-light": ApplyTheme("light"); break;
                     case "theme-dark": ApplyTheme("dark"); break;
                     case "theme-grayblue": ApplyTheme("grayblue"); break;
+                    case "lang-auto": ApplyLanguage(""); break;
                     case "lang-zh": ApplyLanguage("zh"); break;
                     case "lang-en": ApplyLanguage("en"); break;
                     case "settings": OpenSettings(); break;
