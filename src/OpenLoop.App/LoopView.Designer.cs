@@ -75,7 +75,7 @@ namespace OpenLoop.App
             _lblTitle.Margin = new Padding(0, 0, 10, 0);
 
             _lblSub.Dock = DockStyle.Fill;
-            _lblSub.Text = "观察 Worker 与用户判定，积累下一版";
+            _lblSub.Text = Localization.T("LoopSubtitle");
             _lblSub.Font = new Font("Segoe UI", 9F);
             _lblSub.ForeColor = UiStyle.Muted;
             _lblSub.TextAlign = ContentAlignment.MiddleLeft;
@@ -108,7 +108,7 @@ namespace OpenLoop.App
             _txtInput.BorderWidth = 1;
             _txtInput.BackColor = UiStyle.Surface;
             _txtInput.Font = new Font("Segoe UI", 10F);
-            _txtInput.PlaceholderText = "和 Loop 对话：说出你的体验、不满或改进建议（Ctrl+Enter 发送）";
+            _txtInput.PlaceholderText = Localization.T("LoopHint");
             _txtInput.KeyDown += OnInputKeyDown;
 
             _toolbar.Dock = DockStyle.Fill;
@@ -157,7 +157,7 @@ namespace OpenLoop.App
             _toolbarLeft.Controls.Add(_lblStatus);
 
             _btnStop.Name = "btnStop";
-            _btnStop.Text = "停止";
+            _btnStop.Text = Localization.T("Stop");
             _btnStop.Type = AntdUI.TTypeMini.Error;
             _btnStop.Ghost = true;
             _btnStop.Radius = 8;
@@ -169,7 +169,7 @@ namespace OpenLoop.App
             _btnStop.Click += OnStop;
 
             _btnSend.Name = "btnSend";
-            _btnSend.Text = "发送";
+            _btnSend.Text = Localization.T("Send");
             _btnSend.Type = AntdUI.TTypeMini.Primary;
             _btnSend.Radius = 8;
             _btnSend.Width = 104;

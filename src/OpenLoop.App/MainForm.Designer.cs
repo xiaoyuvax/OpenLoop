@@ -72,14 +72,16 @@ namespace OpenLoop.App
             _btnMenu.Radius = 8;
             _btnMenu.IconSvg = UiIcons.Of(UiIcons.Menu, UiStyle.Text);
             _btnMenu.SelectedValueChanged += OnMenuSelect;
-            _btnMenu.Items.Add(new AntdUI.SelectItem("新建会话…") { Tag = "new" });
-            _btnMenu.Items.Add(new AntdUI.SelectItem("会话列表") { Tag = "list" });
-            _btnMenu.Items.Add(new AntdUI.SelectItem("Loop 会话") { Tag = "loop" });
-            _btnMenu.Items.Add(new AntdUI.SelectItem("主题：浅色") { Tag = "theme-light" });
-            _btnMenu.Items.Add(new AntdUI.SelectItem("主题：深色") { Tag = "theme-dark" });
-            _btnMenu.Items.Add(new AntdUI.SelectItem("主题：灰蓝") { Tag = "theme-grayblue" });
-            _btnMenu.Items.Add(new AntdUI.SelectItem("设置…") { Tag = "settings" });
-            _btnMenu.Items.Add(new AntdUI.SelectItem("退出") { Tag = "exit" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuNewSession")) { Tag = "new" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuSessionList")) { Tag = "list" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLoop")) { Tag = "loop" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuThemeLight")) { Tag = "theme-light" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuThemeDark")) { Tag = "theme-dark" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuThemeGrayBlue")) { Tag = "theme-grayblue" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLanguageZh")) { Tag = "lang-zh" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLanguageEn")) { Tag = "lang-en" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuSettings")) { Tag = "settings" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuExit")) { Tag = "exit" });
 
             _titleFlow.Dock = DockStyle.Fill;
             _titleFlow.FlowDirection = FlowDirection.LeftToRight;
@@ -88,14 +90,14 @@ namespace OpenLoop.App
 
             _lblTitle.Name = "lblTitle";
             _lblTitle.AutoSize = true;
-            _lblTitle.Text = "OpenLoop";
+            _lblTitle.Text = Localization.T("AppTitle");
             _lblTitle.Font = new Font("Segoe UI", 13F, FontStyle.Bold);
             _lblTitle.ForeColor = UiStyle.Text;
             _lblTitle.Margin = new Padding(0, 14, 10, 0);
 
             _lblSub.Name = "lblSub";
             _lblSub.AutoSize = true;
-            _lblSub.Text = "多会话 · 关闭标签不停止";
+            _lblSub.Text = Localization.T("AppSubtitle");
             _lblSub.Font = new Font("Segoe UI", 9F);
             _lblSub.ForeColor = UiStyle.Muted;
             _lblSub.Margin = new Padding(0, 18, 0, 0);
@@ -138,7 +140,7 @@ namespace OpenLoop.App
             _tabs.SelectedIndexChanged += OnSelectedTabChanged;
 
             _overviewPage.Name = "overviewPage";
-            _overviewPage.Text = "会话";
+            _overviewPage.Text = Localization.T("TabOverview");
             _overviewPage.ReadOnly = true;
             _overviewPage.Dock = DockStyle.Fill;
             _overviewPage.IconSvg = UiIcons.Of(UiIcons.List, UiStyle.Muted);

@@ -84,7 +84,7 @@ namespace OpenLoop.App
 
             _lblSub.Dock = DockStyle.Top;
             _lblSub.Height = 28;
-            _lblSub.Text = "选择项目并描述任务，开始一个新的会话";
+            _lblSub.Text = Localization.T("NewSessionSubtitle");
             _lblSub.Font = new Font("Segoe UI", 10F);
             _lblSub.ForeColor = UiStyle.Muted;
             _lblSub.TextAlign = ContentAlignment.MiddleCenter;
@@ -110,7 +110,7 @@ namespace OpenLoop.App
             _txtInput.Radius = 10;
             _txtInput.BorderWidth = 1;
             _txtInput.Font = new Font("Segoe UI", 10F);
-            _txtInput.PlaceholderText = "描述任务，例如：为这个项目补一个 README（Ctrl+Enter 开始）";
+            _txtInput.PlaceholderText = Localization.T("NewSessionHint");
             _txtInput.Margin = new Padding(0, 0, 0, 8);
             _txtInput.KeyDown += OnInputKeyDown;
 
@@ -154,7 +154,7 @@ namespace OpenLoop.App
             _btnSend.Radius = 8;
             _btnSend.Width = 96;
             _btnSend.Height = 36;
-            _btnSend.Text = "开始";
+            _btnSend.Text = Localization.T("Start");
             _btnSend.IconSvg = UiIcons.Of(UiIcons.Send, Color.White);
             _btnSend.Margin = new Padding(8, 4, 0, 4);
             _btnSend.Click += OnSend;
@@ -177,7 +177,7 @@ namespace OpenLoop.App
             _projectRow.Margin = new Padding(0);
 
             _lblProject.AutoSize = true;
-            _lblProject.Text = "项目";
+            _lblProject.Text = Localization.T("Projects");
             _lblProject.Font = new Font("Segoe UI", 9F);
             _lblProject.ForeColor = UiStyle.Muted;
             _lblProject.Margin = new Padding(2, 9, 10, 0);
@@ -187,7 +187,7 @@ namespace OpenLoop.App
             _selProject.Height = 38;
             _selProject.Radius = 8;
             _selProject.PrefixSvg = UiIcons.Of(UiIcons.Folder, UiStyle.Muted);
-            _selProject.PlaceholderText = "选择项目，或新建项目";
+            _selProject.PlaceholderText = Localization.T("PickProject");
             _selProject.Margin = new Padding(0, 3, 12, 3);
             _selProject.SelectedValueChanged += OnProjectChanged;
 

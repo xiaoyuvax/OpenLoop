@@ -139,10 +139,10 @@ namespace OpenLoop.App
 
         private static AntdUI.CellBadge Badge(Session session) => session?.State switch
         {
-            SessionState.Running => new AntdUI.CellBadge(AntdUI.TState.Success, "运行中"),
-            SessionState.Interrupted => new AntdUI.CellBadge(AntdUI.TState.Error, "中断"),
-            SessionState.Done => new AntdUI.CellBadge(AntdUI.TState.Default, "已结束"),
-            _ => new AntdUI.CellBadge(AntdUI.TState.Default, "待开始")
+            SessionState.Running => new AntdUI.CellBadge(AntdUI.TState.Success, Localization.T("StateRunning")),
+            SessionState.Interrupted => new AntdUI.CellBadge(AntdUI.TState.Error, Localization.T("StateInterrupted")),
+            SessionState.Done => new AntdUI.CellBadge(AntdUI.TState.Default, Localization.T("StateDone")),
+            _ => new AntdUI.CellBadge(AntdUI.TState.Default, Localization.T("StateIdle"))
         };
 
         private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);

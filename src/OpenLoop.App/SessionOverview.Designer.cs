@@ -51,10 +51,10 @@ namespace OpenLoop.App
             _btnNewSession = new AntdUI.Button();
             _lblProjectPath = new AntdUI.Label();
             _table = new AntdUI.Table();
-            _colState = new AntdUI.Column("State", "状态");
-            _colTitle = new AntdUI.Column("Title", "会话");
-            _colStarted = new AntdUI.Column("Started", "开始");
-            _colSteps = new AntdUI.Column("StepsText", "步数");
+            _colState = new AntdUI.Column("State", Localization.T("ColState"));
+            _colTitle = new AntdUI.Column("Title", Localization.T("ColSession"));
+            _colStarted = new AntdUI.Column("Started", Localization.T("ColStarted"));
+            _colSteps = new AntdUI.Column("StepsText", Localization.T("ColSteps"));
 
             SuspendLayout();
 
@@ -90,7 +90,7 @@ namespace OpenLoop.App
             _leftHeader.Margin = new Padding(0);
 
             _lblProjects.Dock = DockStyle.Fill;
-            _lblProjects.Text = "项目";
+            _lblProjects.Text = Localization.T("Projects");
             _lblProjects.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
             _lblProjects.ForeColor = UiStyle.Muted;
             _lblProjects.TextAlign = ContentAlignment.MiddleLeft;
@@ -123,7 +123,7 @@ namespace OpenLoop.App
             _leftFooter.Margin = new Padding(0);
 
             _btnSettings.Name = "btnSettings";
-            _btnSettings.Text = "设置";
+            _btnSettings.Text = Localization.T("Settings");
             _btnSettings.Ghost = true;
             _btnSettings.Radius = 8;
             _btnSettings.Height = 34;
@@ -165,13 +165,13 @@ namespace OpenLoop.App
             _txtSearch.Name = "txtSearch";
             _txtSearch.Dock = DockStyle.Fill;
             _txtSearch.Radius = 8;
-            _txtSearch.PlaceholderText = "搜索会话";
+            _txtSearch.PlaceholderText = Localization.T("SearchSessions");
             _txtSearch.PrefixSvg = UiIcons.Of(UiIcons.Search, UiStyle.Muted);
             _txtSearch.Margin = new Padding(0, 9, 12, 9);
             _txtSearch.TextChanged += OnSearchChanged;
 
             _btnNewSession.Name = "btnNewSession";
-            _btnNewSession.Text = "新建会话";
+            _btnNewSession.Text = Localization.T("NewSession");
             _btnNewSession.Type = AntdUI.TTypeMini.Primary;
             _btnNewSession.Radius = 8;
             _btnNewSession.Dock = DockStyle.Fill;
@@ -188,7 +188,7 @@ namespace OpenLoop.App
             _table.Bordered = false;
             _table.VisibleHeader = true;
             _table.RowHeight = 46;
-            _table.EmptyText = "这个项目还没有会话";
+            _table.EmptyText = Localization.T("EmptySessions");
             _table.Margin = new Padding(0);
             _table.CellClick += OnCellClick;
             _table.Resize += OnTableResize;

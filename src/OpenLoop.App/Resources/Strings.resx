@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AppTitle" xml:space="preserve">
+    <value>OpenLoop</value>
+  </data>
+  <data name="AppSubtitle" xml:space="preserve">
+    <value>多会话 · 关闭标签不停止</value>
+  </data>
+  <data name="MenuNewSession" xml:space="preserve">
+    <value>新建会话…</value>
+  </data>
+  <data name="MenuSessionList" xml:space="preserve">
+    <value>会话列表</value>
+  </data>
+  <data name="MenuLoop" xml:space="preserve">
+    <value>Loop 会话</value>
+  </data>
+  <data name="MenuThemeLight" xml:space="preserve">
+    <value>主题：浅色</value>
+  </data>
+  <data name="MenuThemeDark" xml:space="preserve">
+    <value>主题：深色</value>
+  </data>
+  <data name="MenuThemeGrayBlue" xml:space="preserve">
+    <value>主题：灰蓝</value>
+  </data>
+  <data name="MenuLanguageZh" xml:space="preserve">
+    <value>语言：中文</value>
+  </data>
+  <data name="MenuLanguageEn" xml:space="preserve">
+    <value>语言：English</value>
+  </data>
+  <data name="MenuSettings" xml:space="preserve">
+    <value>设置…</value>
+  </data>
+  <data name="MenuExit" xml:space="preserve">
+    <value>退出</value>
+  </data>
+  <data name="TabOverview" xml:space="preserve">
+    <value>会话</value>
+  </data>
+  <data name="Projects" xml:space="preserve">
+    <value>项目</value>
+  </data>
+  <data name="SearchSessions" xml:space="preserve">
+    <value>搜索会话</value>
+  </data>
+  <data name="NewSession" xml:space="preserve">
+    <value>新建会话</value>
+  </data>
+  <data name="ColState" xml:space="preserve">
+    <value>状态</value>
+  </data>
+  <data name="ColSession" xml:space="preserve">
+    <value>会话</value>
+  </data>
+  <data name="ColStarted" xml:space="preserve">
+    <value>开始</value>
+  </data>
+  <data name="ColSteps" xml:space="preserve">
+    <value>步数</value>
+  </data>
+  <data name="EmptySessions" xml:space="preserve">
+    <value>这个项目还没有会话</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="Send" xml:space="preserve">
+    <value>发送</value>
+  </data>
+  <data name="Stop" xml:space="preserve">
+    <value>停止</value>
+  </data>
+  <data name="FreeOnly" xml:space="preserve">
+    <value>只看免费</value>
+  </data>
+  <data name="ModeTask" xml:space="preserve">
+    <value>任务</value>
+  </data>
+  <data name="ModeCriterion" xml:space="preserve">
+    <value>声明判据</value>
+  </data>
+  <data name="ModeCorrection" xml:space="preserve">
+    <value>这是纠正</value>
+  </data>
+  <data name="ComposerHint" xml:space="preserve">
+    <value>描述任务，或声明判据 / 纠正（Ctrl+Enter 发送）</value>
+  </data>
+  <data name="TabLoop" xml:space="preserve">
+    <value>Loop</value>
+  </data>
+  <data name="TabDetail" xml:space="preserve">
+    <value>详情</value>
+  </data>
+  <data name="Evolve" xml:space="preserve">
+    <value>演进一轮</value>
+  </data>
+  <data name="Rollback" xml:space="preserve">
+    <value>回滚上一版</value>
+  </data>
+  <data name="OpenLoopChat" xml:space="preserve">
+    <value>打开 Loop 会话</value>
+  </data>
+  <data name="LoopSubtitle" xml:space="preserve">
+    <value>观察 Worker 与用户判定，积累下一版</value>
+  </data>
+  <data name="LoopHint" xml:space="preserve">
+    <value>和 Loop 对话：说出你的体验、不满或改进建议（Ctrl+Enter 发送）</value>
+  </data>
+  <data name="NewSessionSubtitle" xml:space="preserve">
+    <value>选择项目并描述任务，开始一个新的会话</value>
+  </data>
+  <data name="NewSessionHint" xml:space="preserve">
+    <value>描述任务，例如：为这个项目补一个 README（Ctrl+Enter 开始）</value>
+  </data>
+  <data name="Start" xml:space="preserve">
+    <value>开始</value>
+  </data>
+  <data name="NewProject" xml:space="preserve">
+    <value>＋ 新建项目…</value>
+  </data>
+  <data name="PickProject" xml:space="preserve">
+    <value>选择项目，或新建项目</value>
+  </data>
+  <data name="LanguageChanged" xml:space="preserve">
+    <value>语言已保存，重启 OpenLoop 后生效。</value>
+  </data>
+  <data name="ThemeChanged" xml:space="preserve">
+    <value>已保存，重启 OpenLoop 后生效。</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>状态</value>
+  </data>
+  <data name="StateIdle" xml:space="preserve">
+    <value>待开始</value>
+  </data>
+  <data name="Model" xml:space="preserve">
+    <value>模型</value>
+  </data>
+  <data name="Effort" xml:space="preserve">
+    <value>强度</value>
+  </data>
+  <data name="Cost" xml:space="preserve">
+    <value>成本</value>
+  </data>
+  <data name="Trace" xml:space="preserve">
+    <value>trace</value>
+  </data>
+  <data name="EvolveIdle" xml:space="preserve">
+    <value>就绪</value>
+  </data>
+  <data name="StateDone" xml:space="preserve">
+    <value>已结束</value>
+  </data>
+  <data name="StateRunning" xml:space="preserve">
+    <value>运行中</value>
+  </data>
+  <data name="StateInterrupted" xml:space="preserve">
+    <value>中断</value>
+  </data>
+  <data name="Context" xml:space="preserve">
+    <value>上下文</value>
+  </data>
+  <data name="Workspace" xml:space="preserve">
+    <value>工作区</value>
+  </data>
+  <data name="EvolveRunning" xml:space="preserve">
+    <value>运行中</value>
+  </data>
+  <data name="Tasks" xml:space="preserve">
+    <value>考核题</value>
+  </data>
+  <data name="EffortHigh" xml:space="preserve">
+    <value>高</value>
+  </data>
+  <data name="EffortAuto" xml:space="preserve">
+    <value>自动</value>
+  </data>
+  <data name="EffortLow" xml:space="preserve">
+    <value>低</value>
+  </data>
+  <data name="EffortMedium" xml:space="preserve">
+    <value>中</value>
+  </data>
+  <data name="Features" xml:space="preserve">
+    <value>特征</value>
+  </data>
+  <data name="NoMessages" xml:space="preserve">
+    <value>暂无对话</value>
+  </data>
+  <data name="Rules" xml:space="preserve">
+    <value>规则</value>
+  </data>
+  <data name="SettingsModel" xml:space="preserve">
+    <value>模型</value>
+  </data>
+  <data name="StatusProposing" xml:space="preserve">
+    <value>正在候选</value>
+  </data>
+  <data name="StatusThinking" xml:space="preserve">
+    <value>思考中…</value>
+  </data>
+  <data name="SettingsSave" xml:space="preserve">
+    <value>保存</value>
+  </data>
+  <data name="FetchFreeModels" xml:space="preserve">
+    <value>免费模型</value>
+  </data>
+  <data name="SettingsTest" xml:space="preserve">
+    <value>测试连接</value>
+  </data>
+  <data name="SettingsKey" xml:space="preserve">
+    <value>密钥</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="SettingsBaseUrl" xml:space="preserve">
+    <value>接口地址</value>
+  </data>
+  <data name="StatusEvolveFailed" xml:space="preserve">
+    <value>演进失败</value>
+  </data>
+  <data name="StatusPaused" xml:space="preserve">
+    <value>已暂停</value>
+  </data>
+  <data name="SettingsCancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="StatusRolledBack" xml:space="preserve">
+    <value>回滚到 v{0}（新版 v{1}）</value>
+  </data>
+  <data name="TasksUnit" xml:space="preserve">
+    <value>道</value>
+  </data>
+</root>

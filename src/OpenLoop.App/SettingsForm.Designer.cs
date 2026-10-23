@@ -61,9 +61,9 @@ namespace OpenLoop.App
             _root.BackColor = UiStyle.Surface;
             _root.Padding = new Padding(16, 12, 16, 8);
 
-            ConfigureLabel(_lblBaseUrl, "接口地址");
-            ConfigureLabel(_lblModel, "模型");
-            ConfigureLabel(_lblKey, "密钥");
+            ConfigureLabel(_lblBaseUrl, Localization.T("SettingsBaseUrl"));
+            ConfigureLabel(_lblModel, Localization.T("SettingsModel"));
+            ConfigureLabel(_lblKey, Localization.T("SettingsKey"));
 
             _txtBaseUrl.Dock = DockStyle.Fill;
             _txtBaseUrl.Radius = 8;
@@ -77,7 +77,7 @@ namespace OpenLoop.App
             _cboModel.Items.Add(new AntdUI.SelectItem("openrouter/free") { Tag = "openrouter/free" });
 
             _btnFetch.Name = "btnFetch";
-            _btnFetch.Text = "免费模型";
+            _btnFetch.Text = Localization.T("FetchFreeModels");
             _btnFetch.Radius = 8;
             _btnFetch.IconSvg = UiIcons.Of(UiIcons.Refresh, UiStyle.Text);
             _btnFetch.Dock = DockStyle.Fill;
@@ -110,7 +110,7 @@ namespace OpenLoop.App
             _buttons.Margin = new Padding(0);
 
             _btnSave.Name = "btnSave";
-            _btnSave.Text = "保存";
+            _btnSave.Text = Localization.T("SettingsSave");
             _btnSave.Type = AntdUI.TTypeMini.Primary;
             _btnSave.Radius = 8;
             _btnSave.Size = new Size(92, 34);
@@ -118,14 +118,14 @@ namespace OpenLoop.App
             _btnSave.Click += OnSave;
 
             _btnCancel.Name = "btnCancel";
-            _btnCancel.Text = "取消";
+            _btnCancel.Text = Localization.T("SettingsCancel");
             _btnCancel.Radius = 8;
             _btnCancel.Size = new Size(84, 34);
             _btnCancel.Margin = new Padding(8, 6, 0, 0);
             _btnCancel.Click += OnCancel;
 
             _btnTest.Name = "btnTest";
-            _btnTest.Text = "测试连接";
+            _btnTest.Text = Localization.T("SettingsTest");
             _btnTest.Radius = 8;
             _btnTest.Size = new Size(104, 34);
             _btnTest.Margin = new Padding(8, 6, 0, 0);
@@ -160,7 +160,7 @@ namespace OpenLoop.App
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            Text = "设置";
+            Text = Localization.T("SettingsTitle");
             Controls.Add(_root);
 
             ResumeLayout(false);

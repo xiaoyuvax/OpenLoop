@@ -97,7 +97,7 @@ namespace OpenLoop.App
                         SubText = path
                     });
                 }
-                _selProject.Items.Add(new AntdUI.SelectItem("＋ 新建项目…") { Tag = NewProjectTag });
+                _selProject.Items.Add(new AntdUI.SelectItem(Localization.T("NewProject")) { Tag = NewProjectTag });
 
                 _selProject.SelectedValue = _projects.Contains(_project, StringComparer.OrdinalIgnoreCase)
                     ? _project

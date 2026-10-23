@@ -64,6 +64,7 @@ namespace OpenLoop.App
             SelectEffort(_effort);
 
             _book.ReplaceAll(ChatStore.Load(_workspace, "loop"), null);
+            _chat.PlaceholderText = Localization.T("NoMessages");
             _chat.Bind(_book);
             _lblSub.Text = $"工作区 · {_workspace}";
             _chat.ScrollToEnd();
@@ -373,6 +374,8 @@ namespace OpenLoop.App
         {
             var form = FindForm();
             if (form == null) return;
+            title = Localization.Translate(title);
+            text = Localization.Translate(text);
             if (error)
                 AntdUI.Notification.error(form, title, text, AntdUI.TAlignFrom.TR, null, 5);
             else

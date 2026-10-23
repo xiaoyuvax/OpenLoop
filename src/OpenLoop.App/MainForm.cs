@@ -141,7 +141,7 @@ namespace OpenLoop.App
             _loopView.Initialize(target, () => _settings);
             _loopPage = new AntdUI.TabPage
             {
-                Text = "Loop",
+                Text = Localization.T("TabLoop"),
                 IconSvg = UiIcons.Dot(UiStyle.Loop),
                 ReadOnly = false,
                 Tag = _loopView,
@@ -338,7 +338,7 @@ namespace OpenLoop.App
 
             _newPage = new AntdUI.TabPage
             {
-                Text = "新建会话",
+                Text = Localization.T("NewSession"),
                 IconSvg = UiIcons.Of(UiIcons.Edit, UiStyle.Muted),
                 ReadOnly = false,
                 Tag = view,
@@ -366,6 +366,8 @@ namespace OpenLoop.App
                     case "theme-light": ApplyTheme("light"); break;
                     case "theme-dark": ApplyTheme("dark"); break;
                     case "theme-grayblue": ApplyTheme("grayblue"); break;
+                    case "lang-zh": ApplyLanguage("zh"); break;
+                    case "lang-en": ApplyLanguage("en"); break;
                     case "settings": OpenSettings(); break;
                     case "exit": Close(); break;
                 }
@@ -377,6 +379,13 @@ namespace OpenLoop.App
         }
 
         private void OnSettings(object sender, EventArgs e) => OpenSettings();
+
+        private void ApplyLanguage(string language)
+        {
+            _settings.Language = language;
+            try { _settings.Save(); } catch (Exception ex) { AppLog.Warn("保存语言失败：" + ex.Message); }
+            AntdUI.Notification.info(this, "Language", Localization.T("LanguageChanged"), AntdUI.TAlignFrom.TR, null, 3);
+        }
 
         private void ApplyTheme(string theme)
         {

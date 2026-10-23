@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AppTitle" xml:space="preserve">
+    <value>OpenLoop</value>
+  </data>
+  <data name="AppSubtitle" xml:space="preserve">
+    <value>Multi-session · closing a tab keeps it running</value>
+  </data>
+  <data name="MenuNewSession" xml:space="preserve">
+    <value>New session…</value>
+  </data>
+  <data name="MenuSessionList" xml:space="preserve">
+    <value>Sessions</value>
+  </data>
+  <data name="MenuLoop" xml:space="preserve">
+    <value>Loop chat</value>
+  </data>
+  <data name="MenuThemeLight" xml:space="preserve">
+    <value>Theme: Light</value>
+  </data>
+  <data name="MenuThemeDark" xml:space="preserve">
+    <value>Theme: Dark</value>
+  </data>
+  <data name="MenuThemeGrayBlue" xml:space="preserve">
+    <value>Theme: Gray blue</value>
+  </data>
+  <data name="MenuLanguageZh" xml:space="preserve">
+    <value>Language: 中文</value>
+  </data>
+  <data name="MenuLanguageEn" xml:space="preserve">
+    <value>Language: English</value>
+  </data>
+  <data name="MenuSettings" xml:space="preserve">
+    <value>Settings…</value>
+  </data>
+  <data name="MenuExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="TabOverview" xml:space="preserve">
+    <value>Sessions</value>
+  </data>
+  <data name="Projects" xml:space="preserve">
+    <value>Projects</value>
+  </data>
+  <data name="SearchSessions" xml:space="preserve">
+    <value>Search sessions</value>
+  </data>
+  <data name="NewSession" xml:space="preserve">
+    <value>New session</value>
+  </data>
+  <data name="ColState" xml:space="preserve">
+    <value>State</value>
+  </data>
+  <data name="ColSession" xml:space="preserve">
+    <value>Session</value>
+  </data>
+  <data name="ColStarted" xml:space="preserve">
+    <value>Started</value>
+  </data>
+  <data name="ColSteps" xml:space="preserve">
+    <value>Steps</value>
+  </data>
+  <data name="EmptySessions" xml:space="preserve">
+    <value>No sessions in this project yet</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Send" xml:space="preserve">
+    <value>Send</value>
+  </data>
+  <data name="Stop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="FreeOnly" xml:space="preserve">
+    <value>Free only</value>
+  </data>
+  <data name="ModeTask" xml:space="preserve">
+    <value>Task</value>
+  </data>
+  <data name="ModeCriterion" xml:space="preserve">
+    <value>State criteria</value>
+  </data>
+  <data name="ModeCorrection" xml:space="preserve">
+    <value>Correction</value>
+  </data>
+  <data name="ComposerHint" xml:space="preserve">
+    <value>Describe a task, or state criteria / corrections (Ctrl+Enter to send)</value>
+  </data>
+  <data name="TabLoop" xml:space="preserve">
+    <value>Loop</value>
+  </data>
+  <data name="TabDetail" xml:space="preserve">
+    <value>Details</value>
+  </data>
+  <data name="Evolve" xml:space="preserve">
+    <value>Evolve one round</value>
+  </data>
+  <data name="Rollback" xml:space="preserve">
+    <value>Roll back</value>
+  </data>
+  <data name="OpenLoopChat" xml:space="preserve">
+    <value>Open Loop chat</value>
+  </data>
+  <data name="LoopSubtitle" xml:space="preserve">
+    <value>Observe the Worker and user verdicts, accumulate the next version</value>
+  </data>
+  <data name="LoopHint" xml:space="preserve">
+    <value>Talk to the Loop: share friction, complaints or improvement ideas (Ctrl+Enter to send)</value>
+  </data>
+  <data name="NewSessionSubtitle" xml:space="preserve">
+    <value>Pick a project, describe a task, start a new session</value>
+  </data>
+  <data name="NewSessionHint" xml:space="preserve">
+    <value>Describe a task, e.g. add a README for this project (Ctrl+Enter to start)</value>
+  </data>
+  <data name="Start" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="NewProject" xml:space="preserve">
+    <value>+ New project…</value>
+  </data>
+  <data name="PickProject" xml:space="preserve">
+    <value>Pick a project, or create one</value>
+  </data>
+  <data name="LanguageChanged" xml:space="preserve">
+    <value>Language saved. Restart OpenLoop to apply.</value>
+  </data>
+  <data name="ThemeChanged" xml:space="preserve">
+    <value>Saved. Restart OpenLoop to apply.</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="StateIdle" xml:space="preserve">
+    <value>Pending</value>
+  </data>
+  <data name="Model" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="Effort" xml:space="preserve">
+    <value>Effort</value>
+  </data>
+  <data name="Cost" xml:space="preserve">
+    <value>Cost</value>
+  </data>
+  <data name="Trace" xml:space="preserve">
+    <value>trace</value>
+  </data>
+  <data name="EvolveIdle" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="StateDone" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="StateRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="StateInterrupted" xml:space="preserve">
+    <value>Interrupted</value>
+  </data>
+  <data name="Context" xml:space="preserve">
+    <value>Context</value>
+  </data>
+  <data name="Workspace" xml:space="preserve">
+    <value>Workspace</value>
+  </data>
+  <data name="EvolveRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="Tasks" xml:space="preserve">
+    <value>Eval tasks</value>
+  </data>
+  <data name="EffortHigh" xml:space="preserve">
+    <value>High</value>
+  </data>
+  <data name="EffortAuto" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="EffortLow" xml:space="preserve">
+    <value>Low</value>
+  </data>
+  <data name="EffortMedium" xml:space="preserve">
+    <value>Medium</value>
+  </data>
+  <data name="Features" xml:space="preserve">
+    <value>features</value>
+  </data>
+  <data name="NoMessages" xml:space="preserve">
+    <value>No messages yet</value>
+  </data>
+  <data name="Rules" xml:space="preserve">
+    <value>rules</value>
+  </data>
+  <data name="StatusEvolveFailed" xml:space="preserve">
+    <value>Evolve failed</value>
+  </data>
+  <data name="FetchFreeModels" xml:space="preserve">
+    <value>Free models</value>
+  </data>
+  <data name="SettingsModel" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="SettingsSave" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="StatusThinking" xml:space="preserve">
+    <value>Thinking…</value>
+  </data>
+  <data name="StatusProposing" xml:space="preserve">
+    <value>Proposing…</value>
+  </data>
+  <data name="SettingsTest" xml:space="preserve">
+    <value>Test connection</value>
+  </data>
+  <data name="SettingsNote" xml:space="preserve">
+    <value>The key is encrypted with DPAPI for the current Windows user and stored only in %APPDATA%\\OpenLoop\\settings.json.</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="SettingsKey" xml:space="preserve">
+    <value>API key</value>
+  </data>
+  <data name="SettingsBaseUrl" xml:space="preserve">
+    <value>Base URL</value>
+  </data>
+  <data name="StatusRolledBack" xml:space="preserve">
+    <value>Rolled back to v{0} (new version v{1})</value>
+  </data>
+  <data name="SettingsCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="StatusPaused" xml:space="preserve">
+    <value>Paused</value>
+  </data>
+  <data name="SettingsModel" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="StatusProposing" xml:space="preserve">
+    <value>Proposing…</value>
+  </data>
+  <data name="StatusThinking" xml:space="preserve">
+    <value>Thinking…</value>
+  </data>
+  <data name="SettingsSave" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="FetchFreeModels" xml:space="preserve">
+    <value>Free models</value>
+  </data>
+  <data name="SettingsTest" xml:space="preserve">
+    <value>Test connection</value>
+  </data>
+  <data name="SettingsKey" xml:space="preserve">
+    <value>API key</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="SettingsBaseUrl" xml:space="preserve">
+    <value>Base URL</value>
+  </data>
+  <data name="StatusEvolveFailed" xml:space="preserve">
+    <value>Evolve failed</value>
+  </data>
+  <data name="StatusPaused" xml:space="preserve">
+    <value>Paused</value>
+  </data>
+  <data name="SettingsCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="StatusRolledBack" xml:space="preserve">
+    <value>Rolled back to v{0} (new version v{1})</value>
+  </data>
+  <data name="TasksUnit" xml:space="preserve">
+    <value>tasks</value>
+  </data>
+</root>

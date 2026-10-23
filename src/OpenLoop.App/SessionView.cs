@@ -44,6 +44,7 @@ namespace OpenLoop.App
 
             _lblTitle.Text = session.Title;
             _lblPath.Text = session.Workspace;
+            _chat.PlaceholderText = Localization.T("NoMessages");
             _chat.Bind(session.Book);
             SelectEffort(_effort);
             _freeSwitch.Checked = _onlyFree;
@@ -52,6 +53,7 @@ namespace OpenLoop.App
             RefreshLedgerInfo();
             UpdateContext(null);
 
+            _lblStatus.TextChanged += OnStatusTextChanged;
             ModelCatalog.Changed += OnCatalogChanged;
             Disposed += (_, _) => ModelCatalog.Changed -= OnCatalogChanged;
         }
@@ -215,10 +217,17 @@ namespace OpenLoop.App
 
         private void ApplyDetail()
         {
-            _lblDModel.Text = "模型: " + (string.IsNullOrWhiteSpace(_model) ? "—" : _model);
-            _lblDEffort.Text = "强度: " + (_effort switch { "low" => "低", "medium" => "中", "high" => "高", _ => "自动" });
-            _lblDCost.Text = "成本/步数: " + (_lblCost.Text.Replace("成本: ", "") );
-            _lblDStatus.Text = "状态: " + _lblStatus.Text.Replace("状态: ", "");
+            string effort = _effort switch
+            {
+                "low" => Localization.T("EffortLow"),
+                "medium" => Localization.T("EffortMedium"),
+                "high" => Localization.T("EffortHigh"),
+                _ => Localization.T("EffortAuto")
+            };
+            _lblDModel.Text = Localization.T("Model") + ": " + (string.IsNullOrWhiteSpace(_model) ? "—" : _model);
+            _lblDEffort.Text = Localization.T("Effort") + ": " + effort;
+            _lblDCost.Text = Localization.T("Cost") + ": " + _lblCost.Text.Replace(Localization.T("Cost") + ": ", "");
+            _lblDStatus.Text = Localization.T("Status") + ": " + _lblStatus.Text.Replace(Localization.T("Status") + ": ", "");
         }
 
         private void OnInputKeyDown(object sender, KeyEventArgs e)
@@ -301,6 +310,17 @@ namespace OpenLoop.App
             FillModels();
         }
 
+        private bool _statusBusy;
+
+        private void OnStatusTextChanged(object sender, EventArgs e)
+        {
+            if (_statusBusy) return;
+            string translated = Localization.Translate(_lblStatus.Text);
+            if (translated == _lblStatus.Text) return;
+            _statusBusy = true;
+            try { _lblStatus.Text = translated; } finally { _statusBusy = false; }
+        }
+
         private void OnCatalogChanged()
         {
             if (IsDisposed) return;
@@ -367,7 +387,7 @@ namespace OpenLoop.App
                 : 0F;
             _ctx.Value = ratio;
             _ctx.Text = tokens.HasValue ? $"{ratio * 100F:0}%" : "—";
-            _lblDCtx.Text = $"上下文: {(tokens.HasValue ? tokens.Value.ToString("N0") : "—")} / {limit:N0}";
+            _lblDCtx.Text = Localization.T("Context") + $": {(tokens.HasValue ? tokens.Value.ToString("N0") : "—")} / {limit:N0}";
             ApplyDetail();
         }
 
@@ -453,7 +473,7 @@ namespace OpenLoop.App
             SetRunning(true);
             SetState(SessionState.Running);
             _lblTrace.Text = "trace: " + trace.DirectoryPath;
-            _lblStatus.Text = "状态: 运行中…";
+            _lblStatus.Text = Localization.T("Status") + ": 运行中…";
             _chat.ScrollToEnd();
             trace.Message("user", $"[{tag}] {text}");
 
@@ -501,7 +521,7 @@ namespace OpenLoop.App
                 confirmContinue: AskOnUi);
 
             history.Insert(0, new LlmMessage("system", loop.BuildSystemPrompt(null, rules, AgentsInstructions.Load(workspace))));
-            _lblDef.Text = $"def: v{activation.Version} · {activation.Features.Count} 特征 · {rules.Count} 规则";
+            _lblDef.Text = $"def: v{activation.Version} · {activation.Features.Count} {Localization.T("Features")} · {rules.Count} {Localization.T("Rules")}";
 
             _cts = new CancellationTokenSource();
             var ct = _cts.Token;
@@ -528,8 +548,8 @@ namespace OpenLoop.App
                 cost = result.ChatCost;
                 trace.Finish(outcome, turn.AssistantText, result.ChatCost);
 
-                _lblCost.Text = $"成本: {(result.ChatCost.HasValue ? result.ChatCost.Value.ToString("0.0000") : "—")} · {result.Steps.Count} 步";
-                _lblStatus.Text = $"状态: {outcome}" + (result.Compressed ? "（上下文已压缩）" : "");
+                _lblCost.Text = Localization.T("Cost") + $": {(result.ChatCost.HasValue ? result.ChatCost.Value.ToString("0.0000") : "—")} · {result.Steps.Count} 步";
+                _lblStatus.Text = Localization.T("Status") + $": {outcome}" + (result.Compressed ? "（上下文已压缩）" : "");
                 UpdateContext(result.ContextTokens);
 
                 if (outcome == "ok")
@@ -545,7 +565,7 @@ namespace OpenLoop.App
                 if (string.IsNullOrEmpty(turn.AssistantText)) turn.AssistantText = "（已停止）";
                 trace.Message("assistant", turn.AssistantText);
                 trace.Finish("stopped", turn.AssistantText);
-                _lblStatus.Text = "状态: stopped";
+                _lblStatus.Text = Localization.T("Status") + ": stopped";
             }
             catch (Exception ex)
             {
@@ -554,7 +574,7 @@ namespace OpenLoop.App
                 turn.ToolStatusText = null;
                 turn.AssistantText = "执行失败：" + ex.Message;
                 trace.Finish("error", turn.AssistantText);
-                _lblStatus.Text = "状态: error";
+                _lblStatus.Text = Localization.T("Status") + ": error";
                 Notify("执行失败", ex.Message, error: true);
             }
             finally
@@ -608,7 +628,7 @@ namespace OpenLoop.App
             if (!Directory.Exists(workspace))
             {
                 _lblDef.Text = "def: —";
-                _lblTasks.Text = "考核题: —";
+                _lblTasks.Text = Localization.T("Tasks") + ": —";
                 return;
             }
             try
@@ -617,13 +637,13 @@ namespace OpenLoop.App
                 var current = ledger.Activations().LastOrDefault();
                 _lblDef.Text = current == null
                     ? "def: —（首次运行后初始化）"
-                    : $"def: v{current.Version} · {current.Features.Count} 特征";
-                _lblTasks.Text = $"考核题: {TaskSet.Load(ledger.EvalDir).Tasks.Count} 道";
+                    : $"def: v{current.Version} · {current.Features.Count} {Localization.T("Features")}";
+                _lblTasks.Text = Localization.T("Tasks") + $": {TaskSet.Load(ledger.EvalDir).Tasks.Count} {Localization.T("TasksUnit")}";
             }
             catch (Exception ex)
             {
                 _lblDef.Text = "def: 读取失败：" + ex.Message;
-                _lblTasks.Text = "考核题: —";
+                _lblTasks.Text = Localization.T("Tasks") + ": —";
             }
         }
 
@@ -675,7 +695,7 @@ namespace OpenLoop.App
             var ct = _cts.Token;
             SetRunning(true);
             SetState(SessionState.Running);
-            _lblStatus.Text = "状态: 构思中…";
+            _lblStatus.Text = Localization.T("Status") + ": 构思中…";
 
             try
             {
@@ -683,13 +703,13 @@ namespace OpenLoop.App
                 var proposal = await loopAgent.ProposeAsync(loopAgent.BuildPacket(ledger), baseline, features, ct);
                 if (proposal.Error != null)
                 {
-                    _lblStatus.Text = "状态: 候选被拒";
+                    _lblStatus.Text = Localization.T("Status") + ": 候选被拒";
                     string problems = proposal.Problems.Count == 0 ? "" : "\n" + string.Join("\n", proposal.Problems);
                     Notify("候选被拒", proposal.Error + problems, error: true);
                     return;
                 }
 
-                _lblStatus.Text = $"状态: 评审 {tasks.Tasks.Count} 道题（{tasks.Tasks.Count * 2} 次运行）…";
+                _lblStatus.Text = Localization.T("Status") + $": 评审 {tasks.Tasks.Count} 道题（{tasks.Tasks.Count * 2} 次运行）…";
                 var runner = new AgentTaskRunner(
                     _ => new OpenAiCompatibleReasoner(baseUrl, model, ResolveKey(), _effort),
                     features, workspace, ledger.EvalDir);
@@ -697,21 +717,21 @@ namespace OpenLoop.App
                 var report = await gate.EvaluateAsync(baseline, proposal.Candidate, ct);
 
                 _lblStatus.Text = report.Adopted
-                    ? $"状态: 已采纳 v{report.CandidateVersion}"
-                    : "状态: 保留旧版";
+                    ? Localization.T("Status") + $": 已采纳 v{report.CandidateVersion}"
+                    : Localization.T("Status") + ": 保留旧版";
                 Notify(report.Adopted ? "已更替" : "未更替",
                     $"候选 {report.CandidatePassed}/{report.Tasks.Count}，基线 {report.BaselinePassed}/{report.Tasks.Count}");
                 SetState(SessionState.Done);
             }
             catch (OperationCanceledException)
             {
-                _lblStatus.Text = "状态: 已停止";
+                _lblStatus.Text = Localization.T("Status") + ": 已停止";
                 SetState(SessionState.Interrupted);
             }
             catch (Exception ex)
             {
                 AppLog.Error("演进失败", ex);
-                _lblStatus.Text = "状态: 演进失败";
+                _lblStatus.Text = Localization.T("Status") + ": " + Localization.T("StatusEvolveFailed");
                 SetState(SessionState.Interrupted);
                 Notify("演进失败", ex.Message, error: true);
             }
@@ -751,7 +771,7 @@ namespace OpenLoop.App
 
                 var restored = ledger.Rollback(target, "user", $"手动回滚到 v{target}");
                 RefreshLedgerInfo();
-                _lblStatus.Text = $"状态: 已退回 v{target}（新版本 v{restored.Version}）";
+                _lblStatus.Text = Localization.T("Status") + $": 已退回 v{target}（新版本 v{restored.Version}）";
                 Notify("已回滚", $"当前版本 v{restored.Version}");
             }
             catch (Exception ex)

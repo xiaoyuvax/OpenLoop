@@ -192,7 +192,7 @@ namespace OpenLoop.App
             _sideTabs.Height = 32;
             _sideTabs.Margin = new Padding(0);
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Loop" });
-            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "详情" });
+            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabDetail") });
             _sideTabs.SelectIndex = 0;
             _sideTabs.SelectIndexChanged += OnSidePageChanged;
 
@@ -232,20 +232,20 @@ namespace OpenLoop.App
             _lblTrace.Margin = new Padding(0, 0, 0, 8);
 
             _lblCost.AutoSize = true;
-            _lblCost.Text = "成本: —";
+            _lblCost.Text = Localization.T("Cost") + ": —";
             _lblCost.Font = new Font("Segoe UI", 9F);
             _lblCost.ForeColor = UiStyle.Muted;
             _lblCost.Margin = new Padding(0, 0, 0, 8);
 
             _lblStatus.AutoSize = true;
             _lblStatus.MaximumSize = new Size(260, 0);
-            _lblStatus.Text = "状态: 就绪";
+            _lblStatus.Text = Localization.T("Status") + ": —";
             _lblStatus.Font = new Font("Segoe UI", 9F);
             _lblStatus.ForeColor = UiStyle.Text;
             _lblStatus.Margin = new Padding(0, 0, 0, 16);
 
             _btnEvolve.Name = "btnEvolve";
-            _btnEvolve.Text = "演进一轮";
+            _btnEvolve.Text = Localization.T("Evolve");
             _btnEvolve.Radius = 8;
             _btnEvolve.Height = 34;
             _btnEvolve.Width = 236;
@@ -254,7 +254,7 @@ namespace OpenLoop.App
             _btnEvolve.Click += OnEvolve;
 
             _btnRollback.Name = "btnRollback";
-            _btnRollback.Text = "回滚上一版";
+            _btnRollback.Text = Localization.T("Rollback");
             _btnRollback.Radius = 8;
             _btnRollback.Height = 34;
             _btnRollback.Width = 236;
@@ -263,7 +263,7 @@ namespace OpenLoop.App
             _btnRollback.Click += OnRollback;
 
             _btnOpenLoop.Name = "btnOpenLoop";
-            _btnOpenLoop.Text = "打开 Loop 会话";
+            _btnOpenLoop.Text = Localization.T("OpenLoopChat");
             _btnOpenLoop.Radius = 8;
             _btnOpenLoop.Height = 34;
             _btnOpenLoop.Width = 236;
@@ -272,32 +272,32 @@ namespace OpenLoop.App
             _btnOpenLoop.Click += OnOpenLoop;
 
             _lblDModel.AutoSize = true;
-            _lblDModel.Text = "模型: —";
+            _lblDModel.Text = Localization.T("Model") + ": —";
             _lblDModel.Font = new Font("Segoe UI", 9F);
             _lblDModel.ForeColor = UiStyle.Text;
             _lblDModel.MaximumSize = new Size(260, 0);
             _lblDModel.Margin = new Padding(0, 2, 0, 8);
 
             _lblDEffort.AutoSize = true;
-            _lblDEffort.Text = "强度: 自动";
+            _lblDEffort.Text = Localization.T("Effort") + ": —";
             _lblDEffort.Font = new Font("Segoe UI", 9F);
             _lblDEffort.ForeColor = UiStyle.Muted;
             _lblDEffort.Margin = new Padding(0, 0, 0, 8);
 
             _lblDCtx.AutoSize = true;
-            _lblDCtx.Text = "上下文: —";
+            _lblDCtx.Text = Localization.T("Context") + ": —";
             _lblDCtx.Font = new Font("Segoe UI", 9F);
             _lblDCtx.ForeColor = UiStyle.Muted;
             _lblDCtx.Margin = new Padding(0, 0, 0, 8);
 
             _lblDCost.AutoSize = true;
-            _lblDCost.Text = "成本: —";
+            _lblDCost.Text = Localization.T("Cost") + ": —";
             _lblDCost.Font = new Font("Segoe UI", 9F);
             _lblDCost.ForeColor = UiStyle.Muted;
             _lblDCost.Margin = new Padding(0, 0, 0, 8);
 
             _lblDStatus.AutoSize = true;
-            _lblDStatus.Text = "状态: 就绪";
+            _lblDStatus.Text = Localization.T("Status") + ": —";
             _lblDStatus.Font = new Font("Segoe UI", 9F);
             _lblDStatus.ForeColor = UiStyle.Text;
             _lblDStatus.MaximumSize = new Size(260, 0);
@@ -344,7 +344,7 @@ namespace OpenLoop.App
             _txtInput.BorderWidth = 1;
             _txtInput.BackColor = UiStyle.Surface;
             _txtInput.Font = new Font("Segoe UI", 10F);
-            _txtInput.PlaceholderText = "描述任务，或声明判据 / 纠正（Ctrl+Enter 发送）";
+            _txtInput.PlaceholderText = Localization.T("ComposerHint");
             _txtInput.KeyDown += OnInputKeyDown;
 
             _toolbar.Dock = DockStyle.Fill;
@@ -364,14 +364,14 @@ namespace OpenLoop.App
             _modeControl.Height = 34;
             _modeControl.Width = 300;
             _modeControl.Margin = new Padding(0, 0, 8, 0);
-            _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = "任务" });
-            _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = "声明判据" });
-            _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = "这是纠正" });
+            _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("ModeTask") });
+            _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("ModeCriterion") });
+            _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("ModeCorrection") });
             _modeControl.SelectIndex = 0;
             _modeControl.SelectIndexChanged += OnModeChanged;
 
             _btnStop.Name = "btnStop";
-            _btnStop.Text = "停止";
+            _btnStop.Text = Localization.T("Stop");
             _btnStop.Type = AntdUI.TTypeMini.Error;
             _btnStop.Ghost = true;
             _btnStop.Radius = 8;
@@ -409,7 +409,7 @@ namespace OpenLoop.App
 
             _lblFree.Name = "lblFree";
             _lblFree.AutoSize = true;
-            _lblFree.Text = "只看免费";
+            _lblFree.Text = Localization.T("FreeOnly");
             _lblFree.Font = new Font("Segoe UI", 9F);
             _lblFree.ForeColor = UiStyle.Muted;
             _lblFree.Margin = new Padding(0, 9, 4, 0);
@@ -420,10 +420,10 @@ namespace OpenLoop.App
             _selEffort.Radius = 8;
             _selEffort.PrefixSvg = UiIcons.Of(UiIcons.Effort, UiStyle.Muted);
             _selEffort.Margin = new Padding(6, 0, 0, 0);
-            _selEffort.Items.Add(new AntdUI.SelectItem("自动") { Tag = "" });
-            _selEffort.Items.Add(new AntdUI.SelectItem("低") { Tag = "low" });
-            _selEffort.Items.Add(new AntdUI.SelectItem("中") { Tag = "medium" });
-            _selEffort.Items.Add(new AntdUI.SelectItem("高") { Tag = "high" });
+            _selEffort.Items.Add(new AntdUI.SelectItem(Localization.T("EffortAuto")) { Tag = "" });
+            _selEffort.Items.Add(new AntdUI.SelectItem(Localization.T("EffortLow")) { Tag = "low" });
+            _selEffort.Items.Add(new AntdUI.SelectItem(Localization.T("EffortMedium")) { Tag = "medium" });
+            _selEffort.Items.Add(new AntdUI.SelectItem(Localization.T("EffortHigh")) { Tag = "high" });
             _selEffort.SelectedIndex = 0;
             _selEffort.SelectedValueChanged += OnEffortChanged;
 
@@ -437,7 +437,7 @@ namespace OpenLoop.App
             _headerRight.Controls.Add(_ctx);
 
             _btnSend.Name = "btnSend";
-            _btnSend.Text = "发送";
+            _btnSend.Text = Localization.T("Send");
             _btnSend.Type = AntdUI.TTypeMini.Primary;
             _btnSend.Radius = 8;
             _btnSend.Width = 104;

@@ -8,6 +8,7 @@ namespace OpenLoop.App
             ApplicationConfiguration.Initialize();
 
             var startup = AppSettings.Load();
+            Localization.Apply(startup.Language);
             UiStyle.Apply(UiStyle.Parse(startup.Theme));
 
             Application.ThreadException += (_, e) => AppLog.Error("未处理的界面异常", e.Exception);
