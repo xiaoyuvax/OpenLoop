@@ -85,10 +85,9 @@ namespace OpenLoop.Core.Tests
             var scope = new WorkspaceScope(_root);
 
             var result = await new RunCommandTool(scope).ExecuteAsync(
-                Args(("command", "echo hello"), ("timeoutSeconds", 30)), default);
+                Args(("argv", new[] { "dotnet", "--version" }), ("timeoutSeconds", 30)), default);
 
             Assert.True(result.Ok);
-            Assert.Contains("hello", result.Data);
             Assert.Contains("exit=0", result.Data);
         }
     }

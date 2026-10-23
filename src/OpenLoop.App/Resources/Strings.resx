@@ -301,4 +301,14 @@
   <data name="MenuLanguageAuto" xml:space="preserve">
     <value>语言：跟随系统</value>
   </data>
+  <data name="ApproveTitle" xml:space="preserve">
+    <value>需要确认</value>
+  </data>
+  <data name="ApproveCommand" xml:space="preserve">
+    <value>即将执行命令（{0}）：
+
+{1}
+
+允许执行吗？</value>
+  </data>
 </root>

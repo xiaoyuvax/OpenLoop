@@ -26,6 +26,30 @@ namespace OpenLoop.Core.Tools
             return string.IsNullOrWhiteSpace(s) ? fallback : s;
         }
 
+        public IReadOnlyList<string> StrList(string key)
+        {
+            if (!_raw.TryGetValue(key, out var v) || v == null) return Array.Empty<string>();
+            var list = new List<string>();
+            switch (v)
+            {
+                case JsonElement je when je.ValueKind == JsonValueKind.Array:
+                    foreach (var item in je.EnumerateArray())
+                        list.Add(item.ValueKind == JsonValueKind.String ? item.GetString() : item.ToString());
+                    break;
+                case JsonElement je when je.ValueKind == JsonValueKind.String:
+                    list.Add(je.GetString());
+                    break;
+                case IEnumerable<object> items:
+                    foreach (var item in items)
+                        list.Add(Convert.ToString(item, System.Globalization.CultureInfo.InvariantCulture));
+                    break;
+                default:
+                    list.Add(Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture));
+                    break;
+            }
+            return list.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToList();
+        }
+
         public int Int(string key, int fallback)
         {
             if (!_raw.TryGetValue(key, out var v) || v == null) return fallback;

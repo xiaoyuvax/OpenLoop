@@ -7,6 +7,7 @@ using OpenLoop.Core.Messages;
 using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Store;
 using OpenLoop.Core.Tools;
+using OpenLoop.Core.Safety;
 using OpenLoop.Core.Trace;
 
 namespace OpenLoop.App
@@ -433,7 +434,9 @@ namespace OpenLoop.App
             }
 
             var scope = new WorkspaceScope(workspace);
-            var tools = ToolRegistry.Workspace(scope);
+            var tools = ToolRegistry.Workspace(scope, ApproveCommand);
+            string checkpoint = Snapshots.Create(workspace, "worker");
+            if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
             var reasoner = new OpenAiCompatibleReasoner(baseUrl, model, ResolveKey(), _effort);
 
             Ledger ledger;
@@ -843,6 +846,9 @@ namespace OpenLoop.App
             if (InvokeRequired) Invoke(action);
             else action();
         }
+
+        private bool ApproveCommand(OpenLoop.Core.Tools.Builtin.CommandRequest request)
+            => AskOnUi(string.Format(Localization.T("ApproveCommand"), request.Reason, request.Line));
 
         private bool AskOnUi(string message)
         {

@@ -447,7 +447,7 @@ public sealed class AgentPolicy
 | `arrow_up_color_16xLG` 换成自绘后观感变化 | 自绘保持 16×16 与同色，冒烟时肉眼核对 |
 | 长任务界面像卡住 | **已解决**：流式 SSE + ChatFlow 的 UpdateStreamingMessage；工具调用片段不回显 |
 | 单次 A/B 噪声 | 与本阶段无关（M3 才用），届时靠"判据确定 + 平局判旧" |
-| `run_command` 无沙箱 | v0 明示：仅在自己信任的工作目录使用；后续再议 |
+| `run_command` 无沙箱 | **P0 已落地**（见 §10）：argv-only、路径 realpath、环境白名单、危险命令拒绝/风险命令审批、每轮 git 快照、超时与输出上限 |
 | Core 里混入 UI 依赖 | 验收项写死：`OpenLoop.Core.csproj` 无 `UseWindowsForms`、无 `PackageReference` |
 
 ---
@@ -458,3 +458,20 @@ public sealed class AgentPolicy
 - Puppet 接入（`/agent/*`、`/appagent/*`、ActionHub）
 - 主题系统、自定义绘制控件、第三方 UI 包
 - VeniceMan 改造（M1.5）
+
+---
+
+## 10. 安全边界（P0，已验证）
+
+跨平台、全部在 Core，不依赖 WinForms：
+
+- **不经 shell**：`run_command` 只接受 `argv: string[]`；旧的 `command` 字符串直接报错。可执行文件与参数分开传递（`ProcessStartInfo.ArgumentList`）。
+- **路径牢笼**：`WorkspaceScope` 先解析 symlink/junction（`ResolveLinkTarget`，最深已存在祖先 + 拼回尾部），再按平台比较大小写（Windows/macOS 忽略，Linux 敏感）。
+- **环境白名单**：`ChildEnvironment` 只放行 PATH/TEMP/HOME/LANG 等，API Key 等敏感变量不进子进程。
+- **命令策略**：`CommandPolicy` 分 Safe/Risky/Denied。Denied（`rm -rf /`、`format`、`shutdown`、`dd of=/dev/*`）直接拒绝；Risky（shell 解释器、`git reset --hard`、`git clean -f`、`git push`、包管理器安装、`rm/del`、`curl/wget`、`taskkill/reg/sc/net`）经 `Func<CommandRequest,bool>` 审批，无审批通道即失败。
+- **快照**：任务开始前 `git stash create` + `refs/openloop/<时间戳>`，不触碰工作区；`Snapshots.Restore` 为显式回滚入口。
+- **资源**：超时（1–600s，杀进程树）、输出截断（6KB）。
+
+测试：`tests/OpenLoop.Core.Tests/SafetyTests.cs`（拒绝/风险/安全分类、`..` 与 symlink 逃逸、环境无密钥、argv 执行、快照）。
+
+未做（P1）：Linux 的 bubblewrap/Landlock、Windows 的低完整性令牌/AppContainer、出网限制、内存上限。

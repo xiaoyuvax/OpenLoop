@@ -7,12 +7,13 @@ using OpenLoop.Core.Loop;
 using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Store;
 using OpenLoop.Core.Tools;
+using OpenLoop.Core.Safety;
 using OpenLoop.Core.Trace;
 
 namespace OpenLoop.App
 {
     /// <summary>
-    /// Loop 的会话视图（阴面）：与 Worker 页相似的聊天界面，模型是同一个 Loop agent，
+    /// Loop 的会话视图（观察者）：与 Worker 页相似的聊天界面，模型是同一个 Loop agent，
     /// 但提示词是观察者/改进者角色，历史单独存（ChatStore kind="loop"）。
     /// </summary>
     public partial class LoopView : UserControl
@@ -121,7 +122,9 @@ namespace OpenLoop.App
             }
 
             var scope = new WorkspaceScope(_workspace);
-            var tools = ToolRegistry.Workspace(scope);
+            var tools = ToolRegistry.Workspace(scope, ApproveCommand);
+            string checkpoint = Snapshots.Create(_workspace, "loop");
+            if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
             var reasoner = new OpenAiCompatibleReasoner(baseUrl, model, ResolveKey(), _effort);
             var policy = new AgentPolicy { MaxSteps = 12 };
 
@@ -368,6 +371,14 @@ namespace OpenLoop.App
                 return (bool)Invoke(new Func<bool>(() => AskOnUi(message)));
             return MessageBox.Show(FindForm(), message, "继续执行？", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
                 == DialogResult.Yes;
+        }
+
+        private bool ApproveCommand(OpenLoop.Core.Tools.Builtin.CommandRequest request)
+        {
+            string text = string.Format(Localization.T("ApproveCommand"), request.Reason, request.Line);
+            if (IsDisposed || !IsHandleCreated) return false;
+            if (InvokeRequired) return (bool)Invoke(new Func<bool>(() => ApproveCommand(request)));
+            return MessageBox.Show(FindForm(), text, Localization.T("ApproveTitle"), MessageBoxButtons.YesNo) == DialogResult.Yes;
         }
 
         private void Notify(string title, string text, bool error = false)

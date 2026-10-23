@@ -343,4 +343,14 @@
   <data name="MenuLanguageAuto" xml:space="preserve">
     <value>Language: System</value>
   </data>
+  <data name="ApproveTitle" xml:space="preserve">
+    <value>Confirmation</value>
+  </data>
+  <data name="ApproveCommand" xml:space="preserve">
+    <value>About to run a command ({0}):
+
+{1}
+
+Allow?</value>
+  </data>
 </root>

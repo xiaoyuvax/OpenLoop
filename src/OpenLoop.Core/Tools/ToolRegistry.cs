@@ -1,4 +1,5 @@
 using OpenLoop.Core.Agent;
+using OpenLoop.Core.Safety;
 
 namespace OpenLoop.Core.Tools
 {
@@ -39,13 +40,13 @@ namespace OpenLoop.Core.Tools
         }
 
         /// <summary>v0 的五个通用工作目录工具。</summary>
-        public static ToolRegistry Workspace(WorkspaceScope scope) => new(
+        public static ToolRegistry Workspace(WorkspaceScope scope, Func<Builtin.CommandRequest, bool> approve = null) => new(
         [
             new Builtin.ReadFileTool(scope),
             new Builtin.WriteFileTool(scope),
             new Builtin.ListDirTool(scope),
             new Builtin.GrepTool(scope),
-            new Builtin.RunCommandTool(scope),
+            new Builtin.RunCommandTool(scope, approve),
         ]);
     }
 }
