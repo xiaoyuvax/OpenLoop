@@ -1,6 +1,9 @@
 namespace OpenLoop.App
 {
-    /// <summary>把提供商里登记的模型与 OpenRouter 目录合并成下拉项；免费过滤只作用于目录里的模型。</summary>
+    /// <summary>
+    /// 把提供商里登记的模型与 OpenRouter 目录合并成下拉项。
+    /// 免费判定：目录里有的按 pricing；目录里没有的，id 带 free 才算免费，其余默认收费。
+    /// </summary>
     internal static class ModelChoices
     {
         public static List<ModelInfo> Build(AppSettings settings, bool onlyFree)
@@ -25,7 +28,10 @@ namespace OpenLoop.App
                     }
                     else
                     {
-                        result.Add(new ModelInfo { Id = id, Name = id, SupportsTools = true });
+                        // 目录里没有定价信息：只有名称/id 明确带 free 才算免费，其余默认收费。
+                        bool free = LooksFree(id);
+                        if (!onlyFree || free)
+                            result.Add(new ModelInfo { Id = id, Name = id, SupportsTools = true, IsFree = free });
                     }
                 }
             }
@@ -43,6 +49,10 @@ namespace OpenLoop.App
                 .OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
+
+        private static bool LooksFree(string id)
+            => !string.IsNullOrWhiteSpace(id)
+                && id.Contains("free", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>按提供商筛选模型；provider 为 null 表示全部。</summary>
         public static List<ModelInfo> FilterByProvider(List<ModelInfo> models, ProviderConfig provider)

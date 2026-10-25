@@ -15,6 +15,11 @@ namespace OpenLoop.Core.Reasoning
     public sealed class CompletionResult
     {
         public string Content { get; init; }
+
+        /// <summary>推理通道文本（上游的 reasoning / reasoning_content 增量合并）。
+        /// 有的推理模型把思考都放在这里、正文为空，调用方可用它兜底。</summary>
+        public string Reasoning { get; init; }
+
         public decimal? Cost { get; init; }
         public string FinishReason { get; init; }
 
@@ -28,8 +33,10 @@ namespace OpenLoop.Core.Reasoning
     /// <summary>可选的流式通道：每来一段就回调，返回最终完整结果。</summary>
     public interface IStreamingReasoner
     {
+        /// <param name="onDelta">正文增量。</param>
+        /// <param name="onReasoning">推理通道增量（上游不提供推理时永远不回调）。</param>
         Task<CompletionResult> StreamAsync(
             IReadOnlyList<LlmMessage> messages, Action<string> onDelta,
-            CancellationToken ct = default);
+            CancellationToken ct = default, Action<string> onReasoning = null);
     }
 }

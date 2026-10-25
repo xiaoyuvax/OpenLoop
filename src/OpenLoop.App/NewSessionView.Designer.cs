@@ -15,15 +15,19 @@ namespace OpenLoop.App
         private FlowLayoutPanel _toolbarLeft;
         private AntdUI.Select _selProvider;
         private AntdUI.Select _selModel;
+        private AntdUI.Switch _freeSwitch;
+        private AntdUI.Label _lblFree;
         private AntdUI.Select _selEffort;
         private AntdUI.Button _btnSend;
         private TableLayoutPanel _projectRow;
         private AntdUI.Label _lblProject;
         private AntdUI.Select _selProject;
         private AntdUI.Label _lblPath;
+        private ToolTip _tips;
 
         protected override void Dispose(bool disposing)
         {
+            if (disposing) _tips?.Dispose();
             if (disposing && (components != null)) components.Dispose();
             base.Dispose(disposing);
         }
@@ -31,6 +35,7 @@ namespace OpenLoop.App
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
+            _tips = new ToolTip();
 
             _root = new TableLayoutPanel();
             _body = new TableLayoutPanel();
@@ -43,6 +48,8 @@ namespace OpenLoop.App
             _toolbarLeft = new FlowLayoutPanel();
             _selProvider = new AntdUI.Select();
             _selModel = new AntdUI.Select();
+            _freeSwitch = new AntdUI.Switch();
+            _lblFree = new AntdUI.Label();
             _selEffort = new AntdUI.Select();
             _btnSend = new AntdUI.Button();
             _projectRow = new TableLayoutPanel();
@@ -129,7 +136,7 @@ namespace OpenLoop.App
             _toolbarLeft.Margin = new Padding(0);
 
             _selProvider.Name = "selProvider";
-            _selProvider.Width = 160;
+            _selProvider.Width = 140;
             _selProvider.Height = 34;
             _selProvider.Radius = 8;
             _selProvider.PlaceholderText = Localization.T("Provider");
@@ -137,12 +144,26 @@ namespace OpenLoop.App
             _selProvider.SelectedValueChanged += OnProviderChanged;
 
             _selModel.Name = "selModel";
-            _selModel.Width = 280;
+            _selModel.Width = 220;
             _selModel.Height = 34;
             _selModel.Radius = 8;
             _selModel.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
             _selModel.PlaceholderText = "模型";
             _selModel.Margin = new Padding(0, 0, 8, 0);
+
+            _freeSwitch.Name = "freeSwitch";
+            _freeSwitch.Width = 40;
+            _freeSwitch.Height = 22;
+            _freeSwitch.Checked = true;
+            _freeSwitch.Margin = new Padding(4, 6, 0, 0);
+            _freeSwitch.CheckedChanged += OnFreeToggle;
+
+            _lblFree.Name = "lblFree";
+            _lblFree.AutoSize = true;
+            _lblFree.Text = Localization.T("FreeOnly");
+            _lblFree.Font = new Font("Segoe UI", 9F);
+            _lblFree.ForeColor = UiStyle.Muted;
+            _lblFree.Margin = new Padding(0, 9, 8, 0);
 
             _selEffort.Name = "selEffort";
             _selEffort.Width = 128;
@@ -158,6 +179,8 @@ namespace OpenLoop.App
 
             _toolbarLeft.Controls.Add(_selProvider);
             _toolbarLeft.Controls.Add(_selModel);
+            _toolbarLeft.Controls.Add(_freeSwitch);
+            _toolbarLeft.Controls.Add(_lblFree);
             _toolbarLeft.Controls.Add(_selEffort);
 
             _btnSend.Name = "btnSend";

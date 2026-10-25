@@ -60,6 +60,7 @@ namespace OpenLoop.App
             SelectEffort(_effort);
             _freeSwitch.Checked = _onlyFree;
             FillModels();
+            SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort);
             SetMode("task");
             RefreshLedgerInfo();
             UpdateContext(null);
@@ -76,6 +77,7 @@ namespace OpenLoop.App
             _tips.SetToolTip(_lblDef, "点击查看特征与规则");
             _tips.SetToolTip(_lblTasks, "点击查看考核题");
             FitLoopLabels();
+            UpdateEvolveButtonEnabled();
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -101,6 +103,18 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int ModelOptionCount => _selModel.Items.Count;
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ReasoningText =>
+            Session.Book.Turns.Count == 0 ? "" : Session.Book.Turns[^1].ReasoningText;
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ChatDiagnostics => _chat.GetLayoutDiagnostics();
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool EvolveEnabled => _btnEvolve.Enabled;
+
+        public void ShowDefinitions() => OnShowDefinitions(null, EventArgs.Empty);
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool OnlyFreeModels
@@ -304,6 +318,7 @@ namespace OpenLoop.App
             _model = id;
             ApplyDetail();
             Persist(s => s.Model = id);
+            UpdateEvolveButtonEnabled();
         }
 
         private void OnEffortChanged(object sender, AntdUI.ObjectNEventArgs e)
@@ -419,6 +434,7 @@ namespace OpenLoop.App
         {
             if (_fillingProviders || _fillingModels) return;
             FillModels();
+            UpdateEvolveButtonEnabled();
         }
 
         private void FillModels()
@@ -581,11 +597,14 @@ namespace OpenLoop.App
             {
                 User = new ChatMessage("user", text),
                 Assistant = new ChatMessage("assistant", ""),
-                Streaming = true
+                Streaming = true,
+                ThinkingExpanded = _settings().ThinkingExpandedByDefault
             };
 
             Session.Book.AddTurn(turn);
             _turnUndo[turn] = new TurnUndo(undoLog, checkpoint);
+            //发出即落盘：进程被杀时最多丢流式中的半条回复，而不是整轮对话
+            ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
             _txtInput.Clear();
             SetRunning(true);
             SetState(SessionState.Running);
@@ -604,6 +623,32 @@ namespace OpenLoop.App
                 if (LooksLikeToolCallText(snapshot)) return;
                 RunOnUi(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot)));
             };
+
+            // 推理通道：推理模型在出正文前只吐 reasoning，实时显示到思考区，避免长时间只看到「思考中…」
+            var reasoningBuffer = new StringBuilder();
+            long lastReasoningUi = 0;
+            Action<string> onReasoning = piece =>
+            {
+                lock (reasoningBuffer) reasoningBuffer.Append(piece);
+                //推理增量很密：界面按 ~250ms 节流，避免逐片重排聊天区
+                long now = Environment.TickCount64;
+                if (now - Interlocked.Read(ref lastReasoningUi) < 250) return;
+                Interlocked.Exchange(ref lastReasoningUi, now);
+                string snapshot;
+                lock (reasoningBuffer) snapshot = reasoningBuffer.ToString();
+                RunOnUi(() =>
+                {
+                    turn.ReasoningText = snapshot;
+                    RefreshChat();
+                    _chat.ScrollToEnd();
+                });
+            };
+
+            //节流可能丢掉最后几片：收尾时把完整推理文本落地，确保思考区不残缺
+            void FlushReasoning()
+            {
+                lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
+            }
 
             var loop = new AgentLoop(tools, reasoner, policy,
                 onStep: step =>
@@ -643,7 +688,8 @@ namespace OpenLoop.App
                 null, rules,
                 settings.UseAgentsMd
                     ? AgentsInstructions.Load(workspace, AppSettings.GlobalAgentsPath)
-                    : null);
+                    : null,
+                workspace);
             history.Insert(0, new LlmMessage("system", systemPrompt));
             trace.SystemPrompt(systemPrompt);
             _lblDef.Text = $"def: v{activation.Version} · {activation.Features.Count} {Localization.T("Features")} · {rules.Count} {Localization.T("Rules")}";
@@ -658,11 +704,12 @@ namespace OpenLoop.App
             try
             {
                 var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta),
+                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta, onReasoning),
                     ct);
 
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
+                FlushReasoning();
                 turn.AssistantText = CleanAnswer(result.FinalAnswer, result.FinishReason);
                 trace.Message("assistant", turn.AssistantText);
 
@@ -687,6 +734,7 @@ namespace OpenLoop.App
                 outcome = "stopped";
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
+                FlushReasoning();
                 if (string.IsNullOrEmpty(turn.AssistantText)) turn.AssistantText = "（已停止）";
                 trace.Message("assistant", turn.AssistantText);
                 trace.Finish("stopped", turn.AssistantText);
@@ -944,9 +992,15 @@ namespace OpenLoop.App
                 BorderStyle = BorderStyle.FixedSingle,
                 Font = new Font("Consolas", 9.5F),
                 Text = text,
-                Width = Dip(620),
-                Height = Dip(420)
             };
+            //AntdUI Modal 会对其内容控件再乘一次 DPI（实测 250% 下 ×2.5），
+            //所以这里按 96-DPI 单位给尺寸，封顶值也换算到同一单位，最终物理尺寸才不会超出屏幕。
+            var screen = System.Windows.Forms.Screen.PrimaryScreen?.WorkingArea ?? Rectangle.Empty;
+            float scale = DeviceDpi / 96f;
+            int maxW96 = screen.Width > 0 ? (int)(screen.Width * 4 / 5 / scale) : 700;
+            int maxH96 = screen.Height > 0 ? (int)(screen.Height * 4 / 5 / scale) : 500;
+            box.Width = Math.Min(620, maxW96);
+            box.Height = Math.Min(420, maxH96);
             var owner = FindForm();
             if (owner != null) AntdUI.Modal.open(owner, title, (object)box);
         }
@@ -1246,6 +1300,16 @@ namespace OpenLoop.App
             _selProvider.Enabled = !running;
             _selModel.Enabled = !running;
             _selEffort.Enabled = !running;
+        }
+
+        private void UpdateEvolveButtonEnabled()
+        {
+            var ws = Session.Workspace.Trim();
+            if (!Directory.Exists(ws)) { _btnEvolve.Enabled = false; return; }
+            var model = (_model ?? "").Trim();
+            if (model.Length == 0) { _btnEvolve.Enabled = false; return; }
+            var (baseUrl, _) = _settings().EndpointFor(model);
+            _btnEvolve.Enabled = !string.IsNullOrWhiteSpace(baseUrl);
         }
 
         private static ToolRegistry ChildRegistry(WorkspaceScope scope, IReadOnlyList<string> names)

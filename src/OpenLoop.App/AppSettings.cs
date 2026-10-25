@@ -44,6 +44,9 @@ namespace OpenLoop.App
         /// <summary>模型下拉默认只列免费模型。</summary>
         public bool OnlyFreeModels { get; set; } = true;
 
+        /// <summary>新回话的「思考与工具过程」默认展开。</summary>
+        public bool ThinkingExpandedByDefault { get; set; }
+
         /// <summary>完全许可：关闭路径边界、命令审批与环境隔离（仅交互 Worker）。</summary>
         public bool FullAccess { get; set; }
 

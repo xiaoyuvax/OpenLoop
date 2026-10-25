@@ -67,6 +67,7 @@ namespace OpenLoop.App
 
             FillModels();
             SelectEffort(_effort);
+            SelectTips.Bind(_tips, _selModel, _selEffort);
 
             _book.ReplaceAll(ChatStore.Load(_workspace, "loop"), null);
             _chat.PlaceholderText = Localization.T("NoMessages");
@@ -154,7 +155,8 @@ namespace OpenLoop.App
             {
                 User = new ChatMessage("user", text),
                 Assistant = new ChatMessage("assistant", ""),
-                Streaming = true
+                Streaming = true,
+                ThinkingExpanded = _settings().ThinkingExpandedByDefault
             };
             _book.AddTurn(turn);
             _txtInput.Clear();
@@ -171,6 +173,25 @@ namespace OpenLoop.App
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
                 if (LooksLikeToolCallText(snapshot)) return;
                 RunOnUi(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot)));
+            };
+
+            //推理通道：推理模型只吐 reasoning 时也要有内容可看
+            var reasoningBuffer = new StringBuilder();
+            long lastReasoningUi = 0;
+            Action<string> onReasoning = piece =>
+            {
+                lock (reasoningBuffer) reasoningBuffer.Append(piece);
+                long now = Environment.TickCount64;
+                if (now - Interlocked.Read(ref lastReasoningUi) < 250) return;
+                Interlocked.Exchange(ref lastReasoningUi, now);
+                string snapshot;
+                lock (reasoningBuffer) snapshot = reasoningBuffer.ToString();
+                RunOnUi(() =>
+                {
+                    turn.ReasoningText = snapshot;
+                    RefreshChat();
+                    _chat.ScrollToEnd();
+                });
             };
 
             var loop = new AgentLoop(tools, reasoner, policy,
@@ -209,7 +230,8 @@ namespace OpenLoop.App
                 LoopPrompt.Role, LoopPrompt.Rules,
                 settings.UseAgentsMd
                     ? AgentsInstructions.Load(_workspace, AppSettings.GlobalAgentsPath)
-                    : null);
+                    : null,
+                _workspace);
             history.Insert(0, new LlmMessage("system", systemPrompt));
             trace.SystemPrompt(systemPrompt);
 
@@ -220,11 +242,12 @@ namespace OpenLoop.App
             try
             {
                 var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta),
+                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta, onReasoning),
                     ct);
 
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
+                lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
                 turn.AssistantText = CleanAnswer(result.FinalAnswer, result.FinishReason);
                 trace.Message("assistant", turn.AssistantText);
 
@@ -237,6 +260,7 @@ namespace OpenLoop.App
                 outcome = "stopped";
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
+                lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
                 if (string.IsNullOrEmpty(turn.AssistantText)) turn.AssistantText = "（已停止）";
                 trace.Finish("stopped", turn.AssistantText);
                 _lblStatus.Text = "状态: stopped";

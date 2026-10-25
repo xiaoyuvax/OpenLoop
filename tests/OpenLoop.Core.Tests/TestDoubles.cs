@@ -21,6 +21,22 @@ namespace OpenLoop.Core.Tests
         }
     }
 
+    /// <summary>只回推理文本、正文为空的推理模型（OpenRouter 推理模型的常见形态）。</summary>
+    internal sealed class ReasoningOnlyReasoner : IReasoner
+    {
+        private readonly string _reasoning;
+
+        public ReasoningOnlyReasoner(string reasoning) => _reasoning = reasoning;
+
+        public int Calls { get; private set; }
+
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(new CompletionResult { Content = "", Reasoning = _reasoning });
+        }
+    }
+
     internal sealed class FakeTool : ITool
     {
         public Func<ToolArgs, AgentToolResult> Handler { get; init; } = _ => AgentToolResult.Success("ok");

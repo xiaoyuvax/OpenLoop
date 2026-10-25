@@ -10,7 +10,9 @@ namespace OpenLoop.Core.Agent
         public double CompressAt { get; set; } = 0.8;
 
         public bool RepeatCallGuard { get; set; } = true;
-        public int MaxRepeatCalls { get; set; } = 3;
+
+        /// <summary>连续完全相同调用的停止阈值：2 = 相同请求允许重试 1 次；改参数后计数自动刷新。</summary>
+        public int MaxRepeatCalls { get; set; } = 2;
 
         public bool ExplorationGuard { get; set; } = true;
         public int MaxExplorationSteps { get; set; } = 30;

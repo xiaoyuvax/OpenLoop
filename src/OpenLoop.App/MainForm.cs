@@ -97,6 +97,34 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int ModelOptionCount => Active?.View.ModelOptionCount ?? 0;
 
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ReasoningText => Active?.View.ReasoningText ?? "";
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ChatDiagnostics => Active?.View.ChatDiagnostics ?? "";
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool EvolveEnabled => Active?.View.EvolveEnabled ?? false;
+
+        public void ShowDefinitions() => Active?.View.ShowDefinitions();
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int NewSessionModelOptionCount => NewPageView?.ModelOptionCount ?? 0;
+
+        public bool NewSessionOnlyFree
+        {
+            get => NewPageView?.OnlyFreeModels ?? true;
+            set
+            {
+                if (NewPageView != null) NewPageView.OnlyFreeModels = value;
+            }
+        }
+
+        public bool SelectNewSessionProvider(string name)
+            => NewPageView?.SelectProvider(name) ?? false;
+
+        private NewSessionView NewPageView => _newPage?.Tag as NewSessionView;
+
         public bool OnlyFreeModels
         {
             get => Active?.View.OnlyFreeModels ?? true;
@@ -127,6 +155,8 @@ namespace OpenLoop.App
         }
 
         public void SetModel(string model) => Active?.View.SetModel(model);
+
+        public void SetEffort(string effort) => Active?.View.SetEffort(effort);
 
         public void SelectMode(string mode) => Active?.View.SelectMode(mode);
 

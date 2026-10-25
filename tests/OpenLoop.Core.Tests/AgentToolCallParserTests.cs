@@ -24,6 +24,47 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void ParsesAll_MultipleMarkers()
+        {
+            var calls = AgentToolCallParser.TryParseAll(
+                "先并行看这两处。\ntool-call: {\"tool\":\"read_file\",\"args\":{\"path\":\"a.cs\"}}\n" +
+                "tool-call: {\"tool\":\"list_dir\",\"args\":{\"path\":\"src\"}}\ntool-call: {\"tool\":\"grep\",\"args\":{\"pattern\":\"x\"}}");
+            Assert.Equal(3, calls.Count);
+            Assert.Equal("read_file", calls[0].Tool);
+            Assert.Equal("a.cs", calls[0].Args["path"]);
+            Assert.Equal("list_dir", calls[1].Tool);
+            Assert.Equal("grep", calls[2].Tool);
+        }
+
+        [Fact]
+        public void ParsesAll_SingleCall_FallsBackToFullTolerance()
+        {
+            // 无 marker 的裸 JSON 单调用也要能走 TryParse 兜底
+            var calls = AgentToolCallParser.TryParseAll("{\"tool\":\"list_dir\",\"args\":{\"recursive\":true}}");
+            Assert.Single(calls);
+            Assert.Equal("list_dir", calls[0].Tool);
+        }
+
+        [Fact]
+        public void ParsesAll_EmptyOrPlainText_ReturnsEmpty()
+        {
+            Assert.Empty(AgentToolCallParser.TryParseAll(""));
+            Assert.Empty(AgentToolCallParser.TryParseAll("普通最终回答，没有工具调用。"));
+        }
+
+        [Fact]
+        public void ParsesAll_MultilineJsonPerMarker()
+        {
+            var calls = AgentToolCallParser.TryParseAll(
+                "tool-call: {\n  \"tool\": \"grep\",\n  \"args\": {\"pattern\": \"TODO\"}\n}\n" +
+                "tool-call: {\"tool\":\"read_file\",\"args\":{\"path\":\"b.cs\"}}");
+            Assert.Equal(2, calls.Count);
+            Assert.Equal("grep", calls[0].Tool);
+            Assert.Equal("TODO", calls[0].Args["pattern"]);
+            Assert.Equal("read_file", calls[1].Tool);
+        }
+
+        [Fact]
         public void ParsesMultilineJsonWithTrailingText()
         {
             string text = "我先看看。\ntool-call: {\n  \"tool\": \"grep\",\n  \"args\": {\"pattern\": \"TODO\"}\n}\n然后继续。";

@@ -56,30 +56,19 @@ namespace OpenLoop.Core.Reasoning
                 Stream = false,
                 Messages = (messages ?? []).Select(m => new MessagePayload { Role = m.Role, Content = m.Content }).ToArray(),
                 Usage = _includeUsage ? new UsageOption() : null,
-                Reasoning = _effort == null ? null : new ReasoningOption { Effort = _effort }
+                Reasoning = _effort == null ? null : new ReasoningOption { Effort = _effort },
+                IncludeReasoning = true
             };
+            string json = JsonSerializer.Serialize(payload, PayloadJson);
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
-            if (!string.IsNullOrWhiteSpace(_apiKey))
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(payload, PayloadJson), Encoding.UTF8, "application/json");
-
-            using var response = await Http.SendAsync(request, ct);
+            using var response = await SendWithRetryAsync(() => BuildRequest(json), ct);
             string body = await response.Content.ReadAsStringAsync(ct);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                string brief = body.Length <= 500 ? body : body[..500] + "…";
-                throw new InvalidOperationException(
-                    $"模型接口返回 {(int)response.StatusCode} {response.ReasonPhrase}：{brief}");
-            }
-
             return Parse(body);
         }
 
         public async Task<CompletionResult> StreamAsync(
-            IReadOnlyList<LlmMessage> messages, Action<string> onDelta, CancellationToken ct = default)
+            IReadOnlyList<LlmMessage> messages, Action<string> onDelta, CancellationToken ct = default,
+            Action<string> onReasoning = null)
         {
             var payload = new RequestPayload
             {
@@ -88,33 +77,104 @@ namespace OpenLoop.Core.Reasoning
                 Messages = (messages ?? []).Select(m => new MessagePayload { Role = m.Role, Content = m.Content }).ToArray(),
                 Usage = _includeUsage ? new UsageOption() : null,
                 StreamOptions = _includeUsage ? new StreamOption { IncludeUsage = true } : null,
-                Reasoning = _effort == null ? null : new ReasoningOption { Effort = _effort }
+                Reasoning = _effort == null ? null : new ReasoningOption { Effort = _effort },
+                IncludeReasoning = true
             };
+            string json = JsonSerializer.Serialize(payload, PayloadJson);
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
-            if (!string.IsNullOrWhiteSpace(_apiKey))
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(payload, PayloadJson), Encoding.UTF8, "application/json");
-
-            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                string body = await response.Content.ReadAsStringAsync(ct);
-                string brief = body.Length <= 500 ? body : body[..500] + "…";
-                throw new InvalidOperationException(
-                    $"模型接口返回 {(int)response.StatusCode} {response.ReasonPhrase}：{brief}");
-            }
+            using var response = await SendWithRetryAsync(
+                () => BuildRequest(json), ct, HttpCompletionOption.ResponseHeadersRead);
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream, Encoding.UTF8);
-            return await ParseStreamAsync(reader, onDelta, ct);
+            return await ParseStreamAsync(reader, onDelta, ct, onReasoning);
+        }
+
+        private HttpRequestMessage BuildRequest(string json)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+            if (!string.IsNullOrWhiteSpace(_apiKey))
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            return request;
+        }
+
+        /// <summary>
+        /// 发送与失败重试策略（用户约定）：
+        /// 429 限流、401/402/403 鉴权/额度 → 立即失败，不重试；
+        /// 其余 4xx（参数/请求构造类）→ 同一请求最多重试 1 次（循环里内容变了计数自然刷新）；
+        /// 5xx / 网络异常 / 超时 → 指数退避一直重试（1s 起步、封顶 30s），取消令牌可随时中断。
+        /// 上限：流式响应一旦开始输出就不再重试（避免正文重复），此为已知边界。
+        /// </summary>
+    private async Task<HttpResponseMessage> SendWithRetryAsync(
+        Func<HttpRequestMessage> factory, CancellationToken ct,
+        HttpCompletionOption option = HttpCompletionOption.ResponseContentRead)
+        {
+            int transientAttempt = 0;
+            int paramRetried = 0;
+            while (true)
+            {
+                HttpResponseMessage response;
+                try
+                {
+                    response = await Http.SendAsync(factory(), option, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is HttpRequestException || ex is System.Net.Sockets.SocketException
+                    || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+                {
+                    transientAttempt++;
+                    await Task.Delay(BackoffDelayMs(transientAttempt), ct);
+                    continue;
+                }
+
+                if (response.IsSuccessStatusCode) return response;
+
+                string body = await response.Content.ReadAsStringAsync(ct);
+                int code = (int)response.StatusCode;
+                string phrase = response.ReasonPhrase;
+                response.Dispose();
+                switch (ClassifyStatus(code))
+                {
+                    case StatusClass.NoRetry:
+                        throw ApiError(code, phrase, body);
+                    case StatusClass.ParamRetry when paramRetried++ > 0:
+                        throw ApiError(code, phrase, body);
+                }
+                transientAttempt++;
+                await Task.Delay(BackoffDelayMs(transientAttempt), ct);
+            }
+        }
+
+        internal enum StatusClass { Transient, NoRetry, ParamRetry }
+
+        /// <summary>按状态码分类重试策略：5xx=瞬时（退避重试）；429/401/402/403=不重试；其余 4xx=同请求重试 1 次。</summary>
+        internal static StatusClass ClassifyStatus(int code)
+        {
+            if (code >= 500) return StatusClass.Transient;
+            if (code is 429 or 401 or 402 or 403) return StatusClass.NoRetry;
+            return StatusClass.ParamRetry;
+        }
+
+        /// <summary>指数退避：1s、2s、4s…封顶 30s。</summary>
+        internal static int BackoffDelayMs(int attempt)
+            => (int)Math.Min(30_000, 1000d * Math.Pow(2, Math.Clamp(attempt - 1, 0, 5)));
+
+        private static InvalidOperationException ApiError(int code, string phrase, string body)
+        {
+            string brief = string.IsNullOrEmpty(body) ? "" : body.Length <= 500 ? body : body[..500] + "…";
+            return new InvalidOperationException($"模型接口返回 {code} {phrase}：{brief}");
         }
 
         internal static async Task<CompletionResult> ParseStreamAsync(
-            TextReader reader, Action<string> onDelta, CancellationToken ct = default)
+            TextReader reader, Action<string> onDelta, CancellationToken ct = default,
+            Action<string> onReasoning = null)
         {
             var content = new StringBuilder();
+            var reasoning = new StringBuilder();
             string finish = null;
             decimal? cost = null;
             int? tokensIn = null;
@@ -142,7 +202,16 @@ namespace OpenLoop.Core.Reasoning
                     continue;
 
                 var choice = choices[0];
-                if (choice.TryGetProperty("delta", out var delta)
+                if (choice.TryGetProperty("delta", out var delta))
+                {
+                    //推理模型把「思考」放在 reasoning（OpenRouter）或 reasoning_content（其他网关）里
+                    foreach (string piece in ReadReasoningPieces(delta))
+                    {
+                        reasoning.Append(piece);
+                        onReasoning?.Invoke(piece);
+                    }
+                }
+                if (choice.TryGetProperty("delta", out delta)
                     && delta.TryGetProperty("content", out var pieceEl)
                     && pieceEl.ValueKind == JsonValueKind.String)
                 {
@@ -160,6 +229,7 @@ namespace OpenLoop.Core.Reasoning
             return new CompletionResult
             {
                 Content = content.ToString(),
+                Reasoning = reasoning.ToString(),
                 Cost = cost,
                 FinishReason = finish,
                 TokensIn = tokensIn,
@@ -181,11 +251,15 @@ namespace OpenLoop.Core.Reasoning
 
             var choice = choices[0];
             string content = "";
-            if (choice.TryGetProperty("message", out var message)
-                && message.TryGetProperty("content", out var contentEl)
-                && contentEl.ValueKind == JsonValueKind.String)
+            string reasoning = "";
+            if (choice.TryGetProperty("message", out var message))
             {
-                content = contentEl.GetString() ?? "";
+                if (message.TryGetProperty("content", out var contentEl)
+                    && contentEl.ValueKind == JsonValueKind.String)
+                {
+                    content = contentEl.GetString() ?? "";
+                }
+                reasoning = string.Concat(ReadReasoningPieces(message));
             }
 
             string finish = choice.TryGetProperty("finish_reason", out var f) && f.ValueKind == JsonValueKind.String
@@ -196,11 +270,49 @@ namespace OpenLoop.Core.Reasoning
             return new CompletionResult
             {
                 Content = content,
+                Reasoning = reasoning,
                 Cost = ReadCost(root),
                 FinishReason = finish,
                 TokensIn = parsedUsage.In,
                 TokensOut = parsedUsage.Out
             };
+        }
+
+        /// <summary>取出一个 delta/message 里的推理片段：优先 reasoning/reasoning_content 字符串，
+        /// 没有时再读 reasoning_details（Anthropic/Gemini/GLM 等在 OpenRouter 上的标准形态）。</summary>
+        private static IEnumerable<string> ReadReasoningPieces(JsonElement node)
+        {
+            bool found = false;
+            foreach (string name in (string[])["reasoning", "reasoning_content"])
+            {
+                if (node.TryGetProperty(name, out var el)
+                    && el.ValueKind == JsonValueKind.String
+                    && el.GetString() is { Length: > 0 } piece)
+                {
+                    found = true;
+                    yield return piece;
+                }
+            }
+            if (found) yield break;
+
+            if (!node.TryGetProperty("reasoning_details", out var details)
+                || details.ValueKind != JsonValueKind.Array)
+                yield break;
+
+            foreach (var item in details.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                foreach (string field in (string[])["text", "summary"])
+                {
+                    if (item.TryGetProperty(field, out var value)
+                        && value.ValueKind == JsonValueKind.String
+                        && value.GetString() is { Length: > 0 } piece)
+                    {
+                        yield return piece;
+                        break;
+                    }
+                }
+            }
         }
 
         private static (int? In, int? Out) ReadUsage(JsonElement root)
@@ -238,6 +350,10 @@ namespace OpenLoop.Core.Reasoning
             public UsageOption Usage { get; init; }
             public StreamOption StreamOptions { get; init; }
             public ReasoningOption Reasoning { get; init; }
+
+            /// <summary>OpenRouter 扩展：要求上游把推理过程一并返回（reasoning 增量）。</summary>
+            [JsonPropertyName("include_reasoning")]
+            public bool? IncludeReasoning { get; init; }
         }
 
         private sealed class MessagePayload

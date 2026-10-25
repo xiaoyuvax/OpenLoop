@@ -14,6 +14,7 @@ namespace OpenLoop.App
         {
             _source = source ?? new AppSettings();
             InitializeComponent();
+            SelectTips.Bind(_tips, _cboLanguage, _cboTheme, _cboProvider);
             Icon = UiIcons.App;
 
             foreach (var provider in _source.Providers ?? [])
@@ -24,6 +25,7 @@ namespace OpenLoop.App
             _cboTheme.SelectedValue = string.IsNullOrWhiteSpace(_source.Theme) ? "light" : _source.Theme;
             _switchFullAccess.Checked = _source.FullAccess;
             _switchAgents.Checked = _source.UseAgentsMd;
+            _switchThinking.Checked = _source.ThinkingExpandedByDefault;
             _filling = false;
 
             RefreshProviderCombo(_providers.FirstOrDefault());
@@ -352,6 +354,7 @@ namespace OpenLoop.App
                 OnlyFreeModels = _source.OnlyFreeModels,
                 FullAccess = _switchFullAccess.Checked,
                 UseAgentsMd = _switchAgents.Checked,
+                ThinkingExpandedByDefault = _switchThinking.Checked,
                 ReasoningEffort = _source.ReasoningEffort,
                 LoopCommand = _source.LoopCommand,
                 Providers = _providers

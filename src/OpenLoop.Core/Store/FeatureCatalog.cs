@@ -25,7 +25,7 @@ namespace OpenLoop.Core.Store
             {
                 Id = RepeatCall, Kind = "guard", Source = "user", CreatedAt = Now(),
                 Problem = "模型连续用完全相同的参数调用同一工具，步数被白白烧掉。",
-                Payload = J(new { enabled = true, max = 3 })
+                Payload = J(new { enabled = true, max = 2 })
             },
             new FeatureRecord
             {
@@ -103,7 +103,7 @@ namespace OpenLoop.Core.Store
             Note = "v0 默认集",
             Features =
             [
-                Ref(RepeatCall, ("enabled", true), ("max", 3)),
+                Ref(RepeatCall, ("enabled", true), ("max", 2)),
                 Ref(Exploration, ("enabled", true), ("max", 30)),
                 Ref(Claim, ("enabled", true)),
                 Ref(Promise, ("enabled", true)),

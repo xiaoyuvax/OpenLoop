@@ -14,7 +14,7 @@ namespace OpenLoop.Core.Agent
         public static string Build(
             IReadOnlyList<ITool> tools, int maxSteps, string role = null,
             IEnumerable<string> rules = null, string instructions = null,
-            IReadOnlyList<SkillInfo> skills = null)
+            IReadOnlyList<SkillInfo> skills = null, string workspace = null)
         {
             var sb = new StringBuilder();
 
@@ -22,6 +22,13 @@ namespace OpenLoop.Core.Agent
                 ? "你是一个在文本工作目录里工作的 agent。"
                 : role);
             sb.AppendLine();
+            if (!string.IsNullOrWhiteSpace(workspace))
+            {
+                sb.AppendLine($"# 环境");
+                sb.AppendLine($"- 工作目录：{workspace}");
+                sb.AppendLine($"- 今天日期：{DateTime.Now:yyyy-MM-dd}。");
+                sb.AppendLine();
+            }
             sb.AppendLine("# 你的能力边界");
             sb.AppendLine("- 你只能通过下面列出的工具访问环境：不能联网，不能读写工作目录之外的文件。");
             sb.AppendLine("- 拿不准时先用只读工具了解现场，不要猜参数。");
@@ -35,6 +42,21 @@ namespace OpenLoop.Core.Agent
                     sb.Append("- ").AppendLine(rule.Trim());
                 sb.AppendLine();
             }
+
+            sb.AppendLine("# 任务流程");
+            sb.AppendLine("- 先理解再动手：用只读工具（list_dir / grep / read_file）弄清现状和相关代码，再决定怎么做。");
+            sb.AppendLine("- 动手前先看邻近代码：模仿既有风格与命名，优先复用本仓库已有的工具函数与模式，不要重复造轮子。");
+            sb.AppendLine("- 不要假设某个库/框架可用：先确认仓库里已经在用，再引入。");
+            sb.AppendLine("- 改完要验证：有构建/测试命令就运行；没有就如实说明如何验证。绝不假设测试框架存在。");
+            sb.AppendLine("- 一次专注一个任务；发现任务之外的额外问题，提出来让用户决定，不要顺手改。");
+            sb.AppendLine("- 多个相互独立的只读调用（如同时读几个文件）可在一轮内并行发出，每行一个 tool-call；含写操作时一轮只发一个。");
+            sb.AppendLine();
+
+            sb.AppendLine("# 输出与协作");
+            sb.AppendLine("- 回答直接给结论，不要铺垫和收尾客套；能用一句话说清就不用一段。");
+            sb.AppendLine("- 引用具体位置时给出 文件路径:行号，方便用户跳转。");
+            sb.AppendLine("- 不确定就说不确定，不要编造文件内容或工具结果。");
+            sb.AppendLine();
 
             sb.AppendLine("# 可用工具");
             foreach (var t in tools)
@@ -63,7 +85,8 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("# 工具调用协议");
             sb.AppendLine("需要使用工具时，输出一行且仅一行（不要包在代码围栏里，不要加解释文字）：");
             sb.AppendLine("tool-call: {\"tool\":\"工具名\",\"args\":{\"参数名\":\"值\"}}");
-            sb.AppendLine("一轮只调用一个工具。下一轮你会收到一行 tool-result: 开头的 JSON：");
+            sb.AppendLine("多个相互独立的只读调用可各占一行连续输出；一轮只调用一个工具的情形（含任何写操作）照旧单行。");
+            sb.AppendLine("下一轮你会收到 tool-result: 开头的 JSON（多个调用时按顺序回填多行）：");
             sb.AppendLine("成功为 {\"ok\":true,\"data\":...}，失败为 {\"ok\":false,\"error\":...}。");
             sb.AppendLine("任务完成或无需工具时，直接输出面向用户的最终中文回答（不要输出 tool-call 行）。");
             sb.AppendLine();
@@ -75,6 +98,7 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("- 工具结果 ok:false 时如实说明原因，不要虚构成功。");
             sb.AppendLine("- 禁止谎报完成：没有真正调用工具并拿到成功结果之前，不说「已写入/已修改/已完成」。");
             sb.AppendLine("- 禁止只回复「收到」「请稍候」这类占位话术：要执行就输出 tool-call；要收尾就直接给结论。");
+            sb.AppendLine("- 未被明确要求时，不执行 git/svn 提交、推送或发布动作；提交前先看变更状态。");
 
             if (!string.IsNullOrWhiteSpace(instructions))
             {

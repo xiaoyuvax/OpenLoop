@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Drawing;
 
 namespace OpenLoop.App
@@ -17,6 +18,7 @@ namespace OpenLoop.App
         private string _project = "";
         private string _model = "";
         private string _effort = "";
+        private bool _onlyFree = true;
         private bool _filling;
         private bool _fillingProviders;
 
@@ -42,14 +44,20 @@ namespace OpenLoop.App
 
             _model = settings?.Model ?? "";
             _effort = settings?.ReasoningEffort ?? "";
+            _onlyFree = settings?.OnlyFreeModels ?? true;
             _project = _projects.FirstOrDefault(p =>
                 string.Equals(p, defaultWorkspace, StringComparison.OrdinalIgnoreCase)) ??
                 _projects.FirstOrDefault() ?? "";
+
+            _filling = true;
+            try { _freeSwitch.Checked = _onlyFree; }
+            finally { _filling = false; }
 
             FillProviders();
             FillModels();
             SelectEffort(_effort);
             FillProjects();
+            SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort, _selProject);
         }
 
         private void FillProviders()
@@ -89,7 +97,7 @@ namespace OpenLoop.App
                 _selModel.Items.Clear();
                 var provider = _selProvider.SelectedValue as ProviderConfig;
                 var models = ModelChoices.FilterByProvider(
-                    ModelChoices.Build(_settings, onlyFree: true), provider);
+                    ModelChoices.Build(_settings, onlyFree: _onlyFree), provider);
 
                 foreach (var model in models)
                     _selModel.Items.Add(new AntdUI.SelectItem(model.Name)
@@ -117,6 +125,22 @@ namespace OpenLoop.App
             {
                 _filling = false;
             }
+        }
+
+        private void OnFreeToggle(object sender, AntdUI.BoolEventArgs e)
+        {
+            if (_settings == null || _filling) return;
+            _onlyFree = e.Value;
+            try
+            {
+                _settings.OnlyFreeModels = _onlyFree;
+                _settings.Save();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("保存设置失败：" + ex.Message);
+            }
+            FillModels();
         }
 
         private void FillProjects()
@@ -184,6 +208,35 @@ namespace OpenLoop.App
             _project = chosen;
             FillProjects();
             _lblPath.Text = _project;
+        }
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        internal bool OnlyFreeModels
+        {
+            get => _onlyFree;
+            set
+            {
+                _onlyFree = value;
+                _freeSwitch.Checked = value;
+            }
+        }
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        internal int ModelOptionCount => _selModel.Items.Count;
+
+        internal bool SelectProvider(string name)
+        {
+            for (int i = 0; i < _selProvider.Items.Count; i++)
+            {
+                if (_selProvider.Items[i] is AntdUI.SelectItem item
+                    && item.Tag is ProviderConfig provider
+                    && string.Equals(provider.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    _selProvider.SelectedIndex = i;
+                    return true;
+                }
+            }
+            return false;
         }
 
         internal string Draft

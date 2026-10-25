@@ -63,6 +63,37 @@ namespace OpenLoop.Core.Agent
             return false;
         }
 
+        /// <summary>
+        /// 解析全部工具调用（并行调用支持）：文本中按顺序出现的每个 tool-call marker 各还原一次调用。
+        /// 只认显式 marker（多对象兜底扫描无法界定调用边界，容易把参数对象误当调用，故不参与）。
+        /// 解析出 0 个时回退 TryParse 的全量容错路径（单调用兼容形态仍可用）。
+        /// </summary>
+        public static IReadOnlyList<AgentToolCall> TryParseAll(string modelOutput)
+        {
+            if (string.IsNullOrWhiteSpace(modelOutput)) return [];
+            string text = modelOutput.Replace("\r\n", "\n");
+            var calls = new List<AgentToolCall>();
+
+            int searchFrom = 0;
+            while (true)
+            {
+                int markerAt = text.IndexOf(Marker, searchFrom, StringComparison.OrdinalIgnoreCase);
+                if (markerAt < 0) break;
+                int brace = text.IndexOf('{', markerAt + Marker.Length);
+                if (brace >= 0)
+                {
+                    string json = ExtractJsonObject(text, brace);
+                    if (json != null && TryParseJson(json, out var call))
+                        calls.Add(call);
+                }
+                searchFrom = markerAt + Marker.Length;
+            }
+
+            if (calls.Count == 0)
+                return TryParse(text, out var single) ? [single] : [];
+            return calls;
+        }
+
         /// <summary>参数 JSON 的开括号定位：&lt;parameter=args&gt;{…} 优先，其次 "arguments"/"args"/"parameters"/"input": {…}。</summary>
         private static readonly Regex TaggedArgsRegex = new(
             @"<\s*parameter\s*[=:]\s*[""']?args[""']?\s*>|""(?:arguments|args|parameters|input)""\s*:\s*",

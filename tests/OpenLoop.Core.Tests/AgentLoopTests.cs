@@ -31,6 +31,19 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task Empty_Content_Falls_Back_To_Reasoning_Without_Retry()
+        {
+            var reasoner = new ReasoningOnlyReasoner("先看目录，再逐个确认问题。");
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync([], "hi");
+
+            Assert.Equal("先看目录，再逐个确认问题。", result.FinalAnswer);
+            Assert.Equal(1, reasoner.Calls);
+            Assert.Equal(0, result.Guards.EmptyRetries);
+        }
+
+        [Fact]
         public async Task ToolCallThenFinalAnswer()
         {
             var tool = new FakeTool();

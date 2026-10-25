@@ -22,6 +22,10 @@ namespace OpenLoop.App
         private FlowLayoutPanel _agentsFlow;
         private AntdUI.Switch _switchAgents;
         private AntdUI.Label _lblAgentsHint;
+        private AntdUI.Label _lblThinking;
+        private FlowLayoutPanel _thinkingFlow;
+        private AntdUI.Switch _switchThinking;
+        private AntdUI.Label _lblThinkingHint;
         private AntdUI.Label _lblGeneralNote;
 
         private TableLayoutPanel _models;
@@ -52,9 +56,11 @@ namespace OpenLoop.App
         private FlowLayoutPanel _buttons;
         private AntdUI.Button _btnCancel;
         private AntdUI.Button _btnSave;
+        private ToolTip _tips;
 
         protected override void Dispose(bool disposing)
         {
+            if (disposing) _tips?.Dispose();
             if (disposing && (components != null)) components.Dispose();
             base.Dispose(disposing);
         }
@@ -62,6 +68,7 @@ namespace OpenLoop.App
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
+            _tips = new ToolTip();
 
             _root = new TableLayoutPanel();
             _tabs = new AntdUI.Tabs();
@@ -81,6 +88,10 @@ namespace OpenLoop.App
             _agentsFlow = new FlowLayoutPanel();
             _switchAgents = new AntdUI.Switch();
             _lblAgentsHint = new AntdUI.Label();
+            _lblThinking = new AntdUI.Label();
+            _thinkingFlow = new FlowLayoutPanel();
+            _switchThinking = new AntdUI.Switch();
+            _lblThinkingHint = new AntdUI.Label();
             _lblGeneralNote = new AntdUI.Label();
 
             _models = new TableLayoutPanel();
@@ -139,9 +150,10 @@ namespace OpenLoop.App
             // 普通
             _general.Dock = DockStyle.Fill;
             _general.ColumnCount = 2;
-            _general.RowCount = 5;
+            _general.RowCount = 6;
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
@@ -153,6 +165,7 @@ namespace OpenLoop.App
             ConfigureLabel(_lblTheme, "主题色");
             ConfigureLabel(_lblFullAccess, "完全许可");
             ConfigureLabel(_lblAgents, "AGENTS.md");
+            ConfigureLabel(_lblThinking, "思考过程");
 
             _cboLanguage.Dock = DockStyle.Fill;
             _cboLanguage.Radius = 8;
@@ -205,6 +218,24 @@ namespace OpenLoop.App
             _agentsFlow.Controls.Add(_switchAgents);
             _agentsFlow.Controls.Add(_lblAgentsHint);
 
+            _thinkingFlow.Dock = DockStyle.Fill;
+            _thinkingFlow.FlowDirection = FlowDirection.LeftToRight;
+            _thinkingFlow.WrapContents = false;
+            _thinkingFlow.Margin = new Padding(0);
+
+            _switchThinking.Width = 44;
+            _switchThinking.Height = 22;
+            _switchThinking.Margin = new Padding(0, 9, 8, 0);
+
+            _lblThinkingHint.AutoSize = true;
+            _lblThinkingHint.Text = "新回话默认展开「思考与工具过程」";
+            _lblThinkingHint.Font = new Font("Segoe UI", 8.5F);
+            _lblThinkingHint.ForeColor = UiStyle.Muted;
+            _lblThinkingHint.Margin = new Padding(0, 11, 0, 0);
+
+            _thinkingFlow.Controls.Add(_switchThinking);
+            _thinkingFlow.Controls.Add(_lblThinkingHint);
+
             _lblGeneralNote.AutoSize = false;
             _lblGeneralNote.Dock = DockStyle.Fill;
             _lblGeneralNote.Text = "主题与语言在重启 OpenLoop 后生效；完全许可立即生效。";
@@ -221,7 +252,9 @@ namespace OpenLoop.App
             _general.Controls.Add(_fullFlow, 1, 2);
             _general.Controls.Add(_lblAgents, 0, 3);
             _general.Controls.Add(_agentsFlow, 1, 3);
-            _general.Controls.Add(_lblGeneralNote, 0, 4);
+            _general.Controls.Add(_lblThinking, 0, 4);
+            _general.Controls.Add(_thinkingFlow, 1, 4);
+            _general.Controls.Add(_lblGeneralNote, 0, 5);
             _general.SetColumnSpan(_lblGeneralNote, 2);
             _pageGeneral.Controls.Add(_general);
 

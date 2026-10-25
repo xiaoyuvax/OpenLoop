@@ -13,17 +13,21 @@
 - Core 测试：`dotnet test tests\OpenLoop.Core.Tests`
 - ChatFlow 测试：`dotnet test ..\..\..\ChatFlow\ChatFlow.Tests`（跨仓库引用）
 - 无独立 lint；Release 编译即类型检查。
+- 不要用 `dotnet build -t:Compile` 做语法检查（跳过资源生成，之后的增量构建会复用坏产物）；若用过必须 `dotnet build --no-incremental` 重建。
 - 运行前先结束旧进程（`OpenLoop.exe` 文件锁）：`Stop-Process -Name OpenLoop -Force`
 - 启动：`Start-Process <bin>\OpenLoop.exe -WorkingDirectory <repo根>`（默认工作区 = CWD）
 
 ## 运行时验证（Puppet A 面）
 
+- **只用 Puppet 调试**：禁止 UIAutomation、`SendKeys`、`keybd_event`、模拟鼠标/拖动、系统级截屏——会抢焦点、误触菜单。要画面用 `CaptureAction`（应用内截图，不抢输入）；要状态用 `/agent/get`、`/agent/state`、`/agent/logs`。Puppet 缺能力时在宿主加公开方法/属性，不要用 UI 自动化绕过。
 - 必须带 `OPENLOOP_PUPPET_KEY`；端口 9090 常被 VeniceMan 占用，会自动落到 9091+。
-- `POST /agent/invoke?instance=MainForm&method=<名>`，body 为参数数组。
+- `POST /agent/invoke?instance=MainForm&method=<名>`，body 为参数数组；路径参数用正斜杠（反斜杠会被 JSON 转义吞掉）。
 - `GET /agent/get?instance=MainForm&path=<属性>`；`POST /agent/set` body 为 `{"path":..,"value":..}`。
-- `POST /agent/invoke ... method=CaptureAction` body `[x,y,w,h]`，返回 base64 PNG（用于看真实渲染）。
+- 复杂对象判空看 `type` 不看 `value`：`value:null` + 真实 `type` = 有值；`type:null` 才是空。
+- `POST /agent/invoke ... method=CaptureAction` body `[x,y,w,h]`（相对元素），返回 base64 PNG（用于看真实渲染）。
 - `/agent/control` 只支持原生 WinForms 控件；AntdUI 的按钮/菜单点不了 → 给 MainForm/SessionView 暴露公开方法供 A 面驱动。
 - 截图前若窗口被最小化，先 `ShowWindow(hwnd, 9)`。
+- **远程 API 测试须先经用户同意**：会调用真实模型/网关（产生费用）的操作，未经同意不得通过 UI、Puppet 或单测触发；纯本地测试（纯函数、控件状态、文件解析）不受限。
 
 ## UI 规则
 
@@ -36,6 +40,14 @@
 - `AntdUI.Menu` 竖向模式的 `SubText` 会被裁切 → 项目列表用单行 `Text`，路径另放标签。
 - `AntdUI.Label` 带 `PrefixSvg` 时默认 `IconGap=0`，会与文字重叠，显式设 `IconGap`。
 - 大量模型（399 个）时 `Select` 只放过滤后的列表；免费模型用绿点 + “免费”副标题标识。
+- 新增 `ChatFlowControl` 必须在 `InitializeComponent()` 后、`Bind` 前显式设 `ChatFont`——它不是 `Control.Font`，字体遍历/`Font` 赋值不会自动覆盖。
+- 新控件的颜色统一从 `UiStyle` 取，不写死 `Color.X`；自绘控件跟随主题。
+
+## 工程规则
+
+- **读写分离**：只读方法不得写盘/建目录（判据：让它返回空，程序还能不能跑——能跑就不该“确保存在”）；需要“确保存在”的由显式写入口（界面/落盘）承担。
+- 请求体构建抽成 `internal` 纯函数并单测，不在 async 方法里内联拼字典；可空字段条件写入（`JsonIgnoreCondition.WhenWritingNull` 不作用于 `Dictionary` 的值）。
+- WinForms 菜单不要在 `Closed` 里同步 `Dispose`：`ModalMenuFilter` 关闭流程还会访问句柄，会抛 `ObjectDisposedException` 崩进程；用 `BeginInvoke` 延后销毁。
 
 ## 设计器兼容（强制）
 

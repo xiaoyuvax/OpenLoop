@@ -65,7 +65,8 @@ namespace OpenLoop.Core.Loop
                 FeatureCatalog.PolicyFrom(activation, _features), skills: skills);
             string systemPrompt = loop.BuildSystemPrompt(
                 null, FeatureCatalog.RulesFrom(activation, _features),
-                _useAgentsMd ? AgentsInstructions.Load(_workspaceRoot, _globalAgentsPath) : null);
+                _useAgentsMd ? AgentsInstructions.Load(_workspaceRoot, _globalAgentsPath) : null,
+                _workspaceRoot);
             var history = new List<LlmMessage> { new("system", systemPrompt) };
 
             var result = await loop.RunAsync(history, task.Prompt, ct, AgentContext.DefaultContextLimit);

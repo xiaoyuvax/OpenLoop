@@ -59,6 +59,104 @@ public sealed class ReasonerTests
     }
 
     [Fact]
+    public async Task Stream_parser_forwards_reasoning_deltas()
+    {
+        const string sse = """
+        data: {"choices":[{"delta":{"reasoning":"先看目录。"},"finish_reason":null}]}
+
+        data: {"choices":[{"delta":{"reasoning":"再读源码。"},"finish_reason":"length"}]}
+
+        data: [DONE]
+
+        """;
+
+        var reasoning = new List<string>();
+        var result = await OpenAiCompatibleReasoner.ParseStreamAsync(
+            new StringReader(sse), _ => { }, default, reasoning.Add);
+
+        Assert.Equal("", result.Content);
+        Assert.Equal("先看目录。再读源码。", result.Reasoning);
+        Assert.Equal(new[] { "先看目录。", "再读源码。" }, reasoning);
+        Assert.Equal("length", result.FinishReason);
+    }
+
+    [Fact]
+    public async Task Stream_parser_reads_reasoning_content_variant()
+    {
+        const string sse = """
+        data: {"choices":[{"delta":{"reasoning_content":"思考"},"finish_reason":"stop"}]}
+
+        data: [DONE]
+
+        """;
+
+        var reasoning = new List<string>();
+        var result = await OpenAiCompatibleReasoner.ParseStreamAsync(
+            new StringReader(sse), _ => { }, default, reasoning.Add);
+
+        Assert.Equal("思考", result.Reasoning);
+        Assert.Equal(new[] { "思考" }, reasoning);
+    }
+
+    [Fact]
+    public async Task Stream_parser_reads_reasoning_details_blocks()
+    {
+        const string sse = """
+        data: {"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.text","text":"第一,"}]},"finish_reason":null}]}
+
+        data: {"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.summary","summary":"第二。"}]},"finish_reason":"stop"}]}
+
+        data: [DONE]
+
+        """;
+
+        var reasoning = new List<string>();
+        var result = await OpenAiCompatibleReasoner.ParseStreamAsync(
+            new StringReader(sse), _ => { }, default, reasoning.Add);
+
+        Assert.Equal("第一,第二。", result.Reasoning);
+        Assert.Equal(new[] { "第一,", "第二。" }, reasoning);
+    }
+
+    [Fact]
+    public void Status_Classification_Matches_Retry_Policy()
+    {
+        // 429 限流与 401/402/403 鉴权额度：不重试
+        Assert.Equal(OpenAiCompatibleReasoner.StatusClass.NoRetry,
+            OpenAiCompatibleReasoner.ClassifyStatus(429));
+        Assert.Equal(OpenAiCompatibleReasoner.StatusClass.NoRetry,
+            OpenAiCompatibleReasoner.ClassifyStatus(402));
+        // 参数/请求构造类 4xx：同请求重试 1 次
+        Assert.Equal(OpenAiCompatibleReasoner.StatusClass.ParamRetry,
+            OpenAiCompatibleReasoner.ClassifyStatus(400));
+        // 5xx / 网关错误：瞬时，指数退避重试
+        Assert.Equal(OpenAiCompatibleReasoner.StatusClass.Transient,
+            OpenAiCompatibleReasoner.ClassifyStatus(502));
+    }
+
+    [Fact]
+    public void Backoff_Doubles_And_Caps_At_30s()
+    {
+        Assert.Equal(1000, OpenAiCompatibleReasoner.BackoffDelayMs(1));
+        Assert.Equal(2000, OpenAiCompatibleReasoner.BackoffDelayMs(2));
+        Assert.Equal(4000, OpenAiCompatibleReasoner.BackoffDelayMs(3));
+        Assert.Equal(30000, OpenAiCompatibleReasoner.BackoffDelayMs(10));
+    }
+
+    [Fact]
+    public void Parse_reads_reasoning_from_message()
+    {
+        const string body = """
+        { "choices": [ { "message": { "content": "ok", "reasoning": "想一想" } } ] }
+        """;
+
+        var result = OpenAiCompatibleReasoner.Parse(body);
+
+        Assert.Equal("ok", result.Content);
+        Assert.Equal("想一想", result.Reasoning);
+    }
+
+    [Fact]
     public async Task Process_reasoner_round_trips_stdin_to_stdout()
     {
         var reasoner = new ProcessReasoner("cmd", ["/c", "more"], TimeSpan.FromSeconds(30));
