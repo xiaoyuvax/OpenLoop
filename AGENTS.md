@@ -1,5 +1,7 @@
 # OpenLoop 开发约定
 
+> 通用规则（编码、PS/cmd 陷阱、提交纪律、dry-run、文档只写已验证等）见全局 `..\AGENTS.md`；本文件只记本项目特有约定。
+
 ## 定位
 
 - OpenLoop 是一个自演进 agent 设施：**Worker（前台）** 面向用户干活，**Loop（后台观察者）** 观察、收集、迭代版本。
@@ -54,18 +56,7 @@
 - 每个 Form/UserControl 必须有 `.cs` + `.Designer.cs`；字段声明、创建、属性设置、`Controls.Add` 全在 `InitializeComponent` 内。
 - 构造函数只调用 `InitializeComponent()`；运行时初始化走 `Initialize(...)`。
 
-## 文本与编码
-
-- 源码/文档统一 UTF-8；含中文的文件**禁止**用 PowerShell 做文本往返（会变乱码），用编辑工具改。
-- 不用 shell 重定向写源码/配置。
-
 ## AGENTS.md 与提示词
 
 - `<workspace>/AGENTS.md` 会在每次任务开始时作为系统提示词的“项目约定”段落注入（`AgentsInstructions.Load`，上限 32KB）。
 - 本文件即 OpenLoop 自身的项目约定；改动会影响 agent 行为，保持短、可执行。
-
-## 纪律
-
-- 未明确要求不提交；提交前看 `git status` / `git diff`。
-- 破坏性操作先 dry-run。
-- 文档只写已验证的事实；计划与完成分开。
