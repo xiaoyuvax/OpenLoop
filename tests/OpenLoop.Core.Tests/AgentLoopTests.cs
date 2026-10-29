@@ -72,6 +72,7 @@ namespace OpenLoop.Core.Tests
             Assert.Contains("无进展", result.FinalAnswer);
             Assert.Equal(3, result.Steps.Count);
             Assert.Equal(1, result.Guards.RepeatCallStops);
+            Assert.True(result.StoppedByGuard);
         }
 
         [Fact]
@@ -98,6 +99,7 @@ namespace OpenLoop.Core.Tests
 
             Assert.Contains("JSON 格式错误", result.FinalAnswer);
             Assert.Equal(2, result.Guards.MalformedRetries);
+            Assert.True(result.StoppedByGuard);
         }
 
         [Fact]
@@ -171,6 +173,7 @@ namespace OpenLoop.Core.Tests
             Assert.Contains("原地打转", result.FinalAnswer);
             Assert.Equal(2, result.Steps.Count);
             Assert.Equal(1, result.Guards.ExplorationStops);
+            Assert.True(result.StoppedByGuard);
         }
 
         [Fact]

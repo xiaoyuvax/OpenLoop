@@ -8,7 +8,7 @@
 当前考核题只能手写 JSON 放进 `<workspace>/.openloop/eval/tasks/*.json`（`docs/CONFORMANCE.md` §4.4）。问题：
 
 - 字段多（`seed` / `scope` / `checks`），用户出题成本高；
-- Loop 已经在收集证据（findings、traces、子 agent 记录），但没有出口把「观察到的失败」变成题；
+- Loop 已经在收集证据（findings、traces），但没有出口把「观察到的失败」变成题；
 - Gate 结果只存在于内存，UI 只有一条汇总通知（`SessionView.cs:762`），用户看不到逐题对比；
 - 失败候选和裁决已落账，但缺少面向人的报告页。
 

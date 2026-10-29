@@ -251,7 +251,9 @@ namespace OpenLoop.App
                 turn.AssistantText = CleanAnswer(result.FinalAnswer, result.FinishReason);
                 trace.Message("assistant", turn.AssistantText);
 
-                outcome = result.BudgetExhausted ? "budget" : result.StoppedByUser ? "stopped" : "ok";
+                outcome = result.BudgetExhausted ? "budget"
+                    : result.StoppedByUser || result.StoppedByGuard ? "stopped"
+                    : "ok";
                 trace.Finish(outcome, turn.AssistantText, result.ChatCost, result.Guards);
                 _lblStatus.Text = $"状态: {outcome} · {result.Steps.Count} 步 · 成本 {(result.ChatCost?.ToString("0.0000") ?? "—")}";
             }

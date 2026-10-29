@@ -78,7 +78,9 @@ namespace OpenLoop.Core.Loop
             {
                 task = task.Id,
                 version = activation.Version,
-                outcome = result.BudgetExhausted ? "budget" : result.StoppedByUser ? "stopped" : "ok",
+                outcome = result.BudgetExhausted ? "budget"
+                    : result.StoppedByUser || result.StoppedByGuard ? "stopped"
+                    : "ok",
                 steps = result.Steps.Count,
                 cost = result.ChatCost,
                 passed,

@@ -34,6 +34,13 @@ namespace OpenLoop.App
         private sealed record TurnUndo(FileUndoLog Log, string Checkpoint);
         private string _tracePath = "";
 
+        /// <summary>运行中提交的请求排队，当前轮结束后自动发送。</summary>
+        private readonly List<QueuedRequest> _queue = [];
+        private QueuedRequest _interruptNext;
+        private bool _queuePaused;
+
+        private sealed record QueuedRequest(string Text, string Mode);
+
         public SessionView()
         {
             InitializeComponent();
@@ -55,7 +62,6 @@ namespace OpenLoop.App
             _chat.PlaceholderText = Localization.T("NoMessages");
             _chat.UndoRequested += OnChatUndo;
             _chat.CopyRequested += OnChatCopy;
-            _agentChat.CopyRequested += OnChatCopy;
             _chat.Bind(session.Book);
             SelectEffort(_effort);
             _freeSwitch.Checked = _onlyFree;
@@ -68,7 +74,6 @@ namespace OpenLoop.App
             _lblStatus.TextChanged += OnStatusTextChanged;
             _loopFlow.SizeChanged += (_, _) => FitLoopLabels();
             _chat.SurveySubmitted += OnSurveySubmitted;
-            _chat.LinkActivated += OnAgentLink;
             OpenLoop.Core.Store.SurveyStore.Changed += OnSurveyChanged;
             _chat.SurveySkipped += (_, _) => { };
             LoadSurveys();
@@ -110,6 +115,37 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ChatDiagnostics => _chat.GetLayoutDiagnostics();
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int PendingCount => _queue.Count;
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string PendingSummary => string.Join("\n", _queue.Select(q => q.Text));
+
+        /// <summary>A 面驱动：移除第 index 个排队请求。</summary>
+        public void RemovePending(int index)
+        {
+            if (index < 0 || index >= _queue.Count) return;
+            _queue.RemoveAt(index);
+            RefreshQueue();
+        }
+
+        /// <summary>A 面驱动：撤回第 index 个排队请求到输入框。</summary>
+        public void RetractPending(int index)
+        {
+            if (index < 0 || index >= _queue.Count) return;
+            Retract(_queue[index]);
+        }
+
+        /// <summary>A 面驱动：打断当前轮，立即发送第 index 个排队请求。</summary>
+        public void SendPendingNow(int index)
+        {
+            if (index < 0 || index >= _queue.Count) return;
+            SendNow(_queue[index]);
+        }
+
+        /// <summary>A 面驱动：恢复被 Stop 暂停的队列并按序发送。</summary>
+        public void SendAllPending() => OnQueueSendAll(null, EventArgs.Empty);
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool EvolveEnabled => _btnEvolve.Enabled;
@@ -175,7 +211,7 @@ namespace OpenLoop.App
         public void SendMode(string mode = "task")
         {
             SelectMode(mode);
-            SendTask(_mode);
+            Submit();
             SetMode("task");
         }
 
@@ -247,6 +283,12 @@ namespace OpenLoop.App
             if (!_upperSplit.Panel2Collapsed) ApplyLayout();
         }
 
+        private void OnContextClick(object sender, EventArgs e)
+        {
+            if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
+            ShowSidePage(1);
+        }
+
         private void OnSidePageChanged(object sender, AntdUI.IntEventArgs e)
         {
             bool detail = e?.Value == 1;
@@ -281,18 +323,200 @@ namespace OpenLoop.App
             }
         }
 
+        private void OnInputTextChanged(object sender, EventArgs e) => UpdateSendButton();
+
+        /// <summary>运行中：输入框有内容 = 发送（排队），清空 = 停止；只有一个按钮。</summary>
+        private void UpdateSendButton()
+        {
+            bool stop = _running && _txtInput.Text.Trim().Length == 0;
+            _btnSend.Text = Localization.T(stop ? "Stop" : "Send");
+            _btnSend.IconSvg = UiIcons.Of(stop ? UiIcons.Stop : UiIcons.Send,
+                stop ? UiStyle.Error : Color.White);
+            _btnSend.Type = stop ? AntdUI.TTypeMini.Error : AntdUI.TTypeMini.Primary;
+            _btnSend.Ghost = stop;
+        }
+
         private void Submit()
         {
+            string text = _txtInput.Text.Trim();
             if (_running)
             {
-                _cts?.Cancel();
+                if (text.Length == 0)
+                {
+                    _queuePaused = true;
+                    _cts?.Cancel();
+                    return;
+                }
+                Enqueue(text, _mode);
+                _txtInput.Clear();
+                SetMode("task");
                 return;
             }
-            SendTask(_mode);
+
+            if (text.Length == 0) return;
+            _txtInput.Clear();
+            SendTask(_mode, text);
             SetMode("task");
         }
 
         private void OnSendClick(object sender, EventArgs e) => Submit();
+
+        private void Enqueue(string text, string mode)
+        {
+            _queue.Add(new QueuedRequest(text, mode));
+            _queuePaused = false;
+            RefreshQueue();
+        }
+
+        private void OnQueueSendAll(object sender, EventArgs e)
+        {
+            _queuePaused = false;
+            if (!_running) DrainQueue();
+        }
+
+        private void SendNow(QueuedRequest item)
+        {
+            if (!_queue.Remove(item)) return;
+            RefreshQueue();
+            _queuePaused = false;
+
+            if (!_running)
+            {
+                SendTask(item.Mode, item.Text);
+                return;
+            }
+
+            // 打断当前轮；结束后先发这一条，再按队列顺序继续
+            _interruptNext = item;
+            _cts?.Cancel();
+            BeginInvoke(new Action(() => { if (!_running) DrainQueue(); }));
+        }
+
+        private void Retract(QueuedRequest item)
+        {
+            if (!_queue.Remove(item)) return;
+            string draft = _txtInput.Text.Trim();
+            _txtInput.Text = draft.Length == 0 ? item.Text : draft + "\n\n" + item.Text;
+            _txtInput.Focus();
+            RefreshQueue();
+        }
+
+        /// <summary>当前轮结束后调用；打断项优先，其次队列顺序。</summary>
+        private void DrainQueue()
+        {
+            if (IsDisposed || _running) return;
+
+            if (_interruptNext != null)
+            {
+                var item = _interruptNext;
+                _interruptNext = null;
+                SendTask(item.Mode, item.Text);
+                return;
+            }
+
+            if (_queuePaused || _queue.Count == 0) return;
+            var next = _queue[0];
+            _queue.RemoveAt(0);
+            RefreshQueue();
+            SendTask(next.Mode, next.Text);
+        }
+
+        private void RefreshQueue()
+        {
+            if (IsDisposed || _queueList == null) return;
+
+            while (_queueList.Controls.Count > 0)
+            {
+                var old = _queueList.Controls[0];
+                _queueList.Controls.RemoveAt(0);
+                // 行按钮的 Click 正在执行，销毁延后一拍，避免控件在自己的事件里被 Dispose
+                if (IsHandleCreated) BeginInvoke(new Action(old.Dispose));
+                else old.Dispose();
+            }
+
+            _lblQueue.Text = $"待发送 {_queue.Count}";
+            _btnQueueSendAll.Visible = _queue.Count > 1;
+            foreach (var item in _queue)
+                _queueList.Controls.Add(CreateQueueRow(item));
+
+            _queueHost.Height = Math.Min(Dip(150), Dip(36) + _queue.Count * Dip(30));
+            _queueHost.Visible = _queue.Count > 0;
+            FitQueueRows();
+        }
+
+        private Control CreateQueueRow(QueuedRequest item)
+        {
+            var row = new TableLayoutPanel
+            {
+                ColumnCount = 2,
+                RowCount = 1,
+                Height = Dip(26),
+                Margin = new Padding(0, 0, 0, Dip(4)),
+                BackColor = UiStyle.Surface,
+                Padding = new Padding(Dip(6), 0, 0, 0)
+            };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            var label = new AntdUI.Label
+            {
+                Dock = DockStyle.Fill,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Text = item.Text.Replace("\r", " ").Replace("\n", " "),
+                ForeColor = UiStyle.Text,
+                Font = new Font("Segoe UI", 9F),
+                Margin = new Padding(0)
+            };
+            _tips.SetToolTip(label, item.Text);
+
+            var actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.RightToLeft,
+                WrapContents = false,
+                AutoSize = true,
+                Margin = new Padding(0)
+            };
+
+            var send = QueueButton("立即发送", primary: true);
+            var remove = QueueButton("移除");
+            var retract = QueueButton("撤回");
+            send.Click += (_, _) => SendNow(item);
+            remove.Click += (_, _) => { _queue.Remove(item); RefreshQueue(); };
+            retract.Click += (_, _) => Retract(item);
+
+            actions.Controls.Add(send);
+            actions.Controls.Add(remove);
+            actions.Controls.Add(retract);
+
+            row.Controls.Add(label, 0, 0);
+            row.Controls.Add(actions, 1, 0);
+            return row;
+        }
+
+        private AntdUI.Button QueueButton(string text, bool primary = false)
+            => new()
+            {
+                Text = text,
+                Ghost = !primary,
+                Type = primary ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default,
+                Radius = 6,
+                Width = Dip(text.Length > 2 ? 76 : 52),
+                Height = Dip(24),
+                Font = new Font("Segoe UI", 8.5F),
+                Margin = new Padding(Dip(6), 0, 0, 0)
+            };
+
+        private void FitQueueRows()
+        {
+            if (_queueList == null) return;
+            int width = Math.Max(Dip(200),
+                _queueList.ClientSize.Width - Dip(4) - SystemInformation.VerticalScrollBarWidth);
+            foreach (Control row in _queueList.Controls)
+                row.Width = width;
+        }
 
         private void OnModeChanged(object sender, AntdUI.IntEventArgs e)
         {
@@ -511,13 +735,12 @@ namespace OpenLoop.App
             return head + "\n\n" + Localization.T("RawResponse") + "\n```\n" + detail + "\n```";
         }
 
-        private async void SendTask(string tag)
+        private async void SendTask(string tag, string text)
         {
             if (_running) return;
 
             var settings = _settings();
-            string text = _txtInput.Text.Trim();
-            if (text.Length == 0) return;
+            if (string.IsNullOrWhiteSpace(text)) return;
 
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
@@ -541,7 +764,23 @@ namespace OpenLoop.App
             var skillCatalog = SkillCatalog.Load(workspace);
             string checkpoint = Snapshots.Create(workspace, "worker");
             if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
-            var reasoner = new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort);
+
+            //模型等待/重试进度：网关慢或重试时给状态栏反馈，避免看起来「卡住」
+            int awaitingModel = 0;
+            var reasoner = new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort)
+            {
+                OnProgress = progress =>
+                {
+                    Interlocked.Exchange(ref awaitingModel, 1);
+                    RunOnUiSafe(() =>
+                    {
+                        string suffix = progress.Attempt > 0
+                            ? $"{progress.Phase}（{progress.Elapsed.TotalSeconds:0} 秒）"
+                            : progress.Phase;
+                        _lblStatus.Text = Localization.T("Status") + ": " + suffix;
+                    });
+                }
+            };
 
             Ledger ledger;
             ActivationRecord activation;
@@ -571,14 +810,7 @@ namespace OpenLoop.App
                 AppLog.Warn("技能不可用：" + string.Join("；", skillProblems));
             Func<OpenLoop.Core.Tools.Builtin.CommandRequest, bool> approve =
                 fullAccess ? _ => true : ApproveCommand;
-            var tools = new ToolRegistry(ToolRegistry.Workspace(scope, approve, skills, fullAccess).Tools.Concat(
-            [
-                new OpenLoop.Core.Tools.Builtin.SpawnAgentTool(
-                    () => new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort),
-                    names => ChildRegistry(scope, names),
-                    workspace,
-                    () => (Session.Id, Session.Book.Turns.Count - 1))
-            ]));
+            var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess);
 
             TraceWriter trace;
             try
@@ -605,7 +837,6 @@ namespace OpenLoop.App
             _turnUndo[turn] = new TurnUndo(undoLog, checkpoint);
             //发出即落盘：进程被杀时最多丢流式中的半条回复，而不是整轮对话
             ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
-            _txtInput.Clear();
             SetRunning(true);
             SetState(SessionState.Running);
             SetTrace(workspace, trace.DirectoryPath);
@@ -617,18 +848,27 @@ namespace OpenLoop.App
             var streamBuffer = new StringBuilder();
             Action<string> onDelta = piece =>
             {
+                ResumeStatus();
                 lock (streamBuffer) streamBuffer.Append(piece);
                 string snapshot;
                 lock (streamBuffer) snapshot = streamBuffer.ToString();
                 if (LooksLikeToolCallText(snapshot)) return;
-                RunOnUi(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot)));
+                RunOnUiSafe(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot)));
             };
+
+            //收到模型输出即从「等待/重试」回到运行中
+            void ResumeStatus()
+            {
+                if (Interlocked.Exchange(ref awaitingModel, 0) == 0) return;
+                RunOnUiSafe(() => _lblStatus.Text = Localization.T("Status") + ": 运行中…");
+            }
 
             // 推理通道：推理模型在出正文前只吐 reasoning，实时显示到思考区，避免长时间只看到「思考中…」
             var reasoningBuffer = new StringBuilder();
             long lastReasoningUi = 0;
             Action<string> onReasoning = piece =>
             {
+                ResumeStatus();
                 lock (reasoningBuffer) reasoningBuffer.Append(piece);
                 //推理增量很密：界面按 ~250ms 节流，避免逐片重排聊天区
                 long now = Environment.TickCount64;
@@ -636,7 +876,7 @@ namespace OpenLoop.App
                 Interlocked.Exchange(ref lastReasoningUi, now);
                 string snapshot;
                 lock (reasoningBuffer) snapshot = reasoningBuffer.ToString();
-                RunOnUi(() =>
+                RunOnUiSafe(() =>
                 {
                     turn.ReasoningText = snapshot;
                     RefreshChat();
@@ -653,7 +893,7 @@ namespace OpenLoop.App
             var loop = new AgentLoop(tools, reasoner, policy,
                 onStep: step =>
                 {
-                    RunOnUi(() =>
+                    RunOnUiSafe(() =>
                     {
                         turn.ToolStepCount++;
                         turn.ToolTotalMs += step.DurationMs;
@@ -673,7 +913,7 @@ namespace OpenLoop.App
                 onToolStart: (name, _) =>
                 {
                     lock (streamBuffer) streamBuffer.Clear();
-                    RunOnUi(() =>
+                    RunOnUiSafe(() =>
                     {
                         turn.AssistantText = "";
                         turn.ToolStatusText = $"正在调用 {name}…";
@@ -714,7 +954,7 @@ namespace OpenLoop.App
                 trace.Message("assistant", turn.AssistantText);
 
                 outcome = result.BudgetExhausted ? "budget"
-                    : result.StoppedByUser ? "stopped"
+                    : result.StoppedByUser || result.StoppedByGuard ? "stopped"
                     : "ok";
                 stepCount = result.Steps.Count;
                 cost = result.ChatCost;
@@ -782,6 +1022,7 @@ namespace OpenLoop.App
                 _chat.ScrollToEnd();
                 RefreshLedgerInfo();
                 ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
+                if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
             }
         }
 
@@ -1285,17 +1526,12 @@ namespace OpenLoop.App
         private void SetRunning(bool running)
         {
             _running = running;
-            _btnSend.Text = Localization.T(running ? "Stop" : "Send");
-            _btnSend.IconSvg = UiIcons.Of(running ? UiIcons.Stop : UiIcons.Send,
-                running ? UiStyle.Error : Color.White);
-            _btnSend.Type = running ? AntdUI.TTypeMini.Error : AntdUI.TTypeMini.Primary;
-            _btnSend.Ghost = running;
+            UpdateSendButton();
             _btnEvolve.Enabled = !running;
             _btnRollback.Enabled = !running;
             _btnRule.Enabled = !running;
             _btnDrafts.Enabled = !running;
             _btnReport.Enabled = !running;
-            _txtInput.Enabled = !running;
             _modeControl.Enabled = !running;
             _selProvider.Enabled = !running;
             _selModel.Enabled = !running;
@@ -1310,22 +1546,6 @@ namespace OpenLoop.App
             if (model.Length == 0) { _btnEvolve.Enabled = false; return; }
             var (baseUrl, _) = _settings().EndpointFor(model);
             _btnEvolve.Enabled = !string.IsNullOrWhiteSpace(baseUrl);
-        }
-
-        private static ToolRegistry ChildRegistry(WorkspaceScope scope, IReadOnlyList<string> names)
-        {
-            var tools = new List<OpenLoop.Core.Tools.ITool>();
-            foreach (string name in names)
-            {
-                switch (name)
-                {
-                    case "read_file": tools.Add(new OpenLoop.Core.Tools.Builtin.ReadFileTool(scope)); break;
-                    case "write_file": tools.Add(new OpenLoop.Core.Tools.Builtin.WriteFileTool(scope)); break;
-                    case "list_dir": tools.Add(new OpenLoop.Core.Tools.Builtin.ListDirTool(scope)); break;
-                    case "grep": tools.Add(new OpenLoop.Core.Tools.Builtin.GrepTool(scope)); break;
-                }
-            }
-            return new ToolRegistry(tools);
         }
 
         private void OnChatCopy(object sender, ChatFlowActionEventArgs e)
@@ -1418,105 +1638,7 @@ namespace OpenLoop.App
             return record?.Id;
         }
 
-        private void LoadAgentLinks()
-        {
-            if (Session == null) return;
-            var links = OpenLoop.Core.Store.AgentTranscriptStore.List(Session.Workspace, Session.Id)
-                .Select(t => new ChatLink
-                {
-                    Id = t.Id,
-                    AnchorTurnIndex = t.AnchorTurn,
-                    Title = t.Title,
-                    Subtitle = "子 agent",
-                    AccentHex = "#2F54EB"
-                }).ToList();
-            _chat.SetLinks(links);
-        }
-
-        public string SeedAgentDemo()
-        {
-            var transcript = OpenLoop.Core.Store.AgentTranscriptStore.Add(Session.Workspace,
-                new OpenLoop.Core.Store.AgentTranscript
-                {
-                    SessionId = Session.Id,
-                    AnchorTurn = Session.Book.Turns.Count - 1,
-                    Task = "扫描 src 目录并总结模块",
-                    Answer = "子 agent 结论：共 3 个模块，入口在 Program.cs。",
-                    Steps =
-                    [
-                        new OpenLoop.Core.Store.AgentStepRecord { Tool = "list_dir", Args = "src", Ok = true, Ms = 12 },
-                        new OpenLoop.Core.Store.AgentStepRecord { Tool = "grep", Args = "class Program", Ok = true, Ms = 30 }
-                    ]
-                });
-            LoadAgentLinks();
-            return transcript?.Id;
-        }
-
         public string TraceDebug => null; // removed temporary diagnostic
-
-        public bool AgentViewVisible => _agentHost.Visible;
-
-        public string AgentDebug => $"host={_agentHost.Visible}/{_agentHost.Bounds}/idx={_agentHost.Parent?.Controls.GetChildIndex(_agentHost)}; chatParent={(_chat.Parent == _agentHost.Parent)}; chatIdx={_chat.Parent?.Controls.GetChildIndex(_chat)}; hostChildren={_agentHost.Controls.Count}; chatVisible={_chat.Visible}";
-
-        public string AgentViewBounds => _agentHost.Bounds + " parent=" + (_agentHost.Parent?.GetType().Name ?? "null") + " idx=" + (_agentHost.Parent?.Controls.GetChildIndex(_agentHost) ?? -1);
-
-        public string OpenAgentView(string id)
-        {
-            try { ShowAgent(id); return "ok"; } catch (Exception ex) { return "ERR: " + ex; }
-        }
-
-        private void ShowAgent(string id)
-        {
-            var transcript = OpenLoop.Core.Store.AgentTranscriptStore.Load(Session.Workspace, id);
-            if (transcript == null) return;
-
-            var book = new ChatTurnBook();
-            book.AddTurn(new ChatTurn
-            {
-                User = new ChatMessage("user", transcript.Task),
-                Assistant = new ChatMessage("assistant", transcript.Answer),
-                ToolTraceText = string.Join("\n", transcript.Steps.Select(s => $"{s.Tool}  {(s.Ok ? "ok" : "fail")}  {s.Ms}ms"))
-            });
-            _agentBack = true;
-            _chat.Bind(book);
-            _chat.SetLinks([new ChatLink { Id = "__back", AnchorTurnIndex = -1, Title = Localization.T("AgentBack"), AccentHex = "#8C8C8C" }]);
-            _lblTitle.Text = "子 agent · " + transcript.Title;
-            _txtInput.Enabled = false;
-            _btnSend.Enabled = false;
-            _chat.ScrollToEnd();
-        }
-
-        private void OnAgentLink(object sender, ChatLinkEventArgs e)
-        {
-            if (e?.Link == null) return;
-            if (e.Link.Id == "__back")
-            {
-                _agentBack = false;
-                _chat.Bind(Session.Book);
-                LoadAgentLinks();
-                _lblTitle.Text = Session.Title;
-                _txtInput.Enabled = true;
-                _btnSend.Enabled = true;
-                return;
-            }
-            var transcript = OpenLoop.Core.Store.AgentTranscriptStore.Load(Session.Workspace, e.Link.Id);
-            if (transcript == null) return;
-
-            var book = new ChatTurnBook();
-            var turn = new ChatTurn
-            {
-                User = new ChatMessage("user", transcript.Task),
-                Assistant = new ChatMessage("assistant", transcript.Answer),
-                ToolTraceText = string.Join("\n", transcript.Steps.Select(s => $"{s.Tool}  {(s.Ok ? "ok" : "fail")}  {s.Ms}ms"))
-            };
-            book.AddTurn(turn);
-            _agentChat.Bind(book);
-            _lblAgentTitle.Text = "子 agent · " + transcript.Title;
-            _agentHost.Visible = true;
-            _agentHost.BringToFront();
-        }
-
-        private void OnAgentBack(object sender, EventArgs e) => _agentHost.Visible = false;
 
         private void LoadSurveys()
         {
@@ -1563,7 +1685,6 @@ namespace OpenLoop.App
         }
 
         private string _lastPendingSurveyId;
-        private bool _agentBack;
 
         private void OnSurveySubmitted(object sender, ChatSurveyEventArgs e)
         {
@@ -1579,6 +1700,13 @@ namespace OpenLoop.App
             if (IsDisposed || !IsHandleCreated) return;
             if (InvokeRequired) Invoke(action);
             else action();
+        }
+
+        /// <summary>界面更新失败只记日志，不能把异常抛回 Agent 循环（否则整轮任务会被判失败）。</summary>
+        private void RunOnUiSafe(Action action)
+        {
+            try { RunOnUi(action); }
+            catch (Exception ex) { AppLog.Error("界面更新失败", ex); }
         }
 
         private bool ApproveCommand(OpenLoop.Core.Tools.Builtin.CommandRequest request)

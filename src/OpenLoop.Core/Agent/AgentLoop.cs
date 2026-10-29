@@ -10,8 +10,9 @@ using OpenLoop.Core.Tools;
 namespace OpenLoop.Core.Agent
 {
     /// <summary>
-    /// Agent 主循环（文本协议工具调用）：构建消息 → 补全 → 解析工具块 → 执行 → 结果回填 → 继续，
-    /// 直到模型给出最终答案或步数预算耗尽。
+    /// Agent 的便捷驱动：把任务交给状态机管线，直到模型给出最终答案或预算耗尽。
+    /// 管线本身见 <see cref="AgentStateMachine"/> 与 <see cref="AgentPipeline"/>；
+    /// 宿主也可以直接用 CreateMachine + StepAsync/Apply 逐步驱动。
     /// 不认识工作目录、模型、账本；这些都由构造方注入。
     /// </summary>
     public sealed class AgentLoop
@@ -46,10 +47,34 @@ namespace OpenLoop.Core.Agent
             => SystemPromptBuilder.Build(
                 _tools.Tools, Math.Clamp(_policy.MaxSteps, 1, 100), role, rules, instructions, _skills, workspace);
 
+        public AgentStateMachine CreateMachine() => new(AgentPipeline.Create());
+
+        public AgentState CreateState(IReadOnlyList<LlmMessage> history, string userMessage)
+            => new(history, userMessage) { MaxSteps = Math.Clamp(_policy.MaxSteps, 1, 100) };
+
+        public AgentRunContext CreateContext(
+            int contextLimit = 0,
+            Func<bool> shouldStop = null,
+            Action<string> onDelta = null,
+            Action<string> onReasoning = null)
+            => new()
+            {
+                Tools = _tools,
+                Reasoner = _reasoner,
+                Policy = _policy,
+                ContextLimit = contextLimit,
+                ShouldStop = shouldStop,
+                OnDelta = onDelta,
+                OnReasoning = onReasoning,
+                OnStep = _onStep,
+                OnToolStart = _onToolStart,
+                ConfirmContinue = _confirmContinue
+            };
+
         /// <summary>
         /// 执行一次完整任务。history 为既有对话（不含本次用户消息），userMessage 为本次请求。
         /// contextLimit &gt; 0 时，每轮补全前估算占用，超阈值即压缩较早消息（system 不动）。
-        /// shouldStop = 软停止：只在每轮开始前检查，进行中的调用绝不被打断。
+        /// shouldStop = 软停止：只在下一轮模型调用前检查，进行中的工具调用不被打断。
         /// </summary>
         /// <param name="onDelta">正文流式增量（null 时不走流式通道）。</param>
         /// <param name="onReasoning">推理通道流式增量，供宿主实时显示思考内容。</param>
@@ -58,279 +83,15 @@ namespace OpenLoop.Core.Agent
             CancellationToken ct = default, int contextLimit = 0, Func<bool> shouldStop = null,
             Action<string> onDelta = null, Action<string> onReasoning = null)
         {
-            int maxSteps = Math.Clamp(_policy.MaxSteps, 1, 100);
-            var result = new AgentRunResult();
-            var messages = new List<LlmMessage>(history ?? [])
-            {
-                new LlmMessage("user", userMessage)
-            };
-
-            string lastSignature = null;
-            int repeatStreak = 0;
-            int explorationStreak = 0;
-            int malformedRetries = 0;
-            int promiseNudges = 0;
-            bool claimNudged = false;
-            bool anyToolSucceeded = false;
-            bool emptyRetried = false;
-
-            for (int step = 1; step <= maxSteps; step++)
-            {
-                if (shouldStop?.Invoke() == true)
-                {
-                    result.StoppedByUser = true;
-                    return result;
-                }
-                ct.ThrowIfCancellationRequested();
-
-                if (contextLimit > 0
-                    && AgentContext.EstimateTokens(messages) >= contextLimit * _policy.CompressAt)
-                {
-                    var compressed = await CompressMessagesAsync(messages, ct);
-                    if (compressed != null)
-                    {
-                        messages = compressed;
-                        result.Guards.Compressions++;
-                    }
-                }
-
-                var completion = onDelta != null && _reasoner is IStreamingReasoner streaming
-                    ? await streaming.StreamAsync(messages, onDelta, ct, onReasoning)
-                    : await _reasoner.CompleteAsync(messages, ct);
-                string content = completion?.Content;
-                string reasoning = completion?.Reasoning;
-                bool contentEmpty = LlmTextSanitizer.StripSafetyLines(content ?? "").Trim().Length == 0;
-                bool hasReasoning = !string.IsNullOrWhiteSpace(reasoning);
-                if (completion?.Cost is decimal cost) result.ChatCost = (result.ChatCost ?? 0m) + cost;
-                if (completion?.TokensIn is int contextTokens) result.ContextTokens = contextTokens;
-
-                // 并行调用（仅全部只读时并行执行，最多 4 个；含写操作或解析失败回退串行/单调用路径）
-                var calls = AgentToolCallParser.TryParseAll(content);
-                if (calls.Count == 0)
-                {
-                    // 无工具块 → 最终答案（ LooksLikeToolCallAttempt 的纠正路径保持不变）
-                    if (AgentToolCallParser.LooksLikeToolCallAttempt(content))
-                    {
-                        if (_policy.MalformedRetry && malformedRetries < _policy.MaxMalformedRetries && step < maxSteps)
-                        {
-                            malformedRetries++;
-                            result.Guards.MalformedRetries++;
-                            messages.Add(new LlmMessage("assistant", content));
-                            messages.Add(new LlmMessage("user",
-                                "tool-result: {\"ok\":false,\"error\":\"工具调用格式无效，JSON 无法解析。请重新输出一行合法 JSON（可跨行），格式：tool-call: {\\\"tool\\\":\\\"工具名\\\",\\\"args\\\":{...}}。\"}"));
-                            continue;
-                        }
-                        result.FinalAnswer =
-                            "⚠ 模型多次输出无法解析的工具调用（JSON 格式错误），已停止本次执行。请重试或更换模型。";
-                        return result;
-                    }
-
-                    // 谎报完成护栏
-                    if (_policy.ClaimGuard && !claimNudged && !anyToolSucceeded && step < maxSteps
-                        && LooksLikeCompletionClaim(content))
-                    {
-                        claimNudged = true;
-                        result.Guards.ClaimNudges++;
-                        messages.Add(new LlmMessage("assistant", content));
-                        messages.Add(new LlmMessage("user",
-                            "（系统提示）你这条回复声称已经完成了某个操作，但本轮没有任何工具成功执行。不要谎报完成：需要执行就输出一行 tool-call: {\"tool\":\"工具名\",\"args\":{...}}；确实不需要工具（纯回答/说明）就重写答案，明确说明「未执行任何操作」，且不要再出现「已写入/已修改/已完成」这类说法。"));
-                        continue;
-                    }
-
-                    // 占位话术护栏
-                    if (_policy.PromiseGuard && promiseNudges < _policy.MaxPromiseNudges
-                        && step < maxSteps && LooksLikeActionPromise(content))
-                    {
-                        promiseNudges++;
-                        result.Guards.PromiseNudges++;
-                        messages.Add(new LlmMessage("assistant", content));
-                        messages.Add(new LlmMessage("user",
-                            "（系统提示）你上一条只是说明将要执行某事，但没有实际调用工具。若仍需执行操作，请立即输出一行 tool-call: {\"tool\":\"工具名\",\"args\":{...}}；若已全部完成，请直接给出最终结果，不要回复「请稍候」这类占位说明。"));
-                        continue;
-                    }
-
-                    // 上游只给安全判定/空正文：自动重试一次，再空才收尾。
-                    // 推理模型只给 reasoning、正文为空属于正常输出，用推理文本兑底，不再重试。
-                    if (!emptyRetried && step < maxSteps && contentEmpty && !hasReasoning)
-                    {
-                        emptyRetried = true;
-                        result.Guards.EmptyRetries++;
-                        messages.Add(new LlmMessage("assistant", content ?? ""));
-                        messages.Add(new LlmMessage("user",
-                            "（系统提示）你上一轮没有返回正文（只有安全判定或空内容）。请直接重写完整答案，不要输出安全判定。"));
-                        continue;
-                    }
-
-                    result.FinalAnswer = contentEmpty && hasReasoning ? reasoning.Trim() : content?.Trim();
-                    result.FinishReason = completion?.FinishReason;
-                    return result;
-                }
-
-                // 并行上限：只读批量侦察通常 3-5 个，4 已覆盖；超过的拒绝执行、要求分轮
-                if (calls.Count > 4)
-                {
-                    messages.Add(new LlmMessage("assistant", content));
-                    messages.Add(new LlmMessage("user",
-                        $"tool-result: {{\"ok\":false,\"error\":\"一次最多并行 {4} 个工具调用（本轮 {calls.Count} 个）。请拆成 ≤4 个/轮，或改为多轮。\"}}"));
-                    continue;
-                }
-
-                bool parallel = calls.Count > 1 && calls.All(c => _tools.Find(c.Tool)?.IsReadOnly == true);
-
-                // 执行（并行=Task.WhenAll，串行=原路径；参数自愈只对单调用启用）
-                var stepWatch = System.Diagnostics.Stopwatch.StartNew();
-                var executed = new List<(AgentToolCall Call, AgentToolResult Result, string RepairNote)>();
-                if (parallel)
-                {
-                    var tasks = calls.Select(async c => (c, await ExecuteToolSafeAsync(c, ct), (string)null));
-                    var done = await Task.WhenAll(tasks);
-                    executed.AddRange(done);
-                }
-                else
-                {
-                    foreach (var call in calls)
-                    {
-                        var (toolResult, repairNote, effectiveArgs) = await ExecuteWithArgRepairAsync(call, step, maxSteps, ct, result);
-                        executed.Add((call, toolResult, repairNote));
-                    }
-                }
-                stepWatch.Stop();
-
-                // 记录 + 无进展护栏（签名按整轮调用集合算）
-                string batchSignature = string.Join("\u0003", calls.Select(c => SignatureOf(c.Tool, c.Args)));
-                string contentEcho = content;
-                foreach (var (call, toolResult, repairNote) in executed)
-                {
-                    string dataOut = null;
-                    string errorOut = null;
-                    if (toolResult.Ok)
-                    {
-                        anyToolSucceeded = true;
-                        dataOut = Truncate(toolResult.Data, _policy.ToolResultLimit);
-                        if (repairNote != null) dataOut = repairNote + "\n" + dataOut;
-                    }
-                    else
-                    {
-                        errorOut = repairNote != null ? repairNote + "\n" + toolResult.Error : toolResult.Error;
-                        if (IsParameterError(errorOut)) errorOut += ParameterHint(call.Tool);
-                    }
-
-                    string payload = toolResult.Ok
-                        ? JsonSerializer.Serialize(new { ok = true, data = dataOut }, ToolResultJson)
-                        : JsonSerializer.Serialize(new { ok = false, error = errorOut }, ToolResultJson);
-                    string full = $"tool-result: {payload}";
-
-                    var record = new AgentStepRecord
-                    {
-                        Index = step,
-                        Tool = call.Tool,
-                        ArgsSummary = SummarizeArgs(call.Args),
-                        ArgsFull = FormatArgsDetailed(call.Args),
-                        Ok = toolResult.Ok,
-                        Summary = Truncate(toolResult.Ok ? dataOut : errorOut, 160),
-                        FullResult = full,
-                        ResultFull = Truncate(toolResult.Ok ? dataOut : errorOut, 20000),
-                        ArgsRepaired = repairNote != null,
-                        DurationMs = stepWatch.ElapsedMilliseconds
-                    };
-                    result.Steps.Add(record);
-                    _onStep?.Invoke(record);
-                }
-
-                repeatStreak = batchSignature == lastSignature ? repeatStreak + 1 : 1;
-                lastSignature = batchSignature;
-                explorationStreak = calls.All(c => _tools.Find(c.Tool)?.IsReadOnly == true) ? explorationStreak + 1 : 0;
-
-                if (_policy.RepeatCallGuard && repeatStreak >= Math.Max(2, _policy.MaxRepeatCalls))
-                {
-                    result.Guards.RepeatCallStops++;
-                    result.FinalAnswer =
-                        $"检测到连续 {repeatStreak} 次完全相同的工具调用（{calls[0].Tool} 等 {calls.Count} 个），判定为无进展，已停止以免空转。" +
-                        "请补充信息或调整目标后重试。";
-                    return result;
-                }
-                if (_policy.ExplorationGuard && explorationStreak >= Math.Max(2, _policy.MaxExplorationSteps))
-                {
-                    string guardText =
-                        $"已连续 {explorationStreak} 步只读侦察、未产生任何写操作，可能是在原地打转。\n\n" +
-                        "「是」= 允许再继续执行（护栏计数清零）；「否」= 立即停止。";
-                    if (step >= maxSteps || _confirmContinue == null || !_confirmContinue(guardText))
-                    {
-                        result.Guards.ExplorationStops++;
-                        result.FinalAnswer =
-                            $"连续 {explorationStreak} 步仅执行只读侦察、未产生任何写操作，判定为在原地打转，已停止。" +
-                            "请给出更明确的目标或参数（例如具体文件、目录或要执行的动作）。";
-                        return result;
-                    }
-                    result.Guards.ExplorationContinues++;
-                    explorationStreak = 0;
-                }
-
-                // 回填：一条 user 消息带全部结果（保持调用顺序）
-                messages.Add(new LlmMessage("assistant", contentEcho));
-                messages.Add(new LlmMessage("user", string.Join("\n",
-                    executed.Select(e => $"tool-result: {JsonSerializer.Serialize(
-                        e.Result.Ok
-                            ? (object)new { ok = true, data = Truncate(e.Result.Data, _policy.ToolResultLimit) }
-                            : new { ok = false, error = e.Result.Error }, ToolResultJson)}"))));
-
-                if (step == maxSteps)
-                {
-                    result.BudgetExhausted = true;
-                    result.FinalAnswer = $"已达单次任务步数上限（{maxSteps} 步）。已执行的步骤：\n"
-                        + string.Join("\n", result.Steps.Select(s => $"{s.Index}. {s.Tool}({s.ArgsSummary}) → {(s.Ok ? "成功" : "失败")}"));
-                    return result;
-                }
-            }
-
-            return result;
+            var state = CreateState(history, userMessage);
+            var context = CreateContext(contextLimit, shouldStop, onDelta, onReasoning);
+            return await CreateMachine().RunAsync(state, context, ct);
         }
 
-        private async Task<AgentToolResult> ExecuteToolSafeAsync(AgentToolCall call, CancellationToken ct)
-        {
-            try
-            {
-                return await _tools.ExecuteAsync(call.Tool, call.Args, ct);
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                return AgentToolResult.Failure($"工具执行异常：{ex.Message}");
-            }
-        }
-
-        /// <summary>单调用路径（保留参数自愈）；返回 (结果, 修复说明, 生效参数)。</summary>
-        private async Task<(AgentToolResult, string, Dictionary<string, object>)> ExecuteWithArgRepairAsync(
-            AgentToolCall call, int step, int maxSteps, CancellationToken ct, AgentRunResult result)
-        {
-            _onToolStart?.Invoke(call.Tool, call.Args);
-            var toolResult = await ExecuteToolSafeAsync(call, ct);
-
-            var effectiveArgs = call.Args;
-            string repairNote = null;
-            if (_policy.ArgRepair && !toolResult.Ok && step < maxSteps && IsParameterError(toolResult.Error)
-                && TryRepairArgs(call.Args, toolResult.Error, out var repairedArgs, out string fixedDesc))
-            {
-                result.Guards.ArgRepairAttempts++;
-                string firstError = toolResult.Error;
-                effectiveArgs = repairedArgs;
-                _onToolStart?.Invoke(call.Tool, repairedArgs);
-                try
-                {
-                    toolResult = await _tools.ExecuteAsync(call.Tool, repairedArgs, ct);
-                }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception ex)
-                {
-                    toolResult = AgentToolResult.Failure($"工具执行异常：{ex.Message}");
-                }
-                if (toolResult.Ok) result.Guards.ArgRepairSuccesses++;
-                repairNote = toolResult.Ok
-                    ? $"（参数自动修正后重试成功：{fixedDesc}）"
-                    : $"（参数自动修正后重试仍失败：{fixedDesc}；原始错误：{Truncate(firstError, 300)}）";
-            }
-            return (toolResult, repairNote, effectiveArgs);
-        }
+        internal static string BudgetText(AgentState state)
+            => $"已达单次任务步数上限（{state.MaxSteps} 步）。已执行的步骤：\n"
+               + string.Join("\n", state.Result.Steps.Select(s =>
+                   $"{s.Index}. {s.Tool}({s.ArgsSummary}) → {(s.Ok ? "成功" : "失败")}"));
 
         private static readonly string[] ActionPromiseSignals =
         [
@@ -376,30 +137,6 @@ namespace OpenLoop.Core.Agent
             foreach (string signal in CompletionClaimSignals)
                 if (content.Contains(signal, StringComparison.OrdinalIgnoreCase)) return true;
             return false;
-        }
-
-        private async Task<List<LlmMessage>> CompressMessagesAsync(List<LlmMessage> messages, CancellationToken ct)
-        {
-            var (head, middle, tail) = AgentContext.SplitForCompression(messages, AgentContext.KeepRecentMessages);
-            if (middle.Count == 0) return null;
-            string summary;
-            try
-            {
-                var completion = await _reasoner.CompleteAsync(
-                    [new LlmMessage("user", AgentContext.SummaryInstruction + AgentContext.RenderForSummary(middle))], ct);
-                summary = completion?.Content?.Trim();
-            }
-            catch
-            {
-                return null;
-            }
-            if (string.IsNullOrWhiteSpace(summary)) return null;
-            var rebuilt = new List<LlmMessage>(head)
-            {
-                new LlmMessage("user", AgentContext.SummaryPrefix + summary)
-            };
-            rebuilt.AddRange(tail);
-            return rebuilt;
         }
 
         internal static string SummarizeArgs(Dictionary<string, object> args)
@@ -454,7 +191,7 @@ namespace OpenLoop.Core.Agent
             "timeout", "timed out", "超时", "network", "connection", "网络", "dns"
         ];
 
-        private static readonly JsonSerializerOptions ToolResultJson = new()
+        internal static readonly JsonSerializerOptions ToolResultJson = new()
         {
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
@@ -562,9 +299,9 @@ namespace OpenLoop.Core.Agent
             }
         }
 
-        private string ParameterHint(string toolName)
+        internal static string ParameterHint(ToolRegistry tools, string toolName)
         {
-            var tool = _tools.Find(toolName);
+            var tool = tools?.Find(toolName);
             return string.IsNullOrWhiteSpace(tool?.ParamsSchema)
                 ? "\n（参数不被接受：请按工具说明修正参数后重试，不要原样重复调用。）"
                 : $"\n（参数不被接受：请按该工具的参数说明修正后重试，不要原样重复调用——{Truncate(tool.ParamsSchema, 600)}）";

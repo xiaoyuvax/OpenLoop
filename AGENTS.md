@@ -17,12 +17,21 @@
 - 无独立 lint；Release 编译即类型检查。
 - 不要用 `dotnet build -t:Compile` 做语法检查（跳过资源生成，之后的增量构建会复用坏产物）；若用过必须 `dotnet build --no-incremental` 重建。
 - 运行前先结束旧进程（`OpenLoop.exe` 文件锁）：`Stop-Process -Name OpenLoop -Force`
-- 启动：`Start-Process <bin>\OpenLoop.exe -WorkingDirectory <repo根>`（默认工作区 = CWD）
+- 启动：`Start-Process <bin>\OpenLoop.exe -WorkingDirectory <repo根>`（默认工作区 = CWD）。Puppet 默认在 loopback 上启用，key 自动落盘，见下节。
 
 ## 运行时验证（Puppet A 面）
 
 - **只用 Puppet 调试**：禁止 UIAutomation、`SendKeys`、`keybd_event`、模拟鼠标/拖动、系统级截屏——会抢焦点、误触菜单。要画面用 `CaptureAction`（应用内截图，不抢输入）；要状态用 `/agent/get`、`/agent/state`、`/agent/logs`。Puppet 缺能力时在宿主加公开方法/属性，不要用 UI 自动化绕过。
-- 必须带 `OPENLOOP_PUPPET_KEY`；端口 9090 常被 VeniceMan 占用，会自动落到 9091+。
+- **key 落在共享配置文件里**：`%APPDATA%\OpenLoop\puppet.key`（用户目录，不进仓库）。启动时优先取环境变量 `OPENLOOP_PUPPET_KEY`（并同步写回该文件），否则读文件，都没有就生成一个；**其他 agent 直接读这个文件**拿 key，不必再向用户要、也不必注入环境变量。
+- 端口 9090 常被 VeniceMan 占用，会自动落到 9091+；端口用 `zcurl registry` 逐个探测确认。
+- 调用时用 `export ZCURL_KEY=$(cat "$APPDATA/OpenLoop/puppet.key")`（或 `--key`）传入。**不要**把 key 复制进工作区、文档或提交。
+- **多 agent 并发共用同一个 Puppet（常态）——用 Puppet 自带协调机制协商，契约以 `GET /agent/docs` 为准**：
+  1. **报身份**：每个请求带 `agentId=<名字>&agentPurpose=<目的>&agentOp=<在干什么>&agentWaitEst=<预计秒>`（query 参数）；最后一次请求带 `agentDone=true`，或 `POST /agent/book/release` 退场。心跳 5 分钟超时只清会话，**不会自动放锁**。
+  2. **看同伴**：响应自动附 `peers`/`peersHint`；详情 `GET /agent/book`（会话 + `helpLog`）、`GET /agent/lock/status?site=*`。有同伴在跑就不动它的状态（`SetModel`/`Send`/`OpenSession`/`SubmitNewSession`），不拉窗口、不抢焦点。
+  3. **写前先锁**：`POST /agent/lock/acquire {site, mode:"Read|Write", timeoutMs?, agentId?}`，用完显式 `/agent/lock/release`；读操作不锁（如 `get`/`state`/`logs`/`CaptureAction`）。
+  4. **求助**：任意请求加 `agentHelp=<需求>`（定向 `agentHelpTo=<agentId>`）。
+  5. **换 key 是安全的**：`POST /agent/key/refresh` 刷新全局密钥，同伴能读到新 key；**真正危险的是重启进程**（会砸掉同伴正在跑的任务）——重启前先 `GET /agent/book` 确认没有同伴，或先用 `agentHelp` 打招呼。
+- **启动后先验 Puppet 再干活**：探测 9090-9099 找监听端口，用 `%APPDATA%\OpenLoop\puppet.key` 里的 key 调 `zcurl registry`（GET /agent/registry），返回 200 才算可用；没有监听端口说明启动失败，看 `/agent/logs`（`?name=OpenLoop`）或进程日志，不要靠界面肉眼判断。
 - `POST /agent/invoke?instance=MainForm&method=<名>`，body 为参数数组；路径参数用正斜杠（反斜杠会被 JSON 转义吞掉）。
 - `GET /agent/get?instance=MainForm&path=<属性>`；`POST /agent/set` body 为 `{"path":..,"value":..}`。
 - 复杂对象判空看 `type` 不看 `value`：`value:null` + 真实 `type` = 有值；`type:null` 才是空。

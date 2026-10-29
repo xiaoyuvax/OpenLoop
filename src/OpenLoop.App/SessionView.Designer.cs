@@ -16,10 +16,6 @@ namespace OpenLoop.App
         private TableLayoutPanel _side;
         private AntdUI.Segmented _sideTabs;
         private AntdUI.Button _btnPendingSurveys;
-        private Panel _agentHost;
-        private AntdUI.Button _btnAgentBack;
-        private AntdUI.Label _lblAgentTitle;
-        private ChatFlow.ChatFlowControl _agentChat;
         private Panel _sideHost;
         private FlowLayoutPanel _loopFlow;
         private FlowLayoutPanel _detailFlow;
@@ -52,6 +48,11 @@ namespace OpenLoop.App
         private AntdUI.Label _lblFree;
         private AntdUI.Progress _ctx;
         private AntdUI.Button _btnSend;
+        private Panel _queueHost;
+        private TableLayoutPanel _queueHeader;
+        private AntdUI.Label _lblQueue;
+        private AntdUI.Button _btnQueueSendAll;
+        private FlowLayoutPanel _queueList;
         private AntdUI.Label _lblPath;
         private ToolTip _tips;
 
@@ -83,10 +84,6 @@ namespace OpenLoop.App
             _sideHost = new Panel();
             _loopFlow = new FlowLayoutPanel();
             _btnPendingSurveys = new AntdUI.Button();
-            _agentHost = new Panel();
-            _btnAgentBack = new AntdUI.Button();
-            _lblAgentTitle = new AntdUI.Label();
-            _agentChat = new ChatFlow.ChatFlowControl();
             _detailFlow = new FlowLayoutPanel();
             _btnOpenLoop = new AntdUI.Button();
             _lblDModel = new AntdUI.Label();
@@ -117,6 +114,11 @@ namespace OpenLoop.App
             _selEffort = new AntdUI.Select();
             _ctx = new AntdUI.Progress();
             _btnSend = new AntdUI.Button();
+            _queueHost = new Panel();
+            _queueHeader = new TableLayoutPanel();
+            _lblQueue = new AntdUI.Label();
+            _btnQueueSendAll = new AntdUI.Button();
+            _queueList = new FlowLayoutPanel();
             _lblPath = new AntdUI.Label();
 
             SuspendLayout();
@@ -199,34 +201,6 @@ namespace OpenLoop.App
             _chat.Margin = new Padding(0);
             _chat.ChatFont = new Font("Microsoft YaHei UI", 9F);
             _upperSplit.Panel1.Controls.Add(_chat);
-
-            _agentHost.Dock = DockStyle.Fill;
-            _agentHost.Visible = false;
-            _agentHost.BackColor = UiStyle.Page;
-            _agentHost.Padding = new Padding(0);
-
-            _agentChat.Dock = DockStyle.Fill;
-            _agentChat.ChatFont = new Font("Microsoft YaHei UI", 9F);
-            _agentHost.Controls.Add(_agentChat);
-
-            _lblAgentTitle.Dock = DockStyle.Top;
-            _lblAgentTitle.Height = 28;
-            _lblAgentTitle.Text = "";
-            _lblAgentTitle.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
-            _lblAgentTitle.TextAlign = ContentAlignment.MiddleLeft;
-            _agentHost.Controls.Add(_lblAgentTitle);
-
-            _btnAgentBack.Dock = DockStyle.Top;
-            _btnAgentBack.Height = 32;
-            _btnAgentBack.Text = Localization.T("AgentBack");
-            _btnAgentBack.Type = AntdUI.TTypeMini.Default;
-            _btnAgentBack.Ghost = true;
-            _btnAgentBack.Radius = 8;
-            _btnAgentBack.Width = 120;
-            _btnAgentBack.Click += OnAgentBack;
-            _agentHost.Controls.Add(_btnAgentBack);
-
-            _upperSplit.Panel1.Controls.Add(_agentHost);
 
             _side.Dock = DockStyle.Fill;
             _side.ColumnCount = 1;
@@ -424,8 +398,6 @@ namespace OpenLoop.App
             _side.Controls.Add(_sideHost, 0, 1);
             _upperSplit.Panel2.Controls.Add(_side);
 
-            _mainSplit.Panel1.Controls.Add(_upperSplit);
-
             // input area
             _inputArea.Dock = DockStyle.Fill;
             _inputArea.ColumnCount = 1;
@@ -445,6 +417,7 @@ namespace OpenLoop.App
             _txtInput.Font = new Font("Segoe UI", 10F);
             _txtInput.PlaceholderText = Localization.T("ComposerHint");
             _txtInput.KeyDown += OnInputKeyDown;
+            _txtInput.TextChanged += OnInputTextChanged;
 
             _toolbar.Dock = DockStyle.Fill;
             _toolbar.ColumnCount = 2;
@@ -542,6 +515,8 @@ namespace OpenLoop.App
             _ctx.TextUnit = "%";
             _ctx.Value = 0F;
             _ctx.Margin = new Padding(0, 5, 8, 5);
+            _ctx.Cursor = Cursors.Hand;
+            _ctx.Click += OnContextClick;
             _headerRight.Controls.Add(_ctx);
 
             _btnSend.Name = "btnSend";
@@ -553,6 +528,50 @@ namespace OpenLoop.App
             _btnSend.IconSvg = UiIcons.Of(UiIcons.Send, Color.White);
             _btnSend.Margin = new Padding(0);
             _btnSend.Click += OnSendClick;
+
+            // pending request drawer：贴在聊天区下方、输入框上方，有排队请求时才出现
+            _queueHost.Dock = DockStyle.Bottom;
+            _queueHost.Height = 0;
+            _queueHost.Visible = false;
+            _queueHost.BackColor = UiStyle.SecondaryBack;
+            _queueHost.Padding = new Padding(16, 6, 16, 6);
+
+            _queueHeader.Dock = DockStyle.Top;
+            _queueHeader.Height = 24;
+            _queueHeader.ColumnCount = 2;
+            _queueHeader.RowCount = 1;
+            _queueHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _queueHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            _queueHeader.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            _queueHeader.Margin = new Padding(0);
+
+            _lblQueue.AutoSize = true;
+            _lblQueue.Text = "待发送 0";
+            _lblQueue.Font = new Font("Segoe UI", 9F);
+            _lblQueue.ForeColor = UiStyle.Muted;
+            _lblQueue.TextAlign = ContentAlignment.MiddleLeft;
+            _lblQueue.Margin = new Padding(0);
+
+            _btnQueueSendAll.Text = "全部发送";
+            _btnQueueSendAll.Ghost = true;
+            _btnQueueSendAll.Radius = 6;
+            _btnQueueSendAll.Height = 24;
+            _btnQueueSendAll.Width = 80;
+            _btnQueueSendAll.Margin = new Padding(0);
+            _btnQueueSendAll.Click += OnQueueSendAll;
+
+            _queueHeader.Controls.Add(_lblQueue, 0, 0);
+            _queueHeader.Controls.Add(_btnQueueSendAll, 1, 0);
+
+            _queueList.Dock = DockStyle.Fill;
+            _queueList.FlowDirection = FlowDirection.TopDown;
+            _queueList.WrapContents = false;
+            _queueList.AutoScroll = true;
+            _queueList.Margin = new Padding(0);
+            _queueList.SizeChanged += (_, _) => FitQueueRows();
+
+            _queueHost.Controls.Add(_queueList);
+            _queueHost.Controls.Add(_queueHeader);
 
             _toolbarRight.Controls.Add(_btnSend);
             _toolbarRight.Controls.Add(_selEffort);
@@ -567,6 +586,10 @@ namespace OpenLoop.App
             _inputArea.Controls.Add(_txtInput, 0, 0);
             _inputArea.Controls.Add(_toolbar, 0, 1);
             _mainSplit.Panel2.Controls.Add(_inputArea);
+
+            // 队列抽屉在 Panel1 内 Dock=Bottom；先加 Fill 再加 Bottom，Bottom 先占位
+            _mainSplit.Panel1.Controls.Add(_upperSplit);
+            _mainSplit.Panel1.Controls.Add(_queueHost);
 
             _root.Controls.Add(_header, 0, 0);
             _root.Controls.Add(_headerLine, 0, 1);

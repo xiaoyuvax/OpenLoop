@@ -183,6 +183,13 @@ OpenLoop.Core\
 │   ├── AgentArgs.cs                  原样移植
 │   ├── AgentStepRecord.cs
 │   ├── AgentRunResult.cs
+│   ├── StateMachine\                 状态机管线
+│   │   ├── AgentState.cs
+│   │   ├── AgentRunContext.cs
+│   │   ├── AgentStepResult.cs
+│   │   ├── AgentEffects.cs
+│   │   ├── AgentStateMachine.cs
+│   │   └── AgentSteps.cs
 │   └── SystemPromptBuilder.cs        新
 ├── Tools\
 │   ├── ITool.cs
@@ -356,6 +363,28 @@ public sealed class AgentPolicy
  → TraceWriter 落 run.json / messages.jsonl / steps.jsonl / final.md
 ```
 
+### 6.3.1 状态机管线
+
+`AgentLoop.RunAsync` 现在只是便捷驱动：它创建 `AgentState` 与 `AgentRunContext`，交给 `AgentStateMachine` 反复 `StepAsync → Apply`，直到 `Completed/Yielded/Cancelled`。
+
+- 状态：`AgentState`（消息 + 轮次/护栏计数 + 待处理工具/审批）。
+- 一步：`IAgentStep.RunAsync` 返回 `Pass`（不认识）或 `Applied`；`Applied` 带 `AgentStepStatus` 与 `IAgentEffect`。
+- 效果：追加/替换消息、记录 usage、记录工具步骤、设置最终答案/预算/停止；UI 流式回调仍由步骤直接触发。
+- 管线顺序（`AgentPipeline`）：工具执行 → 进度护栏 → 步数预算 → 回答护栏 → 软停止 → 上下文压缩 → 推理。
+- 停机语义：预算耗尽 → `BudgetExhausted`；用户停止 → `StoppedByUser`；护栏判定无进展/格式持续错误 → `StoppedByGuard`。宿主把三者映射为 `budget` / `stopped` / `ok`，不再把护栏停机记成 `ok`。
+- 审批：探索护栏达到阈值时返回 `Yielded`；`ConfirmContinue` 存在时由驱动方询问后继续，否则把控制权交回调用方。
+- 逐步驱动：`AgentLoop.CreateState/CreateContext/CreateMachine` + `StepAsync/Apply`；宿主可只走一步或把 `Messages`/`Pending*` 落盘后续跑。
+
+行为与旧循环一致，回归由 `AgentLoopTests` 覆盖；状态机本身由 `AgentStateMachineTests` 覆盖（Yield 解析、逐步驱动、审批继续）。
+
+### 6.3.2 运行中的请求队列
+
+- 运行期间输入框保持可用；`Ctrl+Enter`/发送按钮提交的请求进入 `SessionView` 的待发送队列，不再打断当前轮。
+- 队列以抽屉形式出现在聊天区下方、输入框上方（高度封顶 150 DIP），每行提供「撤回」（移回输入框）、「移除」、「立即发送」（取消当前轮并优先发送该条）。
+- 发送按钮只有一个：输入框有文字 = 发送（排队），清空 = 停止。停止会暂停自动续跑，抽屉里的「全部发送」恢复。
+- 当前轮结束后按队列顺序自动发送下一条；打断项优先于队列顺序。队列只在内存，关闭进程即丢弃。
+- A 面驱动：`MainForm.RemovePending/RetractPending/SendPendingNow(index)`、`SendAllPending()`，`PendingCount/PendingSummary` 只读。
+
 ### 6.4 trace 格式
 
 ```
@@ -448,7 +477,7 @@ public sealed class AgentPolicy
 
 **AGENTS.md 开关**：关闭后 Worker、Loop、门禁运行都不再注入全局与项目约定。
 
-除新增 `onDelta` 回调外，`AgentLoop` 在 M2/M3 **没有改动**——只换它拿到的 `AgentPolicy`、工具集和提示词。这是 M1b 抽取是否成功的判据。
+除新增 `onDelta` 回调外，`AgentLoop` 在 M2/M3 **没有改动**——只换它拿到的 `AgentPolicy`、工具集和提示词。这是 M1b 抽取是否成功的判据。后续已重构为状态机管线（见 6.3.1），公开的 `RunAsync` 签名不变。
 
 ---
 
@@ -489,7 +518,3 @@ public sealed class AgentPolicy
 测试：`tests/OpenLoop.Core.Tests/SafetyTests.cs`（拒绝/风险/安全分类、`..` 与 symlink 逃逸、环境无密钥、argv 执行、快照）。
 
 未做（P1）：Linux 的 bubblewrap/Landlock、Windows 的低完整性令牌/AppContainer、出网限制、内存上限。
-
-### 10.1 子 agent（默认开启）
-
-spawn_agent：独立上下文、受限工具（ead_file/write_file/list_dir/grep，无命令执行、不能再派生）、步数上限 20、超时 3 分钟；只把结论与成本/步数带回父循环。预算按子运行独立计算（父循环的步数上限不包含子运行）。

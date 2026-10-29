@@ -52,6 +52,13 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("- 多个相互独立的只读调用（如同时读几个文件）可在一轮内并行发出，每行一个 tool-call；含写操作时一轮只发一个。");
             sb.AppendLine();
 
+            sb.AppendLine("# 每轮如何收尾");
+            sb.AppendLine("- 每轮只做两件事之一：输出 tool-call 行去执行，或给出面向用户的最终结论；不要只输出思考过程、计划或“让我继续看看”就结束。");
+            sb.AppendLine("- 还没做完就不要收尾：拿到 tool-result 后继续推进，直到任务完成、确实被卡住、或接近步数上限。");
+            sb.AppendLine("- 确实被卡住时（缺信息/缺权限/环境不支持），用最终回答说清楚缺什么、你已经试过什么，并给出可行的下一步；不要原地重复同样的调用。");
+            sb.AppendLine("- 思考内容只服务于你自己：最终回答里不要粘贴推理过程，直接给结论与改动清单。");
+            sb.AppendLine();
+
             sb.AppendLine("# 输出与协作");
             sb.AppendLine("- 回答直接给结论，不要铺垫和收尾客套；能用一句话说清就不用一段。");
             sb.AppendLine("- 引用具体位置时给出 文件路径:行号，方便用户跳转。");
@@ -85,6 +92,8 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("# 工具调用协议");
             sb.AppendLine("需要使用工具时，输出一行且仅一行（不要包在代码围栏里，不要加解释文字）：");
             sb.AppendLine("tool-call: {\"tool\":\"工具名\",\"args\":{\"参数名\":\"值\"}}");
+            sb.AppendLine("正例：tool-call: {\"tool\":\"list_dir\",\"args\":{\"path\":\".\",\"recursive\":false}}");
+            sb.AppendLine("反例（都会被判为格式错误并回退纠正）：写在代码围栏里、前后带解释、JSON 用单引号、tool-call 不在行首。");
             sb.AppendLine("多个相互独立的只读调用可各占一行连续输出；一轮只调用一个工具的情形（含任何写操作）照旧单行。");
             sb.AppendLine("下一轮你会收到 tool-result: 开头的 JSON（多个调用时按顺序回填多行）：");
             sb.AppendLine("成功为 {\"ok\":true,\"data\":...}，失败为 {\"ok\":false,\"error\":...}。");

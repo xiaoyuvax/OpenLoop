@@ -72,11 +72,6 @@ namespace OpenLoop.App
             return r.Ok ? r.Data : r.Error;
         }
 
-        public string SeedAgentDemo() => Current?.View.SeedAgentDemo() ?? "";
-
-        public string OpenAgentView(string id) => Current?.View.OpenAgentView(id) ?? "";
-
-
         public void AnswerLastSurvey(string summary) => Current?.View.AnswerLastSurvey(summary);
 
         public string AddDemoSurvey(string title, string body)
@@ -102,6 +97,20 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ChatDiagnostics => Active?.View.ChatDiagnostics ?? "";
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int PendingCount => Active?.View.PendingCount ?? 0;
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string PendingSummary => Active?.View.PendingSummary ?? "";
+
+        public void RemovePending(int index) => Active?.View.RemovePending(index);
+
+        public void RetractPending(int index) => Active?.View.RetractPending(index);
+
+        public void SendPendingNow(int index) => Active?.View.SendPendingNow(index);
+
+        public void SendAllPending() => Active?.View.SendAllPending();
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool EvolveEnabled => Active?.View.EvolveEnabled ?? false;

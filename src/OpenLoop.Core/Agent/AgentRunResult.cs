@@ -18,6 +18,9 @@ namespace OpenLoop.Core.Agent
         /// <summary>用户请求停止后，在下一轮开始前终止。</summary>
         public bool StoppedByUser { get; set; }
 
+        /// <summary>护栏判定无进展/格式持续错误而主动停机（不是用户停止，也不是预算耗尽）。</summary>
+        public bool StoppedByGuard { get; set; }
+
         /// <summary>本轮护栏/恢复机制命中计数，用于评估参数调整（只观测，不参与决策）。</summary>
         public AgentGuardStats Guards { get; } = new();
     }
