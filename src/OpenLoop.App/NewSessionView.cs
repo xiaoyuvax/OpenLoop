@@ -33,20 +33,16 @@ namespace OpenLoop.App
         {
             _settings = settings;
             _projects.Clear();
-            _projects.AddRange((projects ?? Enumerable.Empty<string>())
-                .Where(p => !string.IsNullOrWhiteSpace(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
+            _projects.AddRange(Paths.Dedup(projects).OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
 
             if (!string.IsNullOrWhiteSpace(defaultWorkspace) &&
-                !_projects.Contains(defaultWorkspace, StringComparer.OrdinalIgnoreCase))
+                !_projects.Any(p => Paths.Same(p, defaultWorkspace)))
                 _projects.Insert(0, defaultWorkspace);
 
             _model = settings?.Model ?? "";
             _effort = settings?.ReasoningEffort ?? "";
             _onlyFree = settings?.OnlyFreeModels ?? true;
-            _project = _projects.FirstOrDefault(p =>
-                string.Equals(p, defaultWorkspace, StringComparison.OrdinalIgnoreCase)) ??
+            _project = _projects.FirstOrDefault(p => Paths.Same(p, defaultWorkspace)) ??
                 _projects.FirstOrDefault() ?? "";
 
             _filling = true;
@@ -160,9 +156,7 @@ namespace OpenLoop.App
                 }
                 _selProject.Items.Add(new AntdUI.SelectItem(Localization.T("NewProject")) { Tag = NewProjectTag });
 
-                _selProject.SelectedValue = _projects.Contains(_project, StringComparer.OrdinalIgnoreCase)
-                    ? _project
-                    : null;
+                _selProject.SelectedValue = _projects.FirstOrDefault(p => Paths.Same(p, _project));
                 _lblPath.Text = _project;
             }
             finally
@@ -203,9 +197,17 @@ namespace OpenLoop.App
             }
 
             string chosen = dialog.SelectedPath;
-            if (!_projects.Contains(chosen, StringComparer.OrdinalIgnoreCase))
+            //同一目录的不同写法算同一个项目：直接落到已有项目上，不新增重复条目
+            string existing = _projects.FirstOrDefault(p => Paths.Same(p, chosen));
+            if (existing != null)
+            {
+                _project = existing;
+            }
+            else
+            {
                 _projects.Add(chosen);
-            _project = chosen;
+                _project = chosen;
+            }
             FillProjects();
             _lblPath.Text = _project;
         }

@@ -1,4 +1,5 @@
 using OpenLoop.Core.Agent;
+using OpenLoop.Core.Safety;
 using OpenLoop.Core.Skills;
 
 namespace OpenLoop.Core.Tools.Builtin
@@ -11,11 +12,11 @@ namespace OpenLoop.Core.Tools.Builtin
     {
         private readonly string _workspaceRoot;
         private readonly IReadOnlyList<SkillInfo> _skills;
-        private readonly Func<CommandRequest, bool> _approve;
+        private readonly ApprovalHandler _approve;
         private readonly bool _inheritEnvironment;
 
         public RunSkillScriptTool(
-            string workspaceRoot, IReadOnlyList<SkillInfo> skills, Func<CommandRequest, bool> approve,
+            string workspaceRoot, IReadOnlyList<SkillInfo> skills, ApprovalHandler approve,
             bool inheritEnvironment = false)
         {
             _workspaceRoot = workspaceRoot;
@@ -62,9 +63,11 @@ namespace OpenLoop.Core.Tools.Builtin
 
             if (_approve == null)
                 return AgentToolResult.Failure($"需要用户批准才能执行技能脚本：{string.Join(" ", argv)}");
-            var request = new CommandRequest(argv, _workspaceRoot, $"技能 {skill.Name} 的脚本 {actual}");
-            if (!_approve(request))
-                return AgentToolResult.Failure($"用户拒绝执行：{request.Line}");
+            string line = string.Join(" ", argv);
+            var decision = _approve(new ApprovalRequest(
+                ApprovalKind.SensitiveAction, Name, line, $"技能 {skill.Name} 的脚本 {actual}"));
+            if (decision == ApprovalDecision.Deny)
+                return AgentToolResult.Failure($"用户拒绝执行：{line}");
 
             int timeout = Math.Clamp(args.Int("timeoutSeconds", 60), 1, 600);
             return await ProcessRunner.RunAsync(argv, _workspaceRoot, timeout, ct, _inheritEnvironment);

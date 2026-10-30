@@ -30,6 +30,7 @@ namespace OpenLoop.App
 
         internal event Action<Session> OpenRequested;
         internal event Action<string> NewSessionRequested;
+        internal event Action<IReadOnlyList<Session>> DeleteRequested;
         internal event Action SettingsRequested;
 
         internal void Initialize()
@@ -51,30 +52,25 @@ namespace OpenLoop.App
             _all.AddRange(sessions.OrderByDescending(s => s.StartedAt));
 
             _projects.Clear();
-            _projects.AddRange((projects ?? Enumerable.Empty<string>())
-                .Where(p => !string.IsNullOrWhiteSpace(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase));
+            _projects.AddRange(Paths.Dedup(projects));
             RebuildProjects();
         }
 
         internal void FocusProject(string workspace)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return;
-            if (!_all.Any(s => string.Equals(s.Workspace, workspace, StringComparison.OrdinalIgnoreCase))) return;
+            if (!_all.Any(s => Paths.Same(s.Workspace, workspace))) return;
             _project = workspace;
             RebuildProjects();
         }
 
         private void RebuildProjects()
         {
-            var projects = _projects
-                .Concat(_all.Select(s => s.Workspace))
-                .Where(w => !string.IsNullOrWhiteSpace(w))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+            var projects = Paths.Dedup(_projects.Concat(_all.Select(s => s.Workspace)))
                 .OrderBy(w => w, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            if (!projects.Contains(_project, StringComparer.OrdinalIgnoreCase))
+            if (!projects.Any(p => Paths.Same(p, _project)))
                 _project = projects.FirstOrDefault() ?? "";
 
             _building = true;
@@ -91,7 +87,7 @@ namespace OpenLoop.App
                     _menu.Items.Add(item);
                 }
 
-                var selected = _menu.Items.FirstOrDefault(i => string.Equals(i.Tag as string, _project, StringComparison.OrdinalIgnoreCase));
+                var selected = _menu.Items.FirstOrDefault(i => Paths.Same(i.Tag as string, _project));
                 if (selected != null) _menu.Select(selected, true);
             }
             finally
@@ -107,7 +103,7 @@ namespace OpenLoop.App
             string q = _txtSearch.Text?.Trim() ?? "";
             _rows.Clear();
             _rows.AddRange(_all
-                .Where(s => string.Equals(s.Workspace, _project, StringComparison.OrdinalIgnoreCase))
+                .Where(s => Paths.Same(s.Workspace, _project))
                 .Where(s => q.Length == 0 || s.Title.Contains(q, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(s => s.StartedAt));
 
@@ -115,6 +111,20 @@ namespace OpenLoop.App
             _table.DataSource = null;
             _table.DataSource = _rows;
             _btnNewSession.Enabled = !string.IsNullOrEmpty(_project);
+        }
+
+        /// <summary>勾选（多选行）后删除；没勾选就用当前高亮行。</summary>
+        private void OnDelete(object sender, EventArgs e)
+        {
+            var picked = (_table.SelectedIndexs ?? [])
+                .Where(i => i >= 1 && i <= _rows.Count)
+                .Select(i => _rows[i - 1])
+                .Distinct()
+                .ToList();
+            if (picked.Count == 0) return;
+            DeleteRequested?.Invoke(picked);
+            _table.SelectedIndexs = [];
+            RefreshRows();
         }
 
         private static string ProjectName(string path)

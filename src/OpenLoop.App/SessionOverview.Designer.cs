@@ -17,6 +17,7 @@ namespace OpenLoop.App
         private TableLayoutPanel _rightLayout;
         private TableLayoutPanel _rightBar;
         private AntdUI.Input _txtSearch;
+        private AntdUI.Button _btnDelete;
         private AntdUI.Button _btnNewSession;
         private AntdUI.Label _lblProjectPath;
         private AntdUI.Table _table;
@@ -48,6 +49,7 @@ namespace OpenLoop.App
             _rightLayout = new TableLayoutPanel();
             _rightBar = new TableLayoutPanel();
             _txtSearch = new AntdUI.Input();
+            _btnDelete = new AntdUI.Button();
             _btnNewSession = new AntdUI.Button();
             _lblProjectPath = new AntdUI.Label();
             _table = new AntdUI.Table();
@@ -154,10 +156,11 @@ namespace OpenLoop.App
             _rightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             _rightBar.Dock = DockStyle.Fill;
-            _rightBar.ColumnCount = 3;
+            _rightBar.ColumnCount = 4;
             _rightBar.RowCount = 1;
             _rightBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _rightBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 420F));
+            _rightBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110F));
             _rightBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
             _rightBar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _rightBar.Margin = new Padding(0, 0, 0, 8);
@@ -170,6 +173,16 @@ namespace OpenLoop.App
             _txtSearch.Margin = new Padding(0, 9, 12, 9);
             _txtSearch.TextChanged += OnSearchChanged;
 
+            _btnDelete.Name = "btnDelete";
+            _btnDelete.Text = "删除选中";
+            _btnDelete.Ghost = true;
+            _btnDelete.Type = AntdUI.TTypeMini.Error;
+            _btnDelete.Radius = 8;
+            _btnDelete.Dock = DockStyle.Fill;
+            _btnDelete.IconSvg = UiIcons.Of(UiIcons.Trash, UiStyle.Error);
+            _btnDelete.Margin = new Padding(0, 9, 12, 9);
+            _btnDelete.Click += OnDelete;
+
             _btnNewSession.Name = "btnNewSession";
             _btnNewSession.Text = Localization.T("NewSession");
             _btnNewSession.Type = AntdUI.TTypeMini.Primary;
@@ -181,11 +194,13 @@ namespace OpenLoop.App
 
             _rightBar.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) }, 0, 0);
             _rightBar.Controls.Add(_txtSearch, 1, 0);
-            _rightBar.Controls.Add(_btnNewSession, 2, 0);
+            _rightBar.Controls.Add(_btnDelete, 2, 0);
+            _rightBar.Controls.Add(_btnNewSession, 3, 0);
 
             _table.Name = "tableSessions";
             _table.Dock = DockStyle.Fill;
             _table.Bordered = false;
+            _table.MultipleRows = true;
             _table.VisibleHeader = true;
             _table.RowHeight = 46;
             _table.EmptyText = Localization.T("EmptySessions");

@@ -16,7 +16,7 @@ namespace OpenLoop.App
     /// </summary>
     internal sealed class Session
     {
-        public string Id { get; } = Guid.NewGuid().ToString("N")[..8];
+        public string Id { get; init; } = Guid.NewGuid().ToString("N")[..8];
         public ChatTurnBook Book { get; } = new();
         public SessionState State { get; set; } = SessionState.Idle;
         public DateTime StartedAt { get; } = DateTime.Now;

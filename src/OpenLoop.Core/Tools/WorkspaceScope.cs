@@ -36,6 +36,12 @@ namespace OpenLoop.Core.Tools
         /// <summary>可选的文件写入撤销队列；write_file 写入前记录旧内容。</summary>
         public FileUndoLog Undo { get; set; }
 
+        /// <summary>
+        /// 越界访问的审批回调。为空时越界一律拒绝（无人值守场景的默认）。
+        /// 返回非 Deny 表示这次放行；是否「后续都许可」由回调自己记住。
+        /// </summary>
+        public ApprovalHandler Approve { get; set; }
+
         public string Root { get; }
 
         public bool IsDenied(string path)
@@ -50,7 +56,7 @@ namespace OpenLoop.Core.Tools
             return false;
         }
 
-        public bool TryResolve(string path, out string full, out string error)
+        public bool TryResolve(string path, out string full, out string error, string tool = null)
         {
             full = null;
             error = null;
@@ -74,9 +80,15 @@ namespace OpenLoop.Core.Tools
             if (!_unrestricted
                 && !full.Equals(Root, PathComparison) && !full.StartsWith(rootWithSep, PathComparison))
             {
-                error = $"路径越界：{path} 不在工作目录内";
-                full = null;
-                return false;
+                //工作区外：不是直接拒绝，而是走审批（用户可「后续都许可」）
+                var decision = Approve?.Invoke(
+                    new ApprovalRequest(ApprovalKind.OutsideWorkspace, tool, full, "工作目录之外")) ?? ApprovalDecision.Deny;
+                if (decision == ApprovalDecision.Deny)
+                {
+                    error = $"路径越界（未获批准）：{path} 不在工作目录内";
+                    full = null;
+                    return false;
+                }
             }
 
             if (!_unrestricted && IsDenied(full))

@@ -18,16 +18,10 @@ namespace OpenLoop.Core.Reasoning
             Timeout = TimeSpan.FromMinutes(10)
         };
 
-        /// <summary>瞬时错误（超时/5xx/网络）的最大重试次数；超出即放弃并抛出可读错误。</summary>
-        public int MaxTransientRetries { get; set; } = 5;
-
-        /// <summary>瞬时错误重试的总时长预算（含首次等待）。超预算即放弃，避免无限退避重试。</summary>
-        public TimeSpan RetryBudget { get; set; } = TimeSpan.FromSeconds(90);
-
         /// <summary>流式首包超时：网关多久不回包就判超时；<=0 表示沿用 HttpClient.Timeout（10 分钟）。</summary>
         public TimeSpan FirstResponseTimeout { get; set; } = TimeSpan.FromSeconds(60);
 
-        /// <summary>流式正文的总时长上限；<=0 表示不限。</summary>
+        /// <summary>单次流式正文的静默上限：这么久没吐完就判这次尝试失败并重发；<=0 表示不限。</summary>
         public TimeSpan StreamTimeout { get; set; } = TimeSpan.FromMinutes(10);
 
         /// <summary>进度回调（等待模型响应 / 第 N 次重试 / 放弃），供宿主给视觉反馈。</summary>
@@ -86,7 +80,7 @@ namespace OpenLoop.Core.Reasoning
 
         public async Task<CompletionResult> StreamAsync(
             IReadOnlyList<LlmMessage> messages, Action<string> onDelta, CancellationToken ct = default,
-            Action<string> onReasoning = null)
+            Action<string> onReasoning = null, Action onRestart = null)
         {
             var payload = new RequestPayload
             {
@@ -100,24 +94,38 @@ namespace OpenLoop.Core.Reasoning
             };
             string json = JsonSerializer.Serialize(payload, PayloadJson);
 
-            using var response = await SendWithRetryAsync(
-                () => BuildRequest(json), ct, HttpCompletionOption.ResponseHeadersRead);
-
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-
-            // 正文阶段同样封顶：否则网关开始输出后卡住，界面会永远停在“运行中”。
-            using var bodyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            if (StreamTimeout > TimeSpan.Zero) bodyCts.CancelAfter(StreamTimeout);
-            try
+            int attempt = 0;
+            while (true)
             {
-                return await ParseStreamAsync(reader, onDelta, bodyCts.Token, onReasoning);
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                throw new InvalidOperationException(
-                    $"模型流式输出超时：{StreamTimeout.TotalSeconds:0} 秒内未完成，已中断以免界面一直显示运行中。" +
-                    "请重试或更换模型。", null);
+                string failure;
+                try
+                {
+                    using var response = await SendWithRetryAsync(
+                        () => BuildRequest(json), ct, HttpCompletionOption.ResponseHeadersRead);
+
+                    await using var stream = await response.Content.ReadAsStreamAsync(ct);
+                    using var reader = new StreamReader(stream, Encoding.UTF8);
+
+                    // 单次尝试的静默上限：否则网关开始输出后卡住，界面会永远停在“运行中”。
+                    using var bodyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    if (StreamTimeout > TimeSpan.Zero) bodyCts.CancelAfter(StreamTimeout);
+                    return await ParseStreamAsync(reader, onDelta, bodyCts.Token, onReasoning);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    failure = $"正文 {StreamTimeout.TotalSeconds:0} 秒未吐完";
+                }
+                catch (Exception ex) when (IsTransient(ex) && !ct.IsCancellationRequested)
+                {
+                    failure = TransientReason(ex);
+                }
+
+                // 正文已经开始输出也可能被网关掐断（ResponseEnded/连接被关）：整轮丢掉重发。
+                // 重发前通知宿主清掉半截输出，所以不会出现正文重复。
+                attempt++;
+                Report($"第 {attempt} 次重试：{failure}", attempt, TimeSpan.Zero);
+                onRestart?.Invoke();
+                await Task.Delay(BackoffDelayMs(attempt), ct);
             }
         }
 
@@ -131,14 +139,11 @@ namespace OpenLoop.Core.Reasoning
         }
 
         /// <summary>
-        /// 发送与失败重试策略（用户约定）：
+        /// 发送与失败重试策略（用户约定，重试到用户中断为止）：
         /// 429 限流、401/402/403 鉴权/额度 → 立即失败，不重试；
         /// 其余 4xx（参数/请求构造类）→ 同一请求最多重试 1 次（循环里内容变了计数自然刷新）；
-        /// 5xx / 网络异常 / 超时 → 指数退避一直重试（1s 起步、封顶 30s），取消令牌可随时中断。
-        /// 5xx / 网络异常 / 超时 → 指数退避重试（1s 起步、封顶 30s），但受次数与总时长预算约束：
-        /// 超过 MaxTransientRetries 次或 RetryBudget 秒即放弃并抛出可读错误，不再无限重试（否则界面会
-        /// 一直显示“运行中”却毫无输出）。
-        /// 上限：流式响应一旦开始输出就不再重试（避免正文重复），此为已知边界。
+        /// 5xx / 网络异常 / 连接中断 / 超时 → 指数退避（1s 起步、封顶 30s）一直重试，只有取消令牌能中断。
+        /// 正文阶段的断流由 <see cref="StreamAsync"/> 自己整轮重发（含 onRestart 通知宿主清屏）。
         /// </summary>
         private async Task<HttpResponseMessage> SendWithRetryAsync(
             Func<HttpRequestMessage> factory, CancellationToken ct,
@@ -146,7 +151,6 @@ namespace OpenLoop.Core.Reasoning
         {
             int transientAttempt = 0;
             int paramRetried = 0;
-            var budget = System.Diagnostics.Stopwatch.StartNew();
             Report("等待模型响应", 0, TimeSpan.Zero);
             while (true)
             {
@@ -162,7 +166,7 @@ namespace OpenLoop.Core.Reasoning
                 catch (Exception ex) when (IsTransient(ex))
                 {
                     transientAttempt++;
-                    await RetryLaterAsync(transientAttempt, budget.Elapsed, TransientReason(ex), ct);
+                    await RetryLaterAsync(transientAttempt, TransientReason(ex), ct);
                     continue;
                 }
 
@@ -180,7 +184,7 @@ namespace OpenLoop.Core.Reasoning
                         throw ApiError(code, phrase, body);
                 }
                 transientAttempt++;
-                await RetryLaterAsync(transientAttempt, budget.Elapsed, $"HTTP {code}", ct);
+                await RetryLaterAsync(transientAttempt, $"HTTP {code}", ct);
             }
         }
 
@@ -197,33 +201,24 @@ namespace OpenLoop.Core.Reasoning
             return await Http.SendAsync(factory(), option, ct);
         }
 
-        /// <summary>重试前的预算检查 + 进度回调 + 退避；超预算抛出可读错误。</summary>
-        private async Task RetryLaterAsync(int attempt, TimeSpan elapsed, string reason, CancellationToken ct)
+        /// <summary>重试前先报进度，再按指数退避等待；只有取消令牌能中断。</summary>
+        private async Task RetryLaterAsync(int attempt, string reason, CancellationToken ct)
         {
-            if (ExceedsRetryBudget(attempt, elapsed, MaxTransientRetries, RetryBudget))
-            {
-                Report("放弃重试", attempt, elapsed);
-                throw new InvalidOperationException(
-                    $"模型接口连续 {attempt} 次失败（{elapsed.TotalSeconds:0} 秒内，最后一次：{reason}），" +
-                    "已停止重试以免界面一直显示运行中。请稍后重试，或更换模型/提供商。", null);
-            }
-            Report($"第 {attempt} 次重试：{reason}", attempt, elapsed);
+            Report($"第 {attempt} 次重试：{reason}", attempt, TimeSpan.Zero);
             await Task.Delay(BackoffDelayMs(attempt), ct);
         }
 
-        /// <summary>瞬时错误的重试预算：次数或总耗时先到即放弃（纯函数，便于单测）。</summary>
-        internal static bool ExceedsRetryBudget(int attempt, TimeSpan elapsed, int maxAttempts, TimeSpan budget)
-            => attempt > Math.Max(1, maxAttempts) || elapsed > budget;
-
-        /// <summary>瞬时错误的判定：网络异常、Socket 断开、超时（非用户取消）。</summary>
+        /// <summary>瞬时错误的判定：网络异常、连接中断（含流被网关掐断的 ResponseEnded）、Socket 断开、超时（非用户取消）。</summary>
         internal static bool IsTransient(Exception ex)
-            => ex is HttpRequestException || ex is System.Net.Sockets.SocketException || ex is OperationCanceledException;
+            => ex is HttpRequestException || ex is IOException || ex is System.Net.Sockets.SocketException
+                || ex is OperationCanceledException;
 
         /// <summary>把瞬时错误翻成人话，供进度回调与错误消息显示。</summary>
         internal static string TransientReason(Exception ex) => ex switch
         {
             OperationCanceledException => "超时无响应",
             System.Net.Sockets.SocketException => "网络中断",
+            IOException => "连接中断",
             HttpRequestException => "网络/网关错误",
             _ => ex.GetType().Name
         };

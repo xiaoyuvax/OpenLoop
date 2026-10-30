@@ -144,33 +144,19 @@ public sealed class ReasonerTests
     }
 
     [Fact]
-    public void Retry_budget_stops_after_count_or_elapsed()
-    {
-        var budget = TimeSpan.FromSeconds(90);
-
-        // 次数：未超限继续重试，超限即放弃（此前是无限重试，界面会一直显示运行中）
-        Assert.False(OpenAiCompatibleReasoner.ExceedsRetryBudget(5, TimeSpan.Zero, 5, budget));
-        Assert.True(OpenAiCompatibleReasoner.ExceedsRetryBudget(6, TimeSpan.Zero, 5, budget));
-
-        // 总耗时：先到先停，哪怕只失败过一次
-        Assert.True(OpenAiCompatibleReasoner.ExceedsRetryBudget(1, TimeSpan.FromSeconds(91), 5, budget));
-        Assert.False(OpenAiCompatibleReasoner.ExceedsRetryBudget(1, TimeSpan.FromSeconds(89), 5, budget));
-
-        // 下限保护：maxAttempts <= 0 也至少允许 1 次
-        Assert.False(OpenAiCompatibleReasoner.ExceedsRetryBudget(1, TimeSpan.Zero, 0, budget));
-    }
-
-    [Fact]
     public void Transient_classification_covers_timeout_and_network()
     {
         // 注意：用户主动取消在 SendWithRetryAsync 里被前置 catch 过滤，这里只表达“属于瞬时类”
         Assert.True(OpenAiCompatibleReasoner.IsTransient(new OperationCanceledException()));
         Assert.True(OpenAiCompatibleReasoner.IsTransient(new System.Net.Http.HttpRequestException("boom")));
         Assert.True(OpenAiCompatibleReasoner.IsTransient(new System.Net.Sockets.SocketException(10054)));
+        // 网关半途掐断连接抛的是 HttpIOException : IOException（"The response ended prematurely"）
+        Assert.True(OpenAiCompatibleReasoner.IsTransient(new System.IO.IOException("The response ended prematurely.")));
         Assert.False(OpenAiCompatibleReasoner.IsTransient(new InvalidOperationException("nope")));
 
         Assert.Equal("超时无响应", OpenAiCompatibleReasoner.TransientReason(new TaskCanceledException()));
         Assert.Equal("网络中断", OpenAiCompatibleReasoner.TransientReason(new System.Net.Sockets.SocketException(10054)));
+        Assert.Equal("连接中断", OpenAiCompatibleReasoner.TransientReason(new System.IO.IOException("x")));
         Assert.Equal("网络/网关错误", OpenAiCompatibleReasoner.TransientReason(new System.Net.Http.HttpRequestException("x")));
     }
 

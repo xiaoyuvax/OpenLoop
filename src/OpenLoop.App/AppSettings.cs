@@ -50,6 +50,15 @@ namespace OpenLoop.App
         /// <summary>完全许可：关闭路径边界、命令审批与环境隔离（仅交互 Worker）。</summary>
         public bool FullAccess { get; set; }
 
+        /// <summary>自动审批：一切工具调用都不再询问（路径/环境隔离仍按设置生效）。</summary>
+        public bool AutoApprove { get; set; }
+
+        /// <summary>记住的审批：工作目录之外的访问后续都许可。</summary>
+        public bool AllowOutsideWorkspace { get; set; }
+
+        /// <summary>记住的审批：风险操作后续都许可。</summary>
+        public bool AllowSensitiveActions { get; set; }
+
         /// <summary>是否把 AGENTS.md（全局 + 项目）注入系统提示词。</summary>
         public bool UseAgentsMd { get; set; } = true;
 

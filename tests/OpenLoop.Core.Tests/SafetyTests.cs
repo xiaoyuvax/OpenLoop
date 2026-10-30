@@ -191,6 +191,83 @@ public sealed class SafetyTests : IDisposable
     }
 
     [Fact]
+    public void Scope_Outside_Needs_Approval()
+    {
+        var scope = new WorkspaceScope(_root);
+        Assert.False(scope.TryResolve("../outside.txt", out _, out _));
+
+        var asked = new List<ApprovalRequest>();
+        scope.Approve = request => { asked.Add(request); return ApprovalDecision.AllowOnce; };
+        Assert.True(scope.TryResolve("../outside.txt", out string full, out _));
+        Assert.Equal(ApprovalKind.OutsideWorkspace, Assert.Single(asked).Kind);
+        Assert.Contains("outside.txt", full);
+
+        scope.Approve = _ => ApprovalDecision.Deny;
+        Assert.False(scope.TryResolve("../outside.txt", out _, out string error));
+        Assert.Contains("未获批准", error);
+    }
+
+    [Fact]
+    public void Scope_Inside_Never_Asks()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".openloop"));
+        var scope = new WorkspaceScope(_root);
+        int calls = 0;
+        scope.Approve = _ => { calls++; return ApprovalDecision.AllowOnce; };
+
+        Assert.True(scope.TryResolve("sub/a.txt", out _, out _));
+        //受保护目录仍然硬拒：不因为「后续都许可」而放行
+        Assert.False(scope.TryResolve(".openloop/x.jsonl", out _, out _));
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task RunCommand_Risky_Asks_And_Honors_Decision()
+    {
+        var scope = new WorkspaceScope(_root);
+        var asked = new List<ApprovalKind>();
+        var tool = new RunCommandTool(scope, request =>
+        {
+            asked.Add(request.Kind);
+            return ApprovalDecision.Deny;
+        });
+
+        var denied = await tool.ExecuteAsync(
+            new ToolArgs(new() { ["argv"] = new[] { "git", "reset", "--hard" } }), CancellationToken.None);
+        Assert.False(denied.Ok);
+        Assert.Contains("拒绝", denied.Error);
+        Assert.Equal(ApprovalKind.SensitiveAction, Assert.Single(asked));
+    }
+
+    [Fact]
+    public async Task RunCommand_Safe_Does_Not_Ask()
+    {
+        var scope = new WorkspaceScope(_root);
+        int calls = 0;
+        var tool = new RunCommandTool(scope, _ => { calls++; return ApprovalDecision.Deny; });
+
+        var result = await tool.ExecuteAsync(
+            new ToolArgs(new() { ["argv"] = new[] { "dotnet", "--version" } }), CancellationToken.None);
+        if (!result.Ok && (result.Error ?? "").Contains("启动失败", StringComparison.Ordinal)) return;
+        Assert.True(result.Ok, "ERR=" + result.Error);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task Read_Inside_Workspace_Does_Not_Ask()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.txt"), "hello");
+        var scope = new WorkspaceScope(_root);
+        int calls = 0;
+        scope.Approve = _ => { calls++; return ApprovalDecision.Deny; };
+
+        var result = await new ReadFileTool(scope).ExecuteAsync(
+            new ToolArgs(new() { ["path"] = "a.txt" }), CancellationToken.None);
+        Assert.True(result.Ok);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
     public void Snapshot_Returns_Sha_For_Dirty_Repo()
     {
         if (!Git(_root, "init")) return;

@@ -88,7 +88,7 @@ namespace OpenLoop.Core.Agent
             state.Step++;
 
             var completion = context.OnDelta != null && context.Reasoner is IStreamingReasoner streaming
-                ? await streaming.StreamAsync(state.Messages, context.OnDelta, ct, context.OnReasoning)
+                ? await streaming.StreamAsync(state.Messages, context.OnDelta, ct, context.OnReasoning, context.OnRestart)
                 : await context.Reasoner.CompleteAsync(state.Messages, ct);
 
             string content = completion?.Content;

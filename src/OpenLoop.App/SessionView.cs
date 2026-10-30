@@ -60,6 +60,9 @@ namespace OpenLoop.App
             _lblPath.Text = UiStyle.ShortPath(session.Workspace);
             _tips.SetToolTip(_lblPath, session.Workspace);
             _chat.PlaceholderText = Localization.T("NoMessages");
+            //每轮都落过盘，但要在这里读回来，否则重启后会话是空的
+            var saved = ChatStore.Load(session.Workspace, session.Id);
+            if (saved.Count > 0) session.Book.ReplaceAll(saved, null);
             _chat.UndoRequested += OnChatUndo;
             _chat.CopyRequested += OnChatCopy;
             _chat.Bind(session.Book);
@@ -81,6 +84,7 @@ namespace OpenLoop.App
             Disposed += (_, _) => ModelCatalog.Changed -= OnCatalogChanged;
             _tips.SetToolTip(_lblDef, "点击查看特征与规则");
             _tips.SetToolTip(_lblTasks, "点击查看考核题");
+            _sideBtw.Initialize(session.Workspace, settings);
             FitLoopLabels();
             UpdateEvolveButtonEnabled();
         }
@@ -90,6 +94,7 @@ namespace OpenLoop.App
 
         internal event Action<Session> StateChanged;
         internal event Action<string> OpenLoopRequested;
+        internal event Action<Session, string> ForkRequested;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Workspace => Session?.Workspace ?? "";
@@ -175,8 +180,14 @@ namespace OpenLoop.App
         public void ShowSidePage(int index)
         {
             _sideTabs.SelectIndex = index;
-            _loopFlow.Visible = index != 1;
+            UpdateSideVisibility(index);
+        }
+
+        private void UpdateSideVisibility(int index)
+        {
+            _loopFlow.Visible = index == 0;
             _detailFlow.Visible = index == 1;
+            _sideBtw.Visible = index == 2;
             if (index == 1) ApplyDetail();
         }
 
@@ -218,6 +229,7 @@ namespace OpenLoop.App
         public void Shutdown()
         {
             _cts?.Cancel();
+            _sideBtw.Shutdown();
             ChatStore.Save(Session.Workspace, Session.Book.Turns, Session.Id);
         }
 
@@ -291,10 +303,7 @@ namespace OpenLoop.App
 
         private void OnSidePageChanged(object sender, AntdUI.IntEventArgs e)
         {
-            bool detail = e?.Value == 1;
-            _loopFlow.Visible = !detail;
-            _detailFlow.Visible = detail;
-            if (detail) ApplyDetail();
+            UpdateSideVisibility(e?.Value ?? 0);
         }
 
         private void OnOpenLoop(object sender, EventArgs e) => OpenLoopRequested?.Invoke(Session?.Workspace ?? "");
@@ -316,6 +325,14 @@ namespace OpenLoop.App
 
         private void OnInputKeyDown(object sender, KeyEventArgs e)
         {
+            if (_cmdPopup.IsOpen)
+            {
+                if (e.KeyCode == Keys.Down) { _cmdPopup.MoveSelection(1); e.SuppressKeyPress = true; return; }
+                if (e.KeyCode == Keys.Up) { _cmdPopup.MoveSelection(-1); e.SuppressKeyPress = true; return; }
+                if (e.KeyCode == Keys.Escape) { _cmdPopup.Close(); e.SuppressKeyPress = true; return; }
+                if (e.KeyCode == Keys.Enter && !e.Control || e.KeyCode == Keys.Tab) { _cmdPopup.Accept(); e.SuppressKeyPress = true; return; }
+            }
+
             if (e.Control && e.KeyCode == Keys.Enter)
             {
                 e.SuppressKeyPress = true;
@@ -323,7 +340,58 @@ namespace OpenLoop.App
             }
         }
 
-        private void OnInputTextChanged(object sender, EventArgs e) => UpdateSendButton();
+        private void OnInputTextChanged(object sender, EventArgs e)
+        {
+            UpdateSendButton();
+            UpdateCommandPopup();
+        }
+
+        private static readonly (string Command, string Description)[] Commands =
+        {
+            ("/btw", "在右侧栏用当前上下文跑一个只读旁路任务"),
+            ("/fork", "复制当前上下文开一个新会话（可继续对话）并跳转")
+        };
+
+        private readonly List<(string Command, string Description)> _cmdMatches = [];
+
+        /// <summary>输入以 / 开头且还没写参数时，弹出可用命令的联想列表。</summary>
+        private void UpdateCommandPopup()
+        {
+            string text = _txtInput.Text ?? "";
+            bool want = text.StartsWith('/') && !text.Contains(' ') && !text.Contains('\n');
+            _cmdMatches.Clear();
+            if (want)
+                foreach (var command in Commands)
+                    if (command.Command.StartsWith(text, StringComparison.OrdinalIgnoreCase))
+                        _cmdMatches.Add(command);
+
+            if (_cmdMatches.Count == 0)
+            {
+                _cmdPopup.Close();
+                _inputArea.RowStyles[0].Height = 0F;
+                return;
+            }
+
+            _cmdPopup.Open(_cmdMatches);
+            _inputArea.RowStyles[0].Height = _cmdPopup.PreferredHeight;
+        }
+
+        /// <summary>选中命令：补进输入框，光标停在参数位。</summary>
+        private void OnCommandAccepted(string command)
+        {
+            _txtInput.Text = command + " ";
+            _txtInput.SelectionStart = _txtInput.Text.Length;
+            _txtInput.Focus();
+        }
+
+        private void RunSideWork(string request)
+        {
+            if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
+            ShowSidePage(2);
+            _sideBtw.SetModel(_model);
+            _sideBtw.SetEffort(_effort);
+            _sideBtw.Run(request, BuildHistory());
+        }
 
         /// <summary>运行中：输入框有内容 = 发送（排队），清空 = 停止；只有一个按钮。</summary>
         private void UpdateSendButton()
@@ -339,6 +407,15 @@ namespace OpenLoop.App
         private void Submit()
         {
             string text = _txtInput.Text.Trim();
+            //「/命令」先在这里分流：命令不走普通对话
+            if (TryRunCommand(text))
+            {
+                _txtInput.Clear();
+                return;
+            }
+            //命令写了但没写请求：只提示，不要把「/btw」本身当任务发出去
+            if (IsCommand(text, "/btw") || IsCommand(text, "/fork")) return;
+
             if (_running)
             {
                 if (text.Length == 0)
@@ -360,6 +437,42 @@ namespace OpenLoop.App
         }
 
         private void OnSendClick(object sender, EventArgs e) => Submit();
+
+        /// <summary>识别 /btw、/fork；返回 true 表示这条输入已被命令消费。</summary>
+        private bool TryRunCommand(string text)
+        {
+            if (IsCommand(text, "/btw"))
+            {
+                string request = text[4..].Trim();
+                if (request.Length == 0)
+                {
+                    Notify("缺少请求", "/btw 后面要写具体请求，例如：/btw 顺便看看还有哪些调用点。", error: true);
+                    return false;
+                }
+                RunSideWork(request);
+                return true;
+            }
+
+            if (IsCommand(text, "/fork"))
+            {
+                string request = text[5..].Trim();
+                if (request.Length == 0)
+                {
+                    Notify("缺少请求", "/fork 后面要写具体请求，例如：/fork 继续把第二项改完。", error: true);
+                    return false;
+                }
+                ForkRequested?.Invoke(Session, request);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsCommand(string text, string command)
+            => text.Equals(command, StringComparison.OrdinalIgnoreCase)
+                || (text.StartsWith(command, StringComparison.OrdinalIgnoreCase)
+                    && text.Length > command.Length
+                    && char.IsWhiteSpace(text[command.Length]));
 
         private void Enqueue(string text, string mode)
         {
@@ -808,8 +921,10 @@ namespace OpenLoop.App
 
             if (skillProblems.Count > 0)
                 AppLog.Warn("技能不可用：" + string.Join("；", skillProblems));
-            Func<OpenLoop.Core.Tools.Builtin.CommandRequest, bool> approve =
-                fullAccess ? _ => true : ApproveCommand;
+            //工作区内的操作不审批；越界访问与风险操作走分级审批
+            OpenLoop.Core.Safety.ApprovalHandler approve =
+                fullAccess ? _ => OpenLoop.Core.Safety.ApprovalDecision.AllowOnce : AskApproval;
+            scope.Approve = approve;
             var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess);
 
             TraceWriter trace;
@@ -879,8 +994,11 @@ namespace OpenLoop.App
                 RunOnUiSafe(() =>
                 {
                     turn.ReasoningText = snapshot;
-                    RefreshChat();
-                    _chat.ScrollToEnd();
+                    // 就地重绑最后一行（行会重读 ReasoningText）；全量重建会把高度打回估算值，
+                    // 滚动条范围在估算/实测之间来回改，看起来就是不停上下跳。
+                    string text;
+                    lock (streamBuffer) text = streamBuffer.ToString();
+                    _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(text));
                 });
             };
 
@@ -890,6 +1008,19 @@ namespace OpenLoop.App
                 lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
             }
 
+            // 断流整轮重发：清掉已显示的半截正文/思考，避免重发后出现两遍
+            void ResetStream()
+            {
+                lock (streamBuffer) streamBuffer.Clear();
+                lock (reasoningBuffer) reasoningBuffer.Clear();
+                RunOnUiSafe(() =>
+                {
+                    turn.ReasoningText = "";
+                    _chat.UpdateStreamingMessage(turn, "", true);
+                    RefreshChat();
+                });
+            }
+
             var loop = new AgentLoop(tools, reasoner, policy,
                 onStep: step =>
                 {
@@ -897,7 +1028,7 @@ namespace OpenLoop.App
                     {
                         turn.ToolStepCount++;
                         turn.ToolTotalMs += step.DurationMs;
-                        string line = $"{(step.Ok ? "✓" : "✗")} {step.Tool}({step.ArgsSummary}) · {step.DurationText}";
+                        string line = $"{step.Tool}({step.ArgsSummary}) · {step.DurationText}{(step.Ok ? "" : " · 失败")}";
                         turn.ToolCallLines = string.IsNullOrEmpty(turn.ToolCallLines)
                             ? line
                             : turn.ToolCallLines + "\n" + line;
@@ -944,7 +1075,7 @@ namespace OpenLoop.App
             try
             {
                 var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta, onReasoning),
+                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta, onReasoning, ResetStream),
                     ct);
 
                 turn.Streaming = false;
@@ -1709,8 +1840,9 @@ namespace OpenLoop.App
             catch (Exception ex) { AppLog.Error("界面更新失败", ex); }
         }
 
-        private bool ApproveCommand(OpenLoop.Core.Tools.Builtin.CommandRequest request)
-            => AskOnUi(string.Format(Localization.T("ApproveCommand"), request.Reason, request.Line));
+        /// <summary>分级审批：越界访问与风险操作才问用户，可「后续都许可」。</summary>
+        private OpenLoop.Core.Safety.ApprovalDecision AskApproval(OpenLoop.Core.Safety.ApprovalRequest request)
+            => ApprovalGate.Ask(this, _settings, request);
 
         private bool AskOnUi(string message)
         {

@@ -35,8 +35,9 @@ namespace OpenLoop.Core.Reasoning
     {
         /// <param name="onDelta">正文增量。</param>
         /// <param name="onReasoning">推理通道增量（上游不提供推理时永远不回调）。</param>
+        /// <param name="onRestart">整轮重发前的回调：宿主应丢弃已显示的半截输出，避免重发后正文重复。</param>
         Task<CompletionResult> StreamAsync(
             IReadOnlyList<LlmMessage> messages, Action<string> onDelta,
-            CancellationToken ct = default, Action<string> onReasoning = null);
+            CancellationToken ct = default, Action<string> onReasoning = null, Action onRestart = null);
     }
 }

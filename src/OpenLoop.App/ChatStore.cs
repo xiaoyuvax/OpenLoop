@@ -71,9 +71,89 @@ namespace OpenLoop.App
                 string temp = path + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(entries, Json), new UTF8Encoding(false));
                 File.Move(temp, path, true);
+                if (!string.IsNullOrWhiteSpace(kind) && kind != LoopKind) Touch(workspace, kind);
             }
             catch
             {
+            }
+        }
+
+        /// <summary>Loop 会话与普通会话共用一个目录，但恢复时只认普通会话。</summary>
+        private const string LoopKind = "loop";
+
+        /// <summary>删除一个会话的对话文件与索引项。</summary>
+        public static void Delete(string workspace, string sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(sessionId)) return;
+            try
+            {
+                File.Delete(PathFor(workspace, sessionId));
+                var all = ReadIndex();
+                if (all.RemoveAll(e => e.Id == sessionId) > 0)
+                {
+                    string temp = IndexPath + ".tmp";
+                    File.WriteAllText(temp, JsonSerializer.Serialize(all, Json), new UTF8Encoding(false));
+                    File.Move(temp, IndexPath, true);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>会话索引：文件名是哈希，重启后没有索引就无从把会话找回来。</summary>
+        public static void Touch(string workspace, string sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(sessionId)) return;
+            try
+            {
+                var all = ReadIndex();
+                string full = Path.GetFullPath(workspace.Trim());
+                var item = all.FirstOrDefault(e => e.Id == sessionId);
+                if (item == null) all.Add(new IndexEntry { Id = sessionId, Workspace = full });
+                else item.Workspace = full;
+                Directory.CreateDirectory(Dir);
+                string temp = IndexPath + ".tmp";
+                File.WriteAllText(temp, JsonSerializer.Serialize(all, Json), new UTF8Encoding(false));
+                File.Move(temp, IndexPath, true);
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>有内容的已存会话（会话 id + 工作目录），最近的在前。</summary>
+        public static List<(string Id, string Workspace)> SavedSessions()
+        {
+            var result = new List<(string, string)>();
+            try
+            {
+                foreach (var item in ReadIndex().OrderByDescending(e => e.UpdatedAt))
+                {
+                    if (item == null || string.IsNullOrEmpty(item.Id) || string.IsNullOrEmpty(item.Workspace)) continue;
+                    if (Load(item.Workspace, item.Id).Count == 0) continue;
+                    result.Add((item.Id, item.Workspace));
+                }
+            }
+            catch
+            {
+            }
+            return result;
+        }
+
+        private static string IndexPath => Path.Combine(Dir, "index.json");
+
+        private static List<IndexEntry> ReadIndex()
+        {
+            try
+            {
+                string path = IndexPath;
+                if (!File.Exists(path)) return [];
+                return JsonSerializer.Deserialize<List<IndexEntry>>(File.ReadAllText(path, Encoding.UTF8), Json) ?? [];
+            }
+            catch
+            {
+                return [];
             }
         }
 
@@ -93,6 +173,13 @@ namespace OpenLoop.App
             public string ToolLines { get; set; }
             public int Steps { get; set; }
             public long Ms { get; set; }
+        }
+
+        private sealed class IndexEntry
+        {
+            public string Id { get; set; }
+            public string Workspace { get; set; }
+            public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         }
     }
 }

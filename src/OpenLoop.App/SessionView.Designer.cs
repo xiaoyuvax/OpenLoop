@@ -19,6 +19,7 @@ namespace OpenLoop.App
         private Panel _sideHost;
         private FlowLayoutPanel _loopFlow;
         private FlowLayoutPanel _detailFlow;
+        private SideWorkView _sideBtw;
         private AntdUI.Button _btnOpenLoop;
         private AntdUI.Label _lblDModel;
         private AntdUI.Label _lblDEffort;
@@ -55,6 +56,7 @@ namespace OpenLoop.App
         private FlowLayoutPanel _queueList;
         private AntdUI.Label _lblPath;
         private ToolTip _tips;
+        private CommandPopup _cmdPopup;
 
         internal void DetachSurveyEvents() => OpenLoop.Core.Store.SurveyStore.Changed -= OnSurveyChanged;
 
@@ -69,6 +71,7 @@ namespace OpenLoop.App
         {
             components = new System.ComponentModel.Container();
             _tips = new ToolTip();
+            _cmdPopup = new CommandPopup();
 
             _root = new TableLayoutPanel();
             _header = new TableLayoutPanel();
@@ -217,6 +220,7 @@ namespace OpenLoop.App
             _sideTabs.Margin = new Padding(0);
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Loop" });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabDetail") });
+            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "旁路" });
             _sideTabs.SelectIndex = 0;
             _sideTabs.SelectIndexChanged += OnSidePageChanged;
 
@@ -233,6 +237,8 @@ namespace OpenLoop.App
             _detailFlow.WrapContents = false;
             _detailFlow.AutoScroll = true;
             _detailFlow.Visible = false;
+
+            _sideBtw = new SideWorkView { Dock = DockStyle.Fill, Visible = false };
 
             _lblDef.AutoSize = true;
             _lblDef.MaximumSize = new Size(260, 0);
@@ -394,6 +400,7 @@ namespace OpenLoop.App
 
             _sideHost.Controls.Add(_loopFlow);
             _sideHost.Controls.Add(_detailFlow);
+            _sideHost.Controls.Add(_sideBtw);
             _side.Controls.Add(_sideTabs, 0, 0);
             _side.Controls.Add(_sideHost, 0, 1);
             _upperSplit.Panel2.Controls.Add(_side);
@@ -401,8 +408,9 @@ namespace OpenLoop.App
             // input area
             _inputArea.Dock = DockStyle.Fill;
             _inputArea.ColumnCount = 1;
-            _inputArea.RowCount = 2;
+            _inputArea.RowCount = 3;
             _inputArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _inputArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 0F));
             _inputArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _inputArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
             _inputArea.BackColor = UiStyle.Page;
@@ -583,8 +591,9 @@ namespace OpenLoop.App
             _toolbar.Controls.Add(_toolbarLeft, 0, 0);
             _toolbar.Controls.Add(_toolbarRight, 1, 0);
 
-            _inputArea.Controls.Add(_txtInput, 0, 0);
-            _inputArea.Controls.Add(_toolbar, 0, 1);
+            _inputArea.Controls.Add(_cmdPopup, 0, 0);
+            _inputArea.Controls.Add(_txtInput, 0, 1);
+            _inputArea.Controls.Add(_toolbar, 0, 2);
             _mainSplit.Panel2.Controls.Add(_inputArea);
 
             // 队列抽屉在 Panel1 内 Dock=Bottom；先加 Fill 再加 Bottom，Bottom 先占位
@@ -594,6 +603,12 @@ namespace OpenLoop.App
             _root.Controls.Add(_header, 0, 0);
             _root.Controls.Add(_headerLine, 0, 1);
             _root.Controls.Add(_mainSplit, 0, 2);
+
+            // “/” 命令联想下拉：占用输入框上方的一行，关闭时行高收成 0
+            _cmdPopup.Name = "cmdPopup";
+            _cmdPopup.Dock = DockStyle.Fill;
+            _cmdPopup.Font = new Font("Microsoft YaHei UI", 9.5F);
+            _cmdPopup.Accepted += OnCommandAccepted;
 
             // view
             AutoScaleDimensions = new SizeF(7F, 17F);

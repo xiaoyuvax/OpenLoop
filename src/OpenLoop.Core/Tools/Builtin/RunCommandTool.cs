@@ -3,21 +3,6 @@ using OpenLoop.Core.Safety;
 
 namespace OpenLoop.Core.Tools.Builtin
 {
-    public sealed class CommandRequest
-    {
-        public CommandRequest(IReadOnlyList<string> argv, string workingDirectory, string reason)
-        {
-            Argv = argv;
-            WorkingDirectory = workingDirectory;
-            Reason = reason;
-        }
-
-        public IReadOnlyList<string> Argv { get; }
-        public string WorkingDirectory { get; }
-        public string Reason { get; }
-        public string Line => string.Join(" ", Argv);
-    }
-
     /// <summary>
     /// 在工作目录内以 argv 方式执行命令（不经 shell）。
     /// 危险命令直接拒绝；风险命令必须经审批回调；子进程只拿到环境白名单。
@@ -25,10 +10,10 @@ namespace OpenLoop.Core.Tools.Builtin
     public sealed class RunCommandTool : ITool
     {
         private readonly WorkspaceScope _scope;
-        private readonly Func<CommandRequest, bool> _approve;
+        private readonly ApprovalHandler _approve;
         private readonly bool _inheritEnvironment;
 
-        public RunCommandTool(WorkspaceScope scope, Func<CommandRequest, bool> approve = null,
+        public RunCommandTool(WorkspaceScope scope, ApprovalHandler approve = null,
             bool inheritEnvironment = false)
         {
             _scope = scope;
@@ -52,7 +37,7 @@ namespace OpenLoop.Core.Tools.Builtin
             if (verdict.Risk == CommandRisk.Denied)
                 return AgentToolResult.Failure($"拒绝执行（{verdict.Reason}）：{string.Join(" ", argv)}");
 
-            if (!_scope.TryResolve(args.Str("cwd"), out string workingDir, out string error))
+            if (!_scope.TryResolve(args.Str("cwd"), out string workingDir, out string error, Name))
                 return AgentToolResult.Failure(error);
 
             if (!Directory.Exists(workingDir))
@@ -60,11 +45,12 @@ namespace OpenLoop.Core.Tools.Builtin
 
             if (verdict.Risk == CommandRisk.Risky)
             {
-                var request = new CommandRequest(argv, workingDir, verdict.Reason);
+                string line = string.Join(" ", argv);
                 if (_approve == null)
-                    return AgentToolResult.Failure($"需要用户批准才能执行（{verdict.Reason}）：{request.Line}");
-                if (!_approve(request))
-                    return AgentToolResult.Failure($"用户拒绝执行：{request.Line}");
+                    return AgentToolResult.Failure($"需要用户批准才能执行（{verdict.Reason}）：{line}");
+                var decision = _approve(new ApprovalRequest(ApprovalKind.SensitiveAction, Name, line, verdict.Reason));
+                if (decision == ApprovalDecision.Deny)
+                    return AgentToolResult.Failure($"用户拒绝执行：{line}");
             }
 
             int timeoutSeconds = Math.Clamp(args.Int("timeoutSeconds", 60), 1, 600);

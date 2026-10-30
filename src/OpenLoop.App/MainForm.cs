@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using ChatFlow;
 using Puppet.Core;
 using SurveyStore = OpenLoop.Core.Store.SurveyStore;
 
@@ -171,6 +172,13 @@ namespace OpenLoop.App
 
         public void Send(string mode = "task") => Active?.View.SendMode(mode);
 
+        /// <summary>把文字放进当前会话的输入框（不发送），A 面驱动用。</summary>
+        public void SetComposerText(string text)
+        {
+            var view = Current?.View;
+            if (view != null) view.ComposerText = text ?? "";
+        }
+
         public void NewSession(string workspace)
         {
             if (string.IsNullOrWhiteSpace(workspace)) workspace = _settings.Workspace;
@@ -261,13 +269,15 @@ namespace OpenLoop.App
             _overview.Initialize();
             _overview.OpenRequested += ShowSession;
             _overview.NewSessionRequested += OpenNewSessionTab;
+            _overview.DeleteRequested += OnDeleteRequested;
             _overview.SettingsRequested += OpenSettings;
 
             _settings = AppSettings.Load();
             if (string.IsNullOrWhiteSpace(_settings.Workspace))
                 _settings.Workspace = Directory.GetCurrentDirectory();
             _tabs.SelectTab(_overviewPage);
-            if (_settings.Projects.Count == 0) OpenNewSessionTab("");
+            RestoreSessions();
+            if (_settings.Projects.Count == 0 && _sessions.Count == 0) OpenNewSessionTab("");
             else RefreshOverview();
 
             RestoreWindowBounds();
@@ -345,22 +355,33 @@ namespace OpenLoop.App
             }
         }
 
-        private Session CreateSession(string workspace)
+        private Session CreateSession(string workspace, string sessionId = null)
         {
-            workspace = workspace ?? "";
-            if (!string.IsNullOrWhiteSpace(workspace) &&
-                !_settings.Projects.Contains(workspace, StringComparer.OrdinalIgnoreCase))
+            workspace = Paths.Normalize(workspace);
+            //同一目录的不同写法（盘符大小写、斜杠、尾分隔符）算同一个项目：复用既有写法，不再新增一条
+            string existingProject = _settings.Projects.FirstOrDefault(p => Paths.Same(p, workspace));
+            if (existingProject != null)
             {
-                _settings.Projects.Add(workspace);
+                workspace = existingProject;
+            }
+            else if (workspace.Length > 0)
+            {
+                if (!_settings.Projects.Contains(workspace, StringComparer.OrdinalIgnoreCase))
+                    _settings.Projects.Add(workspace);
                 _settings.Workspace = workspace;
                 try { _settings.Save(); } catch (Exception ex) { AppLog.Warn("保存项目列表失败：" + ex.Message); }
             }
+            else
+            {
+                workspace = "";
+            }
 
-            var session = new Session { Workspace = workspace };
+            var session = new Session { Workspace = workspace, Id = string.IsNullOrWhiteSpace(sessionId) ? Guid.NewGuid().ToString("N")[..8] : sessionId };
             session.View = new SessionView { Dock = DockStyle.Fill };
             session.View.Initialize(session, () => _settings);
             session.View.StateChanged += OnSessionStateChanged;
             session.View.OpenLoopRequested += OpenLoop;
+            session.View.ForkRequested += ForkSession;
 
             session.Page = new AntdUI.TabPage
             {
@@ -394,6 +415,24 @@ namespace OpenLoop.App
             OnSurveyStoreChanged(workspace, sessionId);
         }
 
+        /// <summary>重启后把上次的会话摆回会话页：会话文件按 工作目录+id 分桶，靠索引才找得回来。</summary>
+        private void RestoreSessions()
+        {
+            try
+            {
+                foreach (var (id, workspace) in ChatStore.SavedSessions())
+                {
+                    if (_sessions.Any(s => s.Id == id)) continue;
+                    if (!Directory.Exists(workspace)) continue;
+                    CreateSession(workspace, id);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("恢复会话失败", ex);
+            }
+        }
+
         private void ShowSession(Session session)
         {
             if (session == null) return;
@@ -401,6 +440,56 @@ namespace OpenLoop.App
             if (session.Page.Parent == null) _tabs.Pages.Add(session.Page);
             _tabs.SelectTab(session.Page);
             RefreshOverview();
+            _overview.FocusProject(session.Workspace);
+        }
+
+        /// <summary>/fork：复制当前会话的上下文开一个新会话，并把新请求发出去。</summary>
+        private void ForkSession(Session source, string request)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(request)) return;
+            var session = CreateSession(source.Workspace);
+            //克隆可见历史：新会话既是「带着上下文」起步，后续追问也仍带上下文
+            session.Book.ReplaceAll(source.Book.Turns.Select(t => new ChatTurn
+            {
+                User = new ChatMessage("user", t.UserText),
+                Assistant = new ChatMessage("assistant", t.AssistantText),
+                ReasoningText = t.ReasoningText,
+                ToolTraceText = t.ToolTraceText,
+                ToolCallLines = t.ToolCallLines,
+                ToolStepCount = t.ToolStepCount,
+                ToolTotalMs = t.ToolTotalMs
+            }), null);
+            ShowSession(session);
+            session.View.ComposerText = request;
+            session.View.SendMode("task");
+        }
+
+        /// <summary>界面上删除会话：先确认再执行。</summary>
+        private void OnDeleteRequested(IReadOnlyList<Session> sessions)
+        {
+            if (sessions == null || sessions.Count == 0) return;
+            if (MessageBox.Show(this,
+                    $"删除 {sessions.Count} 个会话？对话记录会一并删除，不能恢复。",
+                    "删除会话", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+            DeleteSessions(sessions.Select(s => s.Id));
+        }
+
+        /// <summary>删除会话（含磁盘上的对话与索引），A 面与界面共用同一个入口。</summary>
+        public int DeleteSessions(IEnumerable<string> sessionIds)
+        {
+            var ids = new HashSet<string>(sessionIds ?? [], StringComparer.Ordinal);
+            var targets = _sessions.Where(s => ids.Contains(s.Id)).ToList();
+            foreach (var session in targets)
+            {
+                session.View?.Shutdown();
+                if (session.Page != null) CloseTab(session.Page);
+                ChatStore.Delete(session.Workspace, session.Id);
+                _sessions.Remove(session);
+                if (_lastSession == session) _lastSession = null;
+            }
+            if (targets.Count > 0) RefreshOverview();
+            return targets.Count;
         }
 
         private void CloseTab(AntdUI.TabPage page)

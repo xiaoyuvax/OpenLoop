@@ -24,6 +24,7 @@ namespace OpenLoop.App
             _cboLanguage.SelectedValue = _source.Language ?? "";
             _cboTheme.SelectedValue = string.IsNullOrWhiteSpace(_source.Theme) ? "light" : _source.Theme;
             _switchFullAccess.Checked = _source.FullAccess;
+            _switchAutoApprove.Checked = _source.AutoApprove;
             _switchAgents.Checked = _source.UseAgentsMd;
             _switchThinking.Checked = _source.ThinkingExpandedByDefault;
             _filling = false;
@@ -353,6 +354,10 @@ namespace OpenLoop.App
                 Language = _cboLanguage.SelectedValue as string ?? _source.Language,
                 OnlyFreeModels = _source.OnlyFreeModels,
                 FullAccess = _switchFullAccess.Checked,
+                AutoApprove = _switchAutoApprove.Checked,
+                //记住的「后续都许可」由审批弹框写入，设置页不重置
+                AllowOutsideWorkspace = _source.AllowOutsideWorkspace,
+                AllowSensitiveActions = _source.AllowSensitiveActions,
                 UseAgentsMd = _switchAgents.Checked,
                 ThinkingExpandedByDefault = _switchThinking.Checked,
                 ReasoningEffort = _source.ReasoningEffort,

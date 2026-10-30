@@ -59,6 +59,9 @@ namespace OpenLoop.App
         public const string Edit =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M4 20h4l10.5-10.5-4-4L4 16v4zm12.7-12.7l1.6-1.6a1 1 0 000-1.4l-2.6-2.6a1 1 0 00-1.4 0l-1.6 1.6z'/></svg>";
 
+        public const string Trash =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M9 3h6l1 2h4v2H4V5h4zM6 8h12l-1 12a1 1 0 01-1 1H8a1 1 0 01-1-1zm3 2v9h2v-9zm4 0v9h2v-9z'/></svg>";
+
         public static string Dot(Color color)
             => $"<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='7' fill='{Hex(color)}'/></svg>";
 

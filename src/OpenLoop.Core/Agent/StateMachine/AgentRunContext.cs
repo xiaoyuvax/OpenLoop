@@ -16,6 +16,9 @@ namespace OpenLoop.Core.Agent
         public Func<bool> ShouldStop { get; init; }
         public Action<string> OnDelta { get; init; }
         public Action<string> OnReasoning { get; init; }
+
+        /// <summary>流式整轮重发前调用：宿主丢弃已显示的半截正文/思考。</summary>
+        public Action OnRestart { get; init; }
         public Action<AgentStepRecord> OnStep { get; init; }
         public Action<string, Dictionary<string, object>> OnToolStart { get; init; }
 

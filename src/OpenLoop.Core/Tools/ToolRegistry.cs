@@ -42,13 +42,13 @@ namespace OpenLoop.Core.Tools
 
         /// <summary>v0 的五个通用工作目录工具；有技能时追加 read_skill。</summary>
         public static ToolRegistry Workspace(
-            WorkspaceScope scope, Func<Builtin.CommandRequest, bool> approve = null,
+            WorkspaceScope scope, ApprovalHandler approve = null,
             IReadOnlyList<SkillInfo> skills = null, bool fullAccess = false)
             => new(Common(scope, approve, skills, fullAccess));
 
         /// <summary>Loop 的工具集：通用工具 + 只读证据通道 + 发现落账。</summary>
         public static ToolRegistry Loop(
-            WorkspaceScope scope, string workspaceRoot, Func<Builtin.CommandRequest, bool> approve = null,
+            WorkspaceScope scope, string workspaceRoot, ApprovalHandler approve = null,
             IReadOnlyList<SkillInfo> skills = null)
             => new(Common(scope, approve, skills, fullAccess: false).Concat(
             [
@@ -58,7 +58,7 @@ namespace OpenLoop.Core.Tools
             ]));
 
         private static IEnumerable<ITool> Common(
-            WorkspaceScope scope, Func<Builtin.CommandRequest, bool> approve, IReadOnlyList<SkillInfo> skills,
+            WorkspaceScope scope, ApprovalHandler approve, IReadOnlyList<SkillInfo> skills,
             bool fullAccess)
         {
             yield return new Builtin.ReadFileTool(scope);

@@ -131,7 +131,9 @@ namespace OpenLoop.App
             var scope = new WorkspaceScope(_workspace);
             var skillCatalog = SkillCatalog.Load(_workspace);
             var skills = ActiveSkills(skillCatalog, out var skillProblems);
-            var loopTools = ToolRegistry.Loop(scope, _workspace, ApproveCommand, skills);
+            OpenLoop.Core.Safety.ApprovalHandler approve = AskApproval;
+            scope.Approve = approve;
+            var loopTools = ToolRegistry.Loop(scope, _workspace, approve, skills);
             var tools = new ToolRegistry(loopTools.Tools.Concat(
                 [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
             string checkpoint = Snapshots.Create(_workspace, "loop");
@@ -189,10 +191,25 @@ namespace OpenLoop.App
                 RunOnUi(() =>
                 {
                     turn.ReasoningText = snapshot;
-                    RefreshChat();
-                    _chat.ScrollToEnd();
+                    // 就地重绑最后一行：避免全量重建把高度打回估算值导致滚动条跳动
+                    string text;
+                    lock (_streamBuffer) text = _streamBuffer.ToString();
+                    _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(text));
                 });
             };
+
+            // 断流整轮重发：清掉已显示的半截正文/思考，避免重发后出现两遍
+            void ResetStream()
+            {
+                lock (_streamBuffer) _streamBuffer.Clear();
+                lock (reasoningBuffer) reasoningBuffer.Clear();
+                RunOnUi(() =>
+                {
+                    turn.ReasoningText = "";
+                    _chat.UpdateStreamingMessage(turn, "", true);
+                    RefreshChat();
+                });
+            }
 
             var loop = new AgentLoop(tools, reasoner, policy,
                 onStep: step =>
@@ -201,7 +218,7 @@ namespace OpenLoop.App
                     {
                         turn.ToolStepCount++;
                         turn.ToolTotalMs += step.DurationMs;
-                        string line = $"{(step.Ok ? "✓" : "✗")} {step.Tool}({step.ArgsSummary}) · {step.DurationText}";
+                        string line = $"{step.Tool}({step.ArgsSummary}) · {step.DurationText}{(step.Ok ? "" : " · 失败")}";
                         turn.ToolCallLines = string.IsNullOrEmpty(turn.ToolCallLines)
                             ? line
                             : turn.ToolCallLines + "\n" + line;
@@ -242,7 +259,7 @@ namespace OpenLoop.App
             try
             {
                 var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta, onReasoning),
+                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta, onReasoning, ResetStream),
                     ct);
 
                 turn.Streaming = false;
@@ -475,13 +492,9 @@ namespace OpenLoop.App
                 == DialogResult.Yes;
         }
 
-        private bool ApproveCommand(OpenLoop.Core.Tools.Builtin.CommandRequest request)
-        {
-            string text = string.Format(Localization.T("ApproveCommand"), request.Reason, request.Line);
-            if (IsDisposed || !IsHandleCreated) return false;
-            if (InvokeRequired) return (bool)Invoke(new Func<bool>(() => ApproveCommand(request)));
-            return MessageBox.Show(FindForm(), text, Localization.T("ApproveTitle"), MessageBoxButtons.YesNo) == DialogResult.Yes;
-        }
+        /// <summary>分级审批：越界访问与风险操作才问用户，可「后续都许可」。</summary>
+        private OpenLoop.Core.Safety.ApprovalDecision AskApproval(OpenLoop.Core.Safety.ApprovalRequest request)
+            => ApprovalGate.Ask(this, _settings, request);
 
         private void Notify(string title, string text, bool error = false)
         {

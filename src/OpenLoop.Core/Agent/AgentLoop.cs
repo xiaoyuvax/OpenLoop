@@ -56,7 +56,8 @@ namespace OpenLoop.Core.Agent
             int contextLimit = 0,
             Func<bool> shouldStop = null,
             Action<string> onDelta = null,
-            Action<string> onReasoning = null)
+            Action<string> onReasoning = null,
+            Action onRestart = null)
             => new()
             {
                 Tools = _tools,
@@ -66,6 +67,7 @@ namespace OpenLoop.Core.Agent
                 ShouldStop = shouldStop,
                 OnDelta = onDelta,
                 OnReasoning = onReasoning,
+                OnRestart = onRestart,
                 OnStep = _onStep,
                 OnToolStart = _onToolStart,
                 ConfirmContinue = _confirmContinue
@@ -78,13 +80,14 @@ namespace OpenLoop.Core.Agent
         /// </summary>
         /// <param name="onDelta">正文流式增量（null 时不走流式通道）。</param>
         /// <param name="onReasoning">推理通道流式增量，供宿主实时显示思考内容。</param>
+        /// <param name="onRestart">流式断流整轮重发前调用，供宿主清掉半截输出。</param>
         public async Task<AgentRunResult> RunAsync(
             IReadOnlyList<LlmMessage> history, string userMessage,
             CancellationToken ct = default, int contextLimit = 0, Func<bool> shouldStop = null,
-            Action<string> onDelta = null, Action<string> onReasoning = null)
+            Action<string> onDelta = null, Action<string> onReasoning = null, Action onRestart = null)
         {
             var state = CreateState(history, userMessage);
-            var context = CreateContext(contextLimit, shouldStop, onDelta, onReasoning);
+            var context = CreateContext(contextLimit, shouldStop, onDelta, onReasoning, onRestart);
             return await CreateMachine().RunAsync(state, context, ct);
         }
 

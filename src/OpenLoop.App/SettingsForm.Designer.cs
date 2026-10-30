@@ -18,6 +18,10 @@ namespace OpenLoop.App
         private FlowLayoutPanel _fullFlow;
         private AntdUI.Switch _switchFullAccess;
         private AntdUI.Label _lblFullAccessHint;
+        private AntdUI.Label _lblAutoApprove;
+        private FlowLayoutPanel _autoApproveFlow;
+        private AntdUI.Switch _switchAutoApprove;
+        private AntdUI.Label _lblAutoApproveHint;
         private AntdUI.Label _lblAgents;
         private FlowLayoutPanel _agentsFlow;
         private AntdUI.Switch _switchAgents;
@@ -84,6 +88,10 @@ namespace OpenLoop.App
             _fullFlow = new FlowLayoutPanel();
             _switchFullAccess = new AntdUI.Switch();
             _lblFullAccessHint = new AntdUI.Label();
+            _lblAutoApprove = new AntdUI.Label();
+            _autoApproveFlow = new FlowLayoutPanel();
+            _switchAutoApprove = new AntdUI.Switch();
+            _lblAutoApproveHint = new AntdUI.Label();
             _lblAgents = new AntdUI.Label();
             _agentsFlow = new FlowLayoutPanel();
             _switchAgents = new AntdUI.Switch();
@@ -150,9 +158,10 @@ namespace OpenLoop.App
             // 普通
             _general.Dock = DockStyle.Fill;
             _general.ColumnCount = 2;
-            _general.RowCount = 6;
+            _general.RowCount = 7;
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
@@ -164,6 +173,7 @@ namespace OpenLoop.App
             ConfigureLabel(_lblLanguage, "语言");
             ConfigureLabel(_lblTheme, "主题色");
             ConfigureLabel(_lblFullAccess, "完全许可");
+            ConfigureLabel(_lblAutoApprove, "自动审批");
             ConfigureLabel(_lblAgents, "AGENTS.md");
             ConfigureLabel(_lblThinking, "思考过程");
 
@@ -198,6 +208,24 @@ namespace OpenLoop.App
 
             _fullFlow.Controls.Add(_switchFullAccess);
             _fullFlow.Controls.Add(_lblFullAccessHint);
+
+            _autoApproveFlow.Dock = DockStyle.Fill;
+            _autoApproveFlow.FlowDirection = FlowDirection.LeftToRight;
+            _autoApproveFlow.WrapContents = false;
+            _autoApproveFlow.Margin = new Padding(0);
+
+            _switchAutoApprove.Width = 44;
+            _switchAutoApprove.Height = 22;
+            _switchAutoApprove.Margin = new Padding(0, 9, 8, 0);
+
+            _lblAutoApproveHint.AutoSize = true;
+            _lblAutoApproveHint.Text = "一切工具调用都无需审批（含工作区外访问与风险操作）";
+            _lblAutoApproveHint.Font = new Font("Segoe UI", 8.5F);
+            _lblAutoApproveHint.ForeColor = UiStyle.Muted;
+            _lblAutoApproveHint.Margin = new Padding(0, 11, 0, 0);
+
+            _autoApproveFlow.Controls.Add(_switchAutoApprove);
+            _autoApproveFlow.Controls.Add(_lblAutoApproveHint);
 
             _agentsFlow.Dock = DockStyle.Fill;
             _agentsFlow.FlowDirection = FlowDirection.LeftToRight;
@@ -238,7 +266,7 @@ namespace OpenLoop.App
 
             _lblGeneralNote.AutoSize = false;
             _lblGeneralNote.Dock = DockStyle.Fill;
-            _lblGeneralNote.Text = "主题与语言在重启 OpenLoop 后生效；完全许可立即生效。";
+            _lblGeneralNote.Text = "主题与语言在重启 OpenLoop 后生效；完全许可与自动审批立即生效。";
             _lblGeneralNote.Font = new Font("Segoe UI", 8.5F);
             _lblGeneralNote.ForeColor = UiStyle.Muted;
             _lblGeneralNote.TextAlign = ContentAlignment.TopLeft;
@@ -250,11 +278,13 @@ namespace OpenLoop.App
             _general.Controls.Add(_cboTheme, 1, 1);
             _general.Controls.Add(_lblFullAccess, 0, 2);
             _general.Controls.Add(_fullFlow, 1, 2);
-            _general.Controls.Add(_lblAgents, 0, 3);
-            _general.Controls.Add(_agentsFlow, 1, 3);
-            _general.Controls.Add(_lblThinking, 0, 4);
-            _general.Controls.Add(_thinkingFlow, 1, 4);
-            _general.Controls.Add(_lblGeneralNote, 0, 5);
+            _general.Controls.Add(_lblAutoApprove, 0, 3);
+            _general.Controls.Add(_autoApproveFlow, 1, 3);
+            _general.Controls.Add(_lblAgents, 0, 4);
+            _general.Controls.Add(_agentsFlow, 1, 4);
+            _general.Controls.Add(_lblThinking, 0, 5);
+            _general.Controls.Add(_thinkingFlow, 1, 5);
+            _general.Controls.Add(_lblGeneralNote, 0, 6);
             _general.SetColumnSpan(_lblGeneralNote, 2);
             _pageGeneral.Controls.Add(_general);
 
