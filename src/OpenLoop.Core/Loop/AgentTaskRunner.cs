@@ -27,7 +27,7 @@ namespace OpenLoop.Core.Loop
             Func<string, IReasoner> reasonerFor,
             IReadOnlyDictionary<string, FeatureRecord> features,
             string workspaceRoot, string evidenceRoot, string globalAgentsPath = null,
-            bool useAgentsMd = true)
+            bool useAgentsMd = true, string globalSkillsPath = null)
         {
             _reasonerFor = reasonerFor ?? throw new ArgumentNullException(nameof(reasonerFor));
             _features = features ?? throw new ArgumentNullException(nameof(features));
@@ -35,7 +35,7 @@ namespace OpenLoop.Core.Loop
             _evidenceRoot = Path.GetFullPath(evidenceRoot ?? throw new ArgumentNullException(nameof(evidenceRoot)));
             _globalAgentsPath = globalAgentsPath;
             _useAgentsMd = useAgentsMd;
-            _catalog = SkillCatalog.Load(_workspaceRoot);
+            _catalog = SkillCatalog.Load(_workspaceRoot, globalSkillsPath);
         }
 
         public async Task<TaskOutcome> RunAsync(

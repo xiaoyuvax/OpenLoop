@@ -1,21 +1,32 @@
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.Reasoning;
+using OpenLoop.Core.Skills;
+using OpenLoop.Core.Store;
 
 namespace OpenLoop.App
 {
+    /// <summary>设置页里技能列表的一行（Table 按属性名取值，On 由 Render 画成徽标）。</summary>
+    internal sealed record SkillRow(string Name, string Description, bool On, string From);
+
     internal sealed partial class SettingsForm : Form
     {
         private readonly AppSettings _source;
         private readonly List<ProviderConfig> _providers = [];
+        private readonly List<SkillRow> _skillRows = [];
+        private readonly string _workspace;
         private ProviderConfig _loaded;
         private bool _filling;
 
-        public SettingsForm(AppSettings source)
+        public SettingsForm(AppSettings source, string workspace = "")
         {
             _source = source ?? new AppSettings();
+            _workspace = workspace ?? "";
             InitializeComponent();
             SelectTips.Bind(_tips, _cboLanguage, _cboTheme, _cboProvider);
             Icon = UiIcons.App;
+            _colSkillOn.Render = (value, row, index) => SkillBadge(row as SkillRow);
+            _tblSkills.DataSource = _skillRows;
+            LoadSkills();
 
             foreach (var provider in _source.Providers ?? [])
                 _providers.Add(Clone(provider));
@@ -25,6 +36,7 @@ namespace OpenLoop.App
             _cboTheme.SelectedValue = string.IsNullOrWhiteSpace(_source.Theme) ? "light" : _source.Theme;
             _switchFullAccess.Checked = _source.FullAccess;
             _switchAutoApprove.Checked = _source.AutoApprove;
+            _switchOpenCode.Checked = _source.OpenCodeAskPermissions;
             _switchAgents.Checked = _source.UseAgentsMd;
             _switchThinking.Checked = _source.ThinkingExpandedByDefault;
             _filling = false;
@@ -332,6 +344,82 @@ namespace OpenLoop.App
             }
         }
 
+        private void LoadSkills()
+        {
+            _skillRows.Clear();
+            if (string.IsNullOrWhiteSpace(_workspace) || !Directory.Exists(_workspace))
+            {
+                _lblSkillsPath.Text = "先在项目里打开一个会话：技能按工作区存放";
+                RebindSkills();
+                return;
+            }
+
+            _lblSkillsPath.Text = _workspace;
+            IReadOnlyList<SkillInfo> catalog = [];
+            var enabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                catalog = SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath);
+                var ledger = Ledger.Open(_workspace);
+                ledger.EnsureInitialized();
+                //顺带启用首次出现的技能：新装技能默认就是激活的
+                var active = SkillCatalog.Sync(ledger, catalog, out var problems);
+                foreach (var skill in active) enabled.Add(skill.Name);
+                if (problems.Count > 0) AppLog.Warn("技能不可用：" + string.Join("；", problems));
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("读取技能失败：" + ex.Message);
+            }
+
+            foreach (var skill in catalog.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
+                _skillRows.Add(new SkillRow(skill.Name, skill.Description,
+                    enabled.Contains(skill.Name), skill.Global ? "全局" : "项目"));
+            RebindSkills();
+        }
+
+        private void RebindSkills()
+        {
+            _tblSkills.DataSource = null;
+            _tblSkills.DataSource = _skillRows;
+        }
+
+        /// <summary>启用/停用选中的技能；立即写账本，不用等「保存」。</summary>
+        private void OnSkillEnable(object sender, EventArgs e) => ToggleSelectedSkill(true);
+
+        private void OnSkillDisable(object sender, EventArgs e) => ToggleSelectedSkill(false);
+
+        private void ToggleSelectedSkill(bool enabled)
+        {
+            var row = SelectedSkill();
+            if (row == null) return;
+            try
+            {
+                var ledger = Ledger.Open(_workspace);
+                ledger.EnsureInitialized();
+                SkillCatalog.SetEnabled(ledger, SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath),
+                    row.Name, enabled);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("切换技能失败", ex);
+                AntdUI.Notification.error(this, "技能", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                return;
+            }
+            LoadSkills();
+        }
+
+        private SkillRow SelectedSkill()
+        {
+            int index = (_tblSkills.SelectedIndexs ?? []).FirstOrDefault();
+            return index >= 1 && index <= _skillRows.Count ? _skillRows[index - 1] : null;
+        }
+
+        private static AntdUI.CellBadge SkillBadge(SkillRow row)
+            => row?.On == true
+                ? new AntdUI.CellBadge(AntdUI.TState.Success, "启用")
+                : new AntdUI.CellBadge(AntdUI.TState.Default, "停用");
+
         private void OnSave(object sender, EventArgs e)
         {
             if (_switchFullAccess.Checked && !_source.FullAccess
@@ -355,6 +443,7 @@ namespace OpenLoop.App
                 OnlyFreeModels = _source.OnlyFreeModels,
                 FullAccess = _switchFullAccess.Checked,
                 AutoApprove = _switchAutoApprove.Checked,
+                OpenCodeAskPermissions = _switchOpenCode.Checked,
                 //记住的「后续都许可」由审批弹框写入，设置页不重置
                 AllowOutsideWorkspace = _source.AllowOutsideWorkspace,
                 AllowSensitiveActions = _source.AllowSensitiveActions,

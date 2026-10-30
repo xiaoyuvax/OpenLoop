@@ -135,6 +135,20 @@ public sealed class ReasonerTests
     }
 
     [Fact]
+    public void Api_error_brief_prefers_error_message()
+    {
+        //OpenRouter 的错误体里 message 才是人话，其余字段（metadata/raw）对用户没用
+        string body = """{"error":{"message":"model is temporarily rate-limited upstream","code":429}}""";
+        Assert.Equal("model is temporarily rate-limited upstream",
+            OpenAiCompatibleReasoner.ErrorBrief(body));
+
+        //非 JSON 错误体：原样保留，长则截断
+        Assert.Equal("gateway exploded", OpenAiCompatibleReasoner.ErrorBrief("gateway exploded"));
+        Assert.Empty(OpenAiCompatibleReasoner.ErrorBrief(""));
+        Assert.Equal(501, OpenAiCompatibleReasoner.ErrorBrief(new string('x', 900)).Length);
+    }
+
+    [Fact]
     public void Backoff_Doubles_And_Caps_At_30s()
     {
         Assert.Equal(1000, OpenAiCompatibleReasoner.BackoffDelayMs(1));

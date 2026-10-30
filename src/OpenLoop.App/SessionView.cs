@@ -94,7 +94,10 @@ namespace OpenLoop.App
 
         internal event Action<Session> StateChanged;
         internal event Action<string> OpenLoopRequested;
+        internal event Action<Session, string> ComplaintRequested;
         internal event Action<Session, string> ForkRequested;
+        internal event Action<Session> TitleChanged;
+        internal event Action<string, IReadOnlyList<ChatTurn>> SideWorkEvicted;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Workspace => Session?.Workspace ?? "";
@@ -349,6 +352,7 @@ namespace OpenLoop.App
         private static readonly (string Command, string Description)[] Commands =
         {
             ("/btw", "在右侧栏用当前上下文跑一个只读旁路任务"),
+            ("/complain", "把对 Worker 表现的不满发给 Loop 立即处理"),
             ("/fork", "复制当前上下文开一个新会话（可继续对话）并跳转")
         };
 
@@ -390,7 +394,83 @@ namespace OpenLoop.App
             ShowSidePage(2);
             _sideBtw.SetModel(_model);
             _sideBtw.SetEffort(_effort);
+            // 只保留最新一条旁路：上一条转成普通会话存进会话历史，之后可恢复继续聊
+            var previous = _sideBtw.Snapshot();
+            if (previous.Count > 0)
+            {
+                SideWorkEvicted?.Invoke(Session.Workspace, previous);
+                _sideBtw.Reset();
+            }
             _sideBtw.Run(request, BuildHistory());
+        }
+
+        private void OnSummarize(object sender, EventArgs e) => _ = SummarizeTitleAsync(force: true);
+
+        /// <summary>外部（如旁路转成会话）请求补一个标题，已有标题时不覆盖。</summary>
+        internal void RequestTitle() => _ = SummarizeTitleAsync(force: false);
+
+        /// <summary>关窗时把当前旁路落成一个会话，别直接丢掉。</summary>
+        internal void FlushSideWork()
+        {
+            var turns = _sideBtw.Snapshot();
+            if (turns.Count == 0) return;
+            SideWorkEvicted?.Invoke(Session.Workspace, turns);
+            _sideBtw.Reset();
+        }
+
+        /// <summary>用当前模型给会话起标题：首轮结束后自动生成一次，也可点「总结」重算覆盖。</summary>
+        private async Task SummarizeTitleAsync(bool force)
+        {
+            if (!force && !string.IsNullOrWhiteSpace(Session.CustomTitle)) return;
+            var turns = Session.Book.Turns;
+            if (turns.Count == 0) return;
+
+            string model = _model?.Trim() ?? "";
+            var (baseUrl, _) = _settings().EndpointFor(model);
+            if (baseUrl?.Trim().Length == 0 || model.Length == 0) return;
+
+            var messages = new List<LlmMessage>
+            {
+                new("system", "你给对话起标题。只输出标题本身：不超过 12 个汉字，不加引号、不加句号、不解释。"),
+                new("user", TitleInput(turns))
+            };
+            try
+            {
+                var reasoner = Reasoners.Create(_settings(), model, "", Session.Workspace);
+                var completion = await reasoner.CompleteAsync(messages, CancellationToken.None);
+                string title = CleanTitle(completion?.Content);
+                if (title.Length == 0) return;
+                Session.CustomTitle = title;
+                _lblTitle.Text = title;
+                TitleChanged?.Invoke(Session);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("生成标题失败：" + ex.Message);
+                if (force) Notify("总结失败", ex.Message, error: true);
+            }
+        }
+
+        /// <summary>给标题模型的输入：最近几轮问答，助手正文截断，够判断主题即可。</summary>
+        private static string TitleInput(IReadOnlyList<ChatTurn> turns)
+        {
+            var sb = new StringBuilder();
+            foreach (var turn in turns.Skip(Math.Max(0, turns.Count - 4)))
+            {
+                sb.Append("用户：").AppendLine(Trim(turn.UserText, 300));
+                sb.Append("助手：").AppendLine(Trim(turn.AssistantText, 300));
+            }
+            return sb.ToString();
+        }
+
+        private static string CleanTitle(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            string line = raw.Replace("\r", "\n").Split('\n').Select(l => l.Trim())
+                .FirstOrDefault(l => l.Length > 0) ?? "";
+            line = line.Trim('"', '\'', '“', '”', '‘', '’', '「', '」', '#', '*', ' ');
+            line = line.TrimEnd('。', '.', '：', ':');
+            return line.Length <= 20 ? line : line[..20];
         }
 
         /// <summary>运行中：输入框有内容 = 发送（排队），清空 = 停止；只有一个按钮。</summary>
@@ -414,7 +494,7 @@ namespace OpenLoop.App
                 return;
             }
             //命令写了但没写请求：只提示，不要把「/btw」本身当任务发出去
-            if (IsCommand(text, "/btw") || IsCommand(text, "/fork")) return;
+            if (IsCommand(text, "/btw") || IsCommand(text, "/complain") || IsCommand(text, "/fork")) return;
 
             if (_running)
             {
@@ -453,6 +533,18 @@ namespace OpenLoop.App
                 return true;
             }
 
+            if (IsCommand(text, "/complain"))
+            {
+                string complaint = text[9..].Trim();
+                if (complaint.Length == 0)
+                {
+                    Notify("缺少内容", "/complain 后面要写具体不满，例如：/complain 它没查调用点就改了方法签名。", error: true);
+                    return false;
+                }
+                ComplaintRequested?.Invoke(Session, ComplaintText(complaint));
+                return true;
+            }
+
             if (IsCommand(text, "/fork"))
             {
                 string request = text[5..].Trim();
@@ -473,6 +565,22 @@ namespace OpenLoop.App
                 || (text.StartsWith(command, StringComparison.OrdinalIgnoreCase)
                     && text.Length > command.Length
                     && char.IsWhiteSpace(text[command.Length]));
+
+        /// <summary>转给 Loop 的用户反馈：带上最近一轮，Loop 才知道指的是哪次运行。</summary>
+        private string ComplaintText(string complaint)
+        {
+            var sb = new StringBuilder();
+            sb.Append("[用户反馈] 对 Worker 表现不满（会话「").Append(Session.Title).Append("」）：").AppendLine(complaint);
+            var turns = Session.Book.Turns;
+            if (turns.Count == 0) return sb.ToString().TrimEnd();
+            var last = turns[^1];
+            sb.Append("最近任务：").AppendLine(Trim(last.UserText, 300));
+            sb.Append("最近回复：").AppendLine(Trim(last.AssistantText, 500));
+            return sb.ToString().TrimEnd();
+        }
+
+        private static string Trim(string text, int max)
+            => string.IsNullOrEmpty(text) || text.Length <= max ? text ?? "" : text[..max] + "…";
 
         private void Enqueue(string text, string mode)
         {
@@ -739,7 +847,7 @@ namespace OpenLoop.App
             {
                 _selProvider.Items.Clear();
                 _selProvider.Items.Add(new AntdUI.SelectItem(Localization.T("AllProviders")) { Tag = null });
-                foreach (var provider in _settings?.Invoke()?.Providers ?? [])
+                foreach (var provider in (_settings?.Invoke()?.Providers ?? []).Concat(OpenCodeHub.Providers))
                 {
                     _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
                     {
@@ -826,6 +934,9 @@ namespace OpenLoop.App
             ApplyDetail();
         }
 
+        /// <summary>执行失败的轮次用这个前缀记在正文里；这类正文不是模型回复，不能再当上下文回灌。</summary>
+        private const string FailurePrefix = "执行失败：";
+
         private static string CleanAnswer(string text, string finishReason = null)
         {
             string raw = text ?? "";
@@ -863,7 +974,7 @@ namespace OpenLoop.App
             }
 
             string model = _model?.Trim() ?? "";
-            var (baseUrl, apiKey) = settings.EndpointFor(model);
+            var (baseUrl, _) = settings.EndpointFor(model);
             baseUrl = baseUrl?.Trim() ?? "";
             if (baseUrl.Length == 0 || model.Length == 0)
             {
@@ -874,26 +985,24 @@ namespace OpenLoop.App
             bool fullAccess = settings.FullAccess;
             var undoLog = new FileUndoLog();
             var scope = new WorkspaceScope(workspace, fullAccess ? [] : null, fullAccess) { Undo = undoLog };
-            var skillCatalog = SkillCatalog.Load(workspace);
+            var skillCatalog = SkillCatalog.Load(workspace, AppSettings.GlobalSkillsPath);
             string checkpoint = Snapshots.Create(workspace, "worker");
             if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
 
             //模型等待/重试进度：网关慢或重试时给状态栏反馈，避免看起来「卡住」
             int awaitingModel = 0;
-            var reasoner = new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort)
+            var reasoner = Reasoners.Create(settings, model, _effort, workspace);
+            Reasoners.AttachProgress(reasoner, progress =>
             {
-                OnProgress = progress =>
+                Interlocked.Exchange(ref awaitingModel, 1);
+                RunOnUiSafe(() =>
                 {
-                    Interlocked.Exchange(ref awaitingModel, 1);
-                    RunOnUiSafe(() =>
-                    {
-                        string suffix = progress.Attempt > 0
-                            ? $"{progress.Phase}（{progress.Elapsed.TotalSeconds:0} 秒）"
-                            : progress.Phase;
-                        _lblStatus.Text = Localization.T("Status") + ": " + suffix;
-                    });
-                }
-            };
+                    string suffix = progress.Attempt > 0
+                        ? $"{progress.Phase}（{progress.Elapsed.TotalSeconds:0} 秒）"
+                        : progress.Phase;
+                    _lblStatus.Text = Localization.T("Status") + ": " + suffix;
+                });
+            });
 
             Ledger ledger;
             ActivationRecord activation;
@@ -905,12 +1014,11 @@ namespace OpenLoop.App
             {
                 ledger = Ledger.Open(workspace);
                 ledger.EnsureInitialized();
-                SkillCatalog.RegisterFeatures(ledger, skillCatalog);
+                skills = SkillCatalog.Sync(ledger, skillCatalog, out skillProblems);
                 activation = ledger.Current;
                 var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
                 policy = FeatureCatalog.PolicyFrom(activation, features);
                 rules = FeatureCatalog.RulesFrom(activation, features);
-                skills = SkillCatalog.Active(activation, features, skillCatalog, out skillProblems);
             }
             catch (Exception ex)
             {
@@ -925,7 +1033,7 @@ namespace OpenLoop.App
             OpenLoop.Core.Safety.ApprovalHandler approve =
                 fullAccess ? _ => OpenLoop.Core.Safety.ApprovalDecision.AllowOnce : AskApproval;
             scope.Approve = approve;
-            var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess);
+            var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess, OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions));
 
             TraceWriter trace;
             try
@@ -1116,7 +1224,7 @@ namespace OpenLoop.App
                 AppLog.Error("任务执行失败", ex);
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
-                turn.AssistantText = "执行失败：" + ex.Message;
+                turn.AssistantText = FailurePrefix + ex.Message;
                 trace.Finish("error", turn.AssistantText);
                 _lblStatus.Text = Localization.T("Status") + ": error";
                 Notify("执行失败", ex.Message, error: true);
@@ -1153,6 +1261,9 @@ namespace OpenLoop.App
                 _chat.ScrollToEnd();
                 RefreshLedgerInfo();
                 ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
+                // 首轮成功结束后由所选模型生成短标题（已有人工/历史标题就不再覆盖）
+                if (outcome == "ok" && Session.Book.Turns.Count == 1)
+                    _ = SummarizeTitleAsync(force: false);
                 if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
             }
         }
@@ -1412,7 +1523,7 @@ namespace OpenLoop.App
             string workspace = Session.Workspace.Trim();
             var settings = _settings();
             string model = _model?.Trim() ?? "";
-            var (baseUrl, apiKey) = settings.EndpointFor(model);
+            var (baseUrl, _) = settings.EndpointFor(model);
             if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model))
                 return "缺少接口配置，未试跑基线。";
 
@@ -1423,8 +1534,9 @@ namespace OpenLoop.App
             if (activation == null) return "没有激活版本，未试跑基线。";
 
             var runner = new AgentTaskRunner(
-                _ => new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort),
-                features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath);
+                _ => Reasoners.Create(settings, model, _effort, workspace),
+                features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath,
+                globalSkillsPath: AppSettings.GlobalSkillsPath);
             var outcome = await runner.RunAsync(task, activation, ct);
             return outcome.Passed
                 ? Localization.T("BaselinePassed")
@@ -1444,7 +1556,7 @@ namespace OpenLoop.App
             }
 
             string model = _model?.Trim() ?? "";
-            var (baseUrl, apiKey) = settings.EndpointFor(model);
+            var (baseUrl, _) = settings.EndpointFor(model);
             baseUrl = baseUrl?.Trim() ?? "";
             if (baseUrl.Length == 0 || model.Length == 0)
             {
@@ -1460,7 +1572,7 @@ namespace OpenLoop.App
             {
                 ledger = Ledger.Open(workspace);
                 ledger.EnsureInitialized();
-                SkillCatalog.RegisterFeatures(ledger, SkillCatalog.Load(workspace));
+                SkillCatalog.RegisterFeatures(ledger, SkillCatalog.Load(workspace, AppSettings.GlobalSkillsPath));
                 tasks = TaskSet.Load(ledger.EvalDir);
                 if (tasks.Tasks.Count == 0)
                 {
@@ -1497,8 +1609,9 @@ namespace OpenLoop.App
 
                 _lblStatus.Text = Localization.T("Status") + ": " + string.Format(Localization.T("StatusReviewing"), tasks.Tasks.Count, tasks.Tasks.Count * 2);
                 var runner = new AgentTaskRunner(
-                    _ => new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort),
-                    features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath, settings.UseAgentsMd);
+                    _ => Reasoners.Create(settings, model, _effort, workspace),
+                    features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath, settings.UseAgentsMd,
+                    AppSettings.GlobalSkillsPath);
                 var gate = new Gate(ledger, tasks, features, runner);
                 var report = await gate.EvaluateAsync(baseline, proposal.Candidate, ct);
 
@@ -1578,7 +1691,7 @@ namespace OpenLoop.App
 
             var settings = _settings();
             string model = _model?.Trim() ?? "";
-            var (baseUrl, apiKey) = settings.EndpointFor(model);
+            var (baseUrl, _) = settings.EndpointFor(model);
             baseUrl = baseUrl?.Trim() ?? "";
             if (baseUrl.Length == 0 || model.Length == 0)
             {
@@ -1587,7 +1700,7 @@ namespace OpenLoop.App
             }
             using var form = new RuleForm((name, text, ct) =>
                 RuleAssistant.ImproveAsync(
-                    new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort), name, text, ct));
+                    Reasoners.Create(settings, model, _effort, workspace), name, text, ct));
             if (form.ShowDialog(FindForm()) != DialogResult.OK) return;
 
             try
@@ -1611,8 +1724,7 @@ namespace OpenLoop.App
             var command = settings.LoopCommand;
             if (command is { Count: > 0 })
                 return new ProcessReasoner(command[0], command.Skip(1));
-            var (baseUrl, apiKey) = settings.EndpointFor(_model);
-            return new OpenAiCompatibleReasoner(baseUrl, _model, apiKey, _effort);
+            return Reasoners.Create(settings, _model, _effort, Session.Workspace);
         }
 
         private static string Short(string text)
@@ -1646,6 +1758,8 @@ namespace OpenLoop.App
             var list = new List<LlmMessage>();
             foreach (var turn in Session.Book.Turns)
             {
+                //失败轮次的正文是接口报错，不是模型说过的话：别当上下文再喂回去
+                if (turn.AssistantText.StartsWith(FailurePrefix, StringComparison.Ordinal)) continue;
                 if (!string.IsNullOrEmpty(turn.UserText))
                     list.Add(new LlmMessage("user", turn.UserText));
                 if (!string.IsNullOrEmpty(turn.AssistantText))
@@ -1730,6 +1844,15 @@ namespace OpenLoop.App
             foreach (var turn in remove) _turnUndo.Remove(turn);
             ChatStore.Save(Session.Workspace, Session.Book.Turns, Session.Id);
             _chat.EnsureLastTurnVisible(true);
+
+            string undone = selected.UserText?.Trim() ?? "";
+            if (undone.Length > 0)
+            {
+                string draft = _txtInput.Text.Trim();
+                _txtInput.Text = draft.Length == 0 ? undone : draft + "\n\n" + undone;
+                _txtInput.SelectionStart = _txtInput.Text.Length;
+                _txtInput.Focus();
+            }
 
             string message = $"已撤回 {remove.Count} 组对话，恢复 {restored} 次文件写入。";
             if (errors.Count > 0)

@@ -15,6 +15,7 @@ namespace OpenLoop.App
         private TableLayoutPanel _toolbar;
         private FlowLayoutPanel _toolbarLeft;
         private AntdUI.Select _selModel;
+        private AntdUI.Select _selProvider;
         private AntdUI.Select _selEffort;
         private AntdUI.Button _btnSend;
         private AntdUI.Label _lblStatus;
@@ -43,6 +44,7 @@ namespace OpenLoop.App
             _toolbar = new TableLayoutPanel();
             _toolbarLeft = new FlowLayoutPanel();
             _selModel = new AntdUI.Select();
+            _selProvider = new AntdUI.Select();
             _selEffort = new AntdUI.Select();
             _btnSend = new AntdUI.Button();
             _lblStatus = new AntdUI.Label();
@@ -125,6 +127,14 @@ namespace OpenLoop.App
             _toolbarLeft.WrapContents = false;
             _toolbarLeft.Margin = new Padding(0);
 
+            _selProvider.Name = "selProvider";
+            _selProvider.Width = 140;
+            _selProvider.Height = 30;
+            _selProvider.Radius = 8;
+            _selProvider.PlaceholderText = Localization.T("Provider");
+            _selProvider.Margin = new Padding(0, 0, 8, 0);
+            _selProvider.SelectedValueChanged += OnProviderChanged;
+
             _selModel.Name = "selModel";
             _selModel.Width = 300;
             _selModel.Height = 30;
@@ -154,6 +164,7 @@ namespace OpenLoop.App
             _lblStatus.TextAlign = ContentAlignment.MiddleLeft;
             _lblStatus.Margin = new Padding(0, 9, 0, 0);
 
+            _toolbarLeft.Controls.Add(_selProvider);
             _toolbarLeft.Controls.Add(_selModel);
             _toolbarLeft.Controls.Add(_selEffort);
             _toolbarLeft.Controls.Add(_lblStatus);

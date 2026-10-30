@@ -8,6 +8,19 @@ namespace OpenLoop.App
         private AntdUI.Tabs _tabs;
         private AntdUI.TabPage _pageGeneral;
         private AntdUI.TabPage _pageModels;
+        private AntdUI.TabPage _pageOpenCode;
+        private TableLayoutPanel _skills;
+        private AntdUI.Label _lblSkillsPath;
+        private AntdUI.Table _tblSkills;
+        private AntdUI.Column _colSkillOn;
+        private AntdUI.Column _colSkillName;
+        private AntdUI.Column _colSkillFrom;
+        private AntdUI.Column _colSkillDesc;
+        private AntdUI.Label _lblSkillsHint;
+        private FlowLayoutPanel _skillActions;
+        private AntdUI.Button _btnSkillEnable;
+        private AntdUI.Button _btnSkillDisable;
+        private AntdUI.TabPage _pageSkills;
 
         private TableLayoutPanel _general;
         private AntdUI.Label _lblLanguage;
@@ -22,6 +35,12 @@ namespace OpenLoop.App
         private FlowLayoutPanel _autoApproveFlow;
         private AntdUI.Switch _switchAutoApprove;
         private AntdUI.Label _lblAutoApproveHint;
+        private AntdUI.Label _lblOpenCode;
+        private FlowLayoutPanel _openCodeFlow;
+        private AntdUI.Switch _switchOpenCode;
+        private AntdUI.Label _lblOpenCodeHint;
+        private AntdUI.Label _lblOpenCodeNote;
+        private TableLayoutPanel _openCode;
         private AntdUI.Label _lblAgents;
         private FlowLayoutPanel _agentsFlow;
         private AntdUI.Switch _switchAgents;
@@ -78,6 +97,20 @@ namespace OpenLoop.App
             _tabs = new AntdUI.Tabs();
             _pageGeneral = new AntdUI.TabPage();
             _pageModels = new AntdUI.TabPage();
+            _pageOpenCode = new AntdUI.TabPage();
+            _pageSkills = new AntdUI.TabPage();
+
+            _skills = new TableLayoutPanel();
+            _lblSkillsPath = new AntdUI.Label();
+            _tblSkills = new AntdUI.Table();
+            _colSkillOn = new AntdUI.Column("On", "状态");
+            _colSkillName = new AntdUI.Column("Name", "技能");
+            _colSkillFrom = new AntdUI.Column("From", "来源");
+            _colSkillDesc = new AntdUI.Column("Description", "说明");
+            _lblSkillsHint = new AntdUI.Label();
+            _skillActions = new FlowLayoutPanel();
+            _btnSkillEnable = new AntdUI.Button();
+            _btnSkillDisable = new AntdUI.Button();
 
             _general = new TableLayoutPanel();
             _lblLanguage = new AntdUI.Label();
@@ -92,6 +125,12 @@ namespace OpenLoop.App
             _autoApproveFlow = new FlowLayoutPanel();
             _switchAutoApprove = new AntdUI.Switch();
             _lblAutoApproveHint = new AntdUI.Label();
+            _lblOpenCode = new AntdUI.Label();
+            _openCodeFlow = new FlowLayoutPanel();
+            _switchOpenCode = new AntdUI.Switch();
+            _lblOpenCodeHint = new AntdUI.Label();
+            _lblOpenCodeNote = new AntdUI.Label();
+            _openCode = new TableLayoutPanel();
             _lblAgents = new AntdUI.Label();
             _agentsFlow = new FlowLayoutPanel();
             _switchAgents = new AntdUI.Switch();
@@ -155,6 +194,14 @@ namespace OpenLoop.App
             _pageModels.ReadOnly = true;
             _pageModels.Dock = DockStyle.Fill;
 
+            _pageOpenCode.Text = "OpenCode";
+            _pageOpenCode.ReadOnly = true;
+            _pageOpenCode.Dock = DockStyle.Fill;
+
+            _pageSkills.Text = "技能";
+            _pageSkills.ReadOnly = true;
+            _pageSkills.Dock = DockStyle.Fill;
+
             // 普通
             _general.Dock = DockStyle.Fill;
             _general.ColumnCount = 2;
@@ -174,6 +221,7 @@ namespace OpenLoop.App
             ConfigureLabel(_lblTheme, "主题色");
             ConfigureLabel(_lblFullAccess, "完全许可");
             ConfigureLabel(_lblAutoApprove, "自动审批");
+            ConfigureLabel(_lblOpenCode, "权限审批");
             ConfigureLabel(_lblAgents, "AGENTS.md");
             ConfigureLabel(_lblThinking, "思考过程");
 
@@ -226,6 +274,24 @@ namespace OpenLoop.App
 
             _autoApproveFlow.Controls.Add(_switchAutoApprove);
             _autoApproveFlow.Controls.Add(_lblAutoApproveHint);
+
+            _openCodeFlow.Dock = DockStyle.Fill;
+            _openCodeFlow.FlowDirection = FlowDirection.LeftToRight;
+            _openCodeFlow.WrapContents = false;
+            _openCodeFlow.Margin = new Padding(0);
+
+            _switchOpenCode.Width = 44;
+            _switchOpenCode.Height = 22;
+            _switchOpenCode.Margin = new Padding(0, 9, 8, 0);
+
+            _lblOpenCodeHint.AutoSize = true;
+            _lblOpenCodeHint.Text = "委派给 OpenCode 时，每个动作都经本应用审批";
+            _lblOpenCodeHint.Font = new Font("Segoe UI", 8.5F);
+            _lblOpenCodeHint.ForeColor = UiStyle.Muted;
+            _lblOpenCodeHint.Margin = new Padding(0, 11, 0, 0);
+
+            _openCodeFlow.Controls.Add(_switchOpenCode);
+            _openCodeFlow.Controls.Add(_lblOpenCodeHint);
 
             _agentsFlow.Dock = DockStyle.Fill;
             _agentsFlow.FlowDirection = FlowDirection.LeftToRight;
@@ -287,6 +353,31 @@ namespace OpenLoop.App
             _general.Controls.Add(_lblGeneralNote, 0, 6);
             _general.SetColumnSpan(_lblGeneralNote, 2);
             _pageGeneral.Controls.Add(_general);
+
+            // OpenCode
+            _openCode.Dock = DockStyle.Fill;
+            _openCode.ColumnCount = 2;
+            _openCode.RowCount = 3;
+            _openCode.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
+            _openCode.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _openCode.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _openCode.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _openCode.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            _openCode.Padding = new Padding(8, 16, 8, 8);
+
+            _lblOpenCodeNote.AutoSize = false;
+            _lblOpenCodeNote.Dock = DockStyle.Fill;
+            _lblOpenCodeNote.Text = "服务通过 ~/.local/state/opencode/service.json 自动发现；未就绪时不会出现在模型列表里。";
+            _lblOpenCodeNote.Font = new Font("Segoe UI", 8.5F);
+            _lblOpenCodeNote.ForeColor = UiStyle.Muted;
+            _lblOpenCodeNote.TextAlign = ContentAlignment.TopLeft;
+            _lblOpenCodeNote.Margin = new Padding(0, 10, 0, 0);
+
+            _openCode.Controls.Add(_lblOpenCode, 0, 0);
+            _openCode.Controls.Add(_openCodeFlow, 1, 0);
+            _openCode.Controls.Add(_lblOpenCodeNote, 0, 1);
+            _openCode.SetColumnSpan(_lblOpenCodeNote, 2);
+            _pageOpenCode.Controls.Add(_openCode);
 
             // 模型
             _models.Dock = DockStyle.Fill;
@@ -449,8 +540,80 @@ namespace OpenLoop.App
             _models.SetColumnSpan(_lstModels, 3);
             _pageModels.Controls.Add(_models);
 
+            // 技能：按工作区列，点一行切换启用/停用
+            _skills.Dock = DockStyle.Fill;
+            _skills.ColumnCount = 1;
+            _skills.RowCount = 4;
+            _skills.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _skills.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+            _skills.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            _skills.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+            _skills.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+            _skills.Padding = new Padding(8, 12, 8, 8);
+
+            _lblSkillsPath.Dock = DockStyle.Fill;
+            _lblSkillsPath.Font = new Font("Segoe UI", 9F);
+            _lblSkillsPath.ForeColor = UiStyle.Muted;
+            _lblSkillsPath.PrefixSvg = UiIcons.Of(UiIcons.Folder, UiStyle.Muted);
+            _lblSkillsPath.IconGap = 6;
+            _lblSkillsPath.TextAlign = ContentAlignment.MiddleLeft;
+            _lblSkillsPath.AutoEllipsis = true;
+            _lblSkillsPath.Margin = new Padding(0);
+
+            _tblSkills.Dock = DockStyle.Fill;
+            _tblSkills.Bordered = false;
+            _tblSkills.VisibleHeader = true;
+            _tblSkills.RowHeight = 40;
+            _tblSkills.EmptyText = "这个工作区还没有技能";
+            _tblSkills.Margin = new Padding(0, 4, 0, 4);
+            _colSkillOn.Width = "90";
+            _colSkillName.Width = "180";
+            _colSkillFrom.Width = "90";
+            _colSkillDesc.Width = "360";
+            _colSkillDesc.Ellipsis = true;
+            _tblSkills.Columns.Add(_colSkillOn);
+            _tblSkills.Columns.Add(_colSkillName);
+            _tblSkills.Columns.Add(_colSkillFrom);
+            _tblSkills.Columns.Add(_colSkillDesc);
+
+            _lblSkillsHint.Dock = DockStyle.Fill;
+            _lblSkillsHint.Font = new Font("Segoe UI", 8.5F);
+            _lblSkillsHint.ForeColor = UiStyle.Muted;
+            _lblSkillsHint.AutoEllipsis = true;
+            _lblSkillsHint.Margin = new Padding(0, 4, 0, 0);
+            _lblSkillsHint.Text = "技能放 <工作区>/.openloop/skills/<名字>/SKILL.md，或全局 %APPDATA%\\OpenLoop\\skills（同名时项目优先）；新装技能默认启用，选中一行用下面的按钮切换。";
+
+            _skillActions.Dock = DockStyle.Fill;
+            _skillActions.FlowDirection = FlowDirection.LeftToRight;
+            _skillActions.WrapContents = false;
+            _skillActions.Margin = new Padding(0);
+
+            _btnSkillEnable.Text = "启用选中";
+            _btnSkillEnable.Type = AntdUI.TTypeMini.Primary;
+            _btnSkillEnable.Radius = 8;
+            _btnSkillEnable.Size = new Size(96, 30);
+            _btnSkillEnable.Margin = new Padding(0, 2, 8, 0);
+            _btnSkillEnable.Click += OnSkillEnable;
+
+            _btnSkillDisable.Text = "停用选中";
+            _btnSkillDisable.Radius = 8;
+            _btnSkillDisable.Size = new Size(96, 30);
+            _btnSkillDisable.Margin = new Padding(0, 2, 0, 0);
+            _btnSkillDisable.Click += OnSkillDisable;
+
+            _skillActions.Controls.Add(_btnSkillEnable);
+            _skillActions.Controls.Add(_btnSkillDisable);
+
+            _skills.Controls.Add(_lblSkillsPath, 0, 0);
+            _skills.Controls.Add(_tblSkills, 0, 1);
+            _skills.Controls.Add(_skillActions, 0, 2);
+            _skills.Controls.Add(_lblSkillsHint, 0, 3);
+            _pageSkills.Controls.Add(_skills);
+
             _tabs.Pages.Add(_pageGeneral);
+            _tabs.Pages.Add(_pageOpenCode);
             _tabs.Pages.Add(_pageModels);
+            _tabs.Pages.Add(_pageSkills);
 
             _buttons.Dock = DockStyle.Fill;
             _buttons.FlowDirection = FlowDirection.RightToLeft;

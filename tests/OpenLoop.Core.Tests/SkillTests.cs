@@ -165,12 +165,116 @@ public sealed class SkillTests : IDisposable
         Assert.False(escape.Ok);
     }
 
+    [Fact]
+    public void Load_Parses_Real_World_Skill_Shape()
+    {
+        //形如 GitHub 公开技能包（anthropics/skills 那类）的 SKILL.md：长描述 + license 行 + 正文引用 references/
+        string dir = Path.Combine(_root, ".openloop", "skills", "pdf");
+        Directory.CreateDirectory(dir);
+        string description = "Use this skill whenever the user wants to do anything with PDF files. "
+            + "This includes reading or extracting text or tables from PDFs, merging several PDFs into one, "
+            + "splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs and filling PDF forms. "
+            + "If the user mentions a .pdf file or asks to produce one, use this skill.";
+        string text = $"""
+            ---
+            name: pdf
+            description: {description}
+            license: Proprietary. LICENSE.txt has complete terms
+            ---
+
+            # PDF Processing Guide
+
+            ## Overview
+
+            处理 PDF 的常用做法，细节见 REFERENCE.md。
+
+            | 任务 | 工具 |
+            | --- | --- |
+            | 合并 | pypdf |
+            """;
+        File.WriteAllText(Path.Combine(dir, "SKILL.md"), text, new UTF8Encoding(false));
+
+        var skill = Assert.Single(SkillCatalog.Load(_root));
+
+        Assert.Equal("pdf", skill.Name);
+        Assert.EndsWith("…", skill.Description);   //长描述压成一行并截断
+        Assert.Equal(201, skill.Description.Length);
+        Assert.Contains("# PDF Processing Guide", skill.Body);
+        Assert.Contains("| 合并 | pypdf |", skill.Body);
+        Assert.DoesNotContain("license:", skill.Body);
+        Assert.Equal(".openloop/skills/pdf/SKILL.md", skill.Source);
+    }
+
+    [Fact]
+    public void Sync_Enables_New_Skills_And_Respects_Disable()
+    {
+        WriteSkill("demo", "demo-skill", "做演示", "正文");
+        var ledger = Ledger.Open(_root);
+        ledger.EnsureInitialized();
+
+        //新装的技能：第一次 Sync 就启用
+        var first = SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out var problems);
+        Assert.Single(first);
+        Assert.Empty(problems);
+
+        //用户停用后不会被自动重开
+        SkillCatalog.SetEnabled(ledger, SkillCatalog.Load(_root), "demo-skill", false);
+        Assert.Empty(SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out _));
+
+        //手动再启用就回来
+        SkillCatalog.SetEnabled(ledger, SkillCatalog.Load(_root), "demo-skill", true);
+        Assert.Single(SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out _));
+    }
+
+    [Fact]
+    public void Sync_Upgrades_Changed_Content_And_Keeps_Disabled_Off()
+    {
+        WriteSkill("demo", "demo-skill", "做演示", "正文");
+        var ledger = Ledger.Open(_root);
+        ledger.EnsureInitialized();
+        Assert.Single(SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out _));
+
+        //内容改了：新哈希自动顶替旧引用，不再报「内容已变更」
+        File.AppendAllText(SkillPath("demo"), "\nchanged", new UTF8Encoding(false));
+        var upgraded = SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out var problems);
+        Assert.Single(upgraded);
+        Assert.Empty(problems);
+
+        //停用后再改内容：保持停用
+        SkillCatalog.SetEnabled(ledger, SkillCatalog.Load(_root), "demo-skill", false);
+        File.AppendAllText(SkillPath("demo"), "\nchanged-again", new UTF8Encoding(false));
+        Assert.Empty(SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out _));
+    }
+
+    [Fact]
+    public void Load_Merges_Global_Skills_With_Workspace_Precedence()
+    {
+        string global = Path.Combine(_root, "global-skills");
+        WriteSkillAt(Path.Combine(global, "shared"), "shared", "全局版本", "全局正文");
+        WriteSkillAt(Path.Combine(global, "only-global"), "only-global", "只在全局", "全局正文");
+        WriteSkill("demo", "shared", "项目版本", "项目正文");
+
+        var catalog = SkillCatalog.Load(_root, global);
+
+        //同名：项目那份赢
+        var shared = catalog.Single(s => s.Name == "shared");
+        Assert.False(shared.Global);
+        Assert.Contains("项目正文", shared.Body);
+        Assert.Equal(".openloop/skills/demo/SKILL.md", shared.Source);
+
+        var only = catalog.Single(s => s.Name == "only-global");
+        Assert.True(only.Global);
+        Assert.Equal("skills/only-global/SKILL.md", only.Source);
+    }
+
     private string SkillPath(string folder)
         => Path.Combine(_root, ".openloop", "skills", folder, "SKILL.md");
 
     private void WriteSkill(string folder, string name, string description, string body)
+        => WriteSkillAt(Path.Combine(_root, ".openloop", "skills", folder), name, description, body);
+
+    private static void WriteSkillAt(string dir, string name, string description, string body)
     {
-        string dir = Path.Combine(_root, ".openloop", "skills", folder);
         Directory.CreateDirectory(dir);
         string text = $"---\nname: {name}\ndescription: {description}\n---\n{body}";
         File.WriteAllText(Path.Combine(dir, "SKILL.md"), text, new UTF8Encoding(false));

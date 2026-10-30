@@ -56,6 +56,26 @@ namespace OpenLoop.App
 
         public void Stop() => _cts?.Cancel();
 
+        /// <summary>当前旁路的历史快照（供挤走时转成普通会话；克隆一份，旁路清空后仍可用）。</summary>
+        public IReadOnlyList<ChatTurn> Snapshot() =>
+            _book.Turns.Select(t => new ChatTurn
+            {
+                User = new ChatMessage("user", t.UserText),
+                Assistant = new ChatMessage("assistant", t.AssistantText),
+                ReasoningText = t.ReasoningText,
+                ToolTraceText = t.ToolTraceText,
+                ToolCallLines = t.ToolCallLines,
+                ToolStepCount = t.ToolStepCount,
+                ToolTotalMs = t.ToolTotalMs
+            }).ToList();
+
+        /// <summary>清空当前旁路，给新旁路让位。</summary>
+        public void Reset()
+        {
+            _book.Clear();
+            _lblStatus.Text = "只读 · 尚未运行";
+        }
+
         public void Shutdown() => _cts?.Cancel();
 
         /// <summary>用给定上下文跑一次旁路任务；结果只落在本视图。</summary>
@@ -78,7 +98,7 @@ namespace OpenLoop.App
             }
 
             string model = _model?.Trim() ?? "";
-            var (baseUrl, apiKey) = settings.EndpointFor(model);
+            var (baseUrl, _) = settings.EndpointFor(model);
             baseUrl = baseUrl?.Trim() ?? "";
             if (baseUrl.Length == 0 || model.Length == 0)
             {
@@ -88,7 +108,7 @@ namespace OpenLoop.App
 
             bool fullAccess = settings.FullAccess;
             var scope = new WorkspaceScope(_workspace, fullAccess ? [] : null, fullAccess) { Undo = new FileUndoLog() };
-            var skillCatalog = SkillCatalog.Load(_workspace);
+            var skillCatalog = SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath);
 
             Ledger ledger;
             ActivationRecord activation;
@@ -100,12 +120,11 @@ namespace OpenLoop.App
             {
                 ledger = Ledger.Open(_workspace);
                 ledger.EnsureInitialized();
-                SkillCatalog.RegisterFeatures(ledger, skillCatalog);
+                skills = SkillCatalog.Sync(ledger, skillCatalog, out skillProblems);
                 activation = ledger.Current;
                 var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
                 policy = FeatureCatalog.PolicyFrom(activation, features);
                 rules = FeatureCatalog.RulesFrom(activation, features);
-                skills = SkillCatalog.Active(activation, features, skillCatalog, out skillProblems);
             }
             catch (Exception ex)
             {
@@ -117,7 +136,7 @@ namespace OpenLoop.App
             OpenLoop.Core.Safety.ApprovalHandler approve =
                 fullAccess ? _ => OpenLoop.Core.Safety.ApprovalDecision.AllowOnce : AskApproval;
             scope.Approve = approve;
-            var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess);
+            var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess, OpenCodeTools.For(_workspace, approve, settings.OpenCodeAskPermissions));
             TraceWriter trace;
             try
             {
@@ -130,7 +149,7 @@ namespace OpenLoop.App
             }
 
             var history = new List<LlmMessage>(context ?? []);
-            var reasoner = new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort);
+            var reasoner = Reasoners.Create(settings, model, _effort, _workspace);
             var turn = new ChatTurn
             {
                 User = new ChatMessage("user", text),

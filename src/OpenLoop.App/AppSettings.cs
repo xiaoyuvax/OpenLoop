@@ -53,6 +53,9 @@ namespace OpenLoop.App
         /// <summary>自动审批：一切工具调用都不再询问（路径/环境隔离仍按设置生效）。</summary>
         public bool AutoApprove { get; set; }
 
+        /// <summary>opencode_task 的每个动作都经本应用审批；关闭则沿用 OpenCode 自己的权限配置。</summary>
+        public bool OpenCodeAskPermissions { get; set; } = true;
+
         /// <summary>记住的审批：工作目录之外的访问后续都许可。</summary>
         public bool AllowOutsideWorkspace { get; set; }
 
@@ -82,6 +85,9 @@ namespace OpenLoop.App
 
         /// <summary>用户级全局约定：%APPDATA%\OpenLoop\AGENTS.md。</summary>
         public static string GlobalAgentsPath => Path.Combine(Dir, "AGENTS.md");
+
+        /// <summary>用户级全局技能库：%APPDATA%\OpenLoop\skills（同名时工作区技能优先）。</summary>
+        public static string GlobalSkillsPath => Path.Combine(Dir, "skills");
 
         public static AppSettings Load()
         {
@@ -129,6 +135,8 @@ namespace OpenLoop.App
         /// <summary>该模型应使用的接口地址与密钥（找不到提供商时回退旧字段）。</summary>
         public (string BaseUrl, string Key) EndpointFor(string model)
         {
+            if (OpenCodeHub.IsModel(model)) return (OpenCodeHub.Url, "");
+
             var provider = ProviderFor(model)
                 ?? Providers.FirstOrDefault(p =>
                     string.Equals(p.Kind, "openrouter", StringComparison.OrdinalIgnoreCase));

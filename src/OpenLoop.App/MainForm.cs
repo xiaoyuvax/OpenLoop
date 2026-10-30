@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ChatFlow;
+using ChatMessage = ChatFlow.ChatMessage;
 using Puppet.Core;
 using SurveyStore = OpenLoop.Core.Store.SurveyStore;
 
@@ -17,7 +18,9 @@ namespace OpenLoop.App
         private AntdUI.TabPage _newPage;
         private AntdUI.TabPage _loopPage;
         private LoopView _loopView;
+        private readonly Dictionary<string, (LoopView View, AntdUI.TabPage Page)> _loops = new(StringComparer.OrdinalIgnoreCase);
         private Session _lastSession;
+        private bool _closing;
 
         public MainForm()
         {
@@ -208,38 +211,60 @@ namespace OpenLoop.App
 
         public void SendLoop(string text) => _loopView?.Send(text);
 
-        public void OpenLoop(string workspace = null)
-        {
-            if (_loopPage != null)
-            {
-                _tabs.SelectTab(_loopPage);
-                return;
-            }
+        public void OpenLoop(string workspace = null) => EnsureLoop(workspace, select: true);
 
+        /// <summary>Worker 的 /complain：投到该项目自己的 Loop 会话；忙则排队，且不抢当前标签页。</summary>
+        private void OnComplaint(Session session, string text)
+            => EnsureLoop(session.Workspace, select: false)?.Post(text);
+
+        /// <summary>
+        /// 取（必要时创建）某个项目的 Loop 会话。历史按项目分开存，
+        /// 改进产物（修订提案、源码修改）仍落在全局。
+        /// </summary>
+        private LoopView EnsureLoop(string workspace, bool select)
+        {
             string target = workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _lastSession?.Workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _settings.Projects.FirstOrDefault();
             if (string.IsNullOrWhiteSpace(target) || !Directory.Exists(target))
             {
                 AntdUI.Notification.warn(this, "Loop", "请先打开一个会话，Loop 需要工作区。", AntdUI.TAlignFrom.TR, null, 3);
-                return;
+                return null;
             }
 
-            _loopView = new LoopView { Dock = DockStyle.Fill };
-            _loopView.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
-            
-            _loopView.Initialize(target, () => _settings);
-            _loopPage = new AntdUI.TabPage
+            if (_loops.TryGetValue(Paths.Normalize(target), out var existing))
             {
-                Text = Localization.T("TabLoop"),
+                if (select) _tabs.SelectTab(existing.Page);
+                _loopView = existing.View;
+                _loopPage = existing.Page;
+                return existing.View;
+            }
+
+            var view = new LoopView { Dock = DockStyle.Fill };
+            view.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
+            view.Initialize(target, () => _settings);
+            var page = new AntdUI.TabPage
+            {
+                Text = LoopTabText(target),
                 IconSvg = UiIcons.Dot(UiStyle.Loop),
                 ReadOnly = false,
-                Tag = _loopView,
+                Tag = view,
                 Dock = DockStyle.Fill
             };
-            _loopPage.Controls.Add(_loopView);
-            _tabs.Pages.Add(_loopPage);
-            _tabs.SelectTab(_loopPage);
+            page.Controls.Add(view);
+            _tabs.Pages.Add(page);
+            // 新建页面不主动跳转：/complain 只让它出现在标签栏，用户自己去点
+            if (select) _tabs.SelectTab(page);
+            _loops[Paths.Normalize(target)] = (view, page);
+            _loopView = view;
+            _loopPage = page;
+            return view;
+        }
+
+        private static string LoopTabText(string workspace)
+        {
+            string name = Path.GetFileName(Paths.Normalize(workspace));
+            return string.IsNullOrEmpty(name) ? Localization.T("TabLoop") : Localization.T("TabLoop") + " · " + name;
         }
 
         public void SelectProject(string workspace) => _overview.FocusProject(workspace ?? "");
@@ -264,17 +289,19 @@ namespace OpenLoop.App
         private Session FindByTitle(string title)
             => _sessions.FirstOrDefault(s => string.Equals(s.Title, title, StringComparison.OrdinalIgnoreCase));
 
-        private void OnFormLoad(object sender, EventArgs e)
+        private async void OnFormLoad(object sender, EventArgs e)
         {
             _overview.Initialize();
             _overview.OpenRequested += ShowSession;
             _overview.NewSessionRequested += OpenNewSessionTab;
             _overview.DeleteRequested += OnDeleteRequested;
+            _overview.RemoveProjectRequested += OnRemoveProjectRequested;
             _overview.SettingsRequested += OpenSettings;
 
             _settings = AppSettings.Load();
             if (string.IsNullOrWhiteSpace(_settings.Workspace))
                 _settings.Workspace = Directory.GetCurrentDirectory();
+            await OpenCodeHub.RefreshAsync();
             _tabs.SelectTab(_overviewPage);
             RestoreSessions();
             if (_settings.Projects.Count == 0 && _sessions.Count == 0) OpenNewSessionTab("");
@@ -335,8 +362,14 @@ namespace OpenLoop.App
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
+            _closing = true;
             SaveWindowBounds();
-            foreach (var session in _sessions) session.View?.Shutdown();
+            foreach (var session in _sessions)
+            {
+                session.View?.FlushSideWork();
+                session.View?.Shutdown();
+            }
+            foreach (var loop in _loops.Values) loop.View.Shutdown();
             PuppetHost.Stop();
         }
 
@@ -355,7 +388,7 @@ namespace OpenLoop.App
             }
         }
 
-        private Session CreateSession(string workspace, string sessionId = null)
+        private Session CreateSession(string workspace, string sessionId = null, string title = null)
         {
             workspace = Paths.Normalize(workspace);
             //同一目录的不同写法（盘符大小写、斜杠、尾分隔符）算同一个项目：复用既有写法，不再新增一条
@@ -377,11 +410,15 @@ namespace OpenLoop.App
             }
 
             var session = new Session { Workspace = workspace, Id = string.IsNullOrWhiteSpace(sessionId) ? Guid.NewGuid().ToString("N")[..8] : sessionId };
+            session.CustomTitle = title;
             session.View = new SessionView { Dock = DockStyle.Fill };
             session.View.Initialize(session, () => _settings);
             session.View.StateChanged += OnSessionStateChanged;
             session.View.OpenLoopRequested += OpenLoop;
+            session.View.ComplaintRequested += OnComplaint;
             session.View.ForkRequested += ForkSession;
+            session.View.TitleChanged += OnSessionTitleChanged;
+            session.View.SideWorkEvicted += OnSideWorkEvicted;
 
             session.Page = new AntdUI.TabPage
             {
@@ -420,11 +457,11 @@ namespace OpenLoop.App
         {
             try
             {
-                foreach (var (id, workspace) in ChatStore.SavedSessions())
+                foreach (var (id, workspace, title) in ChatStore.SavedSessions())
                 {
                     if (_sessions.Any(s => s.Id == id)) continue;
                     if (!Directory.Exists(workspace)) continue;
-                    CreateSession(workspace, id);
+                    CreateSession(workspace, id, title);
                 }
             }
             catch (Exception ex)
@@ -475,6 +512,44 @@ namespace OpenLoop.App
             DeleteSessions(sessions.Select(s => s.Id));
         }
 
+        /// <summary>界面上移除项目：项目下的会话（含磁盘对话）一并删除，否则下次启动会把项目带回来。</summary>
+        private void OnRemoveProjectRequested(string workspace)
+        {
+            if (string.IsNullOrWhiteSpace(workspace)) return;
+
+            int count = _sessions.Count(s => Paths.Same(s.Workspace, workspace));
+            string name = Path.GetFileName(workspace.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrEmpty(name)) name = workspace;
+
+            string prompt = count == 0
+                ? $"移除项目“{name}”？"
+                : $"移除项目“{name}”？\n该项目下 {count} 个会话及其对话记录会一并删除，不能恢复。";
+            if (MessageBox.Show(this, prompt, "移除项目", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+
+            RemoveProject(workspace);
+        }
+
+        /// <summary>移除项目：连同该项目下的会话与对话记录一起删掉（否则重启时会被会话带回来）。</summary>
+        public int RemoveProject(string workspace)
+        {
+            if (string.IsNullOrWhiteSpace(workspace)) return 0;
+
+            int removed = DeleteSessions(
+                _sessions.Where(s => Paths.Same(s.Workspace, workspace)).Select(s => s.Id));
+            _settings.Projects.RemoveAll(p => Paths.Same(p, workspace));
+            if (Paths.Same(_settings.Workspace, workspace)) _settings.Workspace = "";
+            try { _settings.Save(); } catch (Exception ex) { AppLog.Warn("保存项目列表失败：" + ex.Message); }
+            RefreshOverview();
+            if (_newPage?.Tag is NewSessionView view) view.SetProjects(ProjectChoices());
+            return removed;
+        }
+
+        private IEnumerable<string> ProjectChoices()
+            => _settings.Projects
+                .Concat(_sessions.Select(s => s.Workspace))
+                .Where(w => !string.IsNullOrWhiteSpace(w));
+
         /// <summary>删除会话（含磁盘上的对话与索引），A 面与界面共用同一个入口。</summary>
         public int DeleteSessions(IEnumerable<string> sessionIds)
         {
@@ -497,11 +572,12 @@ namespace OpenLoop.App
             bool selected = _tabs.SelectedTab == page;
             _tabs.Pages.Remove(page);
             if (page == _newPage) _newPage = null;
-            if (page == _loopPage)
+            if (page.Tag is LoopView)
             {
-                _loopView?.Shutdown();
-                _loopPage = null;
-                _loopView = null;
+                var entry = _loops.FirstOrDefault(p => p.Value.Page == page);
+                if (!string.IsNullOrEmpty(entry.Key)) _loops.Remove(entry.Key);
+                ((LoopView)page.Tag).Shutdown();
+                if (_loopPage == page) { _loopPage = null; _loopView = null; }
             }
 
             if (selected) _tabs.SelectTab(_overviewPage);
@@ -561,7 +637,11 @@ namespace OpenLoop.App
             string name = input.Text?.Trim() ?? "";
             if (name.Length == 0) return;
 
-            if (page.Tag is Session session) session.CustomTitle = name;
+            if (page.Tag is Session session)
+            {
+                session.CustomTitle = name;
+                ChatStore.Touch(session.Workspace, session.Id, name);
+            }
             page.Text = name;
             RefreshOverview();
         }
@@ -604,6 +684,27 @@ namespace OpenLoop.App
         private void OnSessionTitleChanged(Session session)
         {
             if (session.Page != null) session.Page.Text = session.Title;
+            ChatStore.Touch(session.Workspace, session.Id, session.CustomTitle);
+            RefreshOverview();
+        }
+
+        /// <summary>旁路被新旁路挤走：旧结果落成一个普通会话，之后可从会话历史恢复继续聊。</summary>
+        private void OnSideWorkEvicted(string workspace, IReadOnlyList<ChatTurn> turns)
+        {
+            if (turns == null || turns.Count == 0) return;
+            if (_closing)
+            {
+                // 关窗时只落盘，不建视图、不再请求模型
+                string id = Guid.NewGuid().ToString("N")[..8];
+                ChatStore.Save(workspace, turns, id);
+                ChatStore.Touch(workspace, id);
+                return;
+            }
+            var session = CreateSession(workspace);
+            session.Book.ReplaceAll(turns, null);
+            ChatStore.Save(workspace, turns, session.Id);
+            ChatStore.Touch(workspace, session.Id);
+            session.View.RequestTitle();
             RefreshOverview();
         }
 
@@ -623,12 +724,7 @@ namespace OpenLoop.App
             }
 
             var view = new NewSessionView { Dock = DockStyle.Fill };
-            var projects = _settings.Projects
-                .Concat(_sessions.Select(s => s.Workspace))
-                .Where(w => !string.IsNullOrWhiteSpace(w))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            view.Initialize(_settings, projects, workspace ?? "");
+            view.Initialize(_settings, ProjectChoices(), workspace ?? "");
             view.Submit += request =>
             {
                 var page = _newPage;
@@ -706,7 +802,7 @@ namespace OpenLoop.App
             SettingsForm dialog;
             try
             {
-                dialog = new SettingsForm(_settings);
+                dialog = new SettingsForm(_settings, Current?.Workspace ?? _lastSession?.Workspace ?? _settings.Projects.FirstOrDefault() ?? "");
             }
             catch (Exception ex)
             {

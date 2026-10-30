@@ -10,6 +10,7 @@ namespace OpenLoop.App
         private TableLayoutPanel _leftHeader;
         private AntdUI.Label _lblProjects;
         private AntdUI.Button _btnAddProject;
+        private AntdUI.Button _btnRemoveProject;
         private AntdUI.Menu _menu;
         private FlowLayoutPanel _leftFooter;
         private AntdUI.Button _btnSettings;
@@ -42,6 +43,7 @@ namespace OpenLoop.App
             _leftHeader = new TableLayoutPanel();
             _lblProjects = new AntdUI.Label();
             _btnAddProject = new AntdUI.Button();
+            _btnRemoveProject = new AntdUI.Button();
             _menu = new AntdUI.Menu();
             _leftFooter = new FlowLayoutPanel();
             _btnSettings = new AntdUI.Button();
@@ -84,9 +86,10 @@ namespace OpenLoop.App
             _leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
 
             _leftHeader.Dock = DockStyle.Fill;
-            _leftHeader.ColumnCount = 2;
+            _leftHeader.ColumnCount = 3;
             _leftHeader.RowCount = 1;
             _leftHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _leftHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34F));
             _leftHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34F));
             _leftHeader.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _leftHeader.Margin = new Padding(0);
@@ -106,8 +109,17 @@ namespace OpenLoop.App
             _btnAddProject.Margin = new Padding(0, 2, 0, 2);
             _btnAddProject.Click += OnAddProject;
 
+            _btnRemoveProject.Name = "btnRemoveProject";
+            _btnRemoveProject.Dock = DockStyle.Fill;
+            _btnRemoveProject.Ghost = true;
+            _btnRemoveProject.Radius = 6;
+            _btnRemoveProject.IconSvg = UiIcons.Of(UiIcons.Trash, UiStyle.Muted);
+            _btnRemoveProject.Margin = new Padding(0, 2, 0, 2);
+            _btnRemoveProject.Click += OnRemoveProject;
+
             _leftHeader.Controls.Add(_lblProjects, 0, 0);
             _leftHeader.Controls.Add(_btnAddProject, 1, 0);
+            _leftHeader.Controls.Add(_btnRemoveProject, 2, 0);
 
             _menu.Name = "menuProjects";
             _menu.Dock = DockStyle.Fill;

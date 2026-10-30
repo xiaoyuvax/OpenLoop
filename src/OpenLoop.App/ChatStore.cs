@@ -102,7 +102,7 @@ namespace OpenLoop.App
         }
 
         /// <summary>会话索引：文件名是哈希，重启后没有索引就无从把会话找回来。</summary>
-        public static void Touch(string workspace, string sessionId)
+        public static void Touch(string workspace, string sessionId, string title = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(sessionId)) return;
             try
@@ -110,8 +110,12 @@ namespace OpenLoop.App
                 var all = ReadIndex();
                 string full = Path.GetFullPath(workspace.Trim());
                 var item = all.FirstOrDefault(e => e.Id == sessionId);
-                if (item == null) all.Add(new IndexEntry { Id = sessionId, Workspace = full });
-                else item.Workspace = full;
+                if (item == null) all.Add(new IndexEntry { Id = sessionId, Workspace = full, Title = title ?? "" });
+                else
+                {
+                    item.Workspace = full;
+                    if (title != null) item.Title = title;
+                }
                 Directory.CreateDirectory(Dir);
                 string temp = IndexPath + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(all, Json), new UTF8Encoding(false));
@@ -122,17 +126,17 @@ namespace OpenLoop.App
             }
         }
 
-        /// <summary>有内容的已存会话（会话 id + 工作目录），最近的在前。</summary>
-        public static List<(string Id, string Workspace)> SavedSessions()
+        /// <summary>有内容的已存会话（会话 id + 工作目录 + 标题），最近的在前。</summary>
+        public static List<(string Id, string Workspace, string Title)> SavedSessions()
         {
-            var result = new List<(string, string)>();
+            var result = new List<(string, string, string)>();
             try
             {
                 foreach (var item in ReadIndex().OrderByDescending(e => e.UpdatedAt))
                 {
                     if (item == null || string.IsNullOrEmpty(item.Id) || string.IsNullOrEmpty(item.Workspace)) continue;
                     if (Load(item.Workspace, item.Id).Count == 0) continue;
-                    result.Add((item.Id, item.Workspace));
+                    result.Add((item.Id, item.Workspace, item.Title ?? ""));
                 }
             }
             catch
@@ -179,6 +183,7 @@ namespace OpenLoop.App
         {
             public string Id { get; set; }
             public string Workspace { get; set; }
+            public string Title { get; set; }
             public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         }
     }

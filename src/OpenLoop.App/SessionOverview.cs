@@ -31,13 +31,14 @@ namespace OpenLoop.App
         internal event Action<Session> OpenRequested;
         internal event Action<string> NewSessionRequested;
         internal event Action<IReadOnlyList<Session>> DeleteRequested;
+        internal event Action<string> RemoveProjectRequested;
         internal event Action SettingsRequested;
 
         internal void Initialize()
         {
             if (_ready) return;
             _ready = true;
-            _colState.Render = (row, value, index) => Badge(row as Session);
+            _colState.Render = (value, row, index) => Badge(row as Session);
             _table.RowHeight = 44;
             SizeColumns();
             _table.DataSource = _rows;
@@ -111,6 +112,7 @@ namespace OpenLoop.App
             _table.DataSource = null;
             _table.DataSource = _rows;
             _btnNewSession.Enabled = !string.IsNullOrEmpty(_project);
+            _btnRemoveProject.Enabled = !string.IsNullOrEmpty(_project);
         }
 
         /// <summary>勾选（多选行）后删除；没勾选就用当前高亮行。</summary>
@@ -182,6 +184,12 @@ namespace OpenLoop.App
         private void OnSearchChanged(object sender, EventArgs e) => RefreshRows();
 
         private void OnAddProject(object sender, EventArgs e) => NewSessionRequested?.Invoke("");
+
+        private void OnRemoveProject(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_project)) return;
+            RemoveProjectRequested?.Invoke(_project);
+        }
 
         private void OnNewSession(object sender, EventArgs e) => NewSessionRequested?.Invoke(_project);
 

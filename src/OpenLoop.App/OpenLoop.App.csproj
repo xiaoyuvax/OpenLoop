@@ -20,8 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenLoop.Core\OpenLoop.Core.csproj" />
-    <PackageReference Include="Puppet.Core" Version="1.6.1" />
-    <PackageReference Include="Puppet.Core.WinForms" Version="1.6.1" />
+    <PackageReference Include="Puppet.Core" Version="1.7.0" />
+    <PackageReference Include="Puppet.Core.WinForms" Version="1.7.0" />
   </ItemGroup>
 
   <!-- ChatFlow 源码与本仓库并列（../ChatFlow）时直接引用源码；单独克隆 OpenLoop 时回退到 NuGet 包。 -->

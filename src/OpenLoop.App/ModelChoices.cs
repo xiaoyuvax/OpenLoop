@@ -36,6 +36,12 @@ namespace OpenLoop.App
                 }
             }
 
+            foreach (var model in OpenCodeHub.Models)
+            {
+                if (onlyFree && !model.IsFree) continue;
+                if (seen.Add(model.Id)) result.Add(model);
+            }
+
             if (hasOpenRouter || result.Count == 0)
             {
                 foreach (var model in catalog)

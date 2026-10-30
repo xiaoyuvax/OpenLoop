@@ -63,7 +63,7 @@ namespace OpenLoop.App
             {
                 _selProvider.Items.Clear();
                 _selProvider.Items.Add(new AntdUI.SelectItem(Localization.T("AllProviders")) { Tag = null });
-                foreach (var provider in _settings?.Providers ?? [])
+                foreach (var provider in (_settings?.Providers ?? []).Concat(OpenCodeHub.Providers))
                 {
                     _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
                     {
@@ -139,12 +139,22 @@ namespace OpenLoop.App
             FillModels();
         }
 
+        internal void SetProjects(IEnumerable<string> projects)
+        {
+            _projects.Clear();
+            _projects.AddRange(Paths.Dedup(projects).OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
+            if (!_projects.Any(p => Paths.Same(p, _project)))
+                _project = _projects.FirstOrDefault() ?? "";
+            FillProjects();
+        }
+
         private void FillProjects()
         {
             _filling = true;
             try
             {
                 _selProject.Items.Clear();
+                _selProject.Items.Add(new AntdUI.SelectItem(Localization.T("NewProject")) { Tag = NewProjectTag });
                 foreach (var path in _projects)
                 {
                     string name = ProjectName(path);
@@ -154,7 +164,6 @@ namespace OpenLoop.App
                         SubText = path
                     });
                 }
-                _selProject.Items.Add(new AntdUI.SelectItem(Localization.T("NewProject")) { Tag = NewProjectTag });
 
                 _selProject.SelectedValue = _projects.FirstOrDefault(p => Paths.Same(p, _project));
                 _lblPath.Text = _project;

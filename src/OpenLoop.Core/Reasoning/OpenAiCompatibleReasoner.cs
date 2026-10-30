@@ -245,9 +245,27 @@ namespace OpenLoop.Core.Reasoning
             => (int)Math.Min(30_000, 1000d * Math.Pow(2, Math.Clamp(attempt - 1, 0, 5)));
 
         private static InvalidOperationException ApiError(int code, string phrase, string body)
+            => new($"模型接口返回 {code} {phrase}：{ErrorBrief(body)}");
+
+        /// <summary>网关错误体优先取 error.message（人话），拿不到再退回截断的原文。</summary>
+        internal static string ErrorBrief(string body)
         {
-            string brief = string.IsNullOrEmpty(body) ? "" : body.Length <= 500 ? body : body[..500] + "…";
-            return new InvalidOperationException($"模型接口返回 {code} {phrase}：{brief}");
+            if (string.IsNullOrWhiteSpace(body)) return "";
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("error", out var error)
+                    && error.ValueKind == JsonValueKind.Object
+                    && error.TryGetProperty("message", out var message)
+                    && message.ValueKind == JsonValueKind.String
+                    && message.GetString() is { Length: > 0 } text)
+                    return text;
+            }
+            catch (JsonException)
+            {
+            }
+            return body.Length <= 500 ? body : body[..500] + "…";
         }
 
         internal static async Task<CompletionResult> ParseStreamAsync(

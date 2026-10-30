@@ -28,6 +28,10 @@ namespace OpenLoop.App
         private string _effort = "";
         private bool _running;
         private bool _filling;
+        private bool _fillingProviders;
+
+        /// <summary>忙时收到的外部反馈（如 Worker 的 /complain），当前轮结束后按顺序处理。</summary>
+        private readonly List<string> _pending = [];
 
         public LoopView()
         {
@@ -65,9 +69,10 @@ namespace OpenLoop.App
             _model = string.IsNullOrWhiteSpace(current.Model) ? "openrouter/free" : current.Model;
             _effort = current.ReasoningEffort ?? "";
 
+            FillProviders();
             FillModels();
             SelectEffort(_effort);
-            SelectTips.Bind(_tips, _selModel, _selEffort);
+            SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort);
 
             _book.ReplaceAll(ChatStore.Load(_workspace, "loop"), null);
             _chat.PlaceholderText = Localization.T("NoMessages");
@@ -84,6 +89,14 @@ namespace OpenLoop.App
         {
             if (string.IsNullOrWhiteSpace(model)) return;
             _model = model.Trim();
+            var provider = _selProvider.SelectedValue as ProviderConfig;
+            if (provider != null && !(provider.Models ?? []).Any(m =>
+                    string.Equals(m, _model, StringComparison.OrdinalIgnoreCase)))
+            {
+                _fillingProviders = true;
+                try { _selProvider.SelectedIndex = 0; }
+                finally { _fillingProviders = false; }
+            }
             _selModel.SelectedValue = _model;
         }
 
@@ -91,6 +104,26 @@ namespace OpenLoop.App
         {
             if (!string.IsNullOrWhiteSpace(text)) _txtInput.Text = text;
             SendAsync();
+        }
+
+        /// <summary>外部投递（/complain）：空闲就立即处理，忙就排队等当前轮结束后按顺序处理。</summary>
+        internal void Post(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return;
+            if (_running)
+            {
+                _pending.Add(text);
+                return;
+            }
+            Send(text);
+        }
+
+        private void DrainPending()
+        {
+            if (_running || _pending.Count == 0) return;
+            string next = _pending[0];
+            _pending.RemoveAt(0);
+            Send(next);
         }
 
         public void Stop() => _cts?.Cancel();
@@ -120,7 +153,7 @@ namespace OpenLoop.App
             }
 
             string model = _model?.Trim() ?? "";
-            var (baseUrl, apiKey) = settings.EndpointFor(model);
+            var (baseUrl, _) = settings.EndpointFor(model);
             baseUrl = baseUrl?.Trim() ?? "";
             if (baseUrl.Length == 0 || model.Length == 0)
             {
@@ -129,16 +162,16 @@ namespace OpenLoop.App
             }
 
             var scope = new WorkspaceScope(_workspace);
-            var skillCatalog = SkillCatalog.Load(_workspace);
+            var skillCatalog = SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath);
             var skills = ActiveSkills(skillCatalog, out var skillProblems);
             OpenLoop.Core.Safety.ApprovalHandler approve = AskApproval;
             scope.Approve = approve;
-            var loopTools = ToolRegistry.Loop(scope, _workspace, approve, skills);
+            var loopTools = ToolRegistry.Loop(scope, _workspace, approve, skills, OpenCodeTools.For(_workspace, approve, settings.OpenCodeAskPermissions));
             var tools = new ToolRegistry(loopTools.Tools.Concat(
                 [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
             string checkpoint = Snapshots.Create(_workspace, "loop");
             if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
-            var reasoner = new OpenAiCompatibleReasoner(baseUrl, model, apiKey, _effort);
+            var reasoner = Reasoners.Create(settings, model, _effort, _workspace);
             var policy = new AgentPolicy { MaxSteps = 12 };
 
             TraceWriter trace;
@@ -303,6 +336,8 @@ namespace OpenLoop.App
                 RefreshChat();
                 _chat.ScrollToEnd();
                 ChatStore.Save(_workspace, _book.Turns, "loop");
+                // 排队的外部反馈：当前轮收尾后再处理，避免重入
+                if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainPending));
             }
         }
 
@@ -358,13 +393,43 @@ namespace OpenLoop.App
             return history;
         }
 
+        private void FillProviders()
+        {
+            _fillingProviders = true;
+            try
+            {
+                _selProvider.Items.Clear();
+                _selProvider.Items.Add(new AntdUI.SelectItem(Localization.T("AllProviders")) { Tag = null });
+                foreach (var provider in (_settings?.Invoke()?.Providers ?? []).Concat(OpenCodeHub.Providers))
+                    _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
+                    {
+                        Tag = provider,
+                        SubText = provider.Kind
+                    });
+                _selProvider.SelectedIndex = 0;
+            }
+            finally
+            {
+                _fillingProviders = false;
+            }
+        }
+
+        private void OnProviderChanged(object sender, AntdUI.ObjectNEventArgs e)
+        {
+            if (_filling || _fillingProviders) return;
+            FillModels();
+        }
+
         private void FillModels()
         {
             _filling = true;
             try
             {
                 _selModel.Items.Clear();
-                foreach (var model in ModelCatalog.All)
+                var provider = _selProvider.SelectedValue as ProviderConfig;
+                var models = ModelChoices.FilterByProvider(ModelChoices.Build(_settings(), onlyFree: false), provider);
+
+                foreach (var model in models)
                     _selModel.Items.Add(new AntdUI.SelectItem(model.Name)
                     {
                         Tag = model.Id,
@@ -372,8 +437,11 @@ namespace OpenLoop.App
                         SubText = model.IsFree ? "免费" : null
                     });
 
-                if (ModelCatalog.All.Count == 0 || ModelCatalog.All.All(m => m.Id != _model))
+                if (provider == null && !string.IsNullOrWhiteSpace(_model) && models.All(m => m.Id != _model))
                     _selModel.Items.Add(new AntdUI.SelectItem(_model) { Tag = _model });
+
+                if (provider != null && models.All(m => m.Id != _model))
+                    _model = models.FirstOrDefault()?.Id ?? _model;
 
                 _selModel.SelectedValue = _model;
             }
@@ -394,7 +462,11 @@ namespace OpenLoop.App
         private void OnCatalogChanged()
         {
             if (_running) return;
-            RunOnUi(FillModels);
+            RunOnUi(() =>
+            {
+                FillProviders();
+                FillModels();
+            });
         }
 
         private void OnModelChanged(object sender, EventArgs e)
@@ -439,9 +511,7 @@ namespace OpenLoop.App
             {
                 var ledger = Ledger.Open(_workspace);
                 ledger.EnsureInitialized();
-                SkillCatalog.RegisterFeatures(ledger, catalog);
-                var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
-                return SkillCatalog.Active(ledger.Current, features, catalog, out problems);
+                return SkillCatalog.Sync(ledger, catalog, out problems);
             }
             catch (Exception ex)
             {

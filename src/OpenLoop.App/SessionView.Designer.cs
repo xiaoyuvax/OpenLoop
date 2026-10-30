@@ -9,6 +9,7 @@ namespace OpenLoop.App
         private AntdUI.Label _lblTitle;
         private FlowLayoutPanel _headerRight;
         private AntdUI.Button _btnPanel;
+        private AntdUI.Button _btnSummary;
         private Panel _headerLine;
         private SplitContainer _mainSplit;
         private SplitContainer _upperSplit;
@@ -78,6 +79,7 @@ namespace OpenLoop.App
             _lblTitle = new AntdUI.Label();
             _headerRight = new FlowLayoutPanel();
             _btnPanel = new AntdUI.Button();
+            _btnSummary = new AntdUI.Button();
             _headerLine = new Panel();
             _mainSplit = new SplitContainer();
             _upperSplit = new SplitContainer();
@@ -178,9 +180,20 @@ namespace OpenLoop.App
             _btnPanel.Margin = new Padding(0, 5, 0, 5);
             _btnPanel.Click += OnToggleSide;
 
+            _btnSummary.Name = "btnSummary";
+            _btnSummary.Text = "总结";
+            _btnSummary.Width = 62;
+            _btnSummary.Height = 30;
+            _btnSummary.Ghost = true;
+            _btnSummary.Radius = 8;
+            _btnSummary.Font = new Font("Microsoft YaHei UI", 9F);
+            _btnSummary.Margin = new Padding(0, 5, 6, 5);
+            _btnSummary.Click += OnSummarize;
+
             _header.Controls.Add(_lblTitle, 0, 0);
             _header.Controls.Add(_headerRight, 1, 0);
             _headerRight.Controls.Add(_btnPanel);
+            _headerRight.Controls.Add(_btnSummary);
 
             _headerLine.Dock = DockStyle.Fill;
             _headerLine.BackColor = UiStyle.Border;
