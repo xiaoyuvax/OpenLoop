@@ -34,7 +34,7 @@ public sealed class ConformanceTests : IDisposable
     {
         var tools = ToolRegistry.Workspace(Scope);
         var reasoner = new ScriptedReasoner(
-            "tool-call: {\"tool\":\"write_file\",\"args\":{\"path\":\"hello.txt\",\"content\":\"ok\"}}",
+            "tool-call: {\"tool\":\"WriteFile\",\"args\":{\"path\":\"hello.txt\",\"content\":\"ok\"}}",
             "done");
         var loop = new AgentLoop(tools, reasoner);
 
@@ -66,7 +66,7 @@ public sealed class ConformanceTests : IDisposable
     [Fact]
     public async Task T3_Command_Does_Not_Go_Through_Shell()
     {
-        var tool = new RunCommandTool(Scope);
+        var tool = new ShellTool(Scope);
         var result = await tool.ExecuteAsync(
             Args(("argv", new[] { "git", "status", "--porcelain; echo pwned" })), default);
 
@@ -93,7 +93,7 @@ public sealed class ConformanceTests : IDisposable
     [Fact]
     public async Task T5_Dangerous_Command_Is_Rejected()
     {
-        var tool = new RunCommandTool(Scope);
+        var tool = new ShellTool(Scope);
         var result = await tool.ExecuteAsync(Args(("argv", new[] { "rm", "-rf", "/" })), default);
 
         Assert.False(result.Ok);

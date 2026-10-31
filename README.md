@@ -9,7 +9,7 @@ OpenLoop is **not an agent itself**; it is the facility agents run inside. The "
 ## Features
 
 - Tool-using agent loop with a single-line `tool-call:` protocol
-- Built-in tools: `read_file`, `write_file`, `list_dir`, `grep`, `run_command`
+- Built-in tools: `ReadFile`, `WriteFile`, `ListDir`, `Grep`, `Shell`
 - Guardrails: repeat-call detection, exploration budget, claim/promise checks, argument repair, malformed-call retry, context compression
 - Append-only ledger for features, activations, verdicts, and run evidence
 - A/B gate: candidate versions are adopted only when they are strictly better; ties keep the old version

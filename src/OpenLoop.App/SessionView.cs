@@ -851,8 +851,7 @@ namespace OpenLoop.App
                 {
                     _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
                     {
-                        Tag = provider,
-                        SubText = provider.Kind
+                        Tag = provider
                     });
                 }
 
@@ -1190,6 +1189,7 @@ namespace OpenLoop.App
                 turn.ToolStatusText = null;
                 FlushReasoning();
                 turn.AssistantText = CleanAnswer(result.FinalAnswer, result.FinishReason);
+                if (result.Transcript != null) ChatStore.AttachTranscript(turn, result.Transcript);
                 trace.Message("assistant", turn.AssistantText);
 
                 outcome = result.BudgetExhausted ? "budget"
@@ -1755,17 +1755,34 @@ namespace OpenLoop.App
 
         private List<LlmMessage> BuildHistory()
         {
-            var list = new List<LlmMessage>();
-            foreach (var turn in Session.Book.Turns)
+            var turns = Session.Book.Turns;
+
+            //最近一轮落盘过完整消息（含工具调用与结果）就以它为准：重放与模型上下文一致
+            for (int i = turns.Count - 1; i >= 0; i--)
+            {
+                var stored = ChatStore.Transcript(turns[i]);
+                if (stored == null || stored.Count == 0) continue;
+                var list = new List<LlmMessage>(stored);
+                for (int j = i + 1; j < turns.Count; j++)
+                {
+                    if (turns[j].AssistantText.StartsWith(FailurePrefix, StringComparison.Ordinal)) continue;
+                    if (!string.IsNullOrEmpty(turns[j].UserText)) list.Add(new LlmMessage("user", turns[j].UserText));
+                    if (!string.IsNullOrEmpty(turns[j].AssistantText)) list.Add(new LlmMessage("assistant", turns[j].AssistantText));
+                }
+                return list;
+            }
+
+            var fallback = new List<LlmMessage>();
+            foreach (var turn in turns)
             {
                 //失败轮次的正文是接口报错，不是模型说过的话：别当上下文再喂回去
                 if (turn.AssistantText.StartsWith(FailurePrefix, StringComparison.Ordinal)) continue;
                 if (!string.IsNullOrEmpty(turn.UserText))
-                    list.Add(new LlmMessage("user", turn.UserText));
+                    fallback.Add(new LlmMessage("user", turn.UserText));
                 if (!string.IsNullOrEmpty(turn.AssistantText))
-                    list.Add(new LlmMessage("assistant", turn.AssistantText));
+                    fallback.Add(new LlmMessage("assistant", turn.AssistantText));
             }
-            return list;
+            return fallback;
         }
 
         private void SetRunning(bool running)

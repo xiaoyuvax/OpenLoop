@@ -88,7 +88,9 @@ namespace OpenLoop.Core.Agent
         {
             var state = CreateState(history, userMessage);
             var context = CreateContext(contextLimit, shouldStop, onDelta, onReasoning, onRestart);
-            return await CreateMachine().RunAsync(state, context, ct);
+            var result = await CreateMachine().RunAsync(state, context, ct);
+            result.Transcript = state.Messages;
+            return result;
         }
 
         internal static string BudgetText(AgentState state)

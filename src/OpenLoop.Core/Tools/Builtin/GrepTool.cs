@@ -21,7 +21,7 @@ namespace OpenLoop.Core.Tools.Builtin
 
         public GrepTool(WorkspaceScope scope) => _scope = scope;
 
-        public string Name => "grep";
+        public string Name => "Grep";
         public string Description => "在工作目录内按正则搜索文本文件内容，返回 文件:行号: 内容。";
         public string ParamsSchema => "pattern: string（正则）; path: string 可选（默认根）; glob: string 可选（如 *.cs）; ignoreCase: boolean 可选（默认 true）";
         public bool IsReadOnly => true;

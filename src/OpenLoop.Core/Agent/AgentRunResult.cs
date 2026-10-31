@@ -5,6 +5,9 @@ namespace OpenLoop.Core.Agent
     {
         public string FinalAnswer { get; set; }
 
+        /// <summary>本轮结束时的完整消息列表（含工具调用与结果），宿主用它落盘做重放。</summary>
+        public List<Messages.LlmMessage> Transcript { get; set; }
+
         /// <summary>上游结束原因（content_filter/refusal 等），用于区分『被拦截』与『空返回』。</summary>
         public string FinishReason { get; set; }
         public List<AgentStepRecord> Steps { get; } = [];

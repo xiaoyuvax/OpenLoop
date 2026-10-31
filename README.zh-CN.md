@@ -9,7 +9,7 @@ OpenLoop **不是 agent 本身**，而是 agent 运行的设施。名字里的�
 ## 特性
 
 - 带工具的 agent 循环，采用单行 `tool-call:` 协议
-- 内置工具：`read_file`、`write_file`、`list_dir`、`grep`、`run_command`
+- 内置工具：`ReadFile`、`WriteFile`、`ListDir`、`Grep`、`Shell`
 - 护栏：重复调用检测、探索预算、结果/承诺话术检查、参数自愈、畸形调用重试、上下文压缩
 - append-only 账本：特征、激活记录、裁决、运行证据
 - A/B 门禁：候选版本严格更好才更替，平局判旧版

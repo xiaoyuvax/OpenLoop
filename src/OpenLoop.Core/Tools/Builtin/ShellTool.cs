@@ -7,13 +7,13 @@ namespace OpenLoop.Core.Tools.Builtin
     /// 在工作目录内以 argv 方式执行命令（不经 shell）。
     /// 危险命令直接拒绝；风险命令必须经审批回调；子进程只拿到环境白名单。
     /// </summary>
-    public sealed class RunCommandTool : ITool
+    public sealed class ShellTool : ITool
     {
         private readonly WorkspaceScope _scope;
         private readonly ApprovalHandler _approve;
         private readonly bool _inheritEnvironment;
 
-        public RunCommandTool(WorkspaceScope scope, ApprovalHandler approve = null,
+        public ShellTool(WorkspaceScope scope, ApprovalHandler approve = null,
             bool inheritEnvironment = false)
         {
             _scope = scope;
@@ -21,7 +21,7 @@ namespace OpenLoop.Core.Tools.Builtin
             _inheritEnvironment = inheritEnvironment;
         }
 
-        public string Name => "run_command";
+        public string Name => "Shell";
         public string Description => "在工作目录内以 argv 方式执行命令（不经 shell）。危险命令被拒绝，风险命令需要用户批准；子进程不继承密钥。";
         public string ParamsSchema => "argv: string[]（必需；argv[0] 是可执行文件，例如 [\"dotnet\",\"build\"]）; cwd: string 可选，默认工作目录; timeoutSeconds: number 可选，默认 60，最大 600";
         public bool IsReadOnly => false;

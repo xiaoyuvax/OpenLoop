@@ -19,7 +19,7 @@ namespace OpenLoop.Core.Tools.Builtin
             => _scope = new WorkspaceScope(
                 Path.Combine(workspaceRoot, ".openloop"), denied: ["eval"]);
 
-        public string Name => "read_evidence";
+        public string Name => "ReadEvidence";
         public string Description => "只读运行态证据（账本、defs、traces、loop/findings.jsonl）；考核题不可见。path 可为文件或目录。";
         public string ParamsSchema => "path: string 可选（相对 .openloop，默认根）; offset: number 可选（起始行）; limit: number 可选（最多行数/条目，默认 200）";
         public bool IsReadOnly => true;

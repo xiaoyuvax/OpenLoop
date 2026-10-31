@@ -11,7 +11,7 @@ namespace OpenLoop.Core.Tools.Builtin
 
         public ListDirTool(WorkspaceScope scope) => _scope = scope;
 
-        public string Name => "list_dir";
+        public string Name => "ListDir";
         public string Description => "列出工作目录内的文件与子目录（非递归时只列一层）。";
         public string ParamsSchema => "path: string 可选（默认工作目录根）; recursive: boolean 可选（默认 false）";
         public bool IsReadOnly => true;

@@ -110,8 +110,8 @@ public sealed class TaskDraftsTests : IDisposable
     public async Task Propose_task_tool_is_loop_only_and_writes_draft()
     {
         using var scope = new WorkspaceScopeForTest(_root);
-        Assert.Null(ToolRegistry.Workspace(scope.Scope).Find("propose_task"));
-        var tool = ToolRegistry.Loop(scope.Scope, _root).Find("propose_task");
+        Assert.Null(ToolRegistry.Workspace(scope.Scope).Find("ProposeTask"));
+        var tool = ToolRegistry.Loop(scope.Scope, _root).Find("ProposeTask");
         Assert.NotNull(tool);
 
         var args = new ToolArgs(new Dictionary<string, object>

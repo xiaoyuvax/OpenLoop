@@ -201,7 +201,7 @@ OpenLoop.Core\
 │       ├── WriteFileTool.cs
 │       ├── ListDirTool.cs
 │       ├── GrepTool.cs
-│       └── RunCommandTool.cs
+│       └── ShellTool.cs
 └── Trace\
     ├── TraceWriter.cs
     └── TraceRecord.cs
@@ -277,16 +277,16 @@ public sealed class AgentPolicy
 
 | 工具 | 只读 | 参数 |
 |---|---|---|
-| `read_file` | 是 | `path`, `offset?`, `limit?` |
-| `write_file` | 否 | `path`, `content` |
-| `list_dir` | 是 | `path?`, `recursive?` |
-| `grep` | 是 | `pattern`, `path?`, `glob?` |
-| `run_command` | 否 | `command`, `cwd?`, `timeoutSeconds?` |
+| `ReadFile` | 是 | `path`, `offset?`, `limit?` |
+| `WriteFile` | 否 | `path`, `content` |
+| `ListDir` | 是 | `path?`, `recursive?` |
+| `Grep` | 是 | `pattern`, `path?`, `glob?` |
+| `Shell` | 否 | `command`, `cwd?`, `timeoutSeconds?` |
 
 约束：
 
 - 所有路径过 `WorkspaceScope.Resolve()`，越界即失败（返回 `AgentToolResult.Failure`，不抛异常）
-- `run_command` 用 `ProcessStartInfo` + 超时 + 捕获 stdout/stderr；不做 shell 解释器包装以外的沙箱（v0 明示无沙箱）
+- `Shell` 用 `ProcessStartInfo` + 超时 + 捕获 stdout/stderr；不做 shell 解释器包装以外的沙箱（v0 明示无沙箱）
 - 单次工具输出回填模型前截断 6000 字符（沿用 VAgent 的上限）
 
 ### 5.6 测试
@@ -490,7 +490,7 @@ public sealed class AgentPolicy
 | `arrow_up_color_16xLG` 换成自绘后观感变化 | 自绘保持 16×16 与同色，冒烟时肉眼核对 |
 | 长任务界面像卡住 | **已解决**：流式 SSE + ChatFlow 的 UpdateStreamingMessage；工具调用片段不回显 |
 | 单次 A/B 噪声 | 与本阶段无关（M3 才用），届时靠"判据确定 + 平局判旧" |
-| `run_command` 无沙箱 | **P0 已落地**（见 §10）：argv-only、路径 realpath、环境白名单、危险命令拒绝/风险命令审批、每轮 git 快照、超时与输出上限 |
+| `Shell` 无沙箱 | **P0 已落地**（见 §10）：argv-only、路径 realpath、环境白名单、危险命令拒绝/风险命令审批、每轮 git 快照、超时与输出上限 |
 | Core 里混入 UI 依赖 | 验收项写死：`OpenLoop.Core.csproj` 无 `UseWindowsForms`、无 `PackageReference` |
 
 ---
@@ -508,7 +508,7 @@ public sealed class AgentPolicy
 
 跨平台、全部在 Core，不依赖 WinForms：
 
-- **不经 shell**：`run_command` 只接受 `argv: string[]`；旧的 `command` 字符串直接报错。可执行文件与参数分开传递（`ProcessStartInfo.ArgumentList`）。
+- **不经 shell**：`Shell` 只接受 `argv: string[]`；旧的 `command` 字符串直接报错。可执行文件与参数分开传递（`ProcessStartInfo.ArgumentList`）。
 - **路径牢笼**：`WorkspaceScope` 先解析 symlink/junction（`ResolveLinkTarget`，最深已存在祖先 + 拼回尾部），再按平台比较大小写（Windows/macOS 忽略，Linux 敏感）。
 - **环境白名单**：`ChildEnvironment` 只放行 PATH/TEMP/HOME/LANG 等，API Key 等敏感变量不进子进程。
 - **命令策略**：`CommandPolicy` 分 Safe/Risky/Denied。Denied（`rm -rf /`、`format`、`shutdown`、`dd of=/dev/*`）直接拒绝；Risky（shell 解释器、`git reset --hard`、`git clean -f`、`git push`、包管理器安装、`rm/del`、`curl/wget`、`taskkill/reg/sc/net`）经 `Func<CommandRequest,bool>` 审批，无审批通道即失败。

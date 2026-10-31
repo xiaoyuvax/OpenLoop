@@ -1,8 +1,8 @@
 namespace OpenLoop.Core.Safety
 {
     /// <summary>
-    /// write_file 的撤销队列：每次写入前记录旧内容；按相反顺序恢复。
-    /// 只覆盖 write_file；run_command/技能脚本的改动由 git 快照兜底。
+    /// WriteFile 的撤销队列：每次写入前记录旧内容；按相反顺序恢复。
+    /// 只覆盖 WriteFile；Shell/技能脚本的改动由 git 快照兜底。
     /// </summary>
     public sealed class FileUndoLog
     {

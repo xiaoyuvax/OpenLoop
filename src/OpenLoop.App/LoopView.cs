@@ -403,8 +403,7 @@ namespace OpenLoop.App
                 foreach (var provider in (_settings?.Invoke()?.Providers ?? []).Concat(OpenCodeHub.Providers))
                     _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
                     {
-                        Tag = provider,
-                        SubText = provider.Kind
+                        Tag = provider
                     });
                 _selProvider.SelectedIndex = 0;
             }

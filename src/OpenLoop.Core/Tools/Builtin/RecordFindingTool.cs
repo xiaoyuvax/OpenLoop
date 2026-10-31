@@ -13,7 +13,7 @@ namespace OpenLoop.Core.Tools.Builtin
 
         public RecordFindingTool(string workspace) => _workspace = workspace;
 
-        public string Name => "record_finding";
+        public string Name => "RecordFinding";
         public string Description => "把审计发现追加写入 .openloop/loop/findings.jsonl（只追加，不改账本与 trace）。发现值得记录的问题时用它留痕，不要只写在回答里。";
         public string ParamsSchema => "kind: string（access|claim|quality|other）; severity: string（info|warn|high）; summary: string（一句话结论）; evidence: string 可选（trace/账本路径或工具名）; suggestion: string 可选（建议改法）";
         public bool IsReadOnly => false;

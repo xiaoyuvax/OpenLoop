@@ -27,7 +27,7 @@ public sealed class ToolAndSkillFlowTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_root, "data.txt"), "magic-word-42", new UTF8Encoding(false));
         var reasoner = new ScriptedReasoner(
-            Loops.Call("read_file", "{\"path\":\"data.txt\"}"),
+            Loops.Call("ReadFile", "{\"path\":\"data.txt\"}"),
             "内容是 magic-word-42");
         var loop = new AgentLoop(ToolRegistry.Workspace(new WorkspaceScope(_root)), reasoner);
 
@@ -35,7 +35,7 @@ public sealed class ToolAndSkillFlowTests : IDisposable
 
         Assert.Equal("内容是 magic-word-42", result.FinalAnswer);
         var step = Assert.Single(result.Steps);
-        Assert.Equal("read_file", step.Tool);
+        Assert.Equal("ReadFile", step.Tool);
         Assert.True(step.Ok, step.Summary);
 
         //第二轮的上下文必须带上工具结果，否则模型只能瞎猜
@@ -46,18 +46,36 @@ public sealed class ToolAndSkillFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task Transcript_keeps_tool_calls_and_results_for_replay()
+    {
+        File.WriteAllText(Path.Combine(_root, "data.txt"), "magic-word-42", new UTF8Encoding(false));
+        var reasoner = new ScriptedReasoner(
+            Loops.Call("ReadFile", "{\"path\":\"data.txt\"}"),
+            "done");
+        var loop = new AgentLoop(ToolRegistry.Workspace(new WorkspaceScope(_root)), reasoner);
+
+        var result = await loop.RunAsync([], "读 data.txt");
+
+        Assert.NotNull(result.Transcript);
+        Assert.Contains(result.Transcript, m => m.Role == "assistant" && m.Content.Contains("tool-call:"));
+        Assert.Contains(result.Transcript, m => m.Role == "user" && m.Content.Contains("tool-result:"));
+        Assert.Contains("magic-word-42", result.Transcript.First(m => m.Content.StartsWith("tool-result:")).Content);
+        Assert.Equal("done", result.Transcript[^1].Content);
+    }
+
+    [Fact]
     public async Task Write_Then_Read_Through_Loop_Touches_Disk()
     {
         var reasoner = new ScriptedReasoner(
-            Loops.Call("write_file", "{\"path\":\"out.txt\",\"content\":\"hello-openloop\"}"),
-            Loops.Call("read_file", "{\"path\":\"out.txt\"}"),
+            Loops.Call("WriteFile", "{\"path\":\"out.txt\",\"content\":\"hello-openloop\"}"),
+            Loops.Call("ReadFile", "{\"path\":\"out.txt\"}"),
             "已写入并确认");
         var loop = new AgentLoop(ToolRegistry.Workspace(new WorkspaceScope(_root)), reasoner);
 
         var result = await loop.RunAsync([], "写文件再读回来");
 
         Assert.Equal("已写入并确认", result.FinalAnswer);
-        Assert.Equal(["write_file", "read_file"], result.Steps.Select(s => s.Tool));
+        Assert.Equal(["WriteFile", "ReadFile"], result.Steps.Select(s => s.Tool));
         Assert.All(result.Steps, s => Assert.True(s.Ok, s.Summary));
         Assert.Equal("hello-openloop", File.ReadAllText(Path.Combine(_root, "out.txt")));
     }
@@ -74,13 +92,13 @@ public sealed class ToolAndSkillFlowTests : IDisposable
 
         var skills = SkillCatalog.Load(_root);
         var reasoner = new ScriptedReasoner(
-            Loops.Call("read_skill", "{\"name\":\"pdf-guide\"}"),
-            Loops.Call("read_skill", "{\"name\":\"pdf-guide\",\"file\":\"references/FORMS.md\"}"),
+            Loops.Call("ReadSkill", "{\"name\":\"pdf-guide\"}"),
+            Loops.Call("ReadSkill", "{\"name\":\"pdf-guide\",\"file\":\"references/FORMS.md\"}"),
             "按技能步骤处理");
         var loop = new AgentLoop(
             ToolRegistry.Workspace(new WorkspaceScope(_root), null, skills), reasoner, skills: skills);
 
-        //提示词只带索引（名字+描述），正文留给 read_skill 按需取
+        //提示词只带索引（名字+描述），正文留给 ReadSkill 按需取
         string system = loop.BuildSystemPrompt();
         Assert.Contains("pdf-guide", system);
         Assert.Contains("处理 PDF", system);

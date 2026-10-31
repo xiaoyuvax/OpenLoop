@@ -53,7 +53,7 @@ namespace OpenLoop.App
         /// <summary>自动审批：一切工具调用都不再询问（路径/环境隔离仍按设置生效）。</summary>
         public bool AutoApprove { get; set; }
 
-        /// <summary>opencode_task 的每个动作都经本应用审批；关闭则沿用 OpenCode 自己的权限配置。</summary>
+        /// <summary>OpenCodeTask 的每个动作都经本应用审批；关闭则沿用 OpenCode 自己的权限配置。</summary>
         public bool OpenCodeAskPermissions { get; set; } = true;
 
         /// <summary>记住的审批：工作目录之外的访问后续都许可。</summary>

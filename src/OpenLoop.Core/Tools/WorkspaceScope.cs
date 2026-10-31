@@ -33,7 +33,7 @@ namespace OpenLoop.Core.Tools
 
         public bool Unrestricted => _unrestricted;
 
-        /// <summary>可选的文件写入撤销队列；write_file 写入前记录旧内容。</summary>
+        /// <summary>可选的文件写入撤销队列；WriteFile 写入前记录旧内容。</summary>
         public FileUndoLog Undo { get; set; }
 
         /// <summary>

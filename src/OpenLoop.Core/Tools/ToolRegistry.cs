@@ -40,7 +40,7 @@ namespace OpenLoop.Core.Tools
             }
         }
 
-        /// <summary>v0 的五个通用工作目录工具；有技能时追加 read_skill。</summary>
+        /// <summary>v0 的五个通用工作目录工具；有技能时追加 ReadSkill。</summary>
         public static ToolRegistry Workspace(
             WorkspaceScope scope, ApprovalHandler approve = null,
             IReadOnlyList<SkillInfo> skills = null, bool fullAccess = false, IEnumerable<ITool> extra = null)
@@ -65,7 +65,7 @@ namespace OpenLoop.Core.Tools
             yield return new Builtin.WriteFileTool(scope);
             yield return new Builtin.ListDirTool(scope);
             yield return new Builtin.GrepTool(scope);
-            yield return new Builtin.RunCommandTool(scope, approve, fullAccess);
+            yield return new Builtin.ShellTool(scope, approve, fullAccess);
             if (skills is { Count: > 0 })
             {
                 yield return new Builtin.ReadSkillTool(skills);

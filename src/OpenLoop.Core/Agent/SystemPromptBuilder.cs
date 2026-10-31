@@ -44,7 +44,7 @@ namespace OpenLoop.Core.Agent
             }
 
             sb.AppendLine("# 任务流程");
-            sb.AppendLine("- 先理解再动手：用只读工具（list_dir / grep / read_file）弄清现状和相关代码，再决定怎么做。");
+            sb.AppendLine("- 先理解再动手：用只读工具（ListDir / Grep / ReadFile）弄清现状和相关代码，再决定怎么做。");
             sb.AppendLine("- 动手前先看邻近代码：模仿既有风格与命名，优先复用本仓库已有的工具函数与模式，不要重复造轮子。");
             sb.AppendLine("- 不要假设某个库/框架可用：先确认仓库里已经在用，再引入。");
             sb.AppendLine("- 改完要验证：有构建/测试命令就运行；没有就如实说明如何验证。绝不假设测试框架存在。");
@@ -63,6 +63,7 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("- 回答直接给结论，不要铺垫和收尾客套；能用一句话说清就不用一段。");
             sb.AppendLine("- 引用具体位置时给出 文件路径:行号，方便用户跳转。");
             sb.AppendLine("- 不确定就说不确定，不要编造文件内容或工具结果。");
+            sb.AppendLine("- 只讲任务结果与依据；不要附加「我跳过了…」「风险：…」「未验证…」这类过程自述，也不要在正文里复述工具被拒绝或权限提示。");
             sb.AppendLine();
 
             sb.AppendLine("# 可用工具");
@@ -85,14 +86,14 @@ namespace OpenLoop.Core.Agent
                         sb.Append(": ").Append(skill.Description);
                     sb.AppendLine();
                 }
-                sb.AppendLine("需要时调用 read_skill（name）读取做法全文；读取前不要假设技能内容。");
+                sb.AppendLine("需要时调用 ReadSkill（name）读取做法全文；读取前不要假设技能内容。");
                 sb.AppendLine();
             }
 
             sb.AppendLine("# 工具调用协议");
             sb.AppendLine("需要使用工具时，输出一行且仅一行（不要包在代码围栏里，不要加解释文字）：");
             sb.AppendLine("tool-call: {\"tool\":\"工具名\",\"args\":{\"参数名\":\"值\"}}");
-            sb.AppendLine("正例：tool-call: {\"tool\":\"list_dir\",\"args\":{\"path\":\".\",\"recursive\":false}}");
+            sb.AppendLine("正例：tool-call: {\"tool\":\"ListDir\",\"args\":{\"path\":\".\",\"recursive\":false}}");
             sb.AppendLine("反例（都会被判为格式错误并回退纠正）：写在代码围栏里、前后带解释、JSON 用单引号、tool-call 不在行首。");
             sb.AppendLine("多个相互独立的只读调用可各占一行连续输出；一轮只调用一个工具的情形（含任何写操作）照旧单行。");
             sb.AppendLine("下一轮你会收到 tool-result: 开头的 JSON（多个调用时按顺序回填多行）：");

@@ -166,7 +166,7 @@ public sealed class SafetyTests : IDisposable
     [Fact]
     public async Task RunCommand_Uses_Argv_And_Rejects_Risky_Without_Approver()
     {
-        var tool = new RunCommandTool(new WorkspaceScope(_root));
+        var tool = new ShellTool(new WorkspaceScope(_root));
 
         var blocked = await tool.ExecuteAsync(
             new ToolArgs(new() { ["argv"] = new[] { "git", "reset", "--hard" } }), CancellationToken.None);
@@ -182,7 +182,7 @@ public sealed class SafetyTests : IDisposable
     [Fact]
     public async Task RunCommand_Executes_Safe_Argv()
     {
-        var tool = new RunCommandTool(new WorkspaceScope(_root));
+        var tool = new ShellTool(new WorkspaceScope(_root));
         var result = await tool.ExecuteAsync(
             new ToolArgs(new() { ["argv"] = new[] { "dotnet", "--version" } }), CancellationToken.None);
         if (!result.Ok && (result.Error ?? "").Contains("启动失败", StringComparison.Ordinal)) return;
@@ -226,7 +226,7 @@ public sealed class SafetyTests : IDisposable
     {
         var scope = new WorkspaceScope(_root);
         var asked = new List<ApprovalKind>();
-        var tool = new RunCommandTool(scope, request =>
+        var tool = new ShellTool(scope, request =>
         {
             asked.Add(request.Kind);
             return ApprovalDecision.Deny;
@@ -244,7 +244,7 @@ public sealed class SafetyTests : IDisposable
     {
         var scope = new WorkspaceScope(_root);
         int calls = 0;
-        var tool = new RunCommandTool(scope, _ => { calls++; return ApprovalDecision.Deny; });
+        var tool = new ShellTool(scope, _ => { calls++; return ApprovalDecision.Deny; });
 
         var result = await tool.ExecuteAsync(
             new ToolArgs(new() { ["argv"] = new[] { "dotnet", "--version" } }), CancellationToken.None);

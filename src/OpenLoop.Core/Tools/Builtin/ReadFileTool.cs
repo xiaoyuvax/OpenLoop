@@ -12,7 +12,7 @@ namespace OpenLoop.Core.Tools.Builtin
 
         public ReadFileTool(WorkspaceScope scope) => _scope = scope;
 
-        public string Name => "read_file";
+        public string Name => "ReadFile";
         public string Description => "读取工作目录内的文本文件，按行返回（带行号）。";
         public string ParamsSchema => "path: string（相对工作目录的路径）; offset: number 可选（起始行，从 1 起）; limit: number 可选（最多行数，默认 400）";
         public bool IsReadOnly => true;

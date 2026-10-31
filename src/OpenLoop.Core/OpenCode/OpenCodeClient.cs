@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -16,6 +17,9 @@ namespace OpenLoop.Core.OpenCode
         string ID, string Action, IReadOnlyList<string> Resources, IReadOnlyList<string> Save, string Message);
 
     public sealed record OpenCodeFileDiff(string File, int Additions, int Deletions, string Status);
+
+    /// <summary>一次「模型调用」的结果：正文、思维链与用量。</summary>
+    public sealed record OpenCodeTurn(string Text, string Reasoning, decimal? Cost, int? TokensIn, int? TokensOut);
 
     /// <summary>模型在下拉/设置里的稳定标识：opencode/&lt;modelID&gt;@&lt;providerID&gt;。</summary>
     public static class OpenCodeModelId
@@ -108,24 +112,185 @@ namespace OpenLoop.Core.OpenCode
             return list;
         }
 
-        public async Task<string> GenerateTextAsync(
-            string prompt, OpenCodeModelRef? model, string workspace, CancellationToken ct = default)
+        /// <summary>
+        /// 跑一次「模型调用」：临时会话 + 全量 prompt。工具权限全部设为 ask，收到请求一律拒绝 ——
+        /// 这样原生工具在 OpenCode 侧不可能执行，又不会像 deny 那样把整轮跑挂；工具只落到 OpenLoop。
+        /// 思维链与正文经事件流回调；会话用完即删，OpenCode 不保留任何历史。
+        /// </summary>
+        public async Task<OpenCodeTurn> RunTurnAsync(
+            string prompt, OpenCodeModelRef? model, string workspace,
+            Action<string> onDelta = null, Action<string> onReasoning = null,
+            int timeoutSeconds = 600, CancellationToken ct = default)
         {
-            string sessionID = await CreateSessionAsync("OpenLoop reasoner", workspace, model, null, false, ct);
+            string sessionID = await CreateSessionAsync("OpenLoop turn", workspace, model, null, "ask", ct);
             if (string.IsNullOrWhiteSpace(sessionID))
                 throw new InvalidOperationException("OpenCode 没有返回会话 ID");
 
+            var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var failure = new StrongBox<string>();
+            var answered = new HashSet<string>(StringComparer.Ordinal);
+            using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            Task stream = Task.Run(
+                () => ReadEventsAsync(sessionID, onDelta, onReasoning, completed, failure, streamCts.Token),
+                streamCts.Token);
+
             try
             {
-                using var doc = await SendAsync(HttpMethod.Post, $"/api/session/{sessionID}/generate",
-                    new Dictionary<string, object> { ["prompt"] = prompt ?? "" }, ct);
-                return doc.RootElement.TryGetProperty("data", out var data) ? OpenCodeEndpoint.Str(data, "text") : "";
+                await PromptAsync(sessionID, prompt, ct);
+
+                var deadline = DateTime.UtcNow.AddSeconds(Math.Clamp(timeoutSeconds, 30, 3600));
+                OpenCodeSessionSnapshot snapshot = null;
+                while (!completed.Task.IsCompleted)
+                {
+                    if (DateTime.UtcNow > deadline)
+                        throw new TimeoutException($"OpenCode 超过 {timeoutSeconds} 秒未完成（会话 {sessionID}）");
+
+                    await Task.Delay(700, ct);
+                    await RejectPermissionsAsync(sessionID, answered, ct);
+                    snapshot = await GetSessionAsync(sessionID, ct);
+                    if (snapshot.Outcome.Length > 0) break;
+                }
+                snapshot ??= await GetSessionAsync(sessionID, ct);
+
+                //429/额度/网关错误都在这里：不能当成「模型没说话」，否则用户只看到一句「没有返回正文」
+                if (!string.IsNullOrWhiteSpace(failure.Value))
+                    throw new InvalidOperationException(failure.Value);
+                if (string.Equals(snapshot.Outcome, "failed", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException($"OpenCode 会话 {sessionID} 以 failed 结束，没有返回错误详情");
+
+                var messages = await ReadMessagesAsync(sessionID, ct);
+                return new OpenCodeTurn(
+                    LastText(messages),
+                    string.Concat(messages.Select(m => m.Reasoning)),
+                    snapshot.Cost, snapshot.TokensIn, snapshot.TokensOut);
             }
             finally
             {
+                streamCts.Cancel();
+                await Task.WhenAny(stream, Task.Delay(TimeSpan.FromSeconds(2)));
                 try { await DeleteSessionAsync(sessionID, CancellationToken.None); }
                 catch { }
             }
+        }
+
+        /// <summary>
+        /// 订阅全局事件流，只取本会话的正文/思维链增量；完成信号同时由 execution.* 事件给出。
+        /// 流断开或被取消都不影响结果——最终文本始终再从会话消息里取权威值。
+        /// </summary>
+        private async Task ReadEventsAsync(
+            string sessionID, Action<string> onDelta, Action<string> onReasoning,
+            TaskCompletionSource<bool> completed, StrongBox<string> failure, CancellationToken ct)
+        {
+            const string types =
+                "types=session.text.delta&types=session.reasoning.delta" +
+                "&types=session.execution.succeeded&types=session.execution.failed&types=session.idle";
+
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, _base + "/api/event?" + types);
+                request.Headers.Authorization = OpenCodeEndpoint.BasicAuth(_password);
+                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                if (!response.IsSuccessStatusCode) return;
+
+                await using var body = await response.Content.ReadAsStreamAsync(ct);
+                using var reader = new StreamReader(body, Encoding.UTF8);
+                while (!ct.IsCancellationRequested)
+                {
+                    string line = await reader.ReadLineAsync(ct);
+                    if (line == null) return;
+                    if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(line[5..].Trim());
+                        var root = doc.RootElement;
+                        string type = OpenCodeEndpoint.Str(root, "type");
+                        if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+                            continue;
+                        if (OpenCodeEndpoint.Str(data, "sessionID") != sessionID) continue;
+
+                        switch (type)
+                        {
+                            case "session.text.delta":
+                                onDelta?.Invoke(OpenCodeEndpoint.Str(data, "delta"));
+                                break;
+                            case "session.reasoning.delta":
+                                onReasoning?.Invoke(OpenCodeEndpoint.Str(data, "delta"));
+                                break;
+                            case "session.execution.failed":
+                                failure.Value = DescribeFailure(data);
+                                completed.TrySetResult(true);
+                                break;
+                            default:
+                                if (type.StartsWith("session.execution", StringComparison.Ordinal) || type == "session.idle")
+                                    completed.TrySetResult(true);
+                                break;
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch
+            {
+                // 事件流只是锦上添花：拿不到就用会话消息兜底
+            }
+        }
+
+        private static string LastText(IReadOnlyList<OpenCodeMessage> messages)
+        {
+            string text = "";
+            foreach (var message in messages)
+                if (!string.IsNullOrEmpty(message.Text)) text = message.Text;
+            return text;
+        }
+
+        /// <summary>把 OpenCode 的权限请求一律拒掉：工具只由 OpenLoop 执行，拒绝后模型会改走文本协议。</summary>
+        private async Task RejectPermissionsAsync(string sessionID, HashSet<string> answered, CancellationToken ct)
+        {
+            try
+            {
+                foreach (var permission in await GetPermissionsAsync(sessionID, ct))
+                {
+                    if (!answered.Add(permission.ID)) continue;
+                    await ReplyPermissionAsync(sessionID, permission.ID, "reject",
+                        "工具由调用方执行，不要提及这次拒绝。" +
+                        "改用文本协议：输出一行 tool-call: {\"tool\":\"<name>\",\"args\":{...}}。", ct);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch
+            {
+                //权限轮询失败不影响本轮结果：真的执行了也会在会话里留下痕迹
+            }
+        }
+
+        /// <summary>刚结束时消息可能还没落库：短暂重读几次，别把有内容的一轮当成空回复。</summary>
+        private async Task<IReadOnlyList<OpenCodeMessage>> ReadMessagesAsync(string sessionID, CancellationToken ct)
+        {
+            IReadOnlyList<OpenCodeMessage> messages = [];
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                messages = await GetMessagesAsync(sessionID, ct);
+                if (messages.Any(m => m.Text.Length > 0 || m.Reasoning.Length > 0)) break;
+                await Task.Delay(400, ct);
+            }
+            return messages;
+        }
+
+        private static string DescribeFailure(JsonElement data)
+        {
+            if (!data.TryGetProperty("error", out var error) || error.ValueKind != JsonValueKind.Object) return "";
+            string type = OpenCodeEndpoint.Str(error, "type");
+            string message = OpenCodeEndpoint.Str(error, "message");
+            if (message.Length == 0) message = OpenCodeEndpoint.Str(error, "detail");
+            return type.Length == 0 ? message : (message.Length == 0 ? type : type + "：" + message);
         }
 
         public async Task DeleteSessionAsync(string sessionID, CancellationToken ct = default)
@@ -135,7 +300,7 @@ namespace OpenLoop.Core.OpenCode
 
         public async Task<string> CreateSessionAsync(
             string title, string workspace, OpenCodeModelRef? model = null, string agent = null,
-            bool askAllPermissions = false, CancellationToken ct = default)
+            string permissionEffect = null, CancellationToken ct = default)
         {
             var body = new Dictionary<string, object>();
             if (!string.IsNullOrWhiteSpace(title)) body["title"] = title;
@@ -143,12 +308,12 @@ namespace OpenLoop.Core.OpenCode
                 body["location"] = new Dictionary<string, object> { ["directory"] = workspace };
             if (model is { } reference) body["model"] = RefBody(reference);
             if (!string.IsNullOrWhiteSpace(agent)) body["agent"] = agent;
-            if (askAllPermissions)
+            if (!string.IsNullOrWhiteSpace(permissionEffect))
                 body["permissions"] = new[] { new Dictionary<string, object>
                 {
                     ["action"] = "*",
                     ["resource"] = "*",
-                    ["effect"] = "ask"
+                    ["effect"] = permissionEffect
                 } };
 
             using var doc = await SendAsync(HttpMethod.Post, "/api/session", body, ct);

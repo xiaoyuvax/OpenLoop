@@ -1,16 +1,36 @@
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ChatFlow;
+using OpenLoop.Core.Messages;
 
 namespace OpenLoop.App
 {
     /// <summary>
     /// 对话历史按工作目录分开存放，放 %APPDATA%，不进工作区。
-    /// 只存展示所需字段；工具轨迹保留，恢复后仍能展开。
+    /// 每轮同时保存该轮结束时的完整消息列表（含 tool-call / tool-result），恢复后模型能看到自己做过什么。
     /// </summary>
     internal static class ChatStore
     {
+        private static readonly ConditionalWeakTable<ChatTurn, List<LlmMessage>> Transcripts = new();
+
+        /// <summary>记下这一轮结束时的消息列表；下一次 Save 会一起落盘，BuildHistory 用它当上下文。</summary>
+        public static void AttachTranscript(ChatTurn turn, IReadOnlyList<LlmMessage> messages)
+        {
+            if (turn == null || messages == null) return;
+            var list = messages.Where(m => m != null
+                    && !string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrEmpty(m.Content))
+                .Select(m => new LlmMessage(m.Role, m.Content))
+                .ToList();
+            if (list.Count > 0) Transcripts.AddOrUpdate(turn, list);
+        }
+
+        /// <summary>这一轮落盘的消息列表；旧会话没有时为 null。</summary>
+        public static IReadOnlyList<LlmMessage> Transcript(ChatTurn turn)
+            => turn != null && Transcripts.TryGetValue(turn, out var list) ? list : null;
+
         private static readonly JsonSerializerOptions Json = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -35,15 +55,22 @@ namespace OpenLoop.App
                 {
                     if (entry == null || (string.IsNullOrEmpty(entry.User) && string.IsNullOrEmpty(entry.Assistant)))
                         continue;
-                    turns.Add(new ChatTurn
+                    var turn = new ChatTurn
                     {
                         User = new ChatMessage("user", entry.User ?? ""),
                         Assistant = new ChatMessage("assistant", entry.Assistant ?? ""),
+                        ReasoningText = entry.Reasoning ?? "",
                         ToolCallLines = entry.ToolLines ?? "",
                         ToolTraceText = entry.ToolLines ?? "",
                         ToolStepCount = entry.Steps,
                         ToolTotalMs = entry.Ms
-                    });
+                    };
+                    if (entry.Messages is { Count: > 0 })
+                        AttachTranscript(turn, entry.Messages
+                            .Where(m => !string.IsNullOrEmpty(m?.Content))
+                            .Select(m => new LlmMessage(m.Role ?? "user", m.Content))
+                            .ToList());
+                    turns.Add(turn);
                 }
             }
             catch
@@ -61,9 +88,13 @@ namespace OpenLoop.App
                 {
                     User = t.UserText,
                     Assistant = t.AssistantText,
+                    Reasoning = t.ReasoningText,
                     ToolLines = t.ToolCallLines,
                     Steps = t.ToolStepCount,
-                    Ms = t.ToolTotalMs
+                    Ms = t.ToolTotalMs,
+                    Messages = Transcripts.TryGetValue(t, out var transcript)
+                        ? transcript.Select(m => new MessageEntry { Role = m.Role, Content = m.Content }).ToList()
+                        : null
                 }).ToList();
 
                 Directory.CreateDirectory(Dir);
@@ -174,9 +205,17 @@ namespace OpenLoop.App
         {
             public string User { get; set; }
             public string Assistant { get; set; }
+            public string Reasoning { get; set; }
             public string ToolLines { get; set; }
             public int Steps { get; set; }
             public long Ms { get; set; }
+            public List<MessageEntry> Messages { get; set; }
+        }
+
+        private sealed class MessageEntry
+        {
+            public string Role { get; set; }
+            public string Content { get; set; }
         }
 
         private sealed class IndexEntry

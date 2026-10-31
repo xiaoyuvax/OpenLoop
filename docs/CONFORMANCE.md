@@ -56,7 +56,7 @@
 
 ### 4.3 `traces/<id>/`
 - `messages.jsonl`：`{"role":"user|assistant|tool","content":"..."}`
-- `steps.jsonl`：`{"tool":"run_command","args":{...},"ok":true,"ms":12}`
+- `steps.jsonl`：`{"tool":"Shell","args":{...},"ok":true,"ms":12}`
 - `final.md`：最终答案；`run.json`：`{"id","model","cost","steps","outcome"}`
 
 ### 4.4 `eval/tasks/*.json`

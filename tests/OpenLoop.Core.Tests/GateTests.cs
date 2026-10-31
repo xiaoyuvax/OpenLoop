@@ -342,7 +342,7 @@ public sealed class GateTests : IDisposable
         var ledger = NewLedger();
         var features = Map(ledger);
         var reasoner = new ScriptedReasoner(
-            Loops.Call("write_file", "{\"path\":\"hello.txt\",\"content\":\"ok\"}"),
+            Loops.Call("WriteFile", "{\"path\":\"hello.txt\",\"content\":\"ok\"}"),
             "完成");
 
         var runner = new AgentTaskRunner(_ => reasoner, features, _root,

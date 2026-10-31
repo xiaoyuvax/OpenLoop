@@ -35,7 +35,7 @@
 | Loop 只能写 `.openloop/loop/` 下的草稿，不能写 `eval/tasks/` | 沿用 §5.5「Loop 只读证据」；题目入库必须经人 |
 | 草稿必须引用证据 id（finding/trace/session） | 防止凭空想象题目；可回指 |
 | 草稿生成与特征候选（`LoopAgent`）分两次调用、不共享上下文 | 防止「自己出题自己判卷」 |
-| 采纳后题目即 held-out：Worker 工具（`.openloop` 屏蔽）与 `read_evidence`（deny `eval`）都读不到 | 现有 `WorkspaceScope.cs:21`、`ReadEvidenceTool.cs:19-20` |
+| 采纳后题目即 held-out：Worker 工具（`.openloop` 屏蔽）与 `ReadEvidence`（deny `eval`）都读不到 | 现有 `WorkspaceScope.cs:21`、`ReadEvidenceTool.cs:19-20` |
 | 判定条件只允许确定性的文件/命令检查 | 避免 LLM 判卷；与 Gate 可复现性一致 |
 | 同一题重复采纳需拦截（prompt+checks 指纹） | 防止题集膨胀和刷分 |
 
@@ -143,7 +143,7 @@ Gate 结束后由 Core 落盘，用户页只读。
 
 `App/LoopPrompt.cs` 增加一条规则：
 
-- 观察到可复现的失败模式时，用 `propose_task` 落草稿；必须给 `source`；
+- 观察到可复现的失败模式时，用 `ProposeTask` 落草稿；必须给 `source`；
 - 不得把猜测写成判定条件；不得直接操作 `eval/`；
 - 一轮最多起草 1 题，避免批量噪声。
 
@@ -164,7 +164,7 @@ Gate 结束后由 Core 落盘，用户页只读。
 
 ```
 Loop 会话（观察）
-  └─ record_finding / propose_task ──> .openloop/loop/task-drafts/*.json
+  └─ RecordFinding / ProposeTask ──> .openloop/loop/task-drafts/*.json
                                               │
 用户打开「题目候选」 ── 采纳/编辑/丢弃 ────────┤
                                               └─ 采纳 ──> .openloop/eval/tasks/<id>.json
@@ -209,7 +209,7 @@ Loop 会话（观察）
 ## 10. 实现落点（已验证）
 
 - 草稿：`TaskDrafts` 读写 `.openloop/loop/task-drafts/<id>.json`；`Accept` 写 `eval/tasks` 并把 `Source` 固定为 `user`，指纹去重覆盖已有题与草稿。
-- 出题：`propose_task` 只在 `ToolRegistry.Loop` 注册；Worker 的 `ToolRegistry.Workspace` 找不到该工具。
+- 出题：`ProposeTask` 只在 `ToolRegistry.Loop` 注册；Worker 的 `ToolRegistry.Workspace` 找不到该工具。
 - 报告：`Gate.EvaluateAsync` 无论采纳、平局、构建/符合性短路都会写 `eval/reports/<id>/report.json` 与 `report.md`，`GateReport.ReportPath` 回传相对路径。
 - UI：Worker 侧栏新增「题目候选 N」「评估报告 N」；候选对话框支持预览、JSON 编辑、采纳、丢弃、采纳后试跑基线；报告对话框按历史列表展示 `report.md` 并可打开证据目录。
 - 测试：`TaskDraftsTests`（草稿/去重/采纳/工具注册/报告读写）+ `Gate_writes_human_readable_report`。

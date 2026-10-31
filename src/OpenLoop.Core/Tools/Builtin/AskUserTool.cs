@@ -22,9 +22,9 @@ namespace OpenLoop.Core.Tools.Builtin
             _target = target;
         }
 
-        public string Name => "ask_user";
+        public string Name => "AskUser";
         public string Description =>
-            "在用户当前会话里插入一张调查卡，问一个具体问题（会出现在被评价的那一轮之后）。只问 agent 执行行为（工具使用、顺序、验证、范围、效率、偷懒、停止时机），不问答案内容；只问需要人类判断的，能自查的用 record_finding。每会话最多 3 张待答。";
+            "在用户当前会话里插入一张调查卡，问一个具体问题（会出现在被评价的那一轮之后）。只问 agent 执行行为（工具使用、顺序、验证、范围、效率、偷懒、停止时机），不问答案内容；只问需要人类判断的，能自查的用 RecordFinding。每会话最多 3 张待答。";
         public string ParamsSchema =>
             "title: string（一句话问题）; body: string 可选（发生了什么+为什么可疑，1-2 句）; dimension: string（tool_selection|tool_usage|sequencing|verification|scope|efficiency|diligence|stopping|delegation）; kind: string 可选（choice|multi|text|scale，默认 choice）; options: string[] 可选（默认 [\"合理\",\"有问题\",\"说不清\"]）; anchorTurn: number 可选（默认当前最后一轮）";
         public bool IsReadOnly => false;

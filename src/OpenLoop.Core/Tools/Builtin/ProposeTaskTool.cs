@@ -20,7 +20,7 @@ namespace OpenLoop.Core.Tools.Builtin
 
         public ProposeTaskTool(string workspace) => _workspace = workspace;
 
-        public string Name => "propose_task";
+        public string Name => "ProposeTask";
         public string Description => "把观察到、可复现的失败模式起草成一道考核题（草稿）。只写 .openloop/loop/task-drafts/，用户确认后才进入题集；不要直接写 eval/tasks。";
         public string ParamsSchema =>
             "task: object（必需：{id, problem, prompt, seed?: {路径: 内容}, scope?: [路径], checks: [{type: file_exists|file_missing|file_contains|file_equals|command, path?, text?, args?, expectExit?}]}）; " +

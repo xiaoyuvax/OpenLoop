@@ -131,6 +131,7 @@ namespace OpenLoop.App
             _selProvider.Width = 140;
             _selProvider.Height = 30;
             _selProvider.Radius = 8;
+            _selProvider.ListAutoWidth = true;
             _selProvider.PlaceholderText = Localization.T("Provider");
             _selProvider.Margin = new Padding(0, 0, 8, 0);
             _selProvider.SelectedValueChanged += OnProviderChanged;
@@ -139,6 +140,7 @@ namespace OpenLoop.App
             _selModel.Width = 300;
             _selModel.Height = 30;
             _selModel.Radius = 8;
+            _selModel.ListAutoWidth = true;
             _selModel.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
             _selModel.PlaceholderText = "模型";
             _selModel.Margin = new Padding(0, 0, 8, 0);

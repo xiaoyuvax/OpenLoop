@@ -79,7 +79,7 @@ namespace OpenLoop.Core.Store
             {
                 Id = "rule.read_before_write", Kind = "rule", Source = "user", CreatedAt = Now(),
                 Problem = "不先读现场就写，覆盖掉不知道的内容。",
-                Payload = JsonSerializer.SerializeToElement("写文件前先用 list_dir / read_file 看清现场；不确定是否存在或内容时，先读再改。")
+                Payload = JsonSerializer.SerializeToElement("写文件前先用 ListDir / ReadFile 看清现场；不确定是否存在或内容时，先读再改。")
             },
             new FeatureRecord
             {

@@ -25,7 +25,7 @@ namespace OpenLoop.Core.Tools.Builtin
             _inheritEnvironment = inheritEnvironment;
         }
 
-        public string Name => "run_skill_script";
+        public string Name => "RunSkillScript";
         public string Description => "执行技能 scripts/ 下的脚本（.ps1/.cmd/.bat/.sh/.py/.js/.exe），工作目录为工作区根；每次执行都需要用户批准。";
         public string ParamsSchema => "name: string（技能名）; script: string（scripts/ 下的相对路径）; args: string[] 可选（附加参数）; timeoutSeconds: number 可选（默认 60，最大 600）";
         public bool IsReadOnly => false;

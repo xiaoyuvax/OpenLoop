@@ -28,7 +28,7 @@ namespace OpenLoop.Core.OpenCode
             _askAllPermissions = askAllPermissions;
         }
 
-        public string Name => "opencode_task";
+        public string Name => "OpenCodeTask";
 
         public string Description =>
             "把一件完整任务交给本机 OpenCode agent（它有独立工具，会直接改当前工作目录里的文件）。" +
@@ -65,7 +65,7 @@ namespace OpenLoop.Core.OpenCode
             {
                 string title = task.Length <= 40 ? task : task[..40];
                 sessionID = await client.CreateSessionAsync(
-                    title, _workspace, model, args.Str("agent", ""), _askAllPermissions, ct);
+                    title, _workspace, model, args.Str("agent", ""), _askAllPermissions ? "ask" : null, ct);
                 if (string.IsNullOrWhiteSpace(sessionID))
                     return AgentToolResult.Failure("OpenCode 没有返回会话 ID");
 

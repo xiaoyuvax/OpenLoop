@@ -77,8 +77,8 @@ public sealed class SkillTests : IDisposable
             new SkillInfo { Name = "demo", Description = "做演示", Body = "正文", Sha256 = "x", Source = "s" }
         };
 
-        Assert.Null(ToolRegistry.Workspace(scope).Find("read_skill"));
-        Assert.NotNull(ToolRegistry.Workspace(scope, null, skills).Find("read_skill"));
+        Assert.Null(ToolRegistry.Workspace(scope).Find("ReadSkill"));
+        Assert.NotNull(ToolRegistry.Workspace(scope, null, skills).Find("ReadSkill"));
     }
 
     [Fact]

@@ -5,7 +5,7 @@ using OpenLoop.Core.Store;
 
 namespace OpenLoop.Core.Skills
 {
-    /// <summary>一个技能：name/description 用于提示词索引，正文由 read_skill 按需读取。</summary>
+    /// <summary>一个技能：name/description 用于提示词索引，正文由 ReadSkill 按需读取。</summary>
     public sealed class SkillInfo
     {
         public string Name { get; init; }

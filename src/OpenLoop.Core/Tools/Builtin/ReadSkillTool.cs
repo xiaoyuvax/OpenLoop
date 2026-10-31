@@ -17,7 +17,7 @@ namespace OpenLoop.Core.Tools.Builtin
 
         public ReadSkillTool(IReadOnlyList<SkillInfo> skills) => _skills = skills ?? [];
 
-        public string Name => "read_skill";
+        public string Name => "ReadSkill";
         public string Description => "读取一个可用技能：不带 file 返回做法全文与参考文件清单；带 file 读取技能内 references/ 或 scripts/ 下的文件。只在任务与技能描述相关时调用。";
         public string ParamsSchema => "name: string（技能名，见「可用技能」列表）; file: string 可选（技能内 references/… 或 scripts/… 的相对路径）";
         public bool IsReadOnly => true;
@@ -51,7 +51,7 @@ namespace OpenLoop.Core.Tools.Builtin
             if (files.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("## 参考文件（用 read_skill(name, file) 读取）");
+                sb.AppendLine("## 参考文件（用 ReadSkill(name, file) 读取）");
                 foreach (string path in files) sb.Append("- ").AppendLine(path);
             }
 

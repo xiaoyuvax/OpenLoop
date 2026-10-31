@@ -47,71 +47,93 @@ public sealed class OpenCodeTests
     }
 
     [Fact]
-    public async Task Generate_text_uses_session_scoped_generate()
+    public async Task Turn_asks_and_rejects_tool_permissions()
     {
         var calls = new List<string>();
         string createBody = null;
+        string reply = null;
+        int permissionPolls = 0;
         var handler = new StubHandler(async request =>
         {
             string path = request.RequestUri.AbsolutePath;
             calls.Add(request.Method.Method + " " + path);
+            if (path == "/api/event") return Sse("");
             if (path == "/api/session")
             {
                 createBody = await request.Content.ReadAsStringAsync();
-                return Json("""{"data":{"id":"ses_g"}}""");
+                return Json("""{"data":{"id":"ses_t"}}""");
             }
-            if (path == "/api/session/ses_g/generate")
-                return Json("""{"data":{"text":"ok"}}""");
+            if (path == "/api/session/ses_t/prompt") return Json("{}");
+            if (path == "/api/session/ses_t/permission")
+                return ++permissionPolls == 1
+                    ? Json("""{"data":[{"id":"perm_1","action":"shell","resources":["echo x"]}]}""")
+                    : Json("""{"data":[]}""");
+            if (path == "/api/session/ses_t/permission/perm_1/reply")
+            {
+                reply = await request.Content.ReadAsStringAsync();
+                return Json("{}");
+            }
+            if (path == "/api/session/ses_t")
+                return Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded","cost":0.1}}""");
+            if (path == "/api/session/ses_t/message") return Json("""
+            {"data":[{"type":"assistant","content":[
+              {"type":"reasoning","text":"想一想"},
+              {"type":"text","text":"tool-call: {\"tool\":\"read_file\",\"args\":{\"path\":\"a\"}}"}
+            ]}]}
+            """);
             return Json("{}");
         });
         using var client = new OpenCodeClient("http://127.0.0.1:1234", "secret", handler);
+        var reasoner = new OpenCodeReasoner(client, new OpenCodeModelRef("teamorouter", "m"), Path.GetTempPath());
 
-        string text = await client.GenerateTextAsync(
-            "hi", new OpenCodeModelRef("teamorouter", "m"), Path.GetTempPath());
+        var result = await reasoner.CompleteAsync(
+            [new LlmMessage("system", "规则"), new LlmMessage("user", "干活")]);
 
-        Assert.Equal("ok", text);
-        Assert.Contains("POST /api/session", calls);
-        Assert.Contains("POST /api/session/ses_g/generate", calls);
-        Assert.Contains("DELETE /api/session/ses_g", calls);
+        Assert.Contains("read_file", result.Content);
+        Assert.Equal("想一想", result.Reasoning);
+        Assert.Contains("\"effect\":\"ask\"", createBody);
         Assert.Contains("\"providerID\":\"teamorouter\"", createBody);
-        Assert.Contains("\"directory\"", createBody);
+        Assert.Contains("\"decision\":\"reject\"", reply);
+        Assert.Contains("POST /api/session/ses_t/prompt", calls);
+        Assert.Contains("DELETE /api/session/ses_t", calls);
+        Assert.DoesNotContain(calls, call => call.EndsWith("/generate"));
     }
 
     [Fact]
-    public async Task Reasoner_tells_model_it_has_no_native_tools()
+    public void Protocol_sits_right_after_system_prompt()
     {
-        string body = null;
-        var handler = new StubHandler(async request =>
-        {
-            if (request.RequestUri.AbsolutePath == "/api/session")
-                return Json("""{"data":{"id":"ses_r"}}""");
-            body = await request.Content.ReadAsStringAsync();
-            return Json("""{"data":{"text":"ok"}}""");
-        });
-        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
-        var reasoner = new OpenCodeReasoner(client, new OpenCodeModelRef("opencode", "m"), Path.GetTempPath());
+        string text = OpenCodeReasoner.Flatten(
+            [new LlmMessage("system", "规则"), new LlmMessage("user", "干活")]);
 
-        var result = await reasoner.CompleteAsync([new LlmMessage("user", "继续")]);
+        int system = text.IndexOf("[system]", StringComparison.Ordinal);
+        int protocol = text.IndexOf("Native tool calling is disabled", StringComparison.Ordinal);
+        int user = text.IndexOf("[user]", StringComparison.Ordinal);
 
-        Assert.Equal("ok", result.Content);
-        Assert.Contains("Native tool calling is disabled", body);
-        Assert.Contains("print the tool call as text", body);
+        Assert.True(system >= 0 && protocol > system && protocol < user);
+        Assert.Contains("[user]\n干活", text);
     }
 
     [Fact]
     public async Task Reasoner_retries_once_when_text_is_empty()
     {
-        int generates = 0;
-        var bodies = new List<string>();
+        int turns = 0;
         var handler = new StubHandler(async request =>
         {
-            if (request.RequestUri.AbsolutePath == "/api/session")
-                return Json("""{"data":{"id":"ses_e"}}""");
-            if (!request.RequestUri.AbsolutePath.EndsWith("/generate"))
+            string path = request.RequestUri.AbsolutePath;
+            if (path == "/api/event") return Sse("");
+            if (path == "/api/session") return Json("""{"data":{"id":"ses_e"}}""");
+            if (path == "/api/session/ses_e/prompt")
+            {
+                turns++;
                 return Json("{}");
-            generates++;
-            bodies.Add(await request.Content.ReadAsStringAsync());
-            return Json(generates == 1 ? """{"data":{"text":""}}""" : """{"data":{"text":"ok"}}""");
+            }
+            if (path == "/api/session/ses_e")
+                return Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded"}}""");
+            if (path == "/api/session/ses_e/message")
+                return Json(turns == 1
+                    ? """{"data":[{"type":"assistant","content":[]}]}"""
+                    : """{"data":[{"type":"assistant","content":[{"type":"text","text":"ok"}]}]}""");
+            return Json("{}");
         });
         using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
         var reasoner = new OpenCodeReasoner(client, new OpenCodeModelRef("opencode", "m"), Path.GetTempPath());
@@ -119,9 +141,64 @@ public sealed class OpenCodeTests
         var result = await reasoner.CompleteAsync([new LlmMessage("user", "hi")]);
 
         Assert.Equal("ok", result.Content);
-        Assert.Equal(2, generates);
-        Assert.Contains("Native tool calling is disabled", bodies[0]);
-        Assert.Contains("NO tools in this session", bodies[1]);
+        Assert.Equal(2, turns);
+    }
+
+    [Fact]
+    public async Task Turn_surfaces_execution_failure_instead_of_empty_text()
+    {
+        string sse = string.Join("\n",
+            """data: {"type":"session.execution.failed","data":{"sessionID":"ses_f","error":{"type":"provider.free-limit","message":"Free usage limit reached."}}}""") + "\n";
+
+        var handler = new StubHandler(async request => request.RequestUri.AbsolutePath switch
+        {
+            "/api/event" => Sse(sse),
+            "/api/session" => Json("""{"data":{"id":"ses_f"}}"""),
+            "/api/session/ses_f/prompt" => Json("{}"),
+            "/api/session/ses_f" => Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"failed"}}"""),
+            "/api/session/ses_f/message" => Json("""{"data":[]}"""),
+            _ => Json("{}")
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.RunTurnAsync("hi", new OpenCodeModelRef("opencode", "m"), Path.GetTempPath()));
+
+        Assert.Contains("provider.free-limit", ex.Message);
+        Assert.Contains("Free usage limit reached.", ex.Message);
+    }
+
+    [Fact]
+    public async Task Turn_streams_reasoning_and_text_deltas_of_its_own_session()
+    {
+        var deltas = new List<string>();
+        var reasoning = new List<string>();
+        string sse = string.Join("\n",
+            """data: {"type":"session.reasoning.delta","data":{"sessionID":"ses_s","delta":"想"}}""",
+            """data: {"type":"session.text.delta","data":{"sessionID":"ses_s","delta":"答"}}""",
+            """data: {"type":"session.text.delta","data":{"sessionID":"other","delta":"别人的"}}""",
+            """data: {"type":"session.execution.succeeded","data":{"sessionID":"ses_s"}}""") + "\n";
+
+        var handler = new StubHandler(async request => request.RequestUri.AbsolutePath switch
+        {
+            "/api/event" => Sse(sse),
+            "/api/session" => Json("""{"data":{"id":"ses_s"}}"""),
+            "/api/session/ses_s/prompt" => Json("{}"),
+            "/api/session/ses_s" => Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded"}}"""),
+            "/api/session/ses_s/message" => Json(
+                """{"data":[{"type":"assistant","content":[{"type":"text","text":"答"}]}]}"""),
+            _ => Json("{}")
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+
+        var turn = await client.RunTurnAsync(
+            "hi", new OpenCodeModelRef("opencode", "m"), Path.GetTempPath(),
+            delta => { lock (deltas) deltas.Add(delta); },
+            piece => { lock (reasoning) reasoning.Add(piece); });
+
+        Assert.Equal("答", turn.Text);
+        Assert.Equal(["答"], deltas);
+        Assert.Equal(["想"], reasoning);
     }
 
     [Fact]
@@ -232,7 +309,7 @@ public sealed class OpenCodeTests
         });
         using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
 
-        await client.CreateSessionAsync("t", Path.GetTempPath(), askAllPermissions: false);
+        await client.CreateSessionAsync("t", Path.GetTempPath(), permissionEffect: null);
 
         Assert.DoesNotContain("permissions", body);
     }
@@ -315,6 +392,9 @@ public sealed class OpenCodeTests
 
     private static HttpResponseMessage Json(string body, int status = 200)
         => new((HttpStatusCode)status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+    private static HttpResponseMessage Sse(string body)
+        => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "text/event-stream") };
 
     private static HttpResponseMessage Capture(HttpRequestMessage request, Action<string> capture)
     {

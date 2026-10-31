@@ -65,7 +65,7 @@ namespace OpenLoop.App
             _txtRule.Radius = 8;
             _txtRule.BorderWidth = 1;
             _txtRule.Multiline = true;
-            _txtRule.PlaceholderText = "写给 Worker 的一条规则，例如：修改文件前先用 read_file 确认内容。";
+            _txtRule.PlaceholderText = "写给 Worker 的一条规则，例如：修改文件前先用 ReadFile 确认内容。";
             _txtRule.Margin = new Padding(0, 4, 0, 4);
 
             _lblHint.AutoSize = false;

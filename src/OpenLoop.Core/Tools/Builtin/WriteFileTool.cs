@@ -9,7 +9,7 @@ namespace OpenLoop.Core.Tools.Builtin
 
         public WriteFileTool(WorkspaceScope scope) => _scope = scope;
 
-        public string Name => "write_file";
+        public string Name => "WriteFile";
         public string Description => "写入工作目录内的文本文件（覆盖）。父目录不存在时自动创建。";
         public string ParamsSchema => "path: string（相对工作目录的路径）; content: string（完整内容）";
         public bool IsReadOnly => false;

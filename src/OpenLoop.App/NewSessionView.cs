@@ -67,8 +67,7 @@ namespace OpenLoop.App
                 {
                     _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
                     {
-                        Tag = provider,
-                        SubText = provider.Kind
+                        Tag = provider
                     });
                 }
                 _selProvider.SelectedIndex = 0;
@@ -160,8 +159,7 @@ namespace OpenLoop.App
                     string name = ProjectName(path);
                     _selProject.Items.Add(new AntdUI.SelectItem(name)
                     {
-                        Tag = path,
-                        SubText = path
+                        Tag = path
                     });
                 }
 

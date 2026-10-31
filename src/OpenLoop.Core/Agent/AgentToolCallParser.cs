@@ -58,10 +58,43 @@ namespace OpenLoop.Core.Agent
             //    与 OpenAI 风格 {"name":…,"arguments":{…}}——尽量还原成同一次调用，别白费一次往返
             if (TryParseToolCallBlock(text, out call)) return true;
 
+            // 4) 模型自创的 XML 式调用（实测 DeepSeek 系会写 <|DSML|invoke name="Shell"> … <|DSML|parameter name="command">…）
+            if (TryParseInvoke(text, out call)) return true;
+
             if (TryParseTaggedOrOpenAiStyle(text, out call)) return true;
 
             return false;
         }
+
+        /// <summary>
+        /// 模型自创的 XML 式调用：<c>&lt;[装饰]invoke name="Shell"&gt; &lt;[装饰]parameter name="path"&gt;v&lt;/[装饰]parameter&gt; &lt;/[装饰]invoke&gt;</c>。
+        /// 装饰字符（如 <c>|DSML|</c>、全角竖线）不固定，只要求标签名前面有一段短前缀，别把普通 XML 正文误判成调用。
+        /// </summary>
+        private static bool TryParseInvoke(string text, out AgentToolCall call)
+        {
+            call = null;
+            var head = InvokeToolRegex.Match(text);
+            if (!head.Success) return false;
+
+            var args = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (Match p in InvokeParamRegex.Matches(text))
+            {
+                string key = p.Groups["name"].Value.Trim();
+                if (key.Length == 0) continue;
+                args[key] = ConvertValue(p.Groups["value"].Value.Trim());
+            }
+
+            call = new AgentToolCall { Tool = head.Groups["name"].Value, Args = args };
+            return true;
+        }
+
+        private static readonly Regex InvokeToolRegex = new(
+            @"<[^<>]{0,16}invoke\b[^<>]*?\bname\s*=\s*[""'](?<name>[A-Za-z_][\w\-\.]*)[""']",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex InvokeParamRegex = new(
+            @"<[^<>]{0,16}parameter\b[^<>]*?\bname\s*=\s*[""'](?<name>[A-Za-z_][\w\-\.]*)[""'][^<>]*>(?<value>.*?)</[^<>]{0,16}parameter\s*>",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
         /// <summary>
         /// 解析全部工具调用（并行调用支持）：文本中按顺序出现的每个 tool-call marker 各还原一次调用。
@@ -262,6 +295,10 @@ namespace OpenLoop.Core.Agent
                 || modelOutput.Contains("<tool_call", StringComparison.OrdinalIgnoreCase)
                 || modelOutput.Contains("<parameter", StringComparison.OrdinalIgnoreCase)
                 || modelOutput.Contains("<function", StringComparison.OrdinalIgnoreCase)) return true;
+            // 模型自创的 XML 式调用（<|DSML|invoke …>）：认出来就走「格式错误 → 纠正重试」，别当最终答复
+            if (InvokeToolRegex.IsMatch(modelOutput)) return true;
+            if (modelOutput.Contains("invoke", StringComparison.OrdinalIgnoreCase)
+                && modelOutput.Contains("parameter", StringComparison.OrdinalIgnoreCase)) return true;
             return modelOutput.Contains("\"name\"", StringComparison.Ordinal)
                 && modelOutput.Contains("\"arguments\"", StringComparison.Ordinal);
         }
