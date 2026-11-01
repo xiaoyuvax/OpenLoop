@@ -1,7 +1,8 @@
 # 阴阳双进程架构 · 实施方案
 
-> 状态：**计划，未实施**。不改 `CHARTER.md` 的不变量；落地前先确认 §13 的拍板结论。
+> 状态：**M0–M3 已实施并在本机验证（Windows / Debug）；M4（跨平台）、M5（插件）未开始**。
 > 目标：把「同进程的 Worker + Loop」拆成两个独立二进制，使两者可以各自被对方替换、重启后立即生效。
+> 逐里程碑的实测记录见 §14；与本节计划的偏差见 §3 末尾「实施偏差」。
 > 现状基线见 `docs/IMPLEMENTATION.md`（M1–M3 已完成，Puppet 已接入）。
 
 ---
@@ -76,6 +77,15 @@ src/
 依赖方向：`A/I/Shell/Win → Service → Core`；`Win` 是唯一引用 WinForms/AntdUI/ChatFlow 的项目。
 `wwwroot` 挂在 `Service` 上（`PreserveNewest` 复制到引用方的输出/发布目录），A 与 I 的版本目录里各带一份
 **内容相同**的副本，改界面只改一处。
+
+**实施偏差（2026-11-01，以代码为准）**
+
+- 界面程序集沿用 `src/OpenLoop.App`（未新建 `OpenLoop.Win`），它就是 Windows 壳；
+- `Plugins/` 未实现（M5）；
+- A/I 的 `--puppet` 未实现，Puppet 仍只在壳（`MainForm`）；
+- 没有 `--standalone` 开关：不给 `--parent` 即为独立启动；绑定参数是 `--bind`，不是 `--web`；
+- 子进程守护是 1 秒轮询（`ParentWatch`），未挂 Job Object；
+- 对外绑定与 `web-password.txt`（Basic 口令）未实现，只绑 `127.0.0.1`、用 `?key=` 换 Cookie。
 
 ---
 
