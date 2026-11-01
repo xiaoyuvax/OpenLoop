@@ -15,6 +15,37 @@ namespace OpenLoop.Core.Agent
 
         public const string SummaryPrefix = "【此前对话摘要（系统自动压缩）】\n";
 
+        /// <summary>服务端「上下文超限」错误的识别：各网关措辞不同，命中即触发压缩重试。</summary>
+        private static readonly string[] ContextOverflowSignals =
+        [
+            "context length", "context_length", "context window", "context size", "context limit",
+            "maximum context", "max context", "context overflow", "context exceeds",
+            "too many tokens", "token limit exceeded", "exceeds the maximum number of tokens",
+            "prompt is too long", "input is too long", "prompt too long",
+            "reduce the length of the messages", "reduce your prompt", "reduce the input",
+            "exceeds the available context", "maximum prompt length", "max seq len",
+            "request too large", "payload too large",
+            "上下文长度", "上下文窗口", "上下文超出", "上下文超限", "最大上下文",
+            "输入过长", "提示词过长", "文本过长", "token 数量超过", "tokens 超过", "token 数超过"
+        ];
+
+        /// <summary>限流/额度类错误即便带 token 字样也不是上下文超限。</summary>
+        private static readonly string[] NotOverflowSignals =
+        [
+            "rate limit", "too many requests", "quota", "429", "余额", "额度"
+        ];
+
+        public static bool IsContextOverflow(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return false;
+            string lower = message.ToLowerInvariant();
+            foreach (string noise in NotOverflowSignals)
+                if (lower.Contains(noise, StringComparison.Ordinal)) return false;
+            foreach (string signal in ContextOverflowSignals)
+                if (lower.Contains(signal, StringComparison.Ordinal)) return true;
+            return false;
+        }
+
         public const string SummaryInstruction =
             "请把以下 agent 与用户的对话压缩为简洁中文摘要，保留：用户的目标与偏好、已完成的工具操作及其结果" +
             "（尤其是操作过的文件路径、关键参数与数字）、未决事项与后续步骤。不要遗漏文件路径与数字。" +

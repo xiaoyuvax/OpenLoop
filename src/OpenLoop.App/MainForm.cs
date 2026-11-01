@@ -58,6 +58,14 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ActiveTabText => Active?.Page?.Text ?? "";
 
+        /// <summary>A 面自检：当前会话用的模型。</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ActiveModel => Active?.View?.Model ?? "";
+
+        /// <summary>A 面自检：当前会话的运行状态（running/idle | 正文长度 | 步数）。</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ActiveRunStatus => Active?.View?.RunStatus ?? "";
+
         /// <summary>已配置的提供商摘要（A 面自检用）。</summary>
         public string ProviderSummary => string.Join("; ",
             _settings.Providers.Select(p => $"{p.Name}|{p.Kind}|{p.BaseUrl}"));
@@ -118,6 +126,8 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool EvolveEnabled => Active?.View.EvolveEnabled ?? false;
+
+        public void StartEvolve() => Active?.View.StartEvolve();
 
         public void ShowDefinitions() => Active?.View.ShowDefinitions();
 

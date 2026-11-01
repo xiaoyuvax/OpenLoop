@@ -11,6 +11,9 @@ using OpenLoop.Core.Tools;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Skills;
 using OpenLoop.Core.Trace;
+using OpenLoop.Service.Loop;
+using OpenLoop.Service.Worker;
+using OpenLoop.Service.Web;
 
 namespace OpenLoop.App
 {
@@ -33,6 +36,16 @@ namespace OpenLoop.App
         private readonly Dictionary<ChatTurn, TurnUndo> _turnUndo = [];
         private sealed record TurnUndo(FileUndoLog Log, string Checkpoint);
         private string _tracePath = "";
+
+        /// <summary>访问 A 的 /api/sessions；界面不再自己跑 Agent。</summary>
+        private WorkerApiClient _client;
+        private readonly HashSet<string> _answeredPrompts = [];
+
+        /// <summary>访问 I 的 /api/loop/*；演进与回滚的写入口在 I。</summary>
+        private LoopApiClient _loopClient;
+
+        private WorkerApiClient Client => _client ??= new WorkerApiClient();
+        private LoopApiClient Loop => _loopClient ??= new LoopApiClient();
 
         /// <summary>运行中提交的请求排队，当前轮结束后自动发送。</summary>
         private readonly List<QueuedRequest> _queue = [];
@@ -81,7 +94,12 @@ namespace OpenLoop.App
             _chat.SurveySkipped += (_, _) => { };
             LoadSurveys();
             ModelCatalog.Changed += OnCatalogChanged;
-            Disposed += (_, _) => ModelCatalog.Changed -= OnCatalogChanged;
+            Disposed += (_, _) =>
+            {
+                ModelCatalog.Changed -= OnCatalogChanged;
+                _client?.Dispose();
+                _loopClient?.Dispose();
+            };
             _tips.SetToolTip(_lblDef, "点击查看特征与规则");
             _tips.SetToolTip(_lblTasks, "点击查看考核题");
             _sideBtw.Initialize(session.Workspace, settings);
@@ -113,6 +131,10 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Model => _model;
+
+        /// <summary>A 面自检：运行中标志 / 最后一轮正文长度 / 步数。</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string RunStatus => $"{(_running ? "running" : "idle")}|{Session.Book.Turns.LastOrDefault()?.AssistantText?.Length ?? 0}|{Session.Steps}";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int ModelOptionCount => _selModel.Items.Count;
@@ -229,11 +251,22 @@ namespace OpenLoop.App
             SetMode("task");
         }
 
+        /// <summary>A 面驱动：点「演进」（走 I 的 /api/loop/evolve）。</summary>
+        public void StartEvolve() => OnEvolve(this, EventArgs.Empty);
+
         public void Shutdown()
         {
             _cts?.Cancel();
             _sideBtw.Shutdown();
             ChatStore.Save(Session.Workspace, Session.Book.Turns, Session.Id);
+        }
+
+        /// <summary>停止：取消轮询并让 A 停掉当前轮（否则它会把这一轮跑完）。</summary>
+        private async void StopRun()
+        {
+            _cts?.Cancel();
+            try { await Client.StopAsync(Session.Id); }
+            catch (Exception ex) { AppLog.Warn("停止任务失败：" + ex.Message); }
         }
 
         private void OnViewLoad(object sender, EventArgs e)
@@ -501,7 +534,7 @@ namespace OpenLoop.App
                 if (text.Length == 0)
                 {
                     _queuePaused = true;
-                    _cts?.Cancel();
+                    StopRun();
                     return;
                 }
                 Enqueue(text, _mode);
@@ -609,7 +642,7 @@ namespace OpenLoop.App
 
             // 打断当前轮；结束后先发这一条，再按队列顺序继续
             _interruptNext = item;
-            _cts?.Cancel();
+            StopRun();
             BeginInvoke(new Action(() => { if (!_running) DrainQueue(); }));
         }
 
@@ -923,7 +956,7 @@ namespace OpenLoop.App
 
         private void UpdateContext(int? tokens)
         {
-            int limit = AgentContext.DefaultContextLimit;
+            int limit = ModelChoices.ContextLimit(_model);
             float ratio = tokens.HasValue
                 ? Math.Clamp(tokens.Value / (float)limit, 0F, 1F)
                 : 0F;
@@ -981,291 +1014,202 @@ namespace OpenLoop.App
                 return;
             }
 
-            bool fullAccess = settings.FullAccess;
-            var undoLog = new FileUndoLog();
-            var scope = new WorkspaceScope(workspace, fullAccess ? [] : null, fullAccess) { Undo = undoLog };
-            var skillCatalog = SkillCatalog.Load(workspace, AppSettings.GlobalSkillsPath);
-            string checkpoint = Snapshots.Create(workspace, "worker");
-            if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
+            ChatTurn turn = null;
 
-            //模型等待/重试进度：网关慢或重试时给状态栏反馈，避免看起来「卡住」
-            int awaitingModel = 0;
-            var reasoner = Reasoners.Create(settings, model, _effort, workspace);
-            Reasoners.AttachProgress(reasoner, progress =>
-            {
-                Interlocked.Exchange(ref awaitingModel, 1);
-                RunOnUiSafe(() =>
-                {
-                    string suffix = progress.Attempt > 0
-                        ? $"{progress.Phase}（{progress.Elapsed.TotalSeconds:0} 秒）"
-                        : progress.Phase;
-                    _lblStatus.Text = Localization.T("Status") + ": " + suffix;
-                });
-            });
+            _cts?.Dispose();
+            var cts = new CancellationTokenSource();
+            _cts = cts;
+            var ct = cts.Token;
 
-            Ledger ledger;
-            ActivationRecord activation;
-            AgentPolicy policy;
-            IReadOnlyList<string> rules;
-            IReadOnlyList<SkillInfo> skills = [];
-            IReadOnlyList<string> skillProblems = [];
-            try
-            {
-                ledger = Ledger.Open(workspace);
-                ledger.EnsureInitialized();
-                skills = SkillCatalog.Sync(ledger, skillCatalog, out skillProblems);
-                activation = ledger.Current;
-                var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
-                policy = FeatureCatalog.PolicyFrom(activation, features);
-                rules = FeatureCatalog.RulesFrom(activation, features);
-            }
-            catch (Exception ex)
-            {
-                AppLog.Error("读取账本失败", ex);
-                Notify("读取账本失败", ex.Message, error: true);
-                return;
-            }
-
-            if (skillProblems.Count > 0)
-                AppLog.Warn("技能不可用：" + string.Join("；", skillProblems));
-            //工作区内的操作不审批；越界访问与风险操作走分级审批
-            OpenLoop.Core.Safety.ApprovalHandler approve =
-                fullAccess ? _ => OpenLoop.Core.Safety.ApprovalDecision.AllowOnce : AskApproval;
-            scope.Approve = approve;
-            var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess, OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions));
-
-            TraceWriter trace;
-            try
-            {
-                trace = TraceWriter.Start(workspace, tag, text, model);
-            }
-            catch (Exception ex)
-            {
-                AppLog.Error("创建 trace 失败", ex);
-                Notify("创建 trace 失败", ex.Message, error: true);
-                return;
-            }
-
-            var history = BuildHistory();
-            var turn = new ChatTurn
-            {
-                User = new ChatMessage("user", text),
-                Assistant = new ChatMessage("assistant", ""),
-                Streaming = true,
-                ThinkingExpanded = _settings().ThinkingExpandedByDefault
-            };
-
-            Session.Book.AddTurn(turn);
-            _turnUndo[turn] = new TurnUndo(undoLog, checkpoint);
-            //发出即落盘：进程被杀时最多丢流式中的半条回复，而不是整轮对话
-            ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
             SetRunning(true);
             SetState(SessionState.Running);
-            SetTrace(workspace, trace.DirectoryPath);
             _lblStatus.Text = Localization.T("Status") + ": 运行中…";
-            _chat.ScrollToEnd();
-            trace.SkillSet(skills, skillProblems);
-            trace.Message("user", $"[{tag}] {text}");
+            SetTrace(workspace, "");
 
-            var streamBuffer = new StringBuilder();
-            Action<string> onDelta = piece =>
-            {
-                ResumeStatus();
-                lock (streamBuffer) streamBuffer.Append(piece);
-                string snapshot;
-                lock (streamBuffer) snapshot = streamBuffer.ToString();
-                if (LooksLikeToolCallText(snapshot)) return;
-                RunOnUiSafe(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot)));
-            };
-
-            //收到模型输出即从「等待/重试」回到运行中
-            void ResumeStatus()
-            {
-                if (Interlocked.Exchange(ref awaitingModel, 0) == 0) return;
-                RunOnUiSafe(() => _lblStatus.Text = Localization.T("Status") + ": 运行中…");
-            }
-
-            // 推理通道：推理模型在出正文前只吐 reasoning，实时显示到思考区，避免长时间只看到「思考中…」
-            var reasoningBuffer = new StringBuilder();
-            long lastReasoningUi = 0;
-            Action<string> onReasoning = piece =>
-            {
-                ResumeStatus();
-                lock (reasoningBuffer) reasoningBuffer.Append(piece);
-                //推理增量很密：界面按 ~250ms 节流，避免逐片重排聊天区
-                long now = Environment.TickCount64;
-                if (now - Interlocked.Read(ref lastReasoningUi) < 250) return;
-                Interlocked.Exchange(ref lastReasoningUi, now);
-                string snapshot;
-                lock (reasoningBuffer) snapshot = reasoningBuffer.ToString();
-                RunOnUiSafe(() =>
-                {
-                    turn.ReasoningText = snapshot;
-                    // 就地重绑最后一行（行会重读 ReasoningText）；全量重建会把高度打回估算值，
-                    // 滚动条范围在估算/实测之间来回改，看起来就是不停上下跳。
-                    string text;
-                    lock (streamBuffer) text = streamBuffer.ToString();
-                    _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(text));
-                });
-            };
-
-            //节流可能丢掉最后几片：收尾时把完整推理文本落地，确保思考区不残缺
-            void FlushReasoning()
-            {
-                lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
-            }
-
-            // 断流整轮重发：清掉已显示的半截正文/思考，避免重发后出现两遍
-            void ResetStream()
-            {
-                lock (streamBuffer) streamBuffer.Clear();
-                lock (reasoningBuffer) reasoningBuffer.Clear();
-                RunOnUiSafe(() =>
-                {
-                    turn.ReasoningText = "";
-                    _chat.UpdateStreamingMessage(turn, "", true);
-                    RefreshChat();
-                });
-            }
-
-            var loop = new AgentLoop(tools, reasoner, policy,
-                onStep: step =>
-                {
-                    RunOnUiSafe(() =>
-                    {
-                        turn.ToolStepCount++;
-                        turn.ToolTotalMs += step.DurationMs;
-                        string line = $"{step.Tool}({step.ArgsSummary}) · {step.DurationText}{(step.Ok ? "" : " · 失败")}";
-                        turn.ToolCallLines = string.IsNullOrEmpty(turn.ToolCallLines)
-                            ? line
-                            : turn.ToolCallLines + "\n" + line;
-                        turn.ToolTraceText = string.IsNullOrEmpty(turn.ToolTraceText)
-                            ? line
-                            : turn.ToolTraceText + "\n" + line;
-                        turn.ToolStatusText = null;
-                        RefreshChat();
-                        _chat.ScrollToEnd();
-                    });
-                    trace.Step(step);
-                },
-                onToolStart: (name, _) =>
-                {
-                    lock (streamBuffer) streamBuffer.Clear();
-                    RunOnUiSafe(() =>
-                    {
-                        turn.AssistantText = "";
-                        turn.ToolStatusText = $"正在调用 {name}…";
-                        _chat.UpdateStreamingMessage(turn, "", true);
-                        RefreshChat();
-                    });
-                },
-                confirmContinue: AskOnUi,
-                skills: skills);
-
-            string systemPrompt = loop.BuildSystemPrompt(
-                null, rules,
-                settings.UseAgentsMd
-                    ? AgentsInstructions.Load(workspace, AppSettings.GlobalAgentsPath)
-                    : null,
-                workspace);
-            history.Insert(0, new LlmMessage("system", systemPrompt));
-            trace.SystemPrompt(systemPrompt);
-            _lblDef.Text = $"def: v{activation.Version} · {activation.Features.Count} {Localization.T("Features")} · {rules.Count} {Localization.T("Rules")}";
-
-            _cts = new CancellationTokenSource();
-            var ct = _cts.Token;
-
-            string outcome = "error";
-            int stepCount = 0;
-            decimal? cost = null;
-
+            var client = Client;
+            WorkerSessionSnapshot snapshot = null;
+            string failure = null;
             try
             {
-                var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta, onReasoning, ResetStream),
-                    ct);
+                var remote = await client.GetAsync(Session.Id, ct)
+                             ?? await client.CreateAsync(Session.Id, workspace, model, _effort, ct);
+                if (remote == null) throw new InvalidOperationException("Worker 未就绪（" + client.Endpoint + "）");
+                if (!string.Equals(remote.Model, model, StringComparison.Ordinal)
+                    || !string.Equals(remote.Effort, _effort, StringComparison.Ordinal))
+                    await client.SetModelAsync(Session.Id, model, _effort, ct);
 
-                turn.Streaming = false;
-                turn.ToolStatusText = null;
-                FlushReasoning();
-                turn.AssistantText = CleanAnswer(result.FinalAnswer, result.FinishReason);
-                if (result.Transcript != null) ChatStore.AttachTranscript(turn, result.Transcript);
-                trace.Message("assistant", turn.AssistantText);
+                snapshot = await client.SendAsync(Session.Id, tag, text, ct);
+                if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
+                ApplySnapshot(snapshot);
+                //发出即落盘：进程被杀时最多丢流式中的半条回复，而不是整轮对话
+                ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
 
-                outcome = result.BudgetExhausted ? "budget"
-                    : result.StoppedByUser || result.StoppedByGuard ? "stopped"
-                    : "ok";
-                stepCount = result.Steps.Count;
-                cost = result.ChatCost;
-                trace.Finish(outcome, turn.AssistantText, result.ChatCost, result.Guards);
-
-                _lblCost.Text = Localization.T("Cost") + $": {(result.ChatCost.HasValue ? result.ChatCost.Value.ToString("0.0000") : "—")} · {result.Steps.Count} {Localization.T("Steps")}";
-                _lblStatus.Text = Localization.T("Status") + $": {outcome}" + (result.Compressed ? "（上下文已压缩）" : "");
-                UpdateContext(result.ContextTokens);
-
-                if (outcome == "ok")
-                    Notify("任务完成", $"{result.Steps.Count} 步 · 成本 {(result.ChatCost?.ToString("0.0000") ?? "—")}");
-                else if (outcome == "budget")
-                    Notify("预算用尽", "本次执行到达步数上限。", error: true);
+                while (snapshot.State == WorkerSessionHost.Running)
+                {
+                    await Task.Delay(250, ct);
+                    snapshot = await client.GetAsync(Session.Id, ct);
+                    if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
+                    snapshot = await AnswerPromptsAsync(client, snapshot, ct);
+                    ApplySnapshot(snapshot);
+                }
             }
             catch (OperationCanceledException)
             {
-                outcome = "stopped";
-                turn.Streaming = false;
-                turn.ToolStatusText = null;
-                FlushReasoning();
-                if (string.IsNullOrEmpty(turn.AssistantText)) turn.AssistantText = "（已停止）";
-                trace.Message("assistant", turn.AssistantText);
-                trace.Finish("stopped", turn.AssistantText);
-                _lblStatus.Text = Localization.T("Status") + ": stopped";
+                failure = "stopped";
             }
             catch (Exception ex)
             {
                 AppLog.Error("任务执行失败", ex);
-                turn.Streaming = false;
-                turn.ToolStatusText = null;
-                turn.AssistantText = FailurePrefix + ex.Message;
-                trace.Finish("error", turn.AssistantText);
-                _lblStatus.Text = Localization.T("Status") + ": error";
-                Notify("执行失败", ex.Message, error: true);
+                failure = ex.Message;
             }
             finally
             {
-                try
-                {
-                    ledger.AppendRun(new RunRecord
-                    {
-                        Id = Ledger.NewId("R"),
-                        ActivationVersion = activation.Version,
-                        Task = text.Length <= 200 ? text : text[..200],
-                        Outcome = outcome,
-                        Steps = stepCount,
-                        Cost = cost,
-                        TraceDir = trace.DirectoryPath,
-                        At = DateTimeOffset.UtcNow.ToString("O")
-                    });
-                }
-                catch (Exception ex)
-                {
-                    AppLog.Error("账本写入失败", ex);
-                    _lblStatus.Text += $"（账本写入失败：{ex.Message}）";
-                }
-
-                trace.Dispose();
-                _cts?.Dispose();
-                _cts = null;
-                SetRunning(false);
-                Session.Steps = stepCount;
-                SetState(outcome is "ok" or "budget" ? SessionState.Done : SessionState.Interrupted);
-                RefreshChat();
-                _chat.ScrollToEnd();
-                RefreshLedgerInfo();
-                ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
-                // 首轮成功结束后由所选模型生成短标题（已有人工/历史标题就不再覆盖）
-                if (outcome == "ok" && Session.Book.Turns.Count == 1)
-                    _ = SummarizeTitleAsync(force: false);
-                if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
+                cts.Dispose();
+                if (ReferenceEquals(_cts, cts)) _cts = null;
             }
+
+            //停止/失败也取一次最终快照：状态与正文以 Worker 为准
+            try
+            {
+                var final = await client.GetAsync(Session.Id);
+                if (final != null)
+                {
+                    snapshot = final;
+                    ApplySnapshot(final);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("读取会话状态失败：" + ex.Message);
+            }
+
+            string outcome = failure == "stopped" ? "stopped"
+                : failure != null ? "error"
+                : snapshot?.Outcome ?? "error";
+            turn = Session.Book.Turns.Count > 0 ? Session.Book.Turns[^1] : null;
+            var remoteTurn = snapshot?.Turns.Count == Session.Book.Turns.Count ? snapshot.Turns[^1] : null;
+            if (turn != null)
+            {
+                turn.Streaming = false;
+                turn.ToolStatusText = null;
+                string raw = remoteTurn?.Assistant ?? turn.AssistantText;
+                turn.AssistantText = outcome == "error" && raw.Trim().Length == 0
+                    ? FailurePrefix + (failure ?? "执行失败")
+                    : CleanAnswer(raw, remoteTurn?.FinishReason);
+            }
+
+            _lblStatus.Text = Localization.T("Status") + outcome switch
+            {
+                "error" => ": error",
+                "stopped" => ": stopped",
+                _ => $": {outcome}"
+            };
+
+            if (outcome is "ok" or "budget")
+            {
+                decimal? cost = snapshot?.Cost;
+                int steps = remoteTurn?.Steps ?? Session.Steps;
+                _lblCost.Text = Localization.T("Cost") + $": {(cost.HasValue ? cost.Value.ToString("0.0000") : "—")} · {steps} {Localization.T("Steps")}";
+                UpdateContext(snapshot?.ContextTokens);
+            }
+
+            if (outcome == "ok")
+                Notify("任务完成", $"{remoteTurn?.Steps ?? 0} 步 · 成本 {(snapshot?.Cost?.ToString("0.0000") ?? "—")}");
+            else if (outcome == "budget")
+                Notify("预算用尽", "本次执行到达步数上限。", error: true);
+            else if (outcome == "error")
+                Notify("执行失败", failure ?? "执行失败", error: true);
+
+            SetRunning(false);
+            Session.Steps = remoteTurn?.Steps ?? Session.Steps;
+            SetState(outcome is "ok" or "budget" ? SessionState.Done : SessionState.Interrupted);
+            RefreshChat();
+            _chat.ScrollToEnd();
+            RefreshLedgerInfo();
+            ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
+            // 首轮成功结束后由所选模型生成短标题（已有人工/历史标题就不再覆盖）
+            if (outcome == "ok" && Session.Book.Turns.Count == 1)
+                _ = SummarizeTitleAsync(force: false);
+            if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
+        }
+
+        /// <summary>把 A 的快照映射到本地对话：新轮次建 turn，已有的更新正文/工具行/思考区。</summary>
+        private void ApplySnapshot(WorkerSessionSnapshot snapshot)
+        {
+            if (snapshot == null) return;
+
+            bool structure = false;
+            while (Session.Book.Turns.Count < snapshot.Turns.Count)
+            {
+                var remote = snapshot.Turns[Session.Book.Turns.Count];
+                var added = new ChatTurn
+                {
+                    User = new ChatMessage("user", remote.User ?? ""),
+                    Assistant = new ChatMessage("assistant", remote.Assistant ?? ""),
+                    Streaming = remote.Streaming,
+                    ThinkingExpanded = _settings().ThinkingExpandedByDefault
+                };
+                Session.Book.AddTurn(added);
+                _turnUndo[added] = new TurnUndo(null, remote.Checkpoint);
+                structure = true;
+            }
+
+            for (int i = 0; i < snapshot.Turns.Count; i++)
+            {
+                var remote = snapshot.Turns[i];
+                var turn = Session.Book.Turns[i];
+                turn.ReasoningText = remote.Reasoning ?? "";
+                turn.ToolCallLines = remote.ToolLines ?? "";
+                turn.ToolTraceText = remote.ToolLines ?? "";
+                turn.ToolStepCount = remote.Steps;
+                turn.ToolTotalMs = remote.Ms;
+                turn.Streaming = remote.Streaming;
+                if (!string.IsNullOrEmpty(remote.Checkpoint))
+                    _turnUndo[turn] = new TurnUndo(null, remote.Checkpoint);
+                turn.AssistantText = LlmTextSanitizer.StripSafetyLines(remote.Assistant ?? "");
+                if (remote.Transcript is { Count: > 0 })
+                    ChatStore.AttachTranscript(turn, remote.Transcript);
+            }
+
+            if (structure) RefreshChat();
+            var last = Session.Book.Turns.LastOrDefault();
+            if (last != null) _chat.UpdateStreamingMessage(last, last.AssistantText, force: structure);
+            if (!string.IsNullOrEmpty(snapshot.TraceDirectory)) SetTrace(snapshot.Workspace, snapshot.TraceDirectory);
+            if (snapshot.ActivationVersion > 0)
+                _lblDef.Text = $"def: v{snapshot.ActivationVersion} · {snapshot.FeatureCount} {Localization.T("Features")} · {snapshot.RuleCount} {Localization.T("Rules")}";
+            if (structure) _chat.ScrollToEnd();
+        }
+
+        /// <summary>回答 A 挂起的审批/确认；同一个 prompt 只答一次。</summary>
+        private async Task<WorkerSessionSnapshot> AnswerPromptsAsync(WorkerApiClient client,
+            WorkerSessionSnapshot snapshot, CancellationToken ct)
+        {
+            foreach (var prompt in snapshot.Prompts ?? [])
+            {
+                if (prompt?.Id == null || !_answeredPrompts.Add(prompt.Id)) continue;
+                int decision = AnswerPrompt(prompt);
+                var updated = await client.ApproveAsync(Session.Id, prompt.Id, decision, ct);
+                if (updated != null) snapshot = updated;
+            }
+            return snapshot;
+        }
+
+        /// <summary>0 = 拒绝，1 = 允许一次，2 = 同类后续都允许（记进设置，A 下次直接放行）。</summary>
+        private int AnswerPrompt(WorkerPromptView prompt)
+        {
+            if (prompt.Kind == "continue") return AskOnUi(prompt.Text) ? 1 : 0;
+
+            var kind = prompt.Category == "outside" ? ApprovalKind.OutsideWorkspace : ApprovalKind.SensitiveAction;
+            var decision = ApprovalGate.Ask(this, _settings,
+                new ApprovalRequest(kind, prompt.Tool, prompt.Detail, prompt.Reason));
+            if (decision == ApprovalDecision.AllowAlways)
+            {
+                var settings = _settings();
+                if (kind == ApprovalKind.OutsideWorkspace) settings.AllowOutsideWorkspace = true;
+                else settings.AllowSensitiveActions = true;
+                settings.Save();
+            }
+            return (int)decision;
         }
 
         private void Notify(string title, string text, bool error = false)
@@ -1528,7 +1472,6 @@ namespace OpenLoop.App
                 return "缺少接口配置，未试跑基线。";
 
             var ledger = Ledger.Open(workspace);
-            ledger.EnsureInitialized();
             var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
             var activation = ledger.Current;
             if (activation == null) return "没有激活版本，未试跑基线。";
@@ -1536,7 +1479,8 @@ namespace OpenLoop.App
             var runner = new AgentTaskRunner(
                 _ => Reasoners.Create(settings, model, _effort, workspace),
                 features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath,
-                globalSkillsPath: AppSettings.GlobalSkillsPath);
+                globalSkillsPath: AppSettings.GlobalSkillsPath,
+                contextLimit: ModelChoices.ContextLimit(model));
             var outcome = await runner.RunAsync(task, activation, ct);
             return outcome.Passed
                 ? Localization.T("BaselinePassed")
@@ -1547,7 +1491,6 @@ namespace OpenLoop.App
         {
             if (_running) return;
 
-            var settings = _settings();
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
@@ -1556,71 +1499,50 @@ namespace OpenLoop.App
             }
 
             string model = _model?.Trim() ?? "";
-            var (baseUrl, _) = settings.EndpointFor(model);
-            baseUrl = baseUrl?.Trim() ?? "";
-            if (baseUrl.Length == 0 || model.Length == 0)
+            if (model.Length == 0)
             {
-                Notify("缺少配置", "先在设置里填写接口地址与模型。", error: true);
+                Notify("缺少配置", "先在设置里选择模型。", error: true);
                 return;
             }
 
-            Ledger ledger;
-            TaskSet tasks;
-            Dictionary<string, FeatureRecord> features;
-            ActivationRecord baseline;
-            try
-            {
-                ledger = Ledger.Open(workspace);
-                ledger.EnsureInitialized();
-                SkillCatalog.RegisterFeatures(ledger, SkillCatalog.Load(workspace, AppSettings.GlobalSkillsPath));
-                tasks = TaskSet.Load(ledger.EvalDir);
-                if (tasks.Tasks.Count == 0)
-                {
-                    Notify("没有考核题", "先把考核题放进 " + Path.Combine(ledger.EvalDir, "tasks"), error: true);
-                    return;
-                }
-                features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
-                baseline = ledger.Current;
-            }
-            catch (Exception ex)
-            {
-                AppLog.Error("读取账本失败", ex);
-                Notify("读取账本失败", ex.Message, error: true);
-                return;
-            }
-
-            _cts = new CancellationTokenSource();
-            var ct = _cts.Token;
+            _cts?.Dispose();
+            var cts = new CancellationTokenSource();
+            _cts = cts;
             SetRunning(true);
             SetState(SessionState.Running);
-            _lblStatus.Text = Localization.T("Status") + ": 构思中…";
+            _lblStatus.Text = Localization.T("Status") + ": 准备中…";
 
             try
             {
-                var loopAgent = new LoopAgent(CreateLoopReasoner());
-                var proposal = await loopAgent.ProposeAsync(loopAgent.BuildPacket(ledger), baseline, features, ct);
-                if (proposal.Error != null)
+                var state = await Loop.EvolveAsync(workspace, model, _effort, cts.Token);
+                while (state != null && state.State == "running")
                 {
-                    _lblStatus.Text = Localization.T("Status") + ": 候选被拒";
-                    string problems = proposal.Problems.Count == 0 ? "" : "\n" + string.Join("\n", proposal.Problems);
-                    Notify("候选被拒", proposal.Error + problems, error: true);
-                    return;
+                    _lblStatus.Text = Localization.T("Status") + ": " + PhaseText(state);
+                    await Task.Delay(2000, cts.Token);
+                    state = await Loop.EvolveStateAsync(workspace, cts.Token);
                 }
 
-                _lblStatus.Text = Localization.T("Status") + ": " + string.Format(Localization.T("StatusReviewing"), tasks.Tasks.Count, tasks.Tasks.Count * 2);
-                var runner = new AgentTaskRunner(
-                    _ => Reasoners.Create(settings, model, _effort, workspace),
-                    features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath, settings.UseAgentsMd,
-                    AppSettings.GlobalSkillsPath);
-                var gate = new Gate(ledger, tasks, features, runner);
-                var report = await gate.EvaluateAsync(baseline, proposal.Candidate, ct);
-
-                _lblStatus.Text = report.Adopted
-                    ? Localization.T("Status") + $": 已采纳 v{report.CandidateVersion}"
-                    : Localization.T("Status") + ": 保留旧版";
-                Notify(report.Adopted ? "已更替" : "未更替",
-                    $"候选 {report.CandidatePassed}/{report.Tasks.Count}，基线 {report.BaselinePassed}/{report.Tasks.Count}");
-                SetState(SessionState.Done);
+                if (state == null) return;
+                string score = $"候选 {state.CandidatePassed}/{state.TaskCount}，基线 {state.BaselinePassed}/{state.TaskCount}";
+                switch (state.State)
+                {
+                    case "done":
+                        _lblStatus.Text = Localization.T("Status") +
+                                          (state.Adopted ? $": 已采纳 v{state.CandidateVersion}" : ": 保留旧版");
+                        Notify(state.Adopted ? "已更替" : "未更替",
+                            state.Detail == null ? score : score + "\n" + state.Detail, error: false);
+                        SetState(SessionState.Done);
+                        break;
+                    case "stopped":
+                        _lblStatus.Text = Localization.T("Status") + ": 已停止";
+                        SetState(SessionState.Interrupted);
+                        break;
+                    default:
+                        _lblStatus.Text = Localization.T("Status") + ": " + Localization.T("StatusEvolveFailed");
+                        SetState(SessionState.Interrupted);
+                        Notify("演进失败", state.Error ?? score, error: true);
+                        break;
+                }
             }
             catch (OperationCanceledException)
             {
@@ -1636,14 +1558,21 @@ namespace OpenLoop.App
             }
             finally
             {
-                _cts?.Dispose();
-                _cts = null;
+                cts.Dispose();
+                if (ReferenceEquals(_cts, cts)) _cts = null;
                 SetRunning(false);
                 RefreshLedgerInfo();
             }
         }
 
-        private void OnRollback(object sender, EventArgs e)
+        private static string PhaseText(LoopEvolveState state) => state.Phase switch
+        {
+            "evaluating" => string.Format(Localization.T("StatusReviewing"), state.TaskCount, state.TaskCount * 2),
+            "proposing" => "构思中…",
+            _ => "准备中…"
+        };
+
+        private async void OnRollback(object sender, EventArgs e)
         {
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
@@ -1652,26 +1581,35 @@ namespace OpenLoop.App
                 return;
             }
 
+            int currentVersion;
             try
             {
-                var ledger = Ledger.Open(workspace);
-                var current = ledger.Current;
+                var current = Ledger.Open(workspace).Current;
                 if (current == null || current.Version <= 1)
                 {
                     Notify("没有更早的版本", "当前已是最早版本。");
                     return;
                 }
+                currentVersion = current.Version;
+            }
+            catch (Exception ex)
+            {
+                Notify("读取账本失败", ex.Message, error: true);
+                return;
+            }
 
-                int target = current.Version - 1;
-                if (MessageBox.Show(FindForm(),
-                        $"退回 v{target}？会写成 v{current.Version + 1}，旧版本文件不动。",
-                        "回滚", MessageBoxButtons.YesNo) != DialogResult.Yes)
-                    return;
+            int target = currentVersion - 1;
+            if (MessageBox.Show(FindForm(),
+                    $"退回 v{target}？会写成 v{currentVersion + 1}，旧版本文件不动。",
+                    "回滚", MessageBoxButtons.YesNo) != DialogResult.Yes)
+                return;
 
-                var restored = ledger.Rollback(target, "user", $"手动回滚到 v{target}");
+            try
+            {
+                var version = await Loop.RollbackAsync(workspace, target);
                 RefreshLedgerInfo();
-                _lblStatus.Text = Localization.T("Status") + $": 已退回 v{target}（新版本 v{restored.Version}）";
-                Notify("已回滚", $"当前版本 v{restored.Version}");
+                _lblStatus.Text = Localization.T("Status") + $": 已退回 v{target}（新版本 v{version}）";
+                Notify("已回滚", $"当前版本 v{version}");
             }
             catch (Exception ex)
             {
@@ -1680,7 +1618,7 @@ namespace OpenLoop.App
             }
         }
 
-        private void OnAddRule(object sender, EventArgs e)
+        private async void OnAddRule(object sender, EventArgs e)
         {
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
@@ -1705,26 +1643,15 @@ namespace OpenLoop.App
 
             try
             {
-                var ledger = Ledger.Open(workspace);
-                ledger.EnsureInitialized();
-                var feature = ledger.AddRule(form.RuleName, form.RuleText);
+                var id = await Loop.AddRuleAsync(workspace, form.RuleName, form.RuleText);
                 RefreshLedgerInfo();
-                Notify("规则已登记", $"{feature.Id}\n当前版本不变；下一轮演进时可被启用。");
+                Notify("规则已登记", $"{id}\n当前版本不变；下一轮演进时可被启用。");
             }
             catch (Exception ex)
             {
                 AppLog.Error("登记规则失败", ex);
                 Notify("登记规则失败", ex.Message, error: true);
             }
-        }
-
-        private IReasoner CreateLoopReasoner()
-        {
-            var settings = _settings();
-            var command = settings.LoopCommand;
-            if (command is { Count: > 0 })
-                return new ProcessReasoner(command[0], command.Skip(1));
-            return Reasoners.Create(settings, _model, _effort, Session.Workspace);
         }
 
         private static string Short(string text)
@@ -1744,13 +1671,6 @@ namespace OpenLoop.App
             {
                 return path;
             }
-        }
-
-        private static bool LooksLikeToolCallText(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return false;
-            if (text.Contains("tool-call:", StringComparison.OrdinalIgnoreCase)) return true;
-            return text.TrimStart().StartsWith("{", StringComparison.Ordinal);
         }
 
         private List<LlmMessage> BuildHistory()
@@ -1964,25 +1884,6 @@ namespace OpenLoop.App
                 : string.Join(" · ", e.Answers.Select(kv => kv.Value));
             OpenLoop.Core.Store.SurveyStore.Answer(Session.Workspace, Session.Id, e.Survey.Id, summary);
         }
-
-
-        private void RunOnUi(Action action)
-        {
-            if (IsDisposed || !IsHandleCreated) return;
-            if (InvokeRequired) Invoke(action);
-            else action();
-        }
-
-        /// <summary>界面更新失败只记日志，不能把异常抛回 Agent 循环（否则整轮任务会被判失败）。</summary>
-        private void RunOnUiSafe(Action action)
-        {
-            try { RunOnUi(action); }
-            catch (Exception ex) { AppLog.Error("界面更新失败", ex); }
-        }
-
-        /// <summary>分级审批：越界访问与风险操作才问用户，可「后续都许可」。</summary>
-        private OpenLoop.Core.Safety.ApprovalDecision AskApproval(OpenLoop.Core.Safety.ApprovalRequest request)
-            => ApprovalGate.Ask(this, _settings, request);
 
         private bool AskOnUi(string message)
         {

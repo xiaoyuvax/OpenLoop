@@ -22,12 +22,14 @@ namespace OpenLoop.Core.Loop
         private readonly string _globalAgentsPath;
         private readonly bool _useAgentsMd;
         private readonly IReadOnlyList<SkillInfo> _catalog;
+        private readonly int _contextLimit;
 
         public AgentTaskRunner(
             Func<string, IReasoner> reasonerFor,
             IReadOnlyDictionary<string, FeatureRecord> features,
             string workspaceRoot, string evidenceRoot, string globalAgentsPath = null,
-            bool useAgentsMd = true, string globalSkillsPath = null)
+            bool useAgentsMd = true, string globalSkillsPath = null,
+            int contextLimit = AgentContext.DefaultContextLimit)
         {
             _reasonerFor = reasonerFor ?? throw new ArgumentNullException(nameof(reasonerFor));
             _features = features ?? throw new ArgumentNullException(nameof(features));
@@ -35,6 +37,7 @@ namespace OpenLoop.Core.Loop
             _evidenceRoot = Path.GetFullPath(evidenceRoot ?? throw new ArgumentNullException(nameof(evidenceRoot)));
             _globalAgentsPath = globalAgentsPath;
             _useAgentsMd = useAgentsMd;
+            _contextLimit = contextLimit > 0 ? contextLimit : AgentContext.DefaultContextLimit;
             _catalog = SkillCatalog.Load(_workspaceRoot, globalSkillsPath);
         }
 
@@ -69,7 +72,7 @@ namespace OpenLoop.Core.Loop
                 _workspaceRoot);
             var history = new List<LlmMessage> { new("system", systemPrompt) };
 
-            var result = await loop.RunAsync(history, task.Prompt, ct, AgentContext.DefaultContextLimit);
+            var result = await loop.RunAsync(history, task.Prompt, ct, _contextLimit);
             var (passed, detail) = TaskJudge.Evaluate(dir, task.Checks);
             string final = result.FinalAnswer ?? "";
 

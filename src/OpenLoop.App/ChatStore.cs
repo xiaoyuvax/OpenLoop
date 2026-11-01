@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using ChatFlow;
 using OpenLoop.Core.Messages;
+using OpenLoop.Service.Storage;
 
 namespace OpenLoop.App
 {
@@ -46,35 +47,27 @@ namespace OpenLoop.App
         {
             var turns = new List<ChatTurn>();
             if (string.IsNullOrWhiteSpace(workspace)) return turns;
-            try
+            var entries = ChatHistory.Read(workspace, kind);
+            foreach (var entry in entries)
             {
-                string path = PathFor(workspace, kind);
-                if (!File.Exists(path)) return turns;
-                var entries = JsonSerializer.Deserialize<List<Entry>>(File.ReadAllText(path, Encoding.UTF8), Json);
-                foreach (var entry in entries ?? [])
+                if (entry == null || (string.IsNullOrEmpty(entry.User) && string.IsNullOrEmpty(entry.Assistant)))
+                    continue;
+                var turn = new ChatTurn
                 {
-                    if (entry == null || (string.IsNullOrEmpty(entry.User) && string.IsNullOrEmpty(entry.Assistant)))
-                        continue;
-                    var turn = new ChatTurn
-                    {
-                        User = new ChatMessage("user", entry.User ?? ""),
-                        Assistant = new ChatMessage("assistant", entry.Assistant ?? ""),
-                        ReasoningText = entry.Reasoning ?? "",
-                        ToolCallLines = entry.ToolLines ?? "",
-                        ToolTraceText = entry.ToolLines ?? "",
-                        ToolStepCount = entry.Steps,
-                        ToolTotalMs = entry.Ms
-                    };
-                    if (entry.Messages is { Count: > 0 })
-                        AttachTranscript(turn, entry.Messages
-                            .Where(m => !string.IsNullOrEmpty(m?.Content))
-                            .Select(m => new LlmMessage(m.Role ?? "user", m.Content))
-                            .ToList());
-                    turns.Add(turn);
-                }
-            }
-            catch
-            {
+                    User = new ChatMessage("user", entry.User ?? ""),
+                    Assistant = new ChatMessage("assistant", entry.Assistant ?? ""),
+                    ReasoningText = entry.Reasoning ?? "",
+                    ToolCallLines = entry.ToolLines ?? "",
+                    ToolTraceText = entry.ToolLines ?? "",
+                    ToolStepCount = entry.Steps,
+                    ToolTotalMs = entry.Ms
+                };
+                if (entry.Messages is { Count: > 0 })
+                    AttachTranscript(turn, entry.Messages
+                        .Where(m => !string.IsNullOrEmpty(m?.Content))
+                        .Select(m => new LlmMessage(m.Role ?? "user", m.Content))
+                        .ToList());
+                turns.Add(turn);
             }
             return turns;
         }
@@ -82,31 +75,21 @@ namespace OpenLoop.App
         public static void Save(string workspace, IEnumerable<ChatTurn> turns, string kind = null)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return;
-            try
+            var entries = (turns ?? []).Select(t => new ChatEntry
             {
-                var entries = (turns ?? []).Select(t => new Entry
-                {
-                    User = t.UserText,
-                    Assistant = t.AssistantText,
-                    Reasoning = t.ReasoningText,
-                    ToolLines = t.ToolCallLines,
-                    Steps = t.ToolStepCount,
-                    Ms = t.ToolTotalMs,
-                    Messages = Transcripts.TryGetValue(t, out var transcript)
-                        ? transcript.Select(m => new MessageEntry { Role = m.Role, Content = m.Content }).ToList()
-                        : null
-                }).ToList();
+                User = t.UserText,
+                Assistant = t.AssistantText,
+                Reasoning = t.ReasoningText,
+                ToolLines = t.ToolCallLines,
+                Steps = t.ToolStepCount,
+                Ms = t.ToolTotalMs,
+                Messages = Transcripts.TryGetValue(t, out var transcript)
+                    ? transcript.Select(m => new ChatMessageEntry { Role = m.Role, Content = m.Content }).ToList()
+                    : null
+            }).ToList();
 
-                Directory.CreateDirectory(Dir);
-                string path = PathFor(workspace, kind);
-                string temp = path + ".tmp";
-                File.WriteAllText(temp, JsonSerializer.Serialize(entries, Json), new UTF8Encoding(false));
-                File.Move(temp, path, true);
-                if (!string.IsNullOrWhiteSpace(kind) && kind != LoopKind) Touch(workspace, kind);
-            }
-            catch
-            {
-            }
+            ChatHistory.Write(workspace, kind, entries);
+            if (!string.IsNullOrWhiteSpace(kind) && kind != LoopKind) Touch(workspace, kind);
         }
 
         /// <summary>Loop 会话与普通会话共用一个目录，但恢复时只认普通会话。</summary>
@@ -118,7 +101,7 @@ namespace OpenLoop.App
             if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(sessionId)) return;
             try
             {
-                File.Delete(PathFor(workspace, sessionId));
+                File.Delete(ChatHistory.PathFor(workspace, sessionId));
                 var all = ReadIndex();
                 if (all.RemoveAll(e => e.Id == sessionId) > 0)
                 {
@@ -190,32 +173,6 @@ namespace OpenLoop.App
             {
                 return [];
             }
-        }
-
-        private static string PathFor(string workspace, string kind = null)
-        {
-            string normalized = Path.GetFullPath(workspace.Trim()).ToLowerInvariant();
-            if (!string.IsNullOrWhiteSpace(kind)) normalized += "|" + kind;
-            string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)))[..16]
-                .ToLowerInvariant();
-            return Path.Combine(Dir, hash + ".json");
-        }
-
-        private sealed class Entry
-        {
-            public string User { get; set; }
-            public string Assistant { get; set; }
-            public string Reasoning { get; set; }
-            public string ToolLines { get; set; }
-            public int Steps { get; set; }
-            public long Ms { get; set; }
-            public List<MessageEntry> Messages { get; set; }
-        }
-
-        private sealed class MessageEntry
-        {
-            public string Role { get; set; }
-            public string Content { get; set; }
         }
 
         private sealed class IndexEntry

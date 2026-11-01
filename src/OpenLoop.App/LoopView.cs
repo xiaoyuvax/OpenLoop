@@ -33,6 +33,10 @@ namespace OpenLoop.App
         /// <summary>忙时收到的外部反馈（如 Worker 的 /complain），当前轮结束后按顺序处理。</summary>
         private readonly List<string> _pending = [];
 
+        /// <summary>账本归 I 所有：技能激活集从这里读，本进程不写账本。</summary>
+        private OpenLoop.Service.Web.LoopApiClient _loopClient;
+        private OpenLoop.Service.Web.LoopApiClient Loop => _loopClient ??= new OpenLoop.Service.Web.LoopApiClient();
+
         public LoopView()
         {
             InitializeComponent();
@@ -82,7 +86,11 @@ namespace OpenLoop.App
             _chat.ScrollToEnd();
 
             ModelCatalog.Changed += OnCatalogChanged;
-            Disposed += (_, _) => ModelCatalog.Changed -= OnCatalogChanged;
+            Disposed += (_, _) =>
+        {
+            ModelCatalog.Changed -= OnCatalogChanged;
+            _loopClient?.Dispose();
+        };
         }
 
         public void SetModel(string model)
@@ -292,7 +300,7 @@ namespace OpenLoop.App
             try
             {
                 var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit, () => ct.IsCancellationRequested, onDelta, onReasoning, ResetStream),
+                    () => loop.RunAsync(history, text, ct, ModelChoices.ContextLimit(model), () => ct.IsCancellationRequested, onDelta, onReasoning, ResetStream),
                     ct);
 
                 turn.Streaming = false;
@@ -508,9 +516,9 @@ namespace OpenLoop.App
             problems = [];
             try
             {
-                var ledger = Ledger.Open(_workspace);
-                ledger.EnsureInitialized();
-                return SkillCatalog.Sync(ledger, catalog, out problems);
+                var payload = Loop.GetActivation(_workspace);
+                if (payload?.Activation == null) return [];
+                return SkillCatalog.Active(payload.Activation, payload.Features, catalog, out problems);
             }
             catch (Exception ex)
             {

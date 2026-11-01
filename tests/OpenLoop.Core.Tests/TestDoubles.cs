@@ -37,6 +37,21 @@ namespace OpenLoop.Core.Tests
         }
     }
 
+    /// <summary>首次补全抛「上下文超限」，之后正常返回（验证按报错压缩后重试）。</summary>
+    internal sealed class OverflowOnceReasoner : IReasoner
+    {
+        public List<List<LlmMessage>> Calls { get; } = [];
+
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+        {
+            Calls.Add(messages.Select(m => new LlmMessage(m.Role, m.Content)).ToList());
+            if (Calls.Count == 1)
+                throw new InvalidOperationException(
+                    "模型接口返回 400：This model's maximum context length is 1000 tokens");
+            return Task.FromResult(new CompletionResult { Content = "完成" });
+        }
+    }
+
     internal sealed class FakeTool : ITool
     {
         public Func<ToolArgs, AgentToolResult> Handler { get; init; } = _ => AgentToolResult.Success("ok");

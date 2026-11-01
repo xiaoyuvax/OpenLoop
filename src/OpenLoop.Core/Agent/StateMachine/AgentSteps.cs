@@ -39,7 +39,7 @@ namespace OpenLoop.Core.Agent
             return AgentStepResult.Continue(new ReplaceMessagesEffect(compressed));
         }
 
-        private static async Task<List<LlmMessage>> CompressAsync(
+        internal static async Task<List<LlmMessage>> CompressAsync(
             IReadOnlyList<LlmMessage> messages, IReasoner reasoner, CancellationToken ct)
         {
             var (head, middle, tail) = AgentContext.SplitForCompression(messages, AgentContext.KeepRecentMessages);
@@ -70,6 +70,8 @@ namespace OpenLoop.Core.Agent
 
     internal sealed class InferenceStep : IAgentStep
     {
+        private const int MaxContextOverflowRetries = 2;
+
         public string Name => "inference";
 
         public async Task<AgentStepResult> RunAsync(
@@ -87,9 +89,24 @@ namespace OpenLoop.Core.Agent
 
             state.Step++;
 
-            var completion = context.OnDelta != null && context.Reasoner is IStreamingReasoner streaming
-                ? await streaming.StreamAsync(state.Messages, context.OnDelta, ct, context.OnReasoning, context.OnRestart)
-                : await context.Reasoner.CompleteAsync(state.Messages, ct);
+            CompletionResult completion;
+            try
+            {
+                completion = context.OnDelta != null && context.Reasoner is IStreamingReasoner streaming
+                    ? await streaming.StreamAsync(state.Messages, context.OnDelta, ct, context.OnReasoning, context.OnRestart)
+                    : await context.Reasoner.CompleteAsync(state.Messages, ct);
+            }
+            catch (Exception ex) when (state.ContextOverflows < MaxContextOverflowRetries
+                                       && AgentContext.IsContextOverflow(ex.Message))
+            {
+                // 服务端真实上限可能低于配置值：按报错压缩一次再重试，不要直接判任务失败。
+                state.ContextOverflows++;
+                context.OnRestart?.Invoke();
+                var compressed = await CompressionStep.CompressAsync(state.Messages, context.Reasoner, ct);
+                if (compressed == null) throw;
+                state.Result.Guards.Compressions++;
+                return AgentStepResult.Continue(new ReplaceMessagesEffect(compressed));
+            }
 
             string content = completion?.Content;
             var calls = AgentToolCallParser.TryParseAll(content);

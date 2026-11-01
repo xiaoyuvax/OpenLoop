@@ -20,8 +20,29 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenLoop.Core\OpenLoop.Core.csproj" />
+    <ProjectReference Include="..\OpenLoop.Service\OpenLoop.Service.csproj" />
+    <!-- 只为构建顺序：A/I 的可执行文件由下面的 CopyWorker 拷到 worker/，界面按同目录启动它们。 -->
+    <ProjectReference Include="..\OpenLoop.A\OpenLoop.A.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\OpenLoop.I\OpenLoop.I.csproj" ReferenceOutputAssembly="false" />
     <PackageReference Include="Puppet.Core" Version="1.7.0" />
     <PackageReference Include="Puppet.Core.WinForms" Version="1.7.0" />
+  </ItemGroup>
+
+  <Target Name="CopyWorker" AfterTargets="Build">
+    <ItemGroup>
+      <_WorkerFiles Include="..\OpenLoop.A\bin\$(Configuration)\net10.0\**\*" />
+      <_WorkerFiles Include="..\OpenLoop.I\bin\$(Configuration)\net10.0\**\*" />
+    </ItemGroup>
+    <!-- 放进 worker/ 子目录：A/I 用它们自己那份依赖，不和界面的程序集互相覆盖。 -->
+    <Copy SourceFiles="@(_WorkerFiles)"
+          DestinationFiles="@(_WorkerFiles->'$(OutDir)worker\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <ItemGroup>
+    <Using Include="OpenLoop.Service.Config" />
+    <Using Include="OpenLoop.Service.Models" />
+    <Using Include="OpenLoop.Service.Logging" />
   </ItemGroup>
 
   <!-- ChatFlow 源码与本仓库并列（../ChatFlow）时直接引用源码；单独克隆 OpenLoop 时回退到 NuGet 包。 -->
@@ -29,7 +50,7 @@
     <ProjectReference Include="..\..\..\ChatFlow\ChatFlow\ChatFlow.csproj" />
   </ItemGroup>
   <ItemGroup Condition="!Exists('..\..\..\ChatFlow\ChatFlow\ChatFlow.csproj')">
-    <PackageReference Include="ChatFlow" Version="0.1.4" />
+    <PackageReference Include="ChatFlow" Version="0.1.7" />
   </ItemGroup>
 
   <ItemGroup>

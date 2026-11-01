@@ -33,6 +33,9 @@ namespace OpenLoop.Core.Agent
         public bool AnyToolSucceeded { get; set; }
         public bool EmptyRetried { get; set; }
 
+        /// <summary>服务端上下文超限后已强制压缩的次数（压缩无效时防止无限重试）。</summary>
+        public int ContextOverflows { get; set; }
+
         public string PendingContent { get; set; }
         public string PendingReasoning { get; set; }
         public string PendingFinishReason { get; set; }

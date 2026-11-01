@@ -1,12 +1,12 @@
 using Wima.Log;
 
-namespace OpenLoop.App
+namespace OpenLoop.Service.Logging
 {
     /// <summary>
     /// 全局日志：直接用 Puppet 自带的 WimaLogger。
     /// WimaLogger 会登记进 LogBook，因此 /agent/logs 也能读到同一份日志。
     /// </summary>
-    internal static class AppLog
+    public static class AppLog
     {
         public static readonly WimaLogger Log = new("OpenLoop", logMode: LogMode.Native | LogMode.Console);
 

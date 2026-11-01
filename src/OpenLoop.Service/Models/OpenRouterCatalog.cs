@@ -1,13 +1,13 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 
-namespace OpenLoop.App
+namespace OpenLoop.Service.Models
 {
     /// <summary>
     /// OpenRouter 免费模型目录：直接查 /api/v1/models，按 pricing 为 0 过滤。
     /// 不硬编码模型 id——免费清单会变，硬编码必然过期。
     /// </summary>
-    internal sealed class ModelInfo
+    public sealed class ModelInfo
     {
         public string Id { get; init; }
         public string Name { get; init; }
@@ -18,7 +18,7 @@ namespace OpenLoop.App
         public override string ToString() => Name;
     }
 
-    internal static class OpenRouterCatalog
+    public static class OpenRouterCatalog
     {
         private static readonly HttpClient Http = new(new SocketsHttpHandler())
         {

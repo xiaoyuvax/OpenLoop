@@ -2,14 +2,15 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenLoop.Service.Models;
 
-namespace OpenLoop.App
+namespace OpenLoop.Service.Config
 {
     /// <summary>
     /// 应用设置，存放在 %APPDATA%\OpenLoop\settings.json。
     /// 密钥用当前用户 DPAPI 保护后保存，绝不写进工作目录。
     /// </summary>
-    internal sealed class ProviderConfig
+    public sealed class ProviderConfig
     {
         public string Name { get; set; } = "OpenRouter";
         public string Kind { get; set; } = "openrouter";
@@ -22,7 +23,7 @@ namespace OpenLoop.App
         public bool AutoModels => !string.Equals(Kind, "custom", StringComparison.OrdinalIgnoreCase);
     }
 
-    internal sealed class AppSettings
+    public sealed class AppSettings
     {
         public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
         public string Model { get; set; } = "openrouter/free";
@@ -164,6 +165,18 @@ namespace OpenLoop.App
             File.WriteAllText(FilePath,
                 JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }),
                 new UTF8Encoding(false));
+            // shortcut: Unix 无 DPAPI，密钥退化为 0600 设置文件；等接入系统 keyring 再换。
+            if (!OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    File.SetUnixFileMode(FilePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                }
+                catch
+                {
+                    // 文件系统不支持 unix 权限时只能放弃收紧
+                }
+            }
         }
 
         /// <summary>界面用的密钥：优先 DPAPI 存的那份，其次环境变量。</summary>
@@ -185,6 +198,11 @@ namespace OpenLoop.App
                     Encoding.UTF8.GetBytes(plain), null, DataProtectionScope.CurrentUser);
                 return Convert.ToBase64String(bytes);
             }
+            catch (PlatformNotSupportedException)
+            {
+                // 非 Windows：DPAPI 不可用，落成明文字段（Save 时把设置文件收紧到 0600）
+                return PlainPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(plain));
+            }
             catch
             {
                 return "";
@@ -194,6 +212,11 @@ namespace OpenLoop.App
         public static string Unprotect(string protectedBase64)
         {
             if (string.IsNullOrEmpty(protectedBase64)) return "";
+            if (protectedBase64.StartsWith(PlainPrefix, StringComparison.Ordinal))
+            {
+                try { return Encoding.UTF8.GetString(Convert.FromBase64String(protectedBase64[PlainPrefix.Length..])); }
+                catch { return ""; }
+            }
             try
             {
                 byte[] bytes = ProtectedData.Unprotect(
@@ -205,5 +228,7 @@ namespace OpenLoop.App
                 return "";
             }
         }
+
+        private const string PlainPrefix = "plain:";
     }
 }

@@ -1,3 +1,5 @@
+using OpenLoop.Core.Agent;
+
 namespace OpenLoop.App
 {
     /// <summary>
@@ -59,6 +61,9 @@ namespace OpenLoop.App
         private static bool LooksFree(string id)
             => !string.IsNullOrWhiteSpace(id)
                 && id.Contains("free", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>模型上下文上限：用目录/OpenCode 报的真实值，未知时回退保守默认。</summary>
+        public static int ContextLimit(string model) => ModelCatalog.ContextLimit(model);
 
         /// <summary>按提供商筛选模型；provider 为 null 表示全部。</summary>
         public static List<ModelInfo> FilterByProvider(List<ModelInfo> models, ProviderConfig provider)

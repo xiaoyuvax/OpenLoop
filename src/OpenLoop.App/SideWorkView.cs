@@ -251,7 +251,7 @@ namespace OpenLoop.App
             try
             {
                 var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, AgentContext.DefaultContextLimit,
+                    () => loop.RunAsync(history, text, ct, ModelChoices.ContextLimit(model),
                         () => ct.IsCancellationRequested, onDelta, onReasoning, ResetStream),
                     ct);
 

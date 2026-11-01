@@ -2,11 +2,12 @@ using OpenLoop.Core.OpenCode;
 using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Tools;
+using OpenLoop.Service.Config;
 
-namespace OpenLoop.App
+namespace OpenLoop.Service.Models
 {
     /// <summary>按模型 id 选择通道：opencode/* 走本机 OpenCode，其余走 OpenAI 兼容接口。</summary>
-    internal static class Reasoners
+    public static class Reasoners
     {
         public static IReasoner Create(AppSettings settings, string model, string effort, string workspace = null)
         {
@@ -29,7 +30,7 @@ namespace OpenLoop.App
         }
     }
 
-    internal static class OpenCodeTools
+    public static class OpenCodeTools
     {
         public static IEnumerable<ITool> For(string workspace, ApprovalHandler approve = null, bool askAllPermissions = true)
             => [new OpenCodeTaskTool(() => OpenCodeHub.TryClient(), workspace, OpenCodeHub.Resolve, approve, askAllPermissions)];

@@ -1,9 +1,11 @@
 using OpenLoop.Core.OpenCode;
+using OpenLoop.Service.Config;
+using OpenLoop.Service.Logging;
 
-namespace OpenLoop.App
+namespace OpenLoop.Service.Models
 {
     /// <summary>本机 OpenCode v2 服务的单例门面：探活、模型目录、按需客户端。</summary>
-    internal static class OpenCodeHub
+    public static class OpenCodeHub
     {
         private static readonly SemaphoreSlim Gate = new(1, 1);
         private static readonly ProviderConfig UiProviderConfig = new() { Name = "OpenCode", Kind = "opencode" };
@@ -103,6 +105,7 @@ namespace OpenLoop.App
                 {
                     Id = id,
                     Name = $"{model.Name} ({model.Ref.ProviderID})",
+                    ContextLength = model.Context > int.MaxValue ? int.MaxValue : (int)model.Context,
                     IsFree = model.IsFree,
                     SupportsTools = model.SupportsTools
                 });

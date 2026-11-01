@@ -1,9 +1,14 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/OpenLoop.A/OpenLoop.A.csproj" />
     <Project Path="src/OpenLoop.App/OpenLoop.App.csproj" />
     <Project Path="src/OpenLoop.Core/OpenLoop.Core.csproj" />
+    <Project Path="src/OpenLoop.I/OpenLoop.I.csproj" />
+    <Project Path="src/OpenLoop.Service/OpenLoop.Service.csproj" />
+    <Project Path="src/OpenLoop.Shell/OpenLoop.Shell.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OpenLoop.Core.Tests/OpenLoop.Core.Tests.csproj" />
+    <Project Path="tests/OpenLoop.Service.Tests/OpenLoop.Service.Tests.csproj" />
   </Folder>
 </Solution>

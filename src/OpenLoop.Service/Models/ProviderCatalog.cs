@@ -1,9 +1,10 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using OpenLoop.Service.Config;
 
-namespace OpenLoop.App
+namespace OpenLoop.Service.Models
 {
-    internal static class ProviderCatalog
+    public static class ProviderCatalog
     {
         private static readonly HttpClient Http = new(new SocketsHttpHandler())
         {

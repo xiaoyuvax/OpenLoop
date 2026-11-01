@@ -47,5 +47,23 @@ namespace OpenLoop.Core.Tests
             Assert.Empty(middle);
             Assert.Single(tail);
         }
+
+        [Theory]
+        [InlineData("模型接口返回 400：This model's maximum context length is 131072 tokens")]
+        [InlineData("provider.context_length_exceeded：Input is too long for requested model")]
+        [InlineData("the request exceeds the available context size")]
+        [InlineData("The input token count (1048577) exceeds the maximum number of tokens allowed (1048576)")]
+        [InlineData("400：上下文长度超过模型上限")]
+        public void DetectsContextOverflowErrors(string message)
+            => Assert.True(AgentContext.IsContextOverflow(message));
+
+        [Theory]
+        [InlineData("模型接口返回 429 Too Many Requests：rate limit exceeded")]
+        [InlineData("模型接口返回 401 Unauthorized：invalid api key")]
+        [InlineData("insufficient quota")]
+        [InlineData("The max_tokens parameter is invalid")]
+        [InlineData("")]
+        public void IgnoresNonOverflowErrors(string message)
+            => Assert.False(AgentContext.IsContextOverflow(message));
     }
 }

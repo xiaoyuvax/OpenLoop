@@ -193,6 +193,23 @@ namespace OpenLoop.Core.Tests
             Assert.Null(second.FinalAnswer);
         }
 
+        [Fact]
+        public async Task ContextOverflowErrorCompressesAndRetries()
+        {
+            var history = Enumerable.Range(0, 8)
+                .Select(i => new OpenLoop.Core.Messages.LlmMessage(i % 2 == 0 ? "user" : "assistant", "内容" + i))
+                .ToList();
+            var reasoner = new OverflowOnceReasoner();
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync(history, "hi");
+
+            Assert.Equal("完成", result.FinalAnswer);
+            Assert.Equal(1, result.Guards.Compressions);
+            Assert.Equal(3, reasoner.Calls.Count);
+            Assert.Contains("此前对话摘要", reasoner.Calls[2][0].Content);
+        }
+
         [Theory]
         [InlineData("我看了目录和部分源文件。项目是一个 .NET 控制台应用。让我继续检查其他文件以全面了解。")]
         [InlineData("让我继续读剩下的代码")]

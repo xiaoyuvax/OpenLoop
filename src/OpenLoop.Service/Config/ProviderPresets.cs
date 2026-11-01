@@ -1,9 +1,9 @@
-namespace OpenLoop.App
+namespace OpenLoop.Service.Config
 {
-    internal sealed record ProviderPreset(string Kind, string Name, string BaseUrl);
+    public sealed record ProviderPreset(string Kind, string Name, string BaseUrl);
 
     /// <summary>内置提供商：只预填地址，模型仍由用户拉取/添加。</summary>
-    internal static class ProviderPresets
+    public static class ProviderPresets
     {
         public static IReadOnlyList<ProviderPreset> All { get; } =
         [

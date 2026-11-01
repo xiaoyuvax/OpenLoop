@@ -17,11 +17,16 @@ namespace OpenLoop.App
         private ProviderConfig _loaded;
         private bool _filling;
 
+        /// <summary>账本归 I：技能列表与启用/停用都走它的 API。</summary>
+        private OpenLoop.Service.Web.LoopApiClient _loopClient;
+        private OpenLoop.Service.Web.LoopApiClient Loop => _loopClient ??= new OpenLoop.Service.Web.LoopApiClient();
+
         public SettingsForm(AppSettings source, string workspace = "")
         {
             _source = source ?? new AppSettings();
             _workspace = workspace ?? "";
             InitializeComponent();
+            Disposed += (_, _) => _loopClient?.Dispose();
             SelectTips.Bind(_tips, _cboLanguage, _cboTheme, _cboProvider);
             Icon = UiIcons.App;
             _colSkillOn.Render = (value, row, index) => SkillBadge(row as SkillRow);
@@ -360,12 +365,11 @@ namespace OpenLoop.App
             try
             {
                 catalog = SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath);
-                var ledger = Ledger.Open(_workspace);
-                ledger.EnsureInitialized();
-                //顺带启用首次出现的技能：新装技能默认就是激活的
-                var active = SkillCatalog.Sync(ledger, catalog, out var problems);
-                foreach (var skill in active) enabled.Add(skill.Name);
-                if (problems.Count > 0) AppLog.Warn("技能不可用：" + string.Join("；", problems));
+                //账本归 I：这里只读它的激活集（I 会顺带启用首次出现的技能）
+                var payload = Loop.GetActivation(_workspace);
+                foreach (string name in payload?.Skills ?? []) enabled.Add(name);
+                if (payload is { Problems.Count: > 0 })
+                    AppLog.Warn("技能不可用：" + string.Join("；", payload.Problems));
             }
             catch (Exception ex)
             {
@@ -395,10 +399,7 @@ namespace OpenLoop.App
             if (row == null) return;
             try
             {
-                var ledger = Ledger.Open(_workspace);
-                ledger.EnsureInitialized();
-                SkillCatalog.SetEnabled(ledger, SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath),
-                    row.Name, enabled);
+                Loop.SetSkill(_workspace, row.Name, enabled);
             }
             catch (Exception ex)
             {
