@@ -18,6 +18,11 @@ namespace OpenLoop.Service.Runtime
                 string key = Guid.NewGuid().ToString("N");
                 string temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(temp, key, new UTF8Encoding(false));
+                if (!OperatingSystem.IsWindows())
+                {
+                    try { File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+                    catch { }
+                }
                 try
                 {
                     File.Move(temp, path);

@@ -1,0 +1,33 @@
+{
+  "id": "echo",
+  "version": "1.0.0",
+  "entry": {
+    "command": "node",
+    "args": ["plugin.mjs"],
+    "timeoutMs": 30000
+  },
+  "contributions": {
+    "tools": [
+      {
+        "name": "Echo",
+        "description": "把输入原样返回；用来验证插件通道与崩溃隔离。",
+        "params": "text: string（要回显的文本）",
+        "readOnly": true
+      }
+    ],
+    "providers": [
+      {
+        "id": "local-openai",
+        "name": "本机 OpenAI 兼容端点",
+        "baseUrl": "http://127.0.0.1:18900/v1",
+        "models": ["local-model"],
+        "keyEnv": "OPENLOOP_LOCAL_KEY"
+      }
+    ]
+  },
+  "permissions": {
+    "network": false,
+    "shell": false,
+    "workspace": "read"
+  }
+}

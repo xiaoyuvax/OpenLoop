@@ -3,10 +3,11 @@ using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Tools;
 using OpenLoop.Service.Config;
+using OpenLoop.Service.Plugins;
 
 namespace OpenLoop.Service.Models
 {
-    /// <summary>按模型 id 选择通道：opencode/* 走本机 OpenCode，其余走 OpenAI 兼容接口。</summary>
+    /// <summary>按模型 id 选择通道：插件贡献 → opencode/* → 其余 OpenAI 兼容接口。</summary>
     public static class Reasoners
     {
         public static IReasoner Create(AppSettings settings, string model, string effort, string workspace = null)
@@ -14,6 +15,15 @@ namespace OpenLoop.Service.Models
             if (OpenCodeHub.Resolve(model) is { } reference)
                 return new OpenCodeReasoner(OpenCodeHub.RequireClient(), reference,
                     string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace);
+
+            string pluginWorkspace = string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace;
+            if (PluginCatalog.TryProvider(pluginWorkspace, model, out var provider))
+            {
+                string key = string.IsNullOrWhiteSpace(provider.KeyEnv)
+                    ? ""
+                    : Environment.GetEnvironmentVariable(provider.KeyEnv) ?? "";
+                return new OpenAiCompatibleReasoner(provider.BaseUrl, model, key, effort);
+            }
 
             var (baseUrl, apiKey) = settings.EndpointFor(model);
             return new OpenAiCompatibleReasoner(baseUrl, model, apiKey, effort);

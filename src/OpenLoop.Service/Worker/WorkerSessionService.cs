@@ -9,6 +9,7 @@ using OpenLoop.Core.Trace;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Logging;
 using OpenLoop.Service.Models;
+using OpenLoop.Service.Plugins;
 using OpenLoop.Service.Storage;
 
 namespace OpenLoop.Service.Worker
@@ -101,6 +102,7 @@ namespace OpenLoop.Service.Worker
             var undo = new FileUndoLog();
             var scope = new WorkspaceScope(workspace, fullAccess ? [] : null, fullAccess) { Undo = undo };
             var skillCatalog = SkillCatalog.Load(workspace, AppSettings.GlobalSkillsPath);
+            using var plugins = PluginCatalog.Load(workspace);
             string checkpoint = Snapshots.Create(workspace, "worker");
             if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
 
@@ -129,7 +131,7 @@ namespace OpenLoop.Service.Worker
             scope.Approve = approve;
             var tools = ToolRegistry.Workspace(
                 scope, approve, skills, fullAccess,
-                OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions));
+                OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions).Concat(plugins.Tools()));
 
             var trace = TraceWriter.Start(workspace, request.Tag, request.Text, request.Model);
             var ctx = new WorkerRunContext

@@ -1,6 +1,6 @@
 # 阴阳双进程架构 · 实施方案
 
-> 状态：**M0–M3 已实施并在本机验证（Windows / Debug）；M4（跨平台）、M5（插件）未开始**。
+> 状态：**M0–M3 已实施并在本机验证（Windows / Debug）；M4 跨平台产物已产出、Linux 实机未验证；M5 插件层已实施（dsh 桥未做）**。
 > 目标：把「同进程的 Worker + Loop」拆成两个独立二进制，使两者可以各自被对方替换、重启后立即生效。
 > 逐里程碑的实测记录见 §14；与本节计划的偏差见 §3 末尾「实施偏差」。
 > 现状基线见 `docs/IMPLEMENTATION.md`（M1–M3 已完成，Puppet 已接入）。
@@ -582,3 +582,93 @@ OpenLoop.A.exe --eval-run <spec.json> --out <dir>    # 跑一题、出 final.md 
   这条分支没有免费模型可完整跑一轮；
 - 更新只做了「手工 stage + restart」，Loop 演进完自动把新产物 stage 给对方的闭环还没接；
 - 崩溃循环保护（重启防抖）沿用 M0 的 `RestartGuard`（3 次/1 分钟），没在这次脚本里打出来。
+
+**2026-11-01 · M4（linux-x64 产物 / XDG / 密钥回退 / 无界面壳）**
+
+已落地：
+
+- `scripts/publish-linux.ps1`：一条命令产出 `artifacts/linux-x64/`，布局与 Windows 一致——
+  `OpenLoop`（壳）+ `worker/OpenLoop.A` + `worker/OpenLoop.I` + 各自 `wwwroot/`，全部 self-contained；
+- 无界面壳（`OpenLoop.Shell`）：默认先找 `<壳目录>/worker/OpenLoop.A`、`worker/OpenLoop.I`，再找同目录；
+  启动后打印浏览器入口 `http://127.0.0.1:19180/?key=<bus.key>`（`?key=` 换 HttpOnly Cookie）；
+  Ctrl+C 之外再注册 `SIGTERM`（systemd / 容器里能正常收摊）；
+- 密钥回退（Unix 无 DPAPI）：`AppSettings.Protect/Unprotect` 先判平台，非 Windows 直接落 `plain:` 前缀，
+  `Save` 时把 `settings.json` 收成 0600；`bus.key` 也以 0600 创建；
+- XDG：`AppPaths` / `AppSettings` / `ChatHistory` 统一用 `SpecialFolder.ApplicationData`，
+  Linux 上即 `$XDG_CONFIG_HOME/OpenLoop`（缺省 `~/.config/OpenLoop`），与 Windows 的 `%APPDATA%\OpenLoop` 同构。
+
+验证：
+
+- `dotnet publish ... -r linux-x64 --self-contained true` 对 A / I / 壳三者都成功，产物是 ELF（`7F 45 4C 46`），
+  `worker/wwwroot/index.html` 存在；修掉平台判空后发布不再报 `CA1416`；
+- 用 Windows 版壳做同布局回归（`%TEMP%\opencode\m4-shell-test.ps1`）：默认 `worker/` 命中、
+  A+I 各就绪、打印带 key 的 URL、`/api/capabilities` = `{"worker":true,"loop":true}`、页面含 `<title>`、
+  杀壳后 4 秒内 A/I 与壳全部退出（残留 0）；
+- `OpenLoop.Service.Tests` 47 通过（新增 `SettingsKeyTests`：`plain:` 前缀在任意平台都能解、垃圾值解成空）；
+  `OpenLoop.Core.Tests` 181 通过 / 1 跳过；`dotnet build OpenLoop.slnx` 0 错误、无 `CA1416`。
+
+未做 / 已知：
+
+- **Linux 实机没跑起来**：本机 WSL2 Ubuntu-22.04 无法启动（`HCS_E_HYPERV_NOT_INSTALLED`，虚拟化未启用），
+  也没有 Docker，所以验收里的「Linux 上完成一次任务与一轮 loop」尚未执行；产物与壳路径只做了 Windows 等价回归；
+- 从 Windows 拷到 Linux 后要给三个 apphost 补执行位：`chmod +x OpenLoop worker/OpenLoop.A worker/OpenLoop.I`；
+- 设置文件不能跨平台直接搬：Windows 写的 `KeyProtected` 是 DPAPI 密文，Linux 解不开（解成空），
+  要在 Linux 上重填密钥，或改用 `OPENROUTER_API_KEY` 等环境变量；反向（Linux `plain:` → Windows）可以读；
+- 只出 `linux-x64`，没有 arm64；A/I 目前依赖集相同，所以共用一个 `worker/`；
+  将来若分叉，应改成 `worker/a/` 与 `worker/i/` 两套目录；
+- `Puppet.Core.Web` 在 Linux 上只用 Kestrel 的托管实现，运行期尚未实测（发布阶段已带全 Kestrel 依赖）。
+
+**2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
+
+已落地：
+
+- 清单：`plugin.json` 带 `id`、`entry {command,args,timeoutMs}`、
+  `contributions {tools[], providers[]}`、`permissions`（声明式，不强制）；
+- 发现：`<工作区>/.openloop/plugins/<id>/` 与 `%APPDATA%\OpenLoop\plugins\<id>\`
+  （Linux 同目录规则），工作区同名优先，清单无效的目录跳过并记日志；
+- 宿主（`PluginHost`）：一个插件一个子进程，stdin/stdout 一行 JSON，
+  `method=tool.call`，应答 `result {ok,data,error}` 或 JSON-RPC `error`；
+  stderr 转日志；超时（`entry.timeoutMs`，默认 60s）杀进程；
+- 崩溃隔离：失败后**不重放本次调用**（工具可能有副作用），只丢弃进程，
+  下一次调用重新拉起；整个宿主生命周期最多重启一次，再失败就标死，
+  后续调用直接返回失败，代理循环与其他插件照常；
+- 工具注入：Worker 每次运行前加载工作区 + 全局插件，把贡献的工具接到
+  `ToolRegistry.Workspace` 的 `extra`；运行结束 Dispose 收摊；
+- 提供商注入：`Reasoners.Create` 先查插件里声明的模型（`models[]`），
+  命中就用该 `baseUrl` + `keyEnv` 环境变量，走现成的 OpenAI 兼容通道，零代码；
+- 示例：`samples/plugins/echo/`（Node，1 个 `Echo` 工具 + 1 个 OpenAI 兼容 provider 占位，
+  含安装说明与协议）；`__crash__` / `__sleep__` 两个特殊输入用于演练崩溃与超时。
+
+验证（`OpenLoop.Service.Tests` 62 通过，新增 14 条）：
+
+- 清单：空目录、工作区/全局发现、同名工作区优先、无效清单跳过、提供商大小写不敏感；
+- 宿主：正常回包、`ok=false`、非 JSON 回包、崩溃后下一次换新进程、两次失败标死、
+  用户取消不被吞；重启**不重放**同一次调用；
+- 真进程：`samples/plugins/echo` 经 Node 跑通 `hi → hi`；`__crash__` 失败后下一次
+  `alive → alive`（进程已换）；`timeoutMs=300` 时 `__sleep__` 约 0.3s 返回失败；
+- 提供商真链路：本机回环假 OpenAI 端点 + 清单 provider → `Reasoners.Create`
+  → `CompleteAsync` 得到 `pong`，请求体带 `stub-model`、`Authorization: Bearer sk-test`；
+- `dotnet build OpenLoop.slnx` 0 错误；`Core.Tests` 181 通过 / 1 跳过。
+
+dsh spike 结论（实测）：
+
+- `dsh-our-free-model` standalone 可无界面启动：
+  `node packages/standalone/cli.mjs --port 18999 --data-dir <临时目录>`，
+  启动日志打印 `API: http://127.0.0.1:18999/v1`，并把 `forwardKey` 写进
+  `<data-dir>/settings.json`；
+- `/v1/models` 不带 Bearer 返回 401，带 `Authorization: Bearer <forwardKey>`
+  返回 OpenAI 形状的模型列表（含 `context_window`），说明「provider 贡献指向本机
+  OpenAI 兼容网关」这条路成立，零代码；
+- `/v1/chat/completions`（`big-pickle`，短提示）返回 `RATE_LIMIT`
+  「Free usage limit reached」，与 OpenRouter 免费额度是同一堵墙：真实补全未验到；
+- Cordis 的 `ctx.llm` / `ctx.tools` 动态注册**没做桥接**：当前清单是静态贡献，
+  只有 `tool.call` 一个方法；要桥接需要新增握手（如 `tools.list`）和 Node 桥进程，
+  收益不足以在本轮做。结论：优先「OpenAI 端点即 provider」，tool 桥留到有真实插件需求时。
+
+未做 / 已知：
+
+- 插件工具只进 Worker 运行；Loop 构思与 Gate 考核仍只用内置工具（避免新插件影响判分）；
+- 插件模型的 id 不进模型下拉，只在按 id 解析时生效；要出现在下拉里得再接到 `ModelCatalog`；
+- `permissions` 只是声明，插件是本机进程，没有沙箱/资源限额；只应安装可信插件；
+- 插件进程的生命周期是「一次 Worker 运行」，跨轮次不保温；需要常驻时再改成按工作区缓存；
+- 现在的超时是整次调用 60s 上限，长任务插件需要自己把工作拆成多次调用。

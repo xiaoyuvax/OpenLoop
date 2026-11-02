@@ -192,16 +192,16 @@ namespace OpenLoop.Service.Config
         public static string Protect(string plain)
         {
             if (string.IsNullOrEmpty(plain)) return "";
+
+            // 非 Windows：DPAPI 不可用，落成明文字段（Save 时把设置文件收紧到 0600）
+            if (!OperatingSystem.IsWindows())
+                return PlainPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(plain));
+
             try
             {
                 byte[] bytes = ProtectedData.Protect(
                     Encoding.UTF8.GetBytes(plain), null, DataProtectionScope.CurrentUser);
                 return Convert.ToBase64String(bytes);
-            }
-            catch (PlatformNotSupportedException)
-            {
-                // 非 Windows：DPAPI 不可用，落成明文字段（Save 时把设置文件收紧到 0600）
-                return PlainPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(plain));
             }
             catch
             {
@@ -217,6 +217,8 @@ namespace OpenLoop.Service.Config
                 try { return Encoding.UTF8.GetString(Convert.FromBase64String(protectedBase64[PlainPrefix.Length..])); }
                 catch { return ""; }
             }
+
+            if (!OperatingSystem.IsWindows()) return "";
             try
             {
                 byte[] bytes = ProtectedData.Unprotect(

@@ -13,6 +13,7 @@
     <ProjectReference Include="..\OpenLoop.Core\OpenLoop.Core.csproj" />
     <PackageReference Include="Puppet.Core" Version="1.7.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <InternalsVisibleTo Include="OpenLoop.Service.Tests" />
   </ItemGroup>
 
   <!-- 唯一的静态界面：随引用方（A/I）复制到各自输出目录的 wwwroot/。 -->
