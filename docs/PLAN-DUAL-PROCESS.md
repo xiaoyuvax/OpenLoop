@@ -1014,7 +1014,49 @@ dsh spike 结论（实测）：
 结论：长会话验收（工具调用贯穿、取消、落盘、trace）在真模型上成立；剩下的是模型供给问题，
 不是链路问题。
 
-## 15. 待办（2026-11-03 记）
+## 15. 外部服务依赖（契约与实测）
+
+四类东西平行依赖，各有自己的握手；能不能被 OpenLoop 托管，决定它是「资产」还是「关卡」。
+
+| 依赖 | 谁启动 | 握手 | 鉴权 | 提供 | 缺了怎样 |
+|---|---|---|---|---|---|
+| **A / I**（随壳打包） | 壳 `Supervisor` | `runtime/{a,i}.json`（pid/bus/protocol/dir） | `bus.key` → `X-OpenLoop-Key` | 会话、工具、进化 | 壳重启；起不来自报错 |
+| **OpenCode** | 用户外部装/起 | `~/.local/state/opencode/service.json`（url/password/pid/version） | Basic 密码，`/api/info` 探活 | 模型 | `Absent/Unreachable`，不影响别家模型 |
+| **DSH** | 用户外部起 | ❌ 无握手文件（见下） | ACP：无；web：launch token→cookie→内存 peer | 插件（模型/工具）、agent | 对应能力不可用 |
+| **服务型插件**（如 OFM standalone） | 宿主按清单拉起 | 子进程 stdout 打印的 URL + 自己的 key 文件 | provider key | 模型（OpenAI 兼容） | 进程起不来就没有这组模型 |
+
+**DSH 的两个面（2026-11-03 实测）**
+
+- **web `:3080`**：launch token 是 32 字节随机、只存在进程内存，**只有 `console.log('dsh web: …?token=…')` 这一条暴露路径**；不落盘、不进环境（`DSH_WEB_URL` 是干净 origin）、没有返回它的 API。`GET /?token=` 换 v1 cookie（只够拿页面），`GET /connect?token=` 才建 **内存 peer** 并换 v2 cookie；v2 cookie 的 `id` 必须在宿主 `peers` 表里，重启即失效。所以外部伪造 cookie 无用，**要么粘贴一次 URL，要么由宿主代管 dsh 读 stdout**。
+- **ACP `dsh --profile acp`**：JSON-RPC over stdio，**不需要 token**（stdio 即信任边界）。实测 `initialize` → `session/new` 返回 `configOptions`，其中 `model` select 列出 dsh llm 注册表里的全部模型（装插件后 37 个，含 `our-free-model/*` 与 EAC 的 `minimaxai/...`）；`session/set_config_option` 选模型、`session/prompt` 跑一轮。
+  - **流式是整段的**：9.3 秒的短答和 46.8 秒的 200 字回答都只有 1 个 `agent_message_chunk`（另加 1 个 `agent_thought_chunk`、6 个 `config_option_update`、1 个 `usage_update`）。协议支持分片，是这一版 ACP 桥按「消息完成时发整条」实现。
+  - **EAC 封存只在 profile 名为 `web` / `web-desktop` / `desktop` / `tauri` 时解锁**；用别的名字（如 `acptest`）模型列表只有 27 个、没有 EAC。
+  - **插件是按 profile 加载的**：`dsh plugin --profile <p> add <pkg>` 才会进该 profile 的 `bundles`；web profile 里有的插件，acp profile 默认没有。
+
+**profile 就是插件配置面（OpenLoop 可接管）**
+
+- `profiles/<name>/package.json`：`dependencies`（装了什么）+ `dsh.profile.bundles`（组装哪些 bundle，顺序有意义）；
+- `profiles/<name>/cordis.yml`：组装后的入口列表（默认空数组，由 bundle 层拼出来）；
+- `profiles/<name>/cordis.patch.yml`：**用户/宿主可编辑的补丁层**，条目支持 `id` 定位、`config` 覆盖、`disabled: true`、insert 列表（`!!js` 表达式允许）；
+- `dsh --profile <p> --dump-config` 打组装结果、`--dump-config-schema` 打 JSON Schema（含 `disabled: boolean|!!js`），可以拿来做校验/生成。
+- 结论：让 OpenLoop 管理某个 profile，就能做插件的**启用/禁用/参数覆盖**，不需要 web UI、不需要 token。
+
+**服务型插件（OFM 为例）不需要 dsh**
+
+`node packages/standalone/cli.mjs --port 0 --no-refresh --data-dir <dir>` 实测输出：
+
+```
+our-free-model-standalone 2.5.4
+管理页面（10 分钟内一次性登录）：http://127.0.0.1:30181/#login=<token>
+API：http://127.0.0.1:30181/v1
+API Key 保存在：…\settings.json
+```
+
+`GET /v1/models` 返回 9 个模型（新 data-dir；EAC 需在它自己的 data-dir 里另做一次 GitHub 授权），`/` 是它自己的管理页。所以：**只要跑这个子进程，OpenLoop 就能把 OFM 当普通 OpenAI 兼容 provider 用，完全不需要 dsh**；dsh 只在「要 dsh 的 agent/ACP」「要看 dsh 托管的插件页」时才需要。
+
+**本轮测试产物**：`~/.dsh/profiles/` 下的 `acptest`、`web-desktop`、`acp` 三个实验 profile 已删除（`acp` 会在下次 `dsh --profile acp` 时自动重建；要用 EAC 就复制成 `web-desktop`）。测试脚本留在 `%TEMP%\opencode\acp-*.mjs`。
+
+## 16. 待办（2026-11-03 记）
 
 - ~~**长会话稳定性**~~（已跑，见 §14「长会话压测」）：20 轮真模型（`minimax-m3.1-flash`）全过，
   修掉「无限重发」「无限压缩」「system 一轮叠一份」「尾部按条数留」四个问题。
