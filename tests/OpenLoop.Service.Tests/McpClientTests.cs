@@ -83,6 +83,96 @@ namespace OpenLoop.Service.Tests
             Assert.Empty(catalog.Tools());
         }
 
+        [Fact]
+        public async Task Stdio_mcp_server_is_spawned_and_its_tools_work()
+        {
+            if (!HasNode()) return;
+            using var catalog = PluginCatalog.Load(InstallStdio("stdio-ws", timeoutMs: 5000));
+            var tool = Assert.Single(catalog.Tools().OfType<McpTool>());
+
+            Assert.Equal("stdio_echo", tool.Name);
+            var result = await tool.ExecuteAsync(Args("hi"), CancellationToken.None);
+
+            Assert.True(result.Ok, result.Error);
+            Assert.Equal("stdio:hi", result.Data);
+        }
+
+        [Fact]
+        public async Task Stdio_mcp_server_that_never_replies_times_out_and_recovers()
+        {
+            if (!HasNode()) return;
+            using var catalog = PluginCatalog.Load(InstallStdio("stdio-hang-ws", timeoutMs: 500));
+            var tool = Assert.Single(catalog.Tools().OfType<McpTool>());
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var hung = await tool.ExecuteAsync(Args("hang"), CancellationToken.None);
+            watch.Stop();
+
+            Assert.False(hung.Ok);
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"超时没有生效：{watch.Elapsed}");
+
+            // 超时后传输已经不同步，进程被杀掉，下一次调用重新起
+            var after = await tool.ExecuteAsync(Args("alive"), CancellationToken.None);
+            Assert.True(after.Ok, after.Error);
+            Assert.Equal("stdio:alive", after.Data);
+        }
+
+        private static ToolArgs Args(string text)
+            => new(new Dictionary<string, object> { ["text"] = text });
+
+        /// <summary>装一个 stdio MCP 插件（server.mjs 由假服务端生成），返回 workspace。</summary>
+        private static string InstallStdio(string name, int timeoutMs)
+        {
+            string ws = Path.Combine(Path.GetTempPath(), "openloop-mcp-" + name + "-" + Guid.NewGuid().ToString("N"));
+            string dir = Path.Combine(ws, ".openloop", "plugins", "stdio-mcp");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "server.mjs"), StdioServer);
+            string node = OperatingSystem.IsWindows() ? "node.exe" : "node";
+            File.WriteAllText(Path.Combine(dir, "plugin.json"), $$"""
+            {
+              "id": "stdio-mcp",
+              "mcp": { "command": "{{node}}", "args": ["{{dir.Replace('\\', '/')}}/server.mjs"], "timeoutMs": {{timeoutMs}} }
+            }
+            """);
+            return ws;
+        }
+
+        private static bool HasNode()
+        {
+            string name = OperatingSystem.IsWindows() ? "node.exe" : "node";
+            foreach (string dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+            {
+                if (string.IsNullOrWhiteSpace(dir)) continue;
+                if (File.Exists(Path.Combine(dir.Trim('"'), name))) return true;
+            }
+            return false;
+        }
+
+        /// <summary>stdio MCP 假服务端：一行一条 JSON-RPC；顺手吐非 JSON 日志行与通知，验证客户端只认 id 对上的应答。</summary>
+        private const string StdioServer = """
+        import readline from 'node:readline';
+        const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+        readline.createInterface({ input: process.stdin }).on('line', (line) => {
+          let req;
+          try { req = JSON.parse(line); } catch { return; }
+          if (req.id === undefined) return;
+          process.stderr.write('stub-stdio: ' + req.method + '\n');
+          if (req.method === 'tools/list') {
+            send({ jsonrpc: '2.0', id: req.id, result: { tools: [{ name: 'stdio_echo', description: 'echo over stdio',
+              inputSchema: { type: 'object', properties: { text: { type: 'string', description: '文本' } } } }] } });
+            return;
+          }
+          if (req.method === 'tools/call') {
+            if (req.params.arguments.text === 'hang') return;
+            process.stdout.write('this line is a log, not JSON\n');
+            send({ jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info', data: 'noise' } });
+            send({ jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: 'stdio:' + req.params.arguments.text }] } });
+            return;
+          }
+          send({ jsonrpc: '2.0', id: req.id, result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'stub-stdio' } } });
+        });
+        """;
+
         /// <summary>最小 MCP 服务端：一个工具 + 固定返回文本，记录密钥与最后一次请求体。</summary>
         private sealed class StubMcp : IDisposable
         {

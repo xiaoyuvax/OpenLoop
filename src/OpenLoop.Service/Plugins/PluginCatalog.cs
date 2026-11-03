@@ -181,7 +181,9 @@ namespace OpenLoop.Service.Plugins
                     yield return new PluginTool(plugin, spec, Host(plugin), Workspace);
                 }
 
-                if (plugin.Mcp is not { } mcp || string.IsNullOrWhiteSpace(mcp.Url)) continue;
+                if (plugin.Mcp is not { } mcp
+                    || (string.IsNullOrWhiteSpace(mcp.Url) && string.IsNullOrWhiteSpace(mcp.Command)))
+                    continue;
                 var client = Mcp(plugin);
                 foreach (var spec in client.ListTools())
                     yield return new McpTool(client, spec);
@@ -191,7 +193,7 @@ namespace OpenLoop.Service.Plugins
         private McpClient Mcp(PluginManifest plugin)
         {
             if (_mcp.TryGetValue(plugin.Id, out var client)) return client;
-            client = new McpClient(plugin.Mcp);
+            client = new McpClient(plugin.Mcp, Workspace);
             _mcp[plugin.Id] = client;
             return client;
         }
@@ -217,6 +219,8 @@ namespace OpenLoop.Service.Plugins
             _disposed = true;
             foreach (var host in _hosts.Values) host.Dispose();
             _hosts.Clear();
+            foreach (var client in _mcp.Values) client.Dispose();
+            _mcp.Clear();
         }
     }
 

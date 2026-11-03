@@ -15,7 +15,7 @@ namespace OpenLoop.Service.Plugins
         public PluginContributions Contributions { get; set; } = new();
         public PluginPermissions Permissions { get; set; } = new();
 
-        /// <summary>可选：接一个 MCP 服务端（当前只支持 Streamable HTTP），工具在运行时发现</summary>
+        /// <summary>可选：接一个 MCP 服务端（Streamable HTTP 或 stdio 子进程），工具在运行时发现</summary>
         public PluginMcpContribution Mcp { get; set; }
 
         /// <summary>清单所在目录（入口的相对参数与工作目录都以它为基准）。</summary>
@@ -34,7 +34,8 @@ namespace OpenLoop.Service.Plugins
 
                 bool hasTools = (manifest.Contributions?.Tools ?? []).Count > 0;
                 bool hasProviders = (manifest.Contributions?.Providers ?? []).Count > 0;
-                bool hasMcp = !string.IsNullOrWhiteSpace(manifest.Mcp?.Url);
+                bool hasMcp = !string.IsNullOrWhiteSpace(manifest.Mcp?.Url)
+                              || !string.IsNullOrWhiteSpace(manifest.Mcp?.Command);
                 if (!hasTools && !hasProviders && !hasMcp) return null;
 
                 // 只有工具贡献才需要子进程；纯 provider 清单不用起进程
@@ -107,12 +108,19 @@ namespace OpenLoop.Service.Plugins
     }
 
     /// <summary>
-    /// 可选：一个 MCP 服务端。只支持 Streamable HTTP（POST JSON-RPC，无会话头），
-    /// 工具由 <c>tools/list</c> 在运行时发现——Puppet 的 <c>/mcp</c> 就是这种。
+    /// 可选：一个 MCP 服务端。<c>url</c> 走 Streamable HTTP（POST JSON-RPC，无会话头，Puppet 的 <c>/mcp</c> 就是这种）；
+    /// <c>command</c> 走本地 stdio 子进程（每行一条 JSON-RPC）。
+    /// 工具由 <c>tools/list</c> 在运行时发现。
     /// </summary>
     public sealed class PluginMcpContribution
     {
         public string Url { get; set; }
+
+        /// <summary>stdio：启动命令（与 url 二选一）。</summary>
+        public string Command { get; set; }
+
+        public List<string> Args { get; set; } = [];
+
         public string KeyEnv { get; set; }
         public string KeyFile { get; set; }
         public int TimeoutMs { get; set; } = 60000;

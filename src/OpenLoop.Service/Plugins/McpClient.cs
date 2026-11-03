@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -8,33 +9,56 @@ using OpenLoop.Service.Logging;
 namespace OpenLoop.Service.Plugins
 {
     /// <summary>
-    /// MCP 客户端的 Streamable HTTP 传输：POST JSON-RPC，工具由 <c>tools/list</c> 发现、<c>tools/call</c> 调用。
-    /// 无会话头、无 SSE 长连接（服务端返回 SSE 时取最后一帧）。
-    /// shortcut: 只有 HTTP 传输，没有 stdio 子进程；要接本地 stdio MCP 时再补一层传输。
+    /// MCP 客户端：工具由 <c>tools/list</c> 发现、<c>tools/call</c> 调用。
+    /// 传输二选一——Streamable HTTP（POST JSON-RPC，无会话头、无 SSE 长连接，SSE 响应取最后一帧），
+    /// 或本地 stdio 子进程（每行一条 JSON-RPC，stderr 当日志）。
     /// </summary>
-    public sealed class McpClient
+    public sealed class McpClient : IDisposable
     {
         private static readonly HttpClient Http = new();
 
         private readonly string _url;
         private readonly string _key;
+        private readonly string _command;
+        private readonly List<string> _args;
+        private readonly string _cwd;
         private readonly TimeSpan _timeout;
+        private readonly SemaphoreSlim _stdioGate = new(1, 1);
         private int _nextId;
         private bool _initialized;
 
-        public McpClient(PluginMcpContribution config)
+        private Process _process;
+        private StreamWriter _stdin;
+        private StreamReader _stdout;
+
+        public McpClient(PluginMcpContribution config, string workspace = null)
         {
             _url = config?.Url?.Trim() ?? "";
             _key = config?.ResolveKey() ?? "";
+            _command = string.IsNullOrWhiteSpace(_url) ? config?.Command?.Trim() ?? "" : "";
+            _args = config?.Args ?? [];
+            _cwd = workspace;
             _timeout = TimeSpan.FromMilliseconds(config?.TimeoutMs is > 0 and var ms ? ms : 60000);
         }
 
-        public string Url => _url;
+        public string Url => string.IsNullOrWhiteSpace(_url) ? _command : _url;
+
+        public void Dispose() => DropStdio();
+
+        /// <summary>stdio 会话已经不同步：杀掉子进程，下次请求重新起。</summary>
+        private void DropStdio()
+        {
+            try { _process?.Kill(true); } catch { }
+            try { _process?.Dispose(); } catch { }
+            _process = null;
+            _stdin = null;
+            _stdout = null;
+        }
 
         /// <summary>拉一次工具清单；失败返回空并记一条日志，不抛。</summary>
         public IReadOnlyList<McpToolSpec> ListTools()
         {
-            if (string.IsNullOrWhiteSpace(_url)) return [];
+            if (string.IsNullOrWhiteSpace(_url) && string.IsNullOrWhiteSpace(_command)) return [];
             try
             {
                 Initialize();
@@ -58,7 +82,7 @@ namespace OpenLoop.Service.Plugins
             }
             catch (Exception ex)
             {
-                AppLog.Warn($"MCP 工具清单拉取失败：{_url} {ex.Message}");
+                AppLog.Warn($"MCP 工具清单拉取失败：{Url} {ex.Message}");
                 return [];
             }
         }
@@ -116,6 +140,99 @@ namespace OpenLoop.Service.Plugins
             int id = Interlocked.Increment(ref _nextId);
             string body = JsonSerializer.Serialize(new { jsonrpc = "2.0", id, method, @params = parameters });
 
+            var doc = string.IsNullOrWhiteSpace(_command)
+                ? await PostHttpAsync(body, ct).ConfigureAwait(false)
+                : await PostStdioAsync(id, body, ct).ConfigureAwait(false);
+
+            if (doc.RootElement.TryGetProperty("error", out _))
+            {
+                string message = ErrorOf(doc.RootElement) ?? "JSON-RPC error";
+                doc.Dispose();
+                throw new InvalidOperationException(message);
+            }
+            return doc;
+        }
+
+        /// <summary>stdio：一行写请求，读到 id 对上的那一行；通知（无 id）与日志行丢弃。</summary>
+        private async Task<JsonDocument> PostStdioAsync(int id, string body, CancellationToken ct)
+        {
+            await _stdioGate.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                StartStdio();
+
+                // 注意：StreamWriter 的 *Async* 写入在匿名管道上不会真正到达子进程（实测），这里用同步写。
+                _stdin.WriteLine(body);
+                _stdin.Flush();
+
+                while (true)
+                {
+                    var reading = _stdout.ReadLineAsync();
+                    string line = _timeout > TimeSpan.Zero
+                        ? await reading.WaitAsync(_timeout, ct).ConfigureAwait(false)
+                        : await reading.WaitAsync(ct).ConfigureAwait(false);
+                    if (line == null) throw new InvalidOperationException("MCP 子进程已退出");
+
+                    line = line.Trim();
+                    if (line.Length == 0 || line[0] != '{') continue;
+
+                    JsonDocument doc;
+                    try { doc = JsonDocument.Parse(line); }
+                    catch (JsonException) { continue; }
+
+                    if (!doc.RootElement.TryGetProperty("id", out var reply)
+                        || reply.ValueKind != JsonValueKind.Number
+                        || reply.GetInt32() != id)
+                    {
+                        doc.Dispose();
+                        continue;
+                    }
+                    return doc;
+                }
+            }
+            catch
+            {
+                DropStdio();
+                throw;
+            }
+            finally
+            {
+                _stdioGate.Release();
+            }
+        }
+
+        private void StartStdio()
+        {
+            if (_process != null) return;
+
+            var startInfo = new ProcessStartInfo(_command)
+            {
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                // 不能直接用 Encoding.UTF8：它会先往子进程 stdin 写 BOM，MCP 服务端解析首行 JSON 就失败
+                StandardInputEncoding = new UTF8Encoding(false),
+                CreateNoWindow = true
+            };
+            foreach (string arg in _args) startInfo.ArgumentList.Add(arg);
+            if (!string.IsNullOrWhiteSpace(_cwd) && Directory.Exists(_cwd))
+                startInfo.WorkingDirectory = _cwd;
+
+            _process = Process.Start(startInfo)
+                       ?? throw new InvalidOperationException($"MCP 子进程启动失败：{_command}");
+            _stdin = _process.StandardInput;
+            _stdout = _process.StandardOutput;
+            _process.ErrorDataReceived += (_, e) =>
+            {
+                if (!string.IsNullOrWhiteSpace(e.Data)) AppLog.Info($"MCP[{_command}] {e.Data}");
+            };
+            _process.BeginErrorReadLine();
+        }
+
+        private async Task<JsonDocument> PostHttpAsync(string body, CancellationToken ct)
+        {
             using var request = new HttpRequestMessage(HttpMethod.Post, _url)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
@@ -133,15 +250,7 @@ namespace OpenLoop.Service.Plugins
             if (!response.IsSuccessStatusCode)
                 throw new InvalidOperationException($"HTTP {(int)response.StatusCode} {Trim(payload, 200)}");
 
-            string json = Unwrap(payload);
-            var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var error))
-            {
-                string message = ErrorOf(doc.RootElement) ?? "JSON-RPC error";
-                doc.Dispose();
-                throw new InvalidOperationException(message);
-            }
-            return doc;
+            return JsonDocument.Parse(Unwrap(payload));
         }
 
         /// <summary>SSE 响应取最后一个 data: 帧；普通 JSON 原样返回。</summary>
