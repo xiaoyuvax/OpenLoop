@@ -734,6 +734,26 @@ OpenLoop.A.exe --eval-run <spec.json> --out <dir>    # 跑一题、出 final.md 
 再点一次 → `AutoEvolve: false`、状态行清空；`settings.json` 仍为 0600。
 WinForms 那一行只做了编译验证（`dotnet build` 通过），设置对话框没有实际打开看过，250% DPI 下的排版待肉眼确认。
 
+**2026-11-03 · Windows 更新通道验收（补齐 Linux 那次的缺口）**
+
+环境：`src/OpenLoop.App/bin/Debug/net10.0-windows/OpenLoop.exe` 起 WinForms 壳（自带 A+I），
+`%APPDATA%\OpenLoop\versions\a\` 先放 `old1/old2/old3` 三个假目录再放一份真实的 `v2`（33 个文件）。
+
+实测：
+
+- 换版：stage `versions\a\v2` → restart 202 → A 从 pid 26572 换到 21100、`dir=...\versions\a\v2`，
+  `current.json` 记 v2，`runtime\update-log.jsonl` 落 `ok`，`/api/capabilities` 正常；
+- **Prune**：换版成功后 `versions\a` 只剩 `v2` 与最新的 `old1`——`old2/old3` 被删，
+  即「当前版本 + 最新一份旧版」（`keep=2`）符合预期；
+- 回滚：把 `versions\a\bad\OpenLoop.A.exe` 写成一个文本文件再 stage/restart，壳判
+  「不是可执行文件」→ 退回 v2（新 pid 14152），`current.json` 不动，日志落 `rollback`；
+- 持久化：关掉整个壳再启动，A 仍从 `versions\a\v2` 起（Windows 壳本来就查 `current.json`）；
+  删掉 `versions` 目录再启动，回到随包 `worker\`；
+- 收摊后无残留进程。
+
+本次未做：只动了 A（没验 I 的换版）；10 分钟防抖这次没在 Windows 重跑（Linux 已验）；
+Linux 侧的 `Prune` 没在真实目录结构下验过（那次换版目录在 `versions` 之外，不参与清理）。
+
 **2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
 
 已落地：
