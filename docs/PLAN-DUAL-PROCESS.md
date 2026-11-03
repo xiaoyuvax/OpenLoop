@@ -1,6 +1,6 @@
 # 阴阳双进程架构 · 实施方案
 
-> 状态：**M0–M3 已实施并在本机验证（Windows / Debug）；M4 跨平台产物已产出、Linux 实机未验证；M5 插件层已实施（dsh 桥未做）**。
+> 状态：**M0–M5 已实施；M0–M3 在本机 Windows 验证，M4 已在 WSL2 Ubuntu-22.04 实机验收；M5 的 dsh 桥未做**。
 > 目标：把「同进程的 Worker + Loop」拆成两个独立二进制，使两者可以各自被对方替换、重启后立即生效。
 > 逐里程碑的实测记录见 §14；与本节计划的偏差见 §3 末尾「实施偏差」。
 > 现状基线见 `docs/IMPLEMENTATION.md`（M1–M3 已完成，Puppet 已接入）。
@@ -611,12 +611,33 @@ OpenLoop.A.exe --eval-run <spec.json> --out <dir>    # 跑一题、出 final.md 
 
 - **Linux 实机没跑起来**：本机 WSL2 Ubuntu-22.04 无法启动（`HCS_E_HYPERV_NOT_INSTALLED`，虚拟化未启用），
   也没有 Docker，所以验收里的「Linux 上完成一次任务与一轮 loop」尚未执行；产物与壳路径只做了 Windows 等价回归；
+  （2026-11-03 已补跑，见下面「M4 实机验收」）
 - 从 Windows 拷到 Linux 后要给三个 apphost 补执行位：`chmod +x OpenLoop worker/OpenLoop.A worker/OpenLoop.I`；
 - 设置文件不能跨平台直接搬：Windows 写的 `KeyProtected` 是 DPAPI 密文，Linux 解不开（解成空），
   要在 Linux 上重填密钥，或改用 `OPENROUTER_API_KEY` 等环境变量；反向（Linux `plain:` → Windows）可以读；
 - 只出 `linux-x64`，没有 arm64；A/I 目前依赖集相同，所以共用一个 `worker/`；
   将来若分叉，应改成 `worker/a/` 与 `worker/i/` 两套目录；
 - `Puppet.Core.Web` 在 Linux 上只用 Kestrel 的托管实现，运行期尚未实测（发布阶段已带全 Kestrel 依赖）。
+
+**2026-11-03 · M4 实机验收（WSL2 Ubuntu-22.04）**
+
+环境：WSL2 Ubuntu-22.04（Linux 6.18 x64），把 `artifacts/linux-x64/` 整个拷到 `/root/openloop-test`，
+对三个 apphost `chmod +x`，密钥经 `OPENROUTER_API_KEY` 环境变量注入。
+
+实测：
+
+- `./OpenLoop` 起壳，`~/.config/OpenLoop/runtime/{a,i}.json` 数秒内就绪（a=19180、i=19181），`bus.key` 为 0600；
+- `/api/capabilities`：A = `{"worker":true,"loop":true}`，I = `{"worker":false,"loop":true}`；两边共用一份 `wwwroot`，页面 `<title>OpenLoop</title>`；
+- Windows 浏览器经 WSL localhost 转发打开 `http://127.0.0.1:19180/?key=…`：新建会话（`/root/uiwork`）→ 发「创建 ui-note.txt」
+  → `done · ok · 1 步 · v1`，`WriteFile` 工具行正常渲染，文件内容 `hello-from-linux-ui`（19 字节）；
+- Loop 面板选 `/root/olwork`（含 `calc-file` 考核题）→ 演进：`proposing → evaluating → done`，基线 1/1、候选 1/1、平局保留旧版；
+  `.openloop/eval/runs/` 两轮都落 `calc.txt=42`，报告 `binary = 1.0.0+0a9fb14…`，即 Gate 起的是 `worker/OpenLoop.A --eval-run`，不是同进程；
+- SIGTERM 杀壳后 A/I 都正常退出（残留 0）。
+
+顺带修：`LoopAgent.BuildPacket` 的输出样例只给了 `{"enabled":true}`，免费模型于是给 `limit.steps`/`limit.tool_result`/`compress.at`
+也塞 `enabled`，被 `CandidateValidator` 判非法、整轮作废；样例后补一句参数表（guard 用 `enabled`/`max`，limit 只用 `value`，规则不带 params）。
+
+本次未做：没跑出「候选优于基线 → 采纳」的正向样本（免费档候选质量不稳定）；只验证 NAT + localhost 转发，未测 mirrored 网络模式。
 
 **2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
 

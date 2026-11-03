@@ -91,6 +91,7 @@ namespace OpenLoop.Core.Loop
             sb.AppendLine("# 输出格式");
             sb.AppendLine("只输出一个 JSON 对象，不要解释：");
             sb.AppendLine("{\"note\":\"一句话说明这轮想改善什么\",\"features\":[{\"id\":\"...\",\"params\":{\"enabled\":true}}]}");
+            sb.AppendLine("参数只认：guard 特征 enabled（部分可加 max），limit 特征只有 value；规则不带 params。");
             sb.AppendLine("features 是**完整快照**：要启用的全部列出；没列出的即停用。");
             sb.AppendLine("一个都不改就等于没有候选，这轮什么也不会发生。");
             return sb.ToString();
