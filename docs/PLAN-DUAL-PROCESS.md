@@ -691,6 +691,35 @@ OpenLoop.A.exe --eval-run <spec.json> --out <dir>    # 跑一题、出 final.md 
 本次未做：「新版本」是同版本复制体，没有真正不同版本的构建产物；Windows 侧同链路未复测；
 `VersionStore.Prune`（每个角色只留两份）没在真实目录结构下验证过。
 
+**2026-11-03 · 事件驱动自动演进（同上环境）**
+
+此前 Loop 只有点「演进」或 `POST /api/loop/evolve` 才会跑，「事件驱动、可自主启动」一直没落地。
+
+已落地：
+
+- `AppSettings`：`autoEvolve`（默认**关**）、`autoEvolveRuns`（新证据条数，默认 5）、
+  `autoEvolveCooldownMinutes`（默认 60）、`autoEvolvePerDay`（每工作区每天上限，默认 3）；
+- 触发点：A 每轮跑完把记录投进 `.openloop/spool/`，I 的 `/api/loop/spool/drain` 收到新记录后调
+  `LoopService.TryAutoEvolve`（不是定时器，靠真实证据触发）；
+- 判据是纯函数 `AutoEvolve.ShouldStart`（开关 / 新证据 / 冷却 / 每日上限），冷却与配额记在
+  `<工作区>/.openloop/loop/auto.json`（`day`、`count`、`at`、`runs`）；
+- 护栏：同一工作区演进在跑就不启动、没有默认模型不启动、没有考核题不启动、并发 drain 用集合去重。
+
+实测：
+
+- `settings.json` 开 `autoEvolve`、`runs=1`、`cooldown=60`：跑一轮 Worker（auto1）后**没有发任何 POST**，
+  `/api/loop/evolve` 自己变成 `running / proposing`，`auto.json` 落 `{count:1, runs:6}`；
+  这一轮最后 `error: 模型接口返回 429`（免费额度到顶）——触发链是对的，模型调用没成功；
+- 再跑一轮（auto2）：I 日志 `自动演进暂缓：冷却中，11:06 后再试`，`auto.json` 不变；
+- 换到没有考核题的工作区（`/root/uiwork`）：日志 `自动演进跳过：没有考核题`，Loop 仍是 `idle`；
+- `AutoEvolveTests` 5 条覆盖开关、证据不足、冷却、跨日重置、上限为 0。
+
+未做 / 已知：
+
+- 没跑出一次**成功**的自动轮（撞 429），成功轮的证据仍来自手动触发那几次；
+- 自动轮用 `settings.model` 的默认模型，没有「只许免费档」的硬限制；WinForms 也还没有开关，
+  要开就编辑 `settings.json`（默认关就是怕不打招呼地花钱）。
+
 **2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
 
 已落地：

@@ -30,6 +30,18 @@ namespace OpenLoop.Service.Config
         public string KeyProtected { get; set; } = "";
         public string Workspace { get; set; } = "";
 
+        /// <summary>事件驱动：攒够新证据就自己开一轮演进（默认关，会花模型调用）。</summary>
+        public bool AutoEvolve { get; set; }
+
+        /// <summary>自动演进要攒多少条新的运行记录。</summary>
+        public int AutoEvolveRuns { get; set; } = 5;
+
+        /// <summary>两次自动演进之间的冷却分钟数。</summary>
+        public int AutoEvolveCooldownMinutes { get; set; } = 60;
+
+        /// <summary>每个工作区每天最多自动跑几轮。</summary>
+        public int AutoEvolvePerDay { get; set; } = 3;
+
         /// <summary>多提供商配置；旧的单 BaseUrl/KeyProtected 仍作为回退。</summary>
         public List<ProviderConfig> Providers { get; set; } = [];
 

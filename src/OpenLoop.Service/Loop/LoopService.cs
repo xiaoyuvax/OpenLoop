@@ -51,6 +51,7 @@ namespace OpenLoop.Service.Loop
     {
         private readonly object _lock = new();
         private readonly Dictionary<string, Job> _jobs = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _autoStarting = new(StringComparer.OrdinalIgnoreCase);
 
         public LoopEvolveState GetState(string workspace)
         {
@@ -170,7 +171,73 @@ namespace OpenLoop.Service.Loop
                 }
                 RunSpool.Remove(path);
             }
+            if (drained > 0) TryAutoEvolve(ledger.Workspace);
             return drained;
+        }
+
+        /// <summary>
+        /// 事件驱动入口：新运行记录进来时看一眼要不要自己开一轮。
+        /// 开关/门槛/冷却/每日上限都在 settings 里，默认关。
+        /// </summary>
+        private void TryAutoEvolve(string workspace)
+        {
+            var settings = AppSettings.Load();
+            if (!settings.AutoEvolve) return;
+
+            string key = Normalize(workspace);
+            lock (_lock)
+            {
+                if (_jobs.TryGetValue(key, out var job) && job.State.State == "running") return;
+                if (!_autoStarting.Add(key)) return;
+            }
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(settings.Model))
+                {
+                    AppLog.Info("自动演进跳过：没有默认模型");
+                    return;
+                }
+
+                var ledger = Ledger.Open(workspace);
+                int runs = ledger.Runs().Count;
+                var state = AutoEvolve.Load(workspace);
+                var now = DateTimeOffset.Now;
+
+                if (TaskSet.Load(ledger.EvalDir).Tasks.Count == 0)
+                {
+                    AppLog.Info("自动演进跳过：没有考核题");
+                    return;
+                }
+
+                if (!AutoEvolve.ShouldStart(
+                        settings.AutoEvolve, settings.AutoEvolveRuns,
+                        settings.AutoEvolveCooldownMinutes, settings.AutoEvolvePerDay,
+                        state, runs, now, out string reason))
+                {
+                    AppLog.Info($"自动演进暂缓：{reason}");
+                    return;
+                }
+
+                string day = now.ToString("yyyy-MM-dd");
+                AutoEvolve.Save(workspace, new AutoEvolveState
+                {
+                    Day = day,
+                    Count = (state.Day == day ? state.Count : 0) + 1,
+                    At = now.ToString("O"),
+                    Runs = runs
+                });
+                AppLog.Info($"自动演进启动：{workspace}（{runs} 条运行记录）");
+                StartEvolve(workspace, settings.Model, "");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("自动演进触发失败", ex);
+            }
+            finally
+            {
+                lock (_lock) _autoStarting.Remove(key);
+            }
         }
 
         private async Task RunAsync(Job job, string model, string effort)
