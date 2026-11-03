@@ -637,7 +637,36 @@ OpenLoop.A.exe --eval-run <spec.json> --out <dir>    # 跑一题、出 final.md 
 顺带修：`LoopAgent.BuildPacket` 的输出样例只给了 `{"enabled":true}`，免费模型于是给 `limit.steps`/`limit.tool_result`/`compress.at`
 也塞 `enabled`，被 `CandidateValidator` 判非法、整轮作废；样例后补一句参数表（guard 用 `enabled`/`max`，limit 只用 `value`，规则不带 params）。
 
-本次未做：没跑出「候选优于基线 → 采纳」的正向样本（免费档候选质量不稳定）；只验证 NAT + localhost 转发，未测 mirrored 网络模式。
+本次未做：只验证 NAT + localhost 转发，未测 mirrored 网络模式。
+
+**2026-11-03 · 采纳分支验收（同一 WSL2 环境）**
+
+目的：`proposing → evaluating → done` 只证明「拒绝」这条；「候选优于基线 → 采纳 v2 → Worker 下一轮用 v2」这一半没跑过。
+
+搭法：新工作区 `/root/adoptwork`，`defs/v1.json` 用完整默认集但把 `limit.steps` 压到 1；
+考核题 `token-copy` 要求「先 ReadFile 读 `secret.txt` 的随机令牌，再 WriteFile 写到 `token.txt`」——
+1 步跑不完，8 步可以。
+
+实测（两轮演进，第二轮采纳）：
+
+- 第一轮：基线 0/1、候选 0/1（免费模型那一跑没落笔）→ 平局保留 v1；
+- 第二轮：基线 0/1、候选 1/1 → `adopted=true`，`.openloop/defs/v2.json` 出现（`version=2, by=loop`），
+  账本落 `verdict: adopted, base=v1, result=v2`；
+- 采纳当次证据 `run.json`：`version=2, passed=true, steps=2, outcome=ok, binary=1.0.0+5ee2d49…`；
+- 同工作区再开一个 Worker 会话：`activationVersion=v2`，两笔工具调用 `ReadFile → WriteFile`，
+  `token.txt` 与 `secret.txt` 逐字节相同——说明采纳后的激活集真的被 A 读到了。
+
+说明：免费模型自己不会把 `limit.steps` 抬上去（多轮都提「加规则/加护栏」），所以这一轮用
+`settings.json → loopCommand`（本项目既有的「构思端换外部进程」开关）指向一个固定输出候选的脚本，
+让 Gate 的采纳逻辑能在真实模型、真实二进制下被验证；验证完已删掉该设置与脚本。
+不这么做就得等一个会自己调阈值的模型，属于模型运气，不是代码路径。
+
+同轮修掉两个真实缺陷：
+
+- `LoopAgent.Normalize`：模型给 `limit.*` 塞 `enabled` 时，`true` 视为冗余去掉、`false` 当停用，
+  不再让整轮候选被校验打回（三次实测里每次都栽在这个字段上）；
+- `AgentTaskRunner`：单题模型调用抛异常（空 body / 429 / 截断 JSON）不再带走整轮演进，
+  记成「调用失败」的未通过题目，原因写进该题 `run.json`；取消仍然照常向上抛。
 
 **2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
 

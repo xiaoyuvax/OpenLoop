@@ -131,13 +131,14 @@ namespace OpenLoop.Core.Loop
                 Note = dto.Note,
                 Features = dto.Features
                     .Where(f => f?.Id != null)
-                    .Select(f => new FeatureRef
+                    .Select(f => Normalize(new FeatureRef
                     {
                         Id = f.Id,
                         Params = features.TryGetValue(f.Id, out var known) && known.Kind == "rule"
                             ? null
                             : f.Params
-                    })
+                    }, features))
+                    .Where(reference => reference != null)
                     .ToList()
             };
 
@@ -149,6 +150,23 @@ namespace OpenLoop.Core.Loop
                 Problems = problems,
                 Error = problems.Count > 0 ? "候选不合法" : null
             };
+        }
+
+        /// <summary>limit 特征没有 enabled 参数：模型顺手写 true 时当冗余去掉，写 false 等于不启用。</summary>
+        private static FeatureRef Normalize(
+            FeatureRef reference, IReadOnlyDictionary<string, FeatureRecord> features)
+        {
+            if (reference.Params is not { Count: > 0 }
+                || !reference.Params.TryGetValue("enabled", out var enabled)
+                || !features.TryGetValue(reference.Id, out var feature)
+                || feature.Kind != "limit")
+                return reference;
+
+            if (enabled.ValueKind == JsonValueKind.False) return null;
+
+            var rest = new Dictionary<string, JsonElement>(reference.Params, StringComparer.Ordinal);
+            rest.Remove("enabled");
+            return new FeatureRef { Id = reference.Id, Params = rest.Count == 0 ? null : rest };
         }
 
         private static string RenderParams(FeatureRef reference)

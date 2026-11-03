@@ -1,6 +1,8 @@
 using System.Text.Json;
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Loop;
+using OpenLoop.Core.Messages;
+using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Store;
 using OpenLoop.Core.Tools;
 using Xunit;
@@ -325,6 +327,29 @@ public sealed class GateTests : IDisposable
     }
 
     [Fact]
+    public async Task LoopAgent_drops_redundant_enabled_on_limit_features()
+    {
+        var ledger = NewLedger();
+        var features = Map(ledger);
+
+        var on = new ScriptedReasoner("""
+        {"note":"抬高步数","features":[{"id":"limit.steps","params":{"enabled":true,"value":60}}]}
+        """);
+        var boosted = await new LoopAgent(on).ProposeAsync("packet", ledger.Current, features);
+        Assert.Null(boosted.Error);
+        var reference = Assert.Single(boosted.Candidate.Features);
+        Assert.Equal(["value"], reference.Params.Keys);
+        Assert.Equal(60, reference.Params["value"].GetInt32());
+
+        var off = new ScriptedReasoner("""
+        {"note":"x","features":[{"id":"limit.steps","params":{"enabled":false,"value":60}},{"id":"guard.claim"}]}
+        """);
+        var dropped = await new LoopAgent(off).ProposeAsync("packet", ledger.Current, features);
+        Assert.Null(dropped.Error);
+        Assert.DoesNotContain(dropped.Candidate.Features, f => f.Id == "limit.steps");
+    }
+
+    [Fact]
     public void BuildPacket_includes_rule_text_for_proposer()
     {
         var ledger = NewLedger();
@@ -367,5 +392,32 @@ public sealed class GateTests : IDisposable
         Assert.Equal("ok", File.ReadAllText(Path.Combine(dir, "hello.txt")));
         Assert.True(File.Exists(Path.Combine(dir, "final.md")));
         Assert.True(File.Exists(Path.Combine(dir, "run.json")));
+    }
+
+    [Fact]
+    public async Task AgentTaskRunner_records_failed_run_instead_of_aborting()
+    {
+        var ledger = NewLedger();
+        var runner = new AgentTaskRunner(_ => new ThrowingReasoner("模型返回空 body"),
+            Map(ledger), _root, Path.Combine(_root, ".openloop", "eval"));
+        var task = new EvalTask
+        {
+            Id = "any",
+            Prompt = "随便是啥",
+            Checks = [new TaskCheck { Type = "file_exists", Path = "hello.txt" }]
+        };
+
+        var outcome = await runner.RunAsync(task, ledger.Current, CancellationToken.None);
+
+        Assert.False(outcome.Passed);
+        Assert.Contains("调用失败", outcome.Detail);
+        string run = File.ReadAllText(Path.Combine(_root, outcome.EvidenceDir, "run.json"));
+        Assert.Contains("\"outcome\": \"error\"", run);
+    }
+
+    private sealed class ThrowingReasoner(string message) : IReasoner
+    {
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+            => throw new InvalidOperationException(message);
     }
 }

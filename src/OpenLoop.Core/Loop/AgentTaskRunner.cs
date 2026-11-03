@@ -72,24 +72,42 @@ namespace OpenLoop.Core.Loop
                 _workspaceRoot);
             var history = new List<LlmMessage> { new("system", systemPrompt) };
 
-            var result = await loop.RunAsync(history, task.Prompt, ct, _contextLimit);
-            var (passed, detail) = TaskJudge.Evaluate(dir, task.Checks);
-            string final = result.FinalAnswer ?? "";
+            var result = (AgentRunResult)null;
+            string failure = null;
+            try
+            {
+                result = await loop.RunAsync(history, task.Prompt, ct, _contextLimit);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // 单题的模型/网络故障不该让整轮演进作废：记成未通过，原因进证据
+                failure = "调用失败：" + ex.Message;
+            }
+
+            var (passed, detail) = failure == null
+                ? TaskJudge.Evaluate(dir, task.Checks)
+                : (false, failure);
+            string final = result?.FinalAnswer ?? "";
 
             File.WriteAllText(Path.Combine(dir, "final.md"), final, new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, "run.json"), JsonSerializer.Serialize(new
             {
                 task = task.Id,
                 version = activation.Version,
-                outcome = result.BudgetExhausted ? "budget"
+                outcome = result == null ? "error"
+                    : result.BudgetExhausted ? "budget"
                     : result.StoppedByUser || result.StoppedByGuard ? "stopped"
                     : "ok",
-                steps = result.Steps.Count,
-                cost = result.ChatCost,
+                steps = result?.Steps.Count ?? 0,
+                cost = result?.ChatCost,
                 passed,
                 detail,
                 skills = skills.Select(s => new { name = s.Name, sha256 = s.Sha256, source = s.Source }).ToArray(),
-                guards = result.Guards,
+                guards = result?.Guards,
                 systemPrompt = new { sha256 = SystemPromptBuilder.Fingerprint(systemPrompt), chars = systemPrompt.Length },
                 binary = RuntimeInfo.Version
             }, ReportJson), new UTF8Encoding(false));
@@ -98,8 +116,8 @@ namespace OpenLoop.Core.Loop
             {
                 Passed = passed,
                 Detail = detail,
-                Cost = result.ChatCost,
-                Steps = result.Steps.Count,
+                Cost = result?.ChatCost,
+                Steps = result?.Steps.Count ?? 0,
                 EvidenceDir = Path.GetRelativePath(_workspaceRoot, dir).Replace('\\', '/')
             };
         }
