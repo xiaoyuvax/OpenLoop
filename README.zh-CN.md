@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-OpenLoop 是一套自演进的 agent 设施：**Worker** 面向用户干活，**Loop** 观察、收集证据，并迭代出下一个版本的 Worker。两者同进程、同生命周期，但节奏不同——Worker 跟任务走，Loop 由事件驱动。
+OpenLoop 是一套自演进的 agent 设施：**Worker** 面向用户干活，**Loop** 观察、收集证据，并迭代出下一个版本的 Worker。两者各自是独立进程（A / I，同一个壳拉起与收摊），节奏不同——Worker 跟任务走，Loop 由事件驱动。
 
 OpenLoop **不是 agent 本身**，而是 agent 运行的设施。名字里的「Open」指环不闭合：世界（和用户）始终是环的一部分。
 

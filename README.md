@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-OpenLoop is a self-evolving agent facility: a **Worker** does the actual work for the user, while a **Loop** observes, collects evidence, and iterates on the next version of the Worker. They share one process and one lifetime, but run on different rhythms — the Worker follows tasks, the Loop is event-driven.
+OpenLoop is a self-evolving agent facility: a **Worker** does the actual work for the user, while a **Loop** observes, collects evidence, and iterates on the next version of the Worker. They run as two separate processes (A / I, spawned and stopped by one shell) on different rhythms — the Worker follows tasks, the Loop is event-driven.
 
 OpenLoop is **not an agent itself**; it is the facility agents run inside. The "Open" in the name means the loop never closes: the world (and the user) always stays part of it.
 

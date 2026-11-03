@@ -346,7 +346,7 @@ OpenLoop.A.exe --eval-run <spec.json> --out <dir>    # 跑一题、出 final.md 
 - `stage` / `restart`、版本目录、回滚 → M3；
 - Job Object（当前只有 1s 轮询守护）；
 - A/I 的 Puppet 接入（`--puppet`）；
-- `CHARTER.md` §12 改写尚未落笔。
+- ~~`CHARTER.md` §12 改写尚未落笔~~ → 2026-11-03 已落笔：charter 4，§12「成对更替」改为双进程各自可替换、协议号对齐。
 
 现有 `OpenLoop.App` 未改动，仍是今天的行为；M0 只是把两个后台进程与壳立起来。
 

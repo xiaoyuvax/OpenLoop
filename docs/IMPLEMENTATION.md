@@ -1,8 +1,8 @@
 # OpenLoop 实施方案
 
-> 对应 `CHARTER.md` charter/3。本文是实现计划，不是规范。
+> 对应 `CHARTER.md` charter/4。本文是实现计划，不是规范。
 > 范围：M1（可工作的通用 WinForms agent，含共用对话控件抽取）。M2/M3 只列形状。
-> 未完成工作与跨机器交接见 `docs/PLAN-NEXT.md`。
+> M4（跨平台产物）与 M5（插件层）、双进程现状与逐条验收见 `docs/PLAN-DUAL-PROCESS.md`。
 
 ---
 
@@ -443,7 +443,8 @@ public sealed class AgentPolicy
 - 对话历史持久化：`App\ChatStore`
 - 验收：`ReasonerTests` 覆盖成本解析、SSE 解析、外部进程往返与退出码
 
-**未实现**：Puppet 接入、VeniceMan 改造（M1.5）。
+**未实现**：VeniceMan 改造（M1.5）。Puppet 接入已在后续里程碑完成：A/I 默认在 loopback 上启用，
+key 落在 `%APPDATA%\OpenLoop\puppet.key`，见 `docs/PLAN-DUAL-PROCESS.md`。
 
 **考核题格式**（`.openloop/eval/tasks/*.json`，由 User 提供）：
 
