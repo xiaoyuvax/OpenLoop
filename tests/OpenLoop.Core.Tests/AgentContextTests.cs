@@ -48,6 +48,36 @@ namespace OpenLoop.Core.Tests
             Assert.Single(tail);
         }
 
+        [Fact]
+        public void SplitCapsTheTailByTokensNotJustMessageCount()
+        {
+            // 各 ~400 token 的长消息：按条数会留满 6 条，压缩就再也降不下去
+            var messages = Enumerable.Range(0, 10)
+                .Select(_ => new LlmMessage("user", new string('話', 400)))
+                .ToList();
+
+            var (_, middle, tail) = AgentContext.SplitForCompression(messages, 6, 600);
+            Assert.Single(tail);
+            Assert.Equal(9, middle.Count);
+
+            var (_, _, looseTail) = AgentContext.SplitForCompression(messages, 6);
+            Assert.Equal(6, looseTail.Count);
+        }
+
+        [Fact]
+        public void SplitAlwaysKeepsOneMessageEvenIfItBlowsTheBudget()
+        {
+            var messages = Enumerable.Range(0, 7)
+                .Select(_ => new LlmMessage("user", "a"))
+                .Append(new LlmMessage("assistant", new string('話', 900)))
+                .ToList();
+
+            var (_, middle, tail) = AgentContext.SplitForCompression(messages, 6, 100);
+
+            Assert.Single(tail);
+            Assert.Equal(7, middle.Count);
+        }
+
         [Theory]
         [InlineData("模型接口返回 400：This model's maximum context length is 131072 tokens")]
         [InlineData("provider.context_length_exceeded：Input is too long for requested model")]

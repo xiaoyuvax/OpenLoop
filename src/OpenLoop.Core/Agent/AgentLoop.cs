@@ -57,7 +57,8 @@ namespace OpenLoop.Core.Agent
             Func<bool> shouldStop = null,
             Action<string> onDelta = null,
             Action<string> onReasoning = null,
-            Action onRestart = null)
+            Action onRestart = null,
+            Action<IReadOnlyList<LlmMessage>, int> onRequest = null)
             => new()
             {
                 Tools = _tools,
@@ -70,6 +71,7 @@ namespace OpenLoop.Core.Agent
                 OnRestart = onRestart,
                 OnStep = _onStep,
                 OnToolStart = _onToolStart,
+                OnRequest = onRequest,
                 ConfirmContinue = _confirmContinue
             };
 
@@ -84,10 +86,11 @@ namespace OpenLoop.Core.Agent
         public async Task<AgentRunResult> RunAsync(
             IReadOnlyList<LlmMessage> history, string userMessage,
             CancellationToken ct = default, int contextLimit = 0, Func<bool> shouldStop = null,
-            Action<string> onDelta = null, Action<string> onReasoning = null, Action onRestart = null)
+            Action<string> onDelta = null, Action<string> onReasoning = null, Action onRestart = null,
+            Action<IReadOnlyList<LlmMessage>, int> onRequest = null)
         {
             var state = CreateState(history, userMessage);
-            var context = CreateContext(contextLimit, shouldStop, onDelta, onReasoning, onRestart);
+            var context = CreateContext(contextLimit, shouldStop, onDelta, onReasoning, onRestart, onRequest);
             var result = await CreateMachine().RunAsync(state, context, ct);
             result.Transcript = state.Messages;
             return result;

@@ -36,6 +36,7 @@ namespace OpenLoop.Core.Trace
 
         private StreamWriter _messages;
         private StreamWriter _steps;
+        private StreamWriter _requests;
         private IReadOnlyList<SkillInfo> _skills;
         private IReadOnlyList<string> _skillProblems;
         private string _systemPromptHash;
@@ -95,8 +96,28 @@ namespace OpenLoop.Core.Trace
             }
         }
 
-        public void Step(AgentStepRecord record)
+        /// <summary>
+        /// 记录一次真正发给模型的消息（含压缩后的历史与 system）。
+        /// messages.jsonl 只记对话两端，看不到压缩实际发了什么，这一份补上。
+        /// </summary>
+        public void Request(IReadOnlyList<LlmMessage> messages, int tokens)
         {
+            lock (_gate)
+            {
+                if (_finished) return;
+                _requests ??= new StreamWriter(Path.Combine(DirectoryPath, "requests.jsonl"), false,
+                    new UTF8Encoding(false));
+                _requests.WriteLine(JsonSerializer.Serialize(new
+                {
+                    at = DateTime.Now,
+                    tokens,
+                    messages = (messages ?? []).Select(m => new { role = m.Role, content = m.Content }).ToArray()
+                }, LineJson));
+                _requests.Flush();
+            }
+        }
+
+        public void Step(AgentStepRecord record)        {
             lock (_gate)
             {
                 if (_finished) return;
@@ -123,8 +144,10 @@ namespace OpenLoop.Core.Trace
 
                 _messages?.Dispose();
                 _steps?.Dispose();
+                _requests?.Dispose();
                 _messages = null;
                 _steps = null;
+                _requests = null;
 
                 File.WriteAllText(Path.Combine(DirectoryPath, "final.md"), finalAnswer ?? "",
                     new UTF8Encoding(false));
@@ -159,8 +182,10 @@ namespace OpenLoop.Core.Trace
             {
                 _messages?.Dispose();
                 _steps?.Dispose();
+                _requests?.Dispose();
                 _messages = null;
                 _steps = null;
+                _requests = null;
                 _finished = true;
             }
         }

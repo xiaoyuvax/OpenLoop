@@ -216,6 +216,24 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task Long_history_is_compressed_below_the_threshold()
+        {
+            // 尾部按 token 留（这里预算 = 4000/4 = 1000），压缩后才可能真的降到阈值以下
+            var history = Enumerable.Range(0, 12)
+                .Select(i => new OpenLoop.Core.Messages.LlmMessage(
+                    i % 2 == 0 ? "user" : "assistant", new string('話', 200)))
+                .ToList();
+            var reasoner = new SummarizeReasoner(new string('摘', 20));
+            var loop = Loops.Build(new FakeTool(), reasoner, new AgentPolicy { CompressAt = 0.25 });
+
+            var result = await loop.RunAsync(history, "hi", contextLimit: 4000);
+
+            Assert.True(result.Guards.Compressions >= 1, "长历史没有触发压缩");
+            Assert.Contains(result.Transcript,
+                m => (m.Content ?? "").StartsWith(AgentContext.SummaryPrefix, StringComparison.Ordinal));
+        }
+
+        [Fact]
         public async Task ContextOverflowErrorCompressesAndRetries()
         {
             var history = Enumerable.Range(0, 8)

@@ -1,3 +1,4 @@
+using OpenLoop.Core.Messages;
 using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Tools;
 
@@ -21,6 +22,9 @@ namespace OpenLoop.Core.Agent
         public Action OnRestart { get; init; }
         public Action<AgentStepRecord> OnStep { get; init; }
         public Action<string, Dictionary<string, object>> OnToolStart { get; init; }
+
+        /// <summary>每次真正调用模型前回调：实际发送的消息与估算 token（供 trace 记录）。</summary>
+        public Action<IReadOnlyList<LlmMessage>, int> OnRequest { get; init; }
 
         /// <summary>需要宿主确认时调用；返回 false 表示停止。为 null 时直接停止。</summary>
         public Func<string, bool> ConfirmContinue { get; init; }

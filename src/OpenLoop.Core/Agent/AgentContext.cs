@@ -13,6 +13,18 @@ namespace OpenLoop.Core.Agent
         public const double CompressThreshold = 0.8;
         public const int KeepRecentMessages = 6;
 
+        /// <summary>
+        /// 尾部最多保留的估算 token。只按条数保留时，几条长消息就能吃掉整个窗口，
+        /// 压缩换掉中间也降不下来（实测 20 轮 ctx 涨到 59k）；按 token 留尾巴才有得压。
+        /// </summary>
+        public const int KeepRecentTokens = 8000;
+
+        /// <summary>上下文窗口对应的尾部预算：窗口小就少留点，至少 256。</summary>
+        public static int TailTokenBudget(int contextLimit)
+            => contextLimit <= 0
+                ? KeepRecentTokens
+                : Math.Min(KeepRecentTokens, Math.Max(256, contextLimit / 4));
+
         public const string SummaryPrefix = "【此前对话摘要（系统自动压缩）】\n";
 
         /// <summary>服务端「上下文超限」错误的识别：各网关措辞不同，命中即触发压缩重试。</summary>
@@ -82,7 +94,7 @@ namespace OpenLoop.Core.Agent
         /// 尾部起点不落在 tool-result 消息上，避免拆散 assistant(tool-call)+user(tool-result) 对。
         /// </summary>
         public static (List<LlmMessage> head, List<LlmMessage> middle, List<LlmMessage> tail) SplitForCompression(
-            IReadOnlyList<LlmMessage> messages, int keepRecent)
+            IReadOnlyList<LlmMessage> messages, int keepRecent, int keepTokens = 0)
         {
             var head = new List<LlmMessage>();
             int i = 0;
@@ -91,7 +103,19 @@ namespace OpenLoop.Core.Agent
             var rest = messages.Skip(i).ToList();
             int keep = Math.Max(1, keepRecent);
             if (rest.Count <= keep) return (head, new List<LlmMessage>(), rest);
-            int start = rest.Count - keep;
+
+            // 从末尾往前留：先按条数，再按 token 预算；最后一条无论多大都留下（否则没有上下文）
+            int start = rest.Count;
+            int tokens = 0;
+            while (start > 0 && rest.Count - start < keep)
+            {
+                int next = EstimateTokens(rest[start - 1].Content) + 4;
+                if (rest.Count - start > 0 && keepTokens > 0 && tokens + next > keepTokens) break;
+                tokens += next;
+                start--;
+            }
+
+            if (start == rest.Count) start = rest.Count - 1;
             while (start > 0 && IsToolResult(rest[start])) start--;
             var tail = rest.Skip(start).ToList();
             var middle = rest.Take(start).ToList();

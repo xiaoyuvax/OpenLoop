@@ -32,7 +32,8 @@ namespace OpenLoop.Core.Agent
             if (before < context.ContextLimit * context.Policy.CompressAt)
                 return AgentStepResult.Pass;
 
-            var compressed = await CompressAsync(state.Messages, context.Reasoner, ct);
+            var compressed = await CompressAsync(state.Messages, context.Reasoner, ct,
+                AgentContext.TailTokenBudget(context.ContextLimit));
 
             // 尾部（最近几条）自己就超过阈值时，压缩只会把中间换成「摘要的摘要」、长度不再下降；
             // 没有这道闸，RunAsync 会一直重入本步，每圈打一次模型，永不结束。
@@ -44,9 +45,11 @@ namespace OpenLoop.Core.Agent
         }
 
         internal static async Task<List<LlmMessage>> CompressAsync(
-            IReadOnlyList<LlmMessage> messages, IReasoner reasoner, CancellationToken ct)
+            IReadOnlyList<LlmMessage> messages, IReasoner reasoner, CancellationToken ct, int tailTokens = 0)
         {
-            var (head, middle, tail) = AgentContext.SplitForCompression(messages, AgentContext.KeepRecentMessages);
+            var (head, middle, tail) = AgentContext.SplitForCompression(
+                messages, AgentContext.KeepRecentMessages,
+                tailTokens > 0 ? tailTokens : AgentContext.KeepRecentTokens);
             if (middle.Count == 0) return null;
 
             string summary;
@@ -93,6 +96,8 @@ namespace OpenLoop.Core.Agent
 
             state.Step++;
 
+            context.OnRequest?.Invoke(state.Messages, AgentContext.EstimateTokens(state.Messages));
+
             CompletionResult completion;
             try
             {
@@ -106,7 +111,8 @@ namespace OpenLoop.Core.Agent
                 // 服务端真实上限可能低于配置值：按报错压缩一次再重试，不要直接判任务失败。
                 state.ContextOverflows++;
                 context.OnRestart?.Invoke();
-                var compressed = await CompressionStep.CompressAsync(state.Messages, context.Reasoner, ct);
+                var compressed = await CompressionStep.CompressAsync(state.Messages, context.Reasoner, ct,
+                    AgentContext.TailTokenBudget(context.ContextLimit));
                 if (compressed == null) throw;
                 state.Result.Guards.Compressions++;
                 return AgentStepResult.Continue(new ReplaceMessagesEffect(compressed));

@@ -242,8 +242,44 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
-        public async Task History_carries_previous_turns()
+        public void History_does_not_reuse_the_system_prompt_from_the_transcript()
         {
+            var turns = new List<WorkerTurn>
+            {
+                new()
+                {
+                    User = "one",
+                    Assistant = "answer-1",
+                    Transcript =
+                    [
+                        new LlmMessage("system", "S"),
+                        new LlmMessage("user", "one"),
+                        new LlmMessage("assistant", "answer-1")
+                    ]
+                },
+                new()
+                {
+                    User = "two",
+                    Assistant = "answer-2",
+                    Transcript =
+                    [
+                        new LlmMessage("system", "S"),
+                        new LlmMessage("user", "one"),
+                        new LlmMessage("assistant", "answer-1"),
+                        new LlmMessage("user", "two"),
+                        new LlmMessage("assistant", "answer-2")
+                    ]
+                }
+            };
+
+            var history = WorkerSessionHost.BuildHistory(turns);
+
+            Assert.DoesNotContain(history, m => m.Role == "system");
+            Assert.Equal(["one", "answer-1", "two", "answer-2"], history.Select(m => m.Content));
+        }
+
+        [Fact]
+        public async Task History_carries_previous_turns()        {
             var histories = new List<List<LlmMessage>>();
             var host = NewHost((request, ct) =>
             {

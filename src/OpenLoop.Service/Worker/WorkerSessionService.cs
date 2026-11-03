@@ -175,7 +175,8 @@ namespace OpenLoop.Service.Worker
                 var run = await Task.Run(
                     () => loop.RunAsync(request.History, request.Text, ct, contextLimit,
                         () => ct.IsCancellationRequested,
-                        request.Delta, request.Reasoning, request.ResetStream),
+                        request.Delta, request.Reasoning, request.ResetStream,
+                        trace.Request),
                     ct);
 
                 string answer = request.FormatAnswer?.Invoke(run.FinalAnswer, run.FinishReason)

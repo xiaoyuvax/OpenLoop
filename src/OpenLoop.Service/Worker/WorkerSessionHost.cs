@@ -288,7 +288,16 @@ namespace OpenLoop.Service.Worker
                 var stored = turns[i].Transcript;
                 if (stored == null || stored.Count == 0) continue;
 
-                var list = new List<LlmMessage>(stored);
+                var list = new List<LlmMessage>();
+
+                // 调用方每次都会把当轮 system 提示词插到最前面；transcript 里存的那份是上一轮的，
+                // 带进来就会一轮叠一份（实测第 8 轮已经有 9 份 system，ctx 白涨 5k token）。
+                foreach (var message in stored)
+                {
+                    if (string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase)) continue;
+                    list.Add(new LlmMessage(message.Role, message.Content));
+                }
+
                 for (int j = i + 1; j < turns.Count; j++)
                 {
                     if (turns[j].Failed) continue;
