@@ -519,3 +519,22 @@ key 落在 `%APPDATA%\OpenLoop\puppet.key`，见 `docs/PLAN-DUAL-PROCESS.md`。
 测试：`tests/OpenLoop.Core.Tests/SafetyTests.cs`（拒绝/风险/安全分类、`..` 与 symlink 逃逸、环境无密钥、argv 执行、快照）。
 
 未做（P1）：Linux 的 bubblewrap/Landlock、Windows 的低完整性令牌/AppContainer、出网限制、内存上限。
+
+---
+
+## 11. 后续增补（2026-11，已验证）
+
+双进程化（壳 + A 前台 Worker + I 后台 Loop）的契约、待办与逐次验收记录都在
+`docs/PLAN-DUAL-PROCESS.md`，这里只记与本文相关的增量：
+
+- **插件**：清单可贡献 OpenAI 兼容 provider（`keyFile` / `modelsUrl`）与 MCP 服务端
+  （Streamable HTTP 或本地 stdio 子进程）；MCP 工具在每轮开始前 `tools/list` 动态注册。
+  没有沙箱，插件就是本机进程，只装可信来源。
+- **更新通道**：`POST /bus/stage`（只校验登记）+ `POST /bus/restart`（忙 409）+ 壳侧
+  `ApplyUpdate`/回滚；生产者是 `scripts/publish-role.ps1`（publish → `versions/<role>/<ver>-<sha8>` → stage）。
+- **流式的两道闸**：单次静默 90 秒（`StreamIdleTimeout`）重发；连续 3 次停滞（含首包无响应）
+  判这一轮失败，避免界面永远停在「运行中」。
+- **压缩闸**：只有估算 token 真的下降才替换消息。尾部消息自己就超阈值时不再压缩，
+  否则状态机会一直重入压缩、每圈打一次模型。
+- **会话可见性**：索引下沉到 `ChatHistory`，壳每 3 秒同步 A 的会话，网页/API 建的会话也会出现在壳里。
+

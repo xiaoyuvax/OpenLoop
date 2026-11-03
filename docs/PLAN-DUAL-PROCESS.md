@@ -939,12 +939,42 @@ dsh spike 结论（实测）：
 - 壳侧删除（Puppet 驱动 `MainForm.DeleteSessions`）：行、`chats\index.json` 项、A 的内存会话同时消失，
   下一拍同步不复活。
 
+**2026-11-03 · 长会话压测（20+ 轮、压缩、取消、trace）**
+
+三轮真实模型 + 一轮本地假网关。每轮一个独立文件的读写，`compress.at=0.35`（阈值约 11.5k token），
+取消测试在每轮的第 10 轮插入：发一个长任务、6 秒后 `stop`。
+
+- 真模型第一轮（`ol-long3`，20 轮 `WriteFile`，at=0.8）：13/20 轮写出文件；第 4–8、11–13 轮被
+  `repeatCallStops` 停掉（模型反复写同一个文件，护栏按设计生效，不是缺陷）；第 14–20 轮每轮 180 秒
+  零输出，靠脚本 `stop` 才结束。21 个 trace 全部有合法 `run.json`，spool 空，ledger 33 行，
+  ctx 1796→22272，**压缩 0 次**（没到 0.8×32768）。
+- 真模型第二轮（`ol-long4`，`ReadFile` 每轮换文件）：第 1–5 轮正常；第 6 轮卡 327 秒——卡在
+  「连接建立了但一直不回响应头」，首包超时被当成瞬时错误无限重发；第 7 轮起上游直接回
+  `模型返回错误：Sign up for free to continue…`（当日免费额度耗尽）。
+- 压缩轮（`ol-compress`）：ctx 3900→6831→11737→12036，第 4 次跨过阈值后 `guards.compressions=1`；
+  下一轮 ctx 从 12036 **回落到 10283**，压缩链路（触发/摘要/替换消息）成立。
+- 假网关轮（`ol-stub4`，确定性端点，修复后）：13 个 run 里 10 轮各 1 次工具调用全部成功，取消测试
+  `interrupted/stopped`，13/13 有合法 `run.json`，无缺失；每轮压缩 1 次（at=0.35）不再重试。
+
+压测里发现并修掉的两类真问题：
+
+- **无限重发**：`StreamIdleTimeout`（90 秒无新数据）与首包超时都改成计入「连续停滞」计数，
+  连续 3 次就判这一轮失败（`模型连续 N 次正文停滞…`），不再让界面永远停在运行中；
+- **无限压缩**：最近几条消息本身就超过阈值时，压缩只能把中间换「摘要的摘要」、token 不下降，
+  状态机每圈重入压缩、每圈打一次模型（实测 2500 次/秒，A 进程空转、会话永远 running）。
+  现在压缩前后比一次估算 token，没变小就不替换、交给推理继续。
+
+限制：当日两条免费通道都返回 `Free usage limit reached`，所以最后一轮用的是本地假端点——
+它证明流程/压缩/取消/落盘，不证明模型质量。配额恢复后按同一脚本复跑真模型 20 轮即可补齐。
+
 ## 15. 待办（2026-11-03 记）
 
-- **长会话稳定性**：跑一次 20+ 轮的会话（工具调用贯穿全程），看上下文压缩、取消、断流重发、
-  `run.json` / trace 是否仍完整。`compress.at` 掐在 0.8，长会话最可能在这里出问题。
-  判据：轮数增长后还能继续正确调工具、单轮耗时与上下文长度不失控、trace 不丢步。
-- **MCP 客户端（2026-11-03 已接上）**：清单里 `mcp: {url, keyEnv|keyFile, timeoutMs}`，
-  每次会话前 `initialize` + `tools/list` 动态注册，调用走 `tools/call`；只有 Streamable HTTP，
-  stdio 型没做。示例见 `samples/plugins/puppet-mcp/`，单测 `McpClientTests`。
-- 上面两条可以分开做：先用现有工具（WriteFile / ReadFile）跑长会话，不必等 MCP。
+- ~~**长会话稳定性**~~（已跑，见 §14「长会话压测」）：流程/压缩/取消/trace 都成立，
+  并修掉「无限重发」「无限压缩」两个卡死路径。剩下的：免费配额恢复后用同一脚本复跑真模型
+  20 轮，补齐模型质量那一半。
+- ~~**MCP 客户端**~~（已接上，含 stdio）：`mcp: {url, keyEnv|keyFile, timeoutMs}` 走 Streamable HTTP；
+  `mcp: {command, args, timeoutMs}` 起本地 stdio 子进程（每行一条 JSON-RPC，id 对不上就跳过）。
+  示例见 `samples/plugins/puppet-mcp/`，单测 `McpClientTests`。
+- **更新通道的生产者**：`scripts/publish-role.ps1` 把某个角色 `dotnet publish` 到
+  `versions/<role>/<ver>-<sha8>/`，再 `POST /bus/stage`（加 `-Restart` 才 `POST /bus/restart`）。
+  已验证发布 + stage 返回 `ok`；整链重启/回滚没在 Windows 复跑（此前只在 Linux 手验过一次）。
