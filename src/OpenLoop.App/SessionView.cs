@@ -11,7 +11,9 @@ using OpenLoop.Core.Tools;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Skills;
 using OpenLoop.Core.Trace;
+using OpenLoop.Service.Config;
 using OpenLoop.Service.Loop;
+using OpenLoop.Service.Plugins;
 using OpenLoop.Service.Worker;
 using OpenLoop.Service.Web;
 
@@ -138,6 +140,10 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int ModelOptionCount => _selModel.Items.Count;
+
+        /// <summary>提供商下拉里的条目（插件贡献的提供商会排在内置之后），给 Puppet/诊断读。</summary>
+        public string ProviderOptionNames => string.Join("\n",
+            _selProvider.Items.OfType<AntdUI.SelectItem>().Select(i => i.Text));
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ReasoningText =>
@@ -886,6 +892,16 @@ namespace OpenLoop.App
                     {
                         Tag = provider
                     });
+                }
+
+                //插件贡献的提供商（如 dsh / our-free-model）不在设置里，但选中后能只列它自己的模型
+                using (var plugins = PluginCatalog.Load(_settings?.Invoke()?.Workspace ?? ""))
+                {
+                    foreach (var (name, models) in plugins.ProviderGroups())
+                        _selProvider.Items.Add(new AntdUI.SelectItem(name)
+                        {
+                            Tag = new ProviderConfig { Name = name, Kind = "custom", BaseUrl = "", Models = models }
+                        });
                 }
 
                 int index = 0;

@@ -71,6 +71,15 @@ namespace OpenLoop.Service.Tests
             }
         }
 
+        [Fact]
+        public void Provider_groups_carry_the_plugin_name_and_its_models()
+        {
+            using var catalog = PluginCatalog.Load(_workspace, _global);
+            var group = Assert.Single(catalog.ProviderGroups());
+            Assert.Equal("stub", group.Name);
+            Assert.Equal(["stub-model"], group.Models);
+        }
+
         /// <summary>模型清单来自 /v1/models，密钥来自本地文件：dsh 网关那种形态。</summary>
         [Fact]
         public async Task Provider_models_can_come_from_modelsUrl_and_key_from_file()

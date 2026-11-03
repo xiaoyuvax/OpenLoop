@@ -99,6 +99,22 @@ namespace OpenLoop.Service.Plugins
             return ids;
         }
 
+        /// <summary>给提供商下拉用的分组：插件声明的 provider 名 + 它的模型，选中后只列这些模型。</summary>
+        public IReadOnlyList<(string Name, List<string> Models)> ProviderGroups()
+        {
+            var groups = new List<(string, List<string>)>();
+            foreach (var provider in _plugins.SelectMany(p => p.Contributions?.Providers ?? []))
+            {
+                var ids = (provider.Models ?? []).Concat(Discover(provider))
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (ids.Count == 0) continue;
+                groups.Add((string.IsNullOrWhiteSpace(provider.Name) ? provider.Id : provider.Name, ids));
+            }
+            return groups;
+        }
+
         private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
         private static readonly object DiscoveryLock = new();
         private static readonly Dictionary<string, (DateTimeOffset At, List<string> Ids)> Discovered =

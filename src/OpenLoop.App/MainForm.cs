@@ -110,6 +110,9 @@ namespace OpenLoop.App
         public int ModelOptionCount => Active?.View.ModelOptionCount ?? 0;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ProviderOptionNames => Active?.View.ProviderOptionNames ?? "";
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ReasoningText => Active?.View.ReasoningText ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -503,6 +506,7 @@ namespace OpenLoop.App
             try
             {
                 bool created = false;
+                string newestWorkspace = null;
                 foreach (var (id, workspace, title) in ChatStore.SavedSessions())
                 {
                     if (_sessions.Any(s => s.Id == id) || !Directory.Exists(workspace)) continue;
@@ -523,6 +527,7 @@ namespace OpenLoop.App
                         if (!Directory.Exists(brief.Workspace)) continue;
                         session = CreateSession(brief.Workspace, brief.Id);
                         created = true;
+                        newestWorkspace ??= brief.Workspace;
                     }
 
                     //跑着的时候每 3 秒并一次实时进度，刚跑完再补一次定稿
@@ -548,6 +553,8 @@ namespace OpenLoop.App
                 }
 
                 if (created) RefreshOverview();
+                //新会话可能在别的项目下；列表是按项目过滤的，不跳过去就等于「看不见」
+                if (newestWorkspace != null) _overview.FocusProject(newestWorkspace);
             }
             catch (Exception ex)
             {
