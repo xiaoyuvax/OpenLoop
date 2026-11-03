@@ -170,15 +170,37 @@ public sealed class ReasonerTests
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"放弃得太慢：{watch.Elapsed}");
     }
 
-    /// <summary>回 200 + 一帧 SSE 后再也不发数据（也不断开），模拟网关挂住。</summary>
+    [Fact]
+    public async Task Stream_without_response_headers_also_counts_as_a_stall()
+    {
+        // 网关接了连接却不回响应头：首包超时以前在 SendWithRetryAsync 里无限重发，停滞上限管不到
+        using var server = new StallingSseServer(sendHeaders: false);
+        var reasoner = new OpenAiCompatibleReasoner(server.BaseUrl, "m", "")
+        {
+            FirstResponseTimeout = TimeSpan.FromMilliseconds(200),
+            StreamIdleTimeout = TimeSpan.FromMilliseconds(200),
+            StreamStallLimit = 2
+        };
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reasoner.StreamAsync([new LlmMessage("user", "hi")], _ => { }, cts.Token));
+
+        Assert.Contains("连续 2 次", ex.Message);
+        Assert.Contains("首包", ex.Message);
+    }
+
+    /// <summary>回 200 + 一帧 SSE 后再也不发数据（也不断开），模拟网关挂住；sendHeaders=false 时连响应头都不给。</summary>
     private sealed class StallingSseServer : IDisposable
     {
+        private readonly bool _sendHeaders;
         private readonly System.Net.Sockets.TcpListener _listener =
             new(System.Net.IPAddress.Loopback, 0);
         private readonly CancellationTokenSource _cts = new();
 
-        public StallingSseServer()
+        public StallingSseServer(bool sendHeaders = true)
         {
+            _sendHeaders = sendHeaders;
             _listener.Start();
             BaseUrl = $"http://127.0.0.1:{((System.Net.IPEndPoint)_listener.LocalEndpoint).Port}/v1";
             _ = Task.Run(AcceptAsync);
@@ -222,11 +244,14 @@ public sealed class ReasonerTests
                     }
                 }
 
-                await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(
-                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"));
-                await stream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(
-                    "data: {\"choices\":[{\"delta\":{\"content\":\"半句\"}}]}\n\n"));
-                await stream.FlushAsync();
+                if (_sendHeaders)
+                {
+                    await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"));
+                    await stream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(
+                        "data: {\"choices\":[{\"delta\":{\"content\":\"半句\"}}]}\n\n"));
+                    await stream.FlushAsync();
+                }
 
                 try { await Task.Delay(Timeout.Infinite, _cts.Token); } catch { }
             }

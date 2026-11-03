@@ -133,6 +133,14 @@ namespace OpenLoop.Core.Reasoning
                     if (StreamStallLimit > 0 && stalls >= StreamStallLimit)
                         throw new InvalidOperationException($"模型连续 {stalls} 次{failure}，放弃这一轮");
                 }
+                catch (FirstResponseTimeoutException ex)
+                {
+                    // 网关接了连接却不回响应头：同样计入停滞，否则这里会无限重发
+                    stalls++;
+                    failure = ex.Message;
+                    if (StreamStallLimit > 0 && stalls >= StreamStallLimit)
+                        throw new InvalidOperationException($"模型连续 {stalls} 次{failure}，放弃这一轮");
+                }
                 catch (Exception ex) when (IsTransient(ex) && !ct.IsCancellationRequested)
                 {
                     stalls = 0;
@@ -219,10 +227,21 @@ namespace OpenLoop.Core.Reasoning
             {
                 using var first = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 first.CancelAfter(FirstResponseTimeout);
-                return await Http.SendAsync(factory(), option, first.Token);
+                try
+                {
+                    return await Http.SendAsync(factory(), option, first.Token);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    throw new FirstResponseTimeoutException(
+                        $"首包 {FirstResponseTimeout.TotalSeconds:0} 秒没有响应");
+                }
             }
             return await Http.SendAsync(factory(), option, ct);
         }
+
+        /// <summary>网关接了连接却一直不给响应头；不算瞬时错误，交给 StreamAsync 计停滞次数。</summary>
+        private sealed class FirstResponseTimeoutException(string message) : Exception(message);
 
         /// <summary>重试前先报进度，再按指数退避等待；只有取消令牌能中断。</summary>
         private async Task RetryLaterAsync(int attempt, string reason, CancellationToken ct)
