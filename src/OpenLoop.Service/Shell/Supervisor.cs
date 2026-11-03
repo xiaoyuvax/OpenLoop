@@ -100,6 +100,9 @@ namespace OpenLoop.Service.Shell
             var startInfo = new ProcessStartInfo(exePath)
             {
                 UseShellExecute = false,
+                // 壳是 GUI 进程，子进程是控制台程序：不隐藏就会各弹一个黑窗口，用户随手关掉就砸了 Worker
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             };

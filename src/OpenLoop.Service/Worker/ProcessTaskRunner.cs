@@ -47,7 +47,12 @@ namespace OpenLoop.Service.Worker
                 Task = task
             }, BusProtocol.Json));
 
-            var startInfo = new ProcessStartInfo(_exe) { UseShellExecute = false };
+            var startInfo = new ProcessStartInfo(_exe)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
             startInfo.ArgumentList.Add("--eval-run");
             startInfo.ArgumentList.Add(specPath);
             startInfo.ArgumentList.Add("--out");
