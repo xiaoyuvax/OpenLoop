@@ -754,6 +754,26 @@ WinForms 那一行只做了编译验证（`dotnet build` 通过），设置对�
 本次未做：只动了 A（没验 I 的换版）；10 分钟防抖这次没在 Windows 重跑（Linux 已验）；
 Linux 侧的 `Prune` 没在真实目录结构下验过（那次换版目录在 `versions` 之外，不参与清理）。
 
+**2026-11-03 · UI 停止/回滚回归（WSL 页面）**
+
+免费额度当天用尽（`free-models-per-day`，50 次/天，429），为了能真的「点到运行中的东西」，
+临时用了一个本地慢速 OpenAI 兼容桩（`127.0.0.1:18777`，睡 15 秒再回包），把
+`settings.json` 的 provider 指过去、模型名 `stub-model`；验完桩和设置都已删除，环境回到默认。
+
+实测：
+
+- **回滚**：Loop 面板填 `/root/adoptwork` → 点「回滚上一版」→ 弹 confirm「回滚到上一版？会写成新版本，旧版本文件不动。」→
+  确认后提示「已回滚，当前 v3」，账本 `v3`（`by=user`、`note=手动回滚到 v1`），
+  verdict `rolled-back, base=v2, result=v3`，`defs/v3.json` 的特征集与 v1 完全一致；
+- **Worker 停止**：新建 `stub-model` 会话发一句 → 第 3 秒状态 `running · 0 步 · v1`，点「停止」
+  → 0.5 秒内变 `interrupted · stopped · 0 步 · v1`；
+- **演进停止**：`/root/adoptwork` + `stub-model` 点「演进」→ 第 3 秒 `running · proposing · 题目 1`，
+  点「停止」→ `stopped · finished · 已停止`（约 1.5 秒），没有卡在 running；
+- 收摊后桩进程、`settings.json`、A/I、壳全部退净。
+
+本次未做：WinForms 端没重复这三步（两套界面共用同一批 HTTP 接口，但按钮是各自绑的）；
+成功的自动轮仍因当天额度用尽而未验。
+
 **2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
 
 已落地：
