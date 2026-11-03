@@ -12,9 +12,10 @@ namespace OpenLoop.Shell
     {
         private static int Main(string[] args)
         {
-            string aPath = Resolve(args, "--a", "OPENLOOP_A_PATH", BusRoles.A);
-            string iPath = Resolve(args, "--i", "OPENLOOP_I_PATH", BusRoles.I);
-            if (aPath == null || iPath == null)
+            // 更新过的版本记在 current.json：先看它，再看随包 worker/（与 Windows 壳一致）
+            var store = new VersionStore();
+            string aPath = Resolve(args, "--a", "OPENLOOP_A_PATH", BusRoles.A, store);
+            string iPath = Resolve(args, "--i", "OPENLOOP_I_PATH", BusRoles.I, store);            if (aPath == null || iPath == null)
             {
                 Console.Error.WriteLine(
                     "找不到 A/I 可执行文件。用 --a/--i 或 OPENLOOP_A_PATH/OPENLOOP_I_PATH 指定路径；" +
@@ -55,7 +56,7 @@ namespace OpenLoop.Shell
             return 0;
         }
 
-        private static string Resolve(string[] args, string argName, string variable, string role)
+        private static string Resolve(string[] args, string argName, string variable, string role, VersionStore store)
         {
             for (int i = 0; i < args.Length - 1; i++)
             {
@@ -65,6 +66,9 @@ namespace OpenLoop.Shell
 
             string fromEnv = Environment.GetEnvironmentVariable(variable);
             if (!string.IsNullOrWhiteSpace(fromEnv)) return Path.GetFullPath(fromEnv);
+
+            string current = store?.Exe(role);
+            if (!string.IsNullOrWhiteSpace(current)) return Path.GetFullPath(current);
 
             // 与 Windows 壳一致的布局：A/I 在 worker/ 子目录（各自带依赖），也可与壳并排。
             foreach (string dir in new[] { Path.Combine(AppContext.BaseDirectory, "worker"), AppContext.BaseDirectory })

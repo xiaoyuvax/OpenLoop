@@ -668,6 +668,29 @@ OpenLoop.A.exe --eval-run <spec.json> --out <dir>    # 跑一题、出 final.md 
 - `AgentTaskRunner`：单题模型调用抛异常（空 body / 429 / 截断 JSON）不再带走整轮演进，
   记成「调用失败」的未通过题目，原因写进该题 `run.json`；取消仍然照常向上抛。
 
+**2026-11-03 · 更新通道验收（同上环境）**
+
+`/bus/stage` + `/bus/restart` + 壳的换版/回滚/防抖此前只有代码，没走过一次。用现有产物复制成
+`/root/upd/a-v2`（同版本、不同目录）当「新版本」，坏包用 `#!/bin/sh exit 1` 冒充。
+
+实测：
+
+- 正常换版：`stage {dir:/root/upd/a-v2,version:v2}` → `restart` 返回 202 → A 退出、壳拉起新目录，
+  `runtime/a.json` 的 pid 从 367 变 405、`dir=/root/upd/a-v2`，`versions/current.json` 记 v2，
+  `runtime/update-log.jsonl` 落 `result: "ok"`，`/api/capabilities` 照常；
+- 回滚：stage 坏包 → restart → 壳 10 秒内等不到报到，`update-log.jsonl` 落 `result: "rollback"`,
+  退回 v2（新 pid 130、目录仍是 `/root/upd/a-v2`），`current.json` 不动；
+- 防抖：10 分钟内第三次更新被拦，`result: "skipped"`、detail `too many updates`，并照旧重启上一版；
+- 参数校验：没 stage 就 restart → 409 `nothing staged`；sha256 不匹配 / 目录里没有 `OpenLoop.A` /
+  协议号不一致 → 409；错 key 打 `/bus/stage` → 404。
+
+顺带修：**Linux 壳启动时不认 `versions/current.json`**（Windows 壳先查 `store.Exe(role)`，Linux 壳只找
+`worker/`），所以更新过一次、壳重启就退回随包版本。现在两条壳都按「命令行/环境变量 → current.json → worker/」
+的顺序取 exe；实测换到 `a-v2` 后整壳重启仍从 `a-v2` 起来，删掉 `current.json` 又回到 `worker/`。
+
+本次未做：「新版本」是同版本复制体，没有真正不同版本的构建产物；Windows 侧同链路未复测；
+`VersionStore.Prune`（每个角色只留两份）没在真实目录结构下验证过。
+
 **2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
 
 已落地：
