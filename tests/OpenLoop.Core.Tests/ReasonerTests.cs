@@ -136,6 +136,38 @@ public sealed class ReasonerTests
     }
 
     [Fact]
+    public async Task Stream_that_stalls_midway_fails_after_the_idle_timeout()
+    {
+        //长会话实测：网关回了响应头，正文一行不动，过去要挂满 StreamTimeout（10 分钟）
+        var reader = new StallingReader("""data: {"choices":[{"delta":{"content":"半句"}}]}""");
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            OpenAiCompatibleReasoner.ParseStreamAsync(
+                reader, _ => { }, default, null, TimeSpan.FromMilliseconds(200)));
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"空闲超时没有生效：{watch.Elapsed}");
+    }
+
+    /// <summary>吐一行后不再返回，直到读取被取消（模拟网关半途挂住）。</summary>
+    private sealed class StallingReader(string first) : TextReader
+    {
+        private bool _sent;
+
+        public override async ValueTask<string> ReadLineAsync(CancellationToken ct)
+        {
+            if (!_sent)
+            {
+                _sent = true;
+                return first;
+            }
+
+            await Task.Delay(Timeout.Infinite, ct);
+            return null;
+        }
+    }
+
+    [Fact]
     public void Status_Classification_Matches_Retry_Policy()
     {
         // 429 限流与 401/402/403 鉴权额度：不重试

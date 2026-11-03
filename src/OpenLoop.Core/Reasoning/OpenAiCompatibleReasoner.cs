@@ -24,6 +24,12 @@ namespace OpenLoop.Core.Reasoning
         /// <summary>单次流式正文的静默上限：这么久没吐完就判这次尝试失败并重发；<=0 表示不限。</summary>
         public TimeSpan StreamTimeout { get; set; } = TimeSpan.FromMinutes(10);
 
+        /// <summary>
+        /// 两句数据之间的静默上限：网关回了头却一直不吐内容时，不必等满 <see cref="StreamTimeout"/>。
+        /// 每读到一行就重新计时；&lt;=0 表示关闭。
+        /// </summary>
+        public TimeSpan StreamIdleTimeout { get; set; } = TimeSpan.FromSeconds(90);
+
         /// <summary>进度回调（等待模型响应 / 第 N 次重试 / 放弃），供宿主给视觉反馈。</summary>
         public Action<ReasonerProgress> OnProgress { get; set; }
 
@@ -109,11 +115,13 @@ namespace OpenLoop.Core.Reasoning
                     // 单次尝试的静默上限：否则网关开始输出后卡住，界面会永远停在“运行中”。
                     using var bodyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     if (StreamTimeout > TimeSpan.Zero) bodyCts.CancelAfter(StreamTimeout);
-                    return await ParseStreamAsync(reader, onDelta, bodyCts.Token, onReasoning);
+                    return await ParseStreamAsync(reader, onDelta, bodyCts.Token, onReasoning, StreamIdleTimeout);
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
-                    failure = $"正文 {StreamTimeout.TotalSeconds:0} 秒未吐完";
+                    failure = StreamIdleTimeout > TimeSpan.Zero
+                        ? $"正文停滞：{StreamIdleTimeout.TotalSeconds:0} 秒没有新数据"
+                        : $"正文 {StreamTimeout.TotalSeconds:0} 秒未吐完";
                 }
                 catch (Exception ex) when (IsTransient(ex) && !ct.IsCancellationRequested)
                 {
@@ -270,7 +278,7 @@ namespace OpenLoop.Core.Reasoning
 
         internal static async Task<CompletionResult> ParseStreamAsync(
             TextReader reader, Action<string> onDelta, CancellationToken ct = default,
-            Action<string> onReasoning = null)
+            Action<string> onReasoning = null, TimeSpan idleTimeout = default)
         {
             var content = new StringBuilder();
             var reasoning = new StringBuilder();
@@ -280,8 +288,14 @@ namespace OpenLoop.Core.Reasoning
             int? tokensIn = null;
             int? tokensOut = null;
 
-            while (await reader.ReadLineAsync(ct) is { } line)
+            using var idle = idleTimeout > TimeSpan.Zero
+                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+                : null;
+
+            while (true)
             {
+                idle?.CancelAfter(idleTimeout);
+                if (await reader.ReadLineAsync(idle?.Token ?? ct) is not { } line) break;
                 if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
                 string data = line[5..].Trim();
                 if (data.Length == 0) continue;
