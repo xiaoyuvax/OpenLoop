@@ -772,7 +772,32 @@ Linux 侧的 `Prune` 没在真实目录结构下验过（那次换版目录在 `
 - 收摊后桩进程、`settings.json`、A/I、壳全部退净。
 
 本次未做：WinForms 端没重复这三步（两套界面共用同一批 HTTP 接口，但按钮是各自绑的）；
-成功的自动轮仍因当天额度用尽而未验。
+成功的自动轮当次验不了，改走 opencode 免费模型后补验，见下条。
+
+**2026-11-03 · 成功的自动演进轮（改用 opencode 免费模型）**
+
+OpenRouter 免费额度当天用尽，改走 opencode 内置免费模型 `opencode/deepseek-v4.1-flash-free@opencode`
+（`OpenCodeHub` 走本机 `service.json` 的 `/api/model`，不需要 OpenRouter key）。
+
+第一次跑失败并暴露一个真实缺陷：A/I 是无人刷新模型目录的进程，只有 WinForms 壳会周期性
+`OpenCodeHub.RefreshAsync()`，壳直接 `Start-Process` 起来时 A 的 `_byId` 是空的，
+`opencode/*` 被当成普通模型名，网关回 `400 ... is not a valid model ID`。
+修法：`Reasoners.Create` 在解析 `opencode/*` 前调一次 `OpenCodeHub.EnsureFresh()`，
+失败后 30 秒内不重试（避免每次调用都等超时）。
+
+修好后实测（工作区 `<TEMP>\ol-auto-win`，`limit.steps=1`，`token-copy` 任务，`AutoEvolve=true`）：
+
+- Worker 手工会话照旧 `budget` 收尾（1 步用尽），其证据 spool 被 I 抽干时自动开轮，
+  **没有 POST `/api/loop/evolve`**；`auto.json` 记 `day=2026-11-03 count=1 runs=2`；
+- 基线 v1 `passed=False steps=1 outcome=budget`，候选 v2 `passed=True steps=6 outcome=ok`；
+- 裁决 `adopted, base=v1, result=v2, judge=task-set, cost=0`，
+  `defs/v2.json` 由 `by=loop` 写定，`limit.steps` 从 1 放宽到 6，特征仍是 12 条；
+- 换到此工作区的新 Worker 会话 `activationVersion=2`、`steps=3`、`outcome=ok`，
+  `token.txt` 与 `secret.txt` 逐字节相同。
+
+本次未做：`AutoEvolve` 的每日上限/冷却这次刻意设成 `perDay=10, cooldown=0` 让首轮能立刻跑，
+没在「冷却中 / 当日已满」这两个分支上再实测（Linux 那次验过）；
+跑完已把 `settings.json` 从备份复原（`model=openrouter/free, autoEvolve=false`），A/I/壳退净。
 
 **2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
 

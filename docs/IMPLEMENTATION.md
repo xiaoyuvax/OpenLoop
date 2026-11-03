@@ -1,6 +1,6 @@
 # OpenLoop 实施方案
 
-> 对应 `CHARTER.md` charter/4。本文是实现计划，不是规范。
+> 对应 `CHARTER.md` charter/5。本文是实现计划，不是规范。
 > 范围：M1（可工作的通用 WinForms agent，含共用对话控件抽取）。M2/M3 只列形状。
 > M4（跨平台产物）与 M5（插件层）、双进程现状与逐条验收见 `docs/PLAN-DUAL-PROCESS.md`。
 

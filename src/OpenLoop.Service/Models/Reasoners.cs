@@ -12,6 +12,9 @@ namespace OpenLoop.Service.Models
     {
         public static IReasoner Create(AppSettings settings, string model, string effort, string workspace = null)
         {
+            if (model != null && model.StartsWith(OpenCodeModelId.Prefix, StringComparison.OrdinalIgnoreCase))
+                OpenCodeHub.EnsureFresh();
+
             if (OpenCodeHub.Resolve(model) is { } reference)
                 return new OpenCodeReasoner(OpenCodeHub.RequireClient(), reference,
                     string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace);

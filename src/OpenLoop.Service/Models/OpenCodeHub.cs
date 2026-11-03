@@ -35,6 +35,20 @@ namespace OpenLoop.Service.Models
         public static OpenCodeClient TryClient()
             => _endpoint is { IsReady: true } endpoint ? endpoint.CreateClient() : null;
 
+        private static DateTimeOffset _nextRetry = DateTimeOffset.MinValue;
+
+        /// <summary>
+        /// A/I 是无人刷新模型目录的进程（只有壳会定时刷新）：解析 opencode/* 之前按需拉一次，
+        /// 失败后 30 秒内不再重试，免得每次调用都等超时。
+        /// </summary>
+        public static void EnsureFresh()
+        {
+            if (_endpoint is { IsReady: true }) return;
+            if (DateTimeOffset.Now < _nextRetry) return;
+            try { RefreshAsync().GetAwaiter().GetResult(); } catch { }
+            if (_endpoint is not { IsReady: true }) _nextRetry = DateTimeOffset.Now.AddSeconds(30);
+        }
+
         public static OpenCodeClient RequireClient()
         {
             var client = TryClient();
