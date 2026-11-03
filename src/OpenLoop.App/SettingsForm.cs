@@ -44,6 +44,7 @@ namespace OpenLoop.App
             _switchOpenCode.Checked = _source.OpenCodeAskPermissions;
             _switchAgents.Checked = _source.UseAgentsMd;
             _switchThinking.Checked = _source.ThinkingExpandedByDefault;
+            _switchAutoEvolve.Checked = _source.AutoEvolve;
             _filling = false;
 
             RefreshProviderCombo(_providers.FirstOrDefault());
@@ -450,6 +451,10 @@ namespace OpenLoop.App
                 AllowSensitiveActions = _source.AllowSensitiveActions,
                 UseAgentsMd = _switchAgents.Checked,
                 ThinkingExpandedByDefault = _switchThinking.Checked,
+                AutoEvolve = _switchAutoEvolve.Checked,
+                AutoEvolveRuns = _source.AutoEvolveRuns,
+                AutoEvolveCooldownMinutes = _source.AutoEvolveCooldownMinutes,
+                AutoEvolvePerDay = _source.AutoEvolvePerDay,
                 ReasoningEffort = _source.ReasoningEffort,
                 LoopCommand = _source.LoopCommand,
                 Providers = _providers

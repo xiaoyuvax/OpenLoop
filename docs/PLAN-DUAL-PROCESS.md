@@ -720,6 +720,20 @@ OpenLoop.A.exe --eval-run <spec.json> --out <dir>    # 跑一题、出 final.md 
 - 自动轮用 `settings.model` 的默认模型，没有「只许免费档」的硬限制；WinForms 也还没有开关，
   要开就编辑 `settings.json`（默认关就是怕不打招呼地花钱）。
 
+**2026-11-03 · 自动演进进界面**
+
+开关此前只能手改 `settings.json`，现在两个界面都能改、能看到：
+
+- `/api/loop/evolve?workspace=` 的返回多了 `autoEnabled` + `autoHint`（「今日 0/3 轮 · 每攒 5 条新证据触发 · 冷却 60 分钟」）；
+- 新增 `POST /api/loop/auto {workspace, enabled}`：只改开关，阈值/冷却/上限仍留在 `settings.json`；
+- Web 的 Loop 面板：`自动演进` 复选框 + 一行状态；勾选即调上面的接口，失败回滚勾选并提示；
+- WinForms 设置页「普通」多一行 `自动演进` 开关（含一句 hint），`SettingsForm.Result` 会带上
+  `AutoEvolveRuns/CooldownMinutes/PerDay` 原值——不然从设置页保存一次会把阈值重置成默认。
+
+实测：WSL 页面点勾 → `settings.json` 落 `AutoEvolve: true`，状态行变 `今日 0/3 轮 · 每攒 5 条新证据触发 · 冷却 60 分钟`；
+再点一次 → `AutoEvolve: false`、状态行清空；`settings.json` 仍为 0600。
+WinForms 那一行只做了编译验证（`dotnet build` 通过），设置对话框没有实际打开看过，250% DPI 下的排版待肉眼确认。
+
 **2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
 
 已落地：

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Wima.Web;
 using OpenLoop.Service.Bus;
+using OpenLoop.Service.Config;
 using OpenLoop.Service.Loop;
 
 namespace OpenLoop.Service.Web
@@ -56,6 +57,17 @@ namespace OpenLoop.Service.Web
                         return Json(req, new { stopped = _loop.StopEvolve(body.Workspace) });
                     }
                     return NotFound(req);
+
+                case "auto":
+                {
+                    if (method != "POST") return NotFound(req);
+                    var body = ReadBody<AutoRequest>(req);
+                    if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
+                    var settings = AppSettings.Load();
+                    settings.AutoEvolve = body.Enabled;
+                    settings.Save();
+                    return Json(req, new { ok = true, enabled = settings.AutoEvolve });
+                }
 
                 case "rollback":
                 {
@@ -172,6 +184,12 @@ namespace OpenLoop.Service.Web
         {
             public string Workspace { get; set; }
             public string Name { get; set; }
+            public bool Enabled { get; set; }
+        }
+
+        private sealed class AutoRequest
+        {
+            public string Workspace { get; set; }
             public bool Enabled { get; set; }
         }
     }

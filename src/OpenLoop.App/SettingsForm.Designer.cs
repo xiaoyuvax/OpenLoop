@@ -49,6 +49,10 @@ namespace OpenLoop.App
         private FlowLayoutPanel _thinkingFlow;
         private AntdUI.Switch _switchThinking;
         private AntdUI.Label _lblThinkingHint;
+        private AntdUI.Label _lblAutoEvolve;
+        private FlowLayoutPanel _autoEvolveFlow;
+        private AntdUI.Switch _switchAutoEvolve;
+        private AntdUI.Label _lblAutoEvolveHint;
         private AntdUI.Label _lblGeneralNote;
 
         private TableLayoutPanel _models;
@@ -139,6 +143,10 @@ namespace OpenLoop.App
             _thinkingFlow = new FlowLayoutPanel();
             _switchThinking = new AntdUI.Switch();
             _lblThinkingHint = new AntdUI.Label();
+            _lblAutoEvolve = new AntdUI.Label();
+            _autoEvolveFlow = new FlowLayoutPanel();
+            _switchAutoEvolve = new AntdUI.Switch();
+            _lblAutoEvolveHint = new AntdUI.Label();
             _lblGeneralNote = new AntdUI.Label();
 
             _models = new TableLayoutPanel();
@@ -205,9 +213,10 @@ namespace OpenLoop.App
             // 普通
             _general.Dock = DockStyle.Fill;
             _general.ColumnCount = 2;
-            _general.RowCount = 7;
+            _general.RowCount = 8;
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
@@ -224,6 +233,7 @@ namespace OpenLoop.App
             ConfigureLabel(_lblOpenCode, "权限审批");
             ConfigureLabel(_lblAgents, "AGENTS.md");
             ConfigureLabel(_lblThinking, "思考过程");
+            ConfigureLabel(_lblAutoEvolve, "自动演进");
 
             _cboLanguage.Dock = DockStyle.Fill;
             _cboLanguage.Radius = 8;
@@ -330,9 +340,27 @@ namespace OpenLoop.App
             _thinkingFlow.Controls.Add(_switchThinking);
             _thinkingFlow.Controls.Add(_lblThinkingHint);
 
+            _autoEvolveFlow.Dock = DockStyle.Fill;
+            _autoEvolveFlow.FlowDirection = FlowDirection.LeftToRight;
+            _autoEvolveFlow.WrapContents = false;
+            _autoEvolveFlow.Margin = new Padding(0);
+
+            _switchAutoEvolve.Width = 44;
+            _switchAutoEvolve.Height = 22;
+            _switchAutoEvolve.Margin = new Padding(0, 9, 8, 0);
+
+            _lblAutoEvolveHint.AutoSize = true;
+            _lblAutoEvolveHint.Text = "攒够新证据就自己跑一轮演进（阈值与冷却见 settings.json）";
+            _lblAutoEvolveHint.Font = new Font("Segoe UI", 8.5F);
+            _lblAutoEvolveHint.ForeColor = UiStyle.Muted;
+            _lblAutoEvolveHint.Margin = new Padding(0, 11, 0, 0);
+
+            _autoEvolveFlow.Controls.Add(_switchAutoEvolve);
+            _autoEvolveFlow.Controls.Add(_lblAutoEvolveHint);
+
             _lblGeneralNote.AutoSize = false;
             _lblGeneralNote.Dock = DockStyle.Fill;
-            _lblGeneralNote.Text = "主题与语言在重启 OpenLoop 后生效；完全许可与自动审批立即生效。";
+            _lblGeneralNote.Text = "主题与语言在重启 OpenLoop 后生效；完全许可、自动审批与自动演进立即生效。";
             _lblGeneralNote.Font = new Font("Segoe UI", 8.5F);
             _lblGeneralNote.ForeColor = UiStyle.Muted;
             _lblGeneralNote.TextAlign = ContentAlignment.TopLeft;
@@ -350,7 +378,9 @@ namespace OpenLoop.App
             _general.Controls.Add(_agentsFlow, 1, 4);
             _general.Controls.Add(_lblThinking, 0, 5);
             _general.Controls.Add(_thinkingFlow, 1, 5);
-            _general.Controls.Add(_lblGeneralNote, 0, 6);
+            _general.Controls.Add(_lblAutoEvolve, 0, 6);
+            _general.Controls.Add(_autoEvolveFlow, 1, 6);
+            _general.Controls.Add(_lblGeneralNote, 0, 7);
             _general.SetColumnSpan(_lblGeneralNote, 2);
             _pageGeneral.Controls.Add(_general);
 

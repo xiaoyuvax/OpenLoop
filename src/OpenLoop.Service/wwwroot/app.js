@@ -189,6 +189,8 @@ function renderEvolve(s) {
   $('evolve-state').textContent = parts.filter(Boolean).join(' · ');
   $('evolve').disabled = s.state === 'running';
   $('evolve-stop').disabled = s.state !== 'running';
+  $('auto-evolve').checked = !!s.autoEnabled;
+  $('auto-state').textContent = s.autoHint || '';
 }
 
 async function pollEvolve() {
@@ -259,6 +261,18 @@ $('evolve').onclick = async () => {
 
 $('evolve-stop').onclick = async () => {
   try { await post('/api/loop/evolve/stop', { workspace: workspaceOf() }); } catch (e) { say('停止失败：' + e.message); }
+};
+
+$('auto-evolve').onchange = async e => {
+  const box = e.target;
+  try {
+    const r = await post('/api/loop/auto', { workspace: workspaceOf(), enabled: box.checked });
+    say(r.enabled ? '自动演进已开启' : '自动演进已关闭');
+    pollEvolve();
+  } catch (err) {
+    box.checked = !box.checked;
+    say('设置失败：' + err.message);
+  }
 };
 
 $('rollback').onclick = async () => {

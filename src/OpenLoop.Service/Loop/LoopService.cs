@@ -41,6 +41,10 @@ namespace OpenLoop.Service.Loop
         /// <summary>未采纳的原因 / 失败原因。</summary>
         public string Detail { get; set; }
         public string Error { get; set; }
+
+        /// <summary>自动演进开关与当前配额/冷却的一句话说明（界面直接显示）。</summary>
+        public bool AutoEnabled { get; set; }
+        public string AutoHint { get; set; }
     }
 
     /// <summary>
@@ -55,8 +59,26 @@ namespace OpenLoop.Service.Loop
 
         public LoopEvolveState GetState(string workspace)
         {
+            LoopEvolveState state;
             lock (_lock)
-                return _jobs.TryGetValue(Normalize(workspace), out var job) ? Clone(job.State) : new LoopEvolveState { Workspace = workspace };
+                state = _jobs.TryGetValue(Normalize(workspace), out var job)
+                    ? Clone(job.State)
+                    : new LoopEvolveState { Workspace = workspace };
+            DescribeAuto(workspace, state);
+            return state;
+        }
+
+        /// <summary>给界面的一句话：开没开、今天跑了几轮、阈值多少。</summary>
+        private static void DescribeAuto(string workspace, LoopEvolveState state)
+        {
+            var settings = AppSettings.Load();
+            state.AutoEnabled = settings.AutoEvolve;
+            if (!settings.AutoEvolve || string.IsNullOrWhiteSpace(workspace)) return;
+
+            var auto = AutoEvolve.Load(workspace);
+            string day = DateTimeOffset.Now.ToString("yyyy-MM-dd");
+            int today = auto.Day == day ? auto.Count : 0;
+            state.AutoHint = $"今日 {today}/{settings.AutoEvolvePerDay} 轮 · 每攒 {settings.AutoEvolveRuns} 条新证据触发 · 冷却 {settings.AutoEvolveCooldownMinutes} 分钟";
         }
 
         /// <summary>有演进正在跑（/bus/restart 忙时拒绝）。</summary>
