@@ -119,6 +119,23 @@ public sealed class ReasonerTests
     }
 
     [Fact]
+    public async Task Stream_error_frame_in_200_is_reported_not_swallowed()
+    {
+        //dsh 网关把上游 429 塞进 200 的 SSE 帧里（choices 为空 + error），过去会被当成「回答是空的」
+        const string sse = """
+        data: {"choices":[],"error":{"message":"Free usage limit reached","code":"RATE_LIMIT","status":429}}
+
+        data: [DONE]
+
+        """;
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            OpenAiCompatibleReasoner.ParseStreamAsync(new StringReader(sse), _ => { }));
+
+        Assert.Contains("Free usage limit reached", ex.Message);
+    }
+
+    [Fact]
     public void Status_Classification_Matches_Retry_Policy()
     {
         // 429 限流与 401/402/403 鉴权额度：不重试

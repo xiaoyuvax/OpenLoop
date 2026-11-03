@@ -1,4 +1,5 @@
 using OpenLoop.Core.Agent;
+using OpenLoop.Service.Plugins;
 
 namespace OpenLoop.App
 {
@@ -42,6 +43,14 @@ namespace OpenLoop.App
             {
                 if (onlyFree && !model.IsFree) continue;
                 if (seen.Add(model.Id)) result.Add(model);
+            }
+
+            // shortcut: provider 贡献不声明价格，这里一律按免费列出来；要区分收费通道再加字段
+            using (var plugins = PluginCatalog.Load(settings?.Workspace ?? ""))
+            {
+                foreach (string id in plugins.Models())
+                    if (seen.Add(id))
+                        result.Add(new ModelInfo { Id = id, Name = id, SupportsTools = true, IsFree = true });
             }
 
             if (hasOpenRouter || result.Count == 0)

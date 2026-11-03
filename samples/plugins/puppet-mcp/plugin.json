@@ -1,0 +1,13 @@
+{
+  "id": "puppet-mcp",
+  "version": "1.0.0",
+  "mcp": {
+    "url": "http://127.0.0.1:19190/mcp",
+    "keyEnv": "PUPPET_CHANTOOL_KEY",
+    "timeoutMs": 60000
+  },
+  "permissions": {
+    "network": true,
+    "workspace": "read"
+  }
+}

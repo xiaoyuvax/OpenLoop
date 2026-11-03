@@ -4,6 +4,7 @@ using System.Text;
 using OpenLoop.Core.Messages;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Models;
+using OpenLoop.Service.Plugins;
 using Xunit;
 
 namespace OpenLoop.Service.Tests
@@ -16,11 +17,14 @@ namespace OpenLoop.Service.Tests
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "openloop-provider-" + Guid.NewGuid().ToString("N"));
         private readonly string _workspace;
+        private readonly string _global;
         private readonly StubOpenAi _stub = new();
 
         public PluginProviderTests()
         {
             _workspace = Path.Combine(_root, "ws");
+            _global = Path.Combine(_root, "global");
+            Directory.CreateDirectory(_global);
             Directory.CreateDirectory(Path.Combine(_workspace, ".openloop", "plugins", "stub"));
             File.WriteAllText(Path.Combine(_workspace, ".openloop", "plugins", "stub", "plugin.json"), $$"""
             {
@@ -67,6 +71,54 @@ namespace OpenLoop.Service.Tests
             }
         }
 
+        /// <summary>模型清单来自 /v1/models，密钥来自本地文件：dsh 网关那种形态。</summary>
+        [Fact]
+        public async Task Provider_models_can_come_from_modelsUrl_and_key_from_file()
+        {
+            string keyPath = Path.Combine(_root, "gateway-key");
+            File.WriteAllText(keyPath, "file-key\n");
+            File.WriteAllText(Path.Combine(_workspace, ".openloop", "plugins", "stub", "plugin.json"), $$"""
+            {
+              "id": "stub",
+              "contributions": {
+                "providers": [{
+                  "id": "stub",
+                  "baseUrl": "{{_stub.BaseUrl}}",
+                  "modelsUrl": "{{_stub.BaseUrl}}/models",
+                  "keyFile": "{{keyPath.Replace("\\", "/")}}"
+                }]
+              }
+            }
+            """);
+
+            using (var catalog = PluginCatalog.Load(_workspace, _global))
+            {
+                Assert.True(catalog.TryProvider("our-free-model/stub-model", out _));
+                Assert.Equal(["our-free-model/stub-model"], catalog.Models());
+            }
+
+            var reasoner = Reasoners.Create(new AppSettings(), "our-free-model/stub-model", "", _workspace);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var result = await reasoner.CompleteAsync([new LlmMessage("user", "ping")], cts.Token);
+
+            Assert.Equal("pong", result.Content);
+            Assert.Equal("Bearer file-key", _stub.LastAuthorization);
+        }
+
+        [Fact]
+        public void Provider_only_manifest_needs_no_entry_command()
+        {
+            string dir = Path.Combine(_workspace, ".openloop", "plugins", "noentry");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "plugin.json"), """
+            {"id":"noentry","contributions":{"providers":[{"id":"p","baseUrl":"http://127.0.0.1:9/v1","models":["m"]}]}}
+            """);
+
+            using var catalog = PluginCatalog.Load(_workspace, _global);
+            Assert.Contains(catalog.Plugins, p => p.Id == "noentry");
+            Assert.True(catalog.TryProvider("m", out _));
+        }
+
         /// <summary>只认一次请求的最小 OpenAI 兼容端点（HTTP/1.1 + Content-Length）。</summary>
         private sealed class StubOpenAi : IDisposable
         {
@@ -83,6 +135,7 @@ namespace OpenLoop.Service.Tests
             public string BaseUrl { get; }
             public string LastBody { get; private set; } = "";
             public string LastAuthorization { get; private set; } = "";
+            public string LastMethod { get; private set; } = "";
 
             private async Task AcceptAsync()
             {
@@ -104,6 +157,7 @@ namespace OpenLoop.Service.Tests
 
                     int length = 0;
                     string line;
+                    LastMethod = (await reader.ReadLineAsync() ?? "").Split(' ')[0];
                     while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
                     {
                         if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
@@ -122,8 +176,9 @@ namespace OpenLoop.Service.Tests
                     }
                     LastBody = new string(buffer, 0, read);
 
-                    byte[] body = Encoding.UTF8.GetBytes(
-                        """{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}""");
+                    byte[] body = Encoding.UTF8.GetBytes(LastMethod == "GET"
+                        ? """{"object":"list","data":[{"id":"our-free-model/stub-model"}]}"""
+                        : """{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}""");
                     byte[] head = Encoding.ASCII.GetBytes(
                         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
                         body.Length + "\r\nConnection: close\r\n\r\n");

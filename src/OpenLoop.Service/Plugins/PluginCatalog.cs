@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text.Json;
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Tools;
@@ -14,6 +15,7 @@ namespace OpenLoop.Service.Plugins
     {
         private readonly List<PluginManifest> _plugins;
         private readonly Dictionary<string, PluginHost> _hosts = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, McpClient> _mcp = new(StringComparer.OrdinalIgnoreCase);
         private bool _disposed;
 
         private PluginCatalog(string workspace, List<PluginManifest> plugins)
@@ -63,18 +65,86 @@ namespace OpenLoop.Service.Plugins
             return new PluginCatalog(workspace, found);
         }
 
-        /// <summary>按模型名找贡献了它的提供商（工作区优先）。</summary>
+        /// <summary>按模型名找贡献了它的提供商（工作区优先）：先看清单 models，再看 modelsUrl 拉到的目录。</summary>
         public bool TryProvider(string model, out PluginProviderContribution provider)
         {
             string id = model?.Trim();
             provider = null;
             if (string.IsNullOrEmpty(id)) return false;
 
-            provider = _plugins
+            var declared = _plugins
                 .SelectMany(p => p.Contributions?.Providers ?? [])
-                .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.BaseUrl) &&
-                    (p.Models ?? []).Any(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase)));
+                .Where(p => !string.IsNullOrWhiteSpace(p.BaseUrl))
+                .ToList();
+
+            provider = declared.FirstOrDefault(p => (p.Models ?? [])
+                .Any(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase)));
+            if (provider != null) return true;
+
+            provider = declared.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.ModelsUrl) &&
+                Discover(p).Any(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase)));
             return provider != null;
+        }
+
+        /// <summary>所有 provider 贡献的模型 id（含发现结果），给模型选择器用。</summary>
+        public IReadOnlyList<string> Models()
+        {
+            var ids = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var provider in _plugins.SelectMany(p => p.Contributions?.Providers ?? []))
+            {
+                foreach (string id in (provider.Models ?? []).Concat(Discover(provider)))
+                    if (!string.IsNullOrWhiteSpace(id) && seen.Add(id)) ids.Add(id);
+            }
+            return ids;
+        }
+
+        private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
+        private static readonly object DiscoveryLock = new();
+        private static readonly Dictionary<string, (DateTimeOffset At, List<string> Ids)> Discovered =
+            new(StringComparer.OrdinalIgnoreCase);
+        private static readonly TimeSpan DiscoveryTtl = TimeSpan.FromMinutes(5);
+
+        /// <summary>拉一次 <c>/v1/models</c>；失败也缓存（空清单），免得每次调用都等超时。</summary>
+        private static List<string> Discover(PluginProviderContribution provider)
+        {
+            if (string.IsNullOrWhiteSpace(provider.ModelsUrl)) return [];
+
+            string url = provider.ModelsUrl;
+            lock (DiscoveryLock)
+            {
+                if (Discovered.TryGetValue(url, out var cached) && DateTimeOffset.Now - cached.At < DiscoveryTtl)
+                    return cached.Ids;
+            }
+
+            var ids = new List<string>();
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                string key = provider.ResolveKey();
+                if (!string.IsNullOrWhiteSpace(key))
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+                using var response = Http.Send(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                    if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+                        foreach (var item in data.EnumerateArray())
+                            if (item.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+                                ids.Add(id.GetString());
+                }
+                else
+                {
+                    AppLog.Warn($"插件模型目录不可用：{url} HTTP {(int)response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn($"插件模型目录不可用：{url} {ex.Message}");
+            }
+
+            lock (DiscoveryLock) Discovered[url] = (DateTimeOffset.Now, ids);
+            return ids;
         }
 
         /// <summary>一次查询用：读清单、找模型，不启动任何进程。</summary>
@@ -94,7 +164,20 @@ namespace OpenLoop.Service.Plugins
                     if (string.IsNullOrWhiteSpace(spec.Name)) continue;
                     yield return new PluginTool(plugin, spec, Host(plugin), Workspace);
                 }
+
+                if (plugin.Mcp is not { } mcp || string.IsNullOrWhiteSpace(mcp.Url)) continue;
+                var client = Mcp(plugin);
+                foreach (var spec in client.ListTools())
+                    yield return new McpTool(client, spec);
             }
+        }
+
+        private McpClient Mcp(PluginManifest plugin)
+        {
+            if (_mcp.TryGetValue(plugin.Id, out var client)) return client;
+            client = new McpClient(plugin.Mcp);
+            _mcp[plugin.Id] = client;
+            return client;
         }
 
         private PluginHost Host(PluginManifest plugin)

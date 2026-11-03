@@ -25,6 +25,26 @@
 OpenLoop 不需要改代码。dsh-our-free-model 的 standalone 网关默认监听
 `http://127.0.0.1:18900/v1`，模型列表从 `/v1/models` 取。
 
+provider 贡献还有两个可选字段：
+
+- `keyFile`：密钥放本地文件（支持 `%USERPROFILE%` 与 `~/`），省掉设环境变量；`keyEnv` 优先。
+- `modelsUrl`：模型 id 由上游目录决定时，让 OpenLoop 自己去拉 `data[].id`（5 分钟缓存），
+  清单里就不用写死会腐坏的 id。真实例子见 `samples/plugins/dsh-free/`。
+
+只有 provider 贡献、没有工具贡献的清单可以不写 `entry.command`——这种插件不会起子进程。
+
+### MCP 服务端（可选）
+
+清单里加 `mcp` 就能把现成的 MCP 服务端接进来，工具在每次会话开始时 `tools/list` 动态发现：
+
+```json
+"mcp": { "url": "http://127.0.0.1:19190/mcp", "keyEnv": "PUPPET_CHANTOOL_KEY", "timeoutMs": 60000 }
+```
+
+- 只支持 Streamable HTTP（POST JSON-RPC，无会话头）；stdio 型 MCP 还没做；
+- `keyEnv` / `keyFile` 写法与 provider 相同，密钥走 `Authorization: Bearer`；
+- 服务端不可达时只是「没有这些工具」，不打断会话。真实例子见 `samples/plugins/puppet-mcp/`。
+
 ## 协议
 
 请求（宿主 → 插件）：

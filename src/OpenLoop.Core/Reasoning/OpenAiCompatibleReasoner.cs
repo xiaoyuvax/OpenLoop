@@ -275,6 +275,7 @@ namespace OpenLoop.Core.Reasoning
             var content = new StringBuilder();
             var reasoning = new StringBuilder();
             string finish = null;
+            string error = null;
             decimal? cost = null;
             int? tokensIn = null;
             int? tokensOut = null;
@@ -294,6 +295,9 @@ namespace OpenLoop.Core.Reasoning
                 var usage = ReadUsage(root);
                 if (usage.In.HasValue) tokensIn = usage.In;
                 if (usage.Out.HasValue) tokensOut = usage.Out;
+
+                // 有的网关把上游错误塞进 200 的 SSE 帧里（choices 为空 + error），不能当成「模型没说话」
+                if (ReadStreamError(root) is { } chunkError) error = chunkError;
 
                 if (!root.TryGetProperty("choices", out var choices)
                     || choices.ValueKind != JsonValueKind.Array
@@ -325,6 +329,9 @@ namespace OpenLoop.Core.Reasoning
                     finish = f.GetString();
             }
 
+            if (error != null && content.Length == 0 && reasoning.Length == 0 && finish == null)
+                throw new InvalidOperationException($"模型返回错误：{error}");
+
             return new CompletionResult
             {
                 Content = content.ToString(),
@@ -335,6 +342,14 @@ namespace OpenLoop.Core.Reasoning
                 TokensOut = tokensOut
             };
         }
+
+        private static string ReadStreamError(JsonElement root)
+            => root.TryGetProperty("error", out var error)
+               && error.ValueKind == JsonValueKind.Object
+               && error.TryGetProperty("message", out var message)
+               && message.ValueKind == JsonValueKind.String
+                ? message.GetString()
+                : null;
 
         internal static CompletionResult Parse(string body)
         {
