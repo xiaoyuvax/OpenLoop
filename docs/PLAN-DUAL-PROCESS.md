@@ -799,6 +799,46 @@ OpenRouter 免费额度当天用尽，改走 opencode 内置免费模型 `openco
 没在「冷却中 / 当日已满」这两个分支上再实测（Linux 那次验过）；
 跑完已把 `settings.json` 从备份复原（`model=openrouter/free, autoEvolve=false`），A/I/壳退净。
 
+**2026-11-03 · Windows 上验 I 的换版**
+
+此前更新通道只在 Windows 验过 A。I 是账本与 `defs/` 的唯一写者，换版要杀掉它再起，是唯一「失败会毁数据」的未验点。
+
+实测（先拿 `/ol-auto-win` 的 `ledger.jsonl` 做指纹）：
+
+- stage `versions\i\v2`（33 个文件）→ restart：I 从 pid 25884 换到 5420、`dir=...\versions\i\v2`，
+  `update-log` 落 `ok`，换完 `/api/loop/evolve` 正常返回；**账本 sha256 与行数不变（16 行）**；
+- 坏包（`OpenLoop.I.exe` 写成文本）→ restart：15 秒内退回 v2（新 pid 11528），
+  `update-log` 落 `rollback / did not report within 10s`，I 仍可用；
+- 整个壳重启后 I 仍从 `versions\i\v2` 起（`current.json` 生效），A 仍在随包 `worker\`；
+- 同一进程内第 3 次更新触发 10 分钟防抖：日志 `skipped / too many updates`，退回上一份可执行文件——
+  与设计一致。
+
+顺带修一个真缺陷：`/bus/stage` 不传 `version` 时 `current.json` 里写空串。改成默认取目录名，
+重新构建后再 stage 一个不带版本号的 `staging-1` → `current.json` 记 `staging-1`。
+
+本次未做：I 正在跑演进时换版会被 409 拒（`busy`），这条没单独造场景点一次；`--force` 路径未验。
+
+**2026-11-03 · 设置页布局（250% DPI 几何探针）**
+
+设置页是模态框，Puppet 的 invoke 会被它挡住，所以临时加了个探针属性（量完已删）在真实 DPI 下报尺寸：
+
+- `form=2006x1239 dpi=240`，「通用」页 7 个固定行各 110 px，底注行剩 **254 px**；
+- 底注标签 `1902x231`，8.5pt 文字一行约 1120 px 宽 → 不需要折行，254 px 的行高有富余；
+- 新增的「自动演进」行 y=697、提示文字高 38 px，没有挤压底注。
+
+结论：250% 下不会被挤出窗口。未做：没人眼看过这个对话框（探针是唯一证据，已随代码删除）。
+
+**2026-11-03 · 自动演进的冷却 / 当日上限（Windows）**
+
+不用模型、不花额度：造一条假 spool 记录再 `POST /api/loop/spool/drain`，让 `DrainSpool` 走到 `TryAutoEvolve`。
+
+- 冷却（`count=1 < perDay=3`，`at=now`，`cooldown=60`）→ `自动演进暂缓：冷却中，12:28 后再试`；
+- 当日已满（`count=3`）→ `自动演进暂缓：今天已自动演进 3 轮（上限 3）`；
+- 两种情况下 `/api/loop/evolve` 都是 `idle`、只有 `v1.json`、`eval/runs` 为空，
+  且 `autoEnabled=true`——不是「开关没开」造成的假阴性。
+
+本次未做：没验「证据条数不足（`证据还差 n/m`）」这一条；测完已复原 `settings.json`。
+
 **2026-11-02 · M5（插件清单 / stdio 宿主 / 贡献注册 / dsh spike）**
 
 已落地：

@@ -109,7 +109,9 @@ namespace OpenLoop.Service.Bus
             _staged = new UpdateRequest
             {
                 Role = _role,
-                Version = body.Version ?? "",
+                Version = string.IsNullOrWhiteSpace(body.Version)
+                    ? Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar))
+                    : body.Version,
                 Dir = dir,
                 Sha256 = sha,
                 At = DateTimeOffset.Now.ToString("O")
