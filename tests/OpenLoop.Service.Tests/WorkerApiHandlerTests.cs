@@ -19,7 +19,8 @@ namespace OpenLoop.Service.Tests
 
         private static WorkerApiHandler Handler(WorkerSessionHost host) => new(host, Key);
 
-        private static WebRequest Call(WorkerApiHandler handler, string method, string path, string body = null)
+        private static WebRequest Call(WorkerApiHandler handler, string method, string path, string body = null,
+            string query = null)
         {
             var req = new WebRequest
             {
@@ -27,6 +28,11 @@ namespace OpenLoop.Service.Tests
                 InputStream = new MemoryStream(body == null ? [] : Encoding.UTF8.GetBytes(body))
             };
             req.Path = path;
+            if (!string.IsNullOrEmpty(query))
+            {
+                var pair = query.Split('=', 2);
+                req.Queries[pair[0]] = pair.Length > 1 ? pair[1] : "";
+            }
             req.Headers[BusProtocol.KeyHeader] = Key;
             req.Response = new WebResponse();
             Assert.True(handler.Handle(req), $"{method} {path} 未被处理");
@@ -53,6 +59,37 @@ namespace OpenLoop.Service.Tests
 
             var missing = Call(handler, "GET", "/api/sessions/nope");
             Assert.Equal(404, missing.Response.StatusCode);
+        }
+
+        [Fact]
+        public void Delete_removes_the_session_so_the_shell_stops_listing_it()
+        {
+            var host = new WorkerSessionHost((_, _) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }));
+            var handler = Handler(host);
+
+            Call(handler, "POST", "/api/sessions",
+                """{"id":"del00001","workspace":"C:/work","model":"m","effort":""}""");
+
+            var deleted = Call(handler, "DELETE", "/api/sessions/del00001");
+            Assert.Equal(200, deleted.Response.StatusCode);
+            Assert.Null(host.Get("del00001"));
+            Assert.Equal(404, Call(handler, "DELETE", "/api/sessions/del00001").Response.StatusCode);
+        }
+
+        [Fact]
+        public void Summary_list_stays_small_but_keeps_state()
+        {
+            var host = new WorkerSessionHost((_, _) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }));
+            var handler = Handler(host);
+            Call(handler, "POST", "/api/sessions",
+                """{"id":"sum00001","workspace":"C:/work","model":"m","effort":""}""");
+
+            var summary = Call(handler, "GET", "/api/sessions", null, "summary=1");
+            var list = JsonSerializer.Deserialize<List<WorkerSessionSnapshot>>(summary.Response.Buffer, Json);
+            var one = Assert.Single(list);
+            Assert.Equal("sum00001", one.Id);
+            Assert.Equal(WorkerSessionHost.Idle, one.State);
+            Assert.Empty(one.Turns);
         }
 
         [Fact]

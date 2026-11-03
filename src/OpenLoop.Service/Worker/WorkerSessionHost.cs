@@ -135,11 +135,27 @@ namespace OpenLoop.Service.Worker
             return snapshot(session);
         }
 
-        public IReadOnlyList<WorkerSessionSnapshot> List()
+        public IReadOnlyList<WorkerSessionSnapshot> List(bool summary = false)
         {
             lock (_lock)
-                return _sessions.Values.OrderByDescending(s => s.CreatedAt).Select(snapshot).ToList();
+                return _sessions.Values.OrderByDescending(s => s.CreatedAt)
+                    .Select(s => summary ? brief(s) : snapshot(s)).ToList();
         }
+
+        /// <summary>列表轮询用的轻量投影：只带状态，不带轮次正文。</summary>
+        private static WorkerSessionSnapshot brief(Session session) => new()
+        {
+            Id = session.Id,
+            Workspace = session.Workspace,
+            Model = session.Model,
+            Effort = session.Effort,
+            State = session.State,
+            Revision = session.Revision,
+            Paused = session.Paused,
+            Outcome = session.Outcome,
+            Cost = session.Cost,
+            ContextTokens = session.ContextTokens
+        };
 
         public WorkerSessionSnapshot Get(string id)
         {
@@ -229,6 +245,20 @@ namespace OpenLoop.Service.Worker
                 if (index < 0 || index >= session.Pending.Count) return false;
                 session.Pending.RemoveAt(index);
                 session.Revision++;
+            }
+
+            Changed?.Invoke(id);
+            return true;
+        }
+
+        /// <summary>丢掉内存里的会话（正在跑的先停）；对话文件由调用方删。</summary>
+        public bool Remove(string id)
+        {
+            Session session;
+            lock (_lock)
+            {
+                if (!_sessions.Remove(id ?? "", out session)) return false;
+                session.Cancel?.Cancel();
             }
 
             Changed?.Invoke(id);
@@ -458,6 +488,7 @@ namespace OpenLoop.Service.Worker
             }
 
             ChatHistory.Write(workspace, id, entries);
+            ChatHistory.Touch(workspace, id);
         }
 
         private ApprovalDecision Approve(Session session, ApprovalRequest request, CancellationToken ct)

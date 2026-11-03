@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using ChatFlow;
 using ChatMessage = ChatFlow.ChatMessage;
+using OpenLoop.Service.Web;
+using OpenLoop.Service.Worker;
 using Puppet.Core;
 using SurveyStore = OpenLoop.Core.Store.SurveyStore;
 
@@ -13,6 +15,9 @@ namespace OpenLoop.App
     public partial class MainForm : Form, IPuppet
     {
         private readonly List<Session> _sessions = new();
+        /// <summary>定时把 A 那边（API / 网页 / 别的 agent 建的）会话并进界面。</summary>
+        private readonly System.Windows.Forms.Timer _workerSync = new() { Interval = 3000 };
+        private bool _syncingRemote;
         private AppSettings _settings = new();
         private bool _menuBusy;
         private AntdUI.TabPage _newPage;
@@ -319,7 +324,12 @@ namespace OpenLoop.App
 
             RestoreWindowBounds();
             _ = RefreshCatalogAsync();
+
+            _workerSync.Tick += OnWorkerSyncTick;
+            _workerSync.Start();
         }
+
+        private void OnWorkerSyncTick(object sender, EventArgs e) => _ = SyncWorkerSessionsAsync();
 
         /// <summary>恢复上次窗口位置：原屏幕还在就原位启动，不在则回主屏居中（保留尺寸）。</summary>
         private void RestoreWindowBounds()
@@ -373,6 +383,8 @@ namespace OpenLoop.App
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
             _closing = true;
+            _workerSync.Stop();
+            _workerSync.Dispose();
             SaveWindowBounds();
             foreach (var session in _sessions)
             {
@@ -480,6 +492,118 @@ namespace OpenLoop.App
             }
         }
 
+        /// <summary>
+        /// 壳只认识自己建的会话；直接走 A 的 API / 网页 / 别的 agent 建的会话靠这里补进列表。
+        /// 打开着的页面顺带同步进度；没打开的只更新状态，不碰控件。
+        /// </summary>
+        private async Task SyncWorkerSessionsAsync()
+        {
+            if (_syncingRemote || _closing || WindowState == FormWindowState.Minimized) return;
+            _syncingRemote = true;
+            try
+            {
+                bool created = false;
+                foreach (var (id, workspace, title) in ChatStore.SavedSessions())
+                {
+                    if (_sessions.Any(s => s.Id == id) || !Directory.Exists(workspace)) continue;
+                    CreateSession(workspace, id, title);
+                    created = true;
+                }
+
+                using var client = new WorkerApiClient();
+                if (!await client.PingAsync()) return;
+                var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var brief in await client.ListAsync(summary: true))
+                {
+                    if (brief?.Id == null) continue;
+                    known.Add(brief.Id);
+                    var session = _sessions.FirstOrDefault(s => s.Id == brief.Id);
+                    if (session == null)
+                    {
+                        if (!Directory.Exists(brief.Workspace)) continue;
+                        session = CreateSession(brief.Workspace, brief.Id);
+                        created = true;
+                    }
+
+                    //跑着的时候每 3 秒并一次实时进度，刚跑完再补一次定稿
+                    if (session.Page?.Parent != null
+                        && (brief.State == WorkerSessionHost.Running || session.State == SessionState.Running))
+                        session.View.SyncFromWorker(await client.GetAsync(brief.Id) ?? brief);
+
+                    var state = StateOf(brief.State);
+                    if (session.State != state)
+                    {
+                        session.State = state;
+                        OnSessionStateChanged(session);
+                    }
+                }
+
+                //A 重启或忘了这个会话：本地别一直挂着「运行中」
+                foreach (var stale in _sessions.Where(s => s.State == SessionState.Running
+                                                           && s.View?.Busy != true
+                                                           && !known.Contains(s.Id)))
+                {
+                    stale.State = SessionState.Idle;
+                    OnSessionStateChanged(stale);
+                }
+
+                if (created) RefreshOverview();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("同步 A 的会话失败：" + ex.Message);
+            }
+            finally
+            {
+                _syncingRemote = false;
+            }
+        }
+
+        /// <summary>打开一条会话时先对一次 A：它可能在别处又跑过几轮，界面还是旧的。</summary>
+        private async Task SyncSessionAsync(Session session)
+        {
+            if (session == null) return;
+            try
+            {
+                using var client = new WorkerApiClient();
+                var snapshot = await client.GetAsync(session.Id);
+                if (snapshot == null) return;
+                session.View.SyncFromWorker(snapshot);
+                var state = StateOf(snapshot.State);
+                if (session.State != state)
+                {
+                    session.State = state;
+                    OnSessionStateChanged(session);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("读取会话状态失败：" + ex.Message);
+            }
+        }
+
+        /// <summary>删除一条会话时也让 A 忘掉它，否则同步定时器 3 秒后又把行拾回来。</summary>
+        private static async Task ForgetOnWorkerAsync(string id)
+        {
+            try
+            {
+                using var client = new WorkerApiClient();
+                await client.DeleteAsync(id);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("通知 A 删除会话失败：" + ex.Message);
+            }
+        }
+
+        private static SessionState StateOf(string workerState) => workerState switch
+        {
+            WorkerSessionHost.Running => SessionState.Running,
+            WorkerSessionHost.Done => SessionState.Done,
+            WorkerSessionHost.Interrupted => SessionState.Interrupted,
+            _ => SessionState.Idle
+        };
+
         private void ShowSession(Session session)
         {
             if (session == null) return;
@@ -488,6 +612,7 @@ namespace OpenLoop.App
             _tabs.SelectTab(session.Page);
             RefreshOverview();
             _overview.FocusProject(session.Workspace);
+            _ = SyncSessionAsync(session);
         }
 
         /// <summary>/fork：复制当前会话的上下文开一个新会话，并把新请求发出去。</summary>
@@ -570,6 +695,7 @@ namespace OpenLoop.App
                 session.View?.Shutdown();
                 if (session.Page != null) CloseTab(session.Page);
                 ChatStore.Delete(session.Workspace, session.Id);
+                _ = ForgetOnWorkerAsync(session.Id);
                 _sessions.Remove(session);
                 if (_lastSession == session) _lastSession = null;
             }

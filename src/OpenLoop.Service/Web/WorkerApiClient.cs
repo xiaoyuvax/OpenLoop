@@ -50,8 +50,9 @@ namespace OpenLoop.Service.Web
             }
         }
 
-        public async Task<List<WorkerSessionSnapshot>> ListAsync(CancellationToken ct = default)
-            => await _http.GetFromJsonAsync<List<WorkerSessionSnapshot>>("/api/sessions", BusProtocol.Json, ct)
+        public async Task<List<WorkerSessionSnapshot>> ListAsync(bool summary = false, CancellationToken ct = default)
+            => await _http.GetFromJsonAsync<List<WorkerSessionSnapshot>>(
+                   summary ? "/api/sessions?summary=1" : "/api/sessions", BusProtocol.Json, ct)
                ?? [];
 
         /// <summary>没有这个会话时返回 null（A 用 404 表示）。</summary>
@@ -74,6 +75,14 @@ namespace OpenLoop.Service.Web
 
         public async Task<WorkerSessionSnapshot> StopAsync(string id, CancellationToken ct = default)
             => await PostAsync(Path(id) + "/stop", new { }, ct);
+
+        /// <summary>让 A 丢掉这个会话（正在跑的先停）；A 不认识它也算成功。</summary>
+        public async Task DeleteAsync(string id, CancellationToken ct = default)
+        {
+            using var response = await _http.DeleteAsync(Path(id), ct);
+            if (response.StatusCode == HttpStatusCode.NotFound) return;
+            response.EnsureSuccessStatusCode();
+        }
 
         public async Task<WorkerSessionSnapshot> ResumeAsync(string id, CancellationToken ct = default)
             => await PostAsync(Path(id) + "/resume", new { }, ct);

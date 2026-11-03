@@ -893,3 +893,58 @@ dsh spike 结论（实测）：
 - `permissions` 只是声明，插件是本机进程，没有沙箱/资源限额；只应安装可信插件；
 - 插件进程的生命周期是「一次 Worker 运行」，跨轮次不保温；需要常驻时再改成按工作区缓存；
 - 现在的超时是整次调用 60s 上限，长任务插件需要自己把工作拆成多次调用。
+
+**2026-11-03 · dsh 免费模型插件 + MCP 客户端**
+
+插件清单多了两种贡献，都不用改 OpenLoop 代码：
+
+- provider：`keyFile`（`~` / `%VAR%` 展开）与 `modelsUrl`（带 Bearer 拉 `/v1/models` 的 `data[].id`，
+  5 分钟缓存）；只有 provider、没有工具贡献的清单可以不写 `entry.command`；
+- `mcp: {url, keyEnv|keyFile, timeoutMs}`：Streamable HTTP 的 MCP 客户端，
+  Worker 每次运行前 `initialize` + `tools/list` 动态注册，调用走 `tools/call`，取 `content[].text`；
+  服务端不可达只是「没有这些工具」，不打断会话。
+
+实测（`dsh web` 自带网关于 `127.0.0.1:8326`，密钥 `~/.dsh/openai-gateway/api-key`，`/v1/models` 37 个 id）：
+
+- A：`our-free-model/inclusionai/ling-3.1-flash-1019-free` 一轮 1 步 `WriteFile`，落盘内容正确；
+- I：演进轮用 `our-free-model/openrouter/free` 跑通（`base 0/1 cand 0/1`，判「平局」保留旧版）：
+  路由通，两个任务本身没做出来是模型质量问题，不是链路问题；
+- Puppet `/mcp`（ChanTool）：48 个工具（5 个固定 `puppet_*` + 43 个按公开方法合成），
+  Agent 真实调用 `puppet_registry` / `puppet_get` / `puppet_describe`，多轮正常；
+- dsh 网关把上游 429 塞进 **HTTP 200 的 SSE 帧**（`choices: []` + `error`），过去被当成「空回答 + ok」，
+  现在抛 `模型返回错误：…`（`ReasonerTests.Stream_error_frame_in_200_is_reported_not_swallowed`）。
+
+未做：stdio 型 MCP；MCP 工具只读性未知，一律按可写处理。
+
+**2026-11-03 · 壳能看到 A 直接建的会话（B+）**
+
+问题：网页 / API / 别的 agent 直接在 A 上开的会话，壳里既没有行也看不到历史——
+`chats\index.json` 只有壳写，A 只写对话文件；`/api/sessions` 又只列 A 的内存。
+
+已落地：
+
+- 索引下沉到 `ChatHistory.Index/Touch/Forget`（与旧 `ChatStore` 同一文件形状，旧索引直接可用）；
+  A 每轮落盘后 `Touch`，壳的 `ChatStore` 改为同一份实现；
+- `GET /api/sessions?summary=1`：轻量列表（带状态、不带轮次正文），给壳高频轮询；
+- `DELETE /api/sessions/{id}`：壳删会话时让 A 一起忘（正在跑的先取消），否则下一拍同步又把行拾回来；
+- 壳每 3 秒同步一次：索引里的新会话补成行，A 的会话补成行并更新状态；
+  打开着的页面用 `SessionView.SyncFromWorker` 把快照并进界面（复用 `ApplySnapshot`）；
+  打开一条会话时先对一次 A；A 重启后忘掉的会话不再挂「运行中」，降为 idle（历史仍在）。
+
+实测（Windows，壳 + A + I）：
+
+- 只经 A 的 API 建 `shellsync3` 并发一轮（1 步 `WriteFile`）：壳 3 秒内出现该行、状态 `running`，
+  跑完转 `done`；摘要列表 `turns=[]`；
+- 重启壳：只经 API 建的 `shellsync1` 从索引恢复成行（`Idle` + 历史）；
+- 壳侧删除（Puppet 驱动 `MainForm.DeleteSessions`）：行、`chats\index.json` 项、A 的内存会话同时消失，
+  下一拍同步不复活。
+
+## 15. 待办（2026-11-03 记）
+
+- **长会话稳定性**：跑一次 20+ 轮的会话（工具调用贯穿全程），看上下文压缩、取消、断流重发、
+  `run.json` / trace 是否仍完整。`compress.at` 掐在 0.8，长会话最可能在这里出问题。
+  判据：轮数增长后还能继续正确调工具、单轮耗时与上下文长度不失控、trace 不丢步。
+- **MCP 客户端（2026-11-03 已接上）**：清单里 `mcp: {url, keyEnv|keyFile, timeoutMs}`，
+  每次会话前 `initialize` + `tools/list` 动态注册，调用走 `tools/call`；只有 Streamable HTTP，
+  stdio 型没做。示例见 `samples/plugins/puppet-mcp/`，单测 `McpClientTests`。
+- 上面两条可以分开做：先用现有工具（WriteFile / ReadFile）跑长会话，不必等 MCP。

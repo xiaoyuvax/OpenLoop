@@ -1,7 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using ChatFlow;
 using OpenLoop.Core.Messages;
 using OpenLoop.Service.Storage;
@@ -31,17 +28,6 @@ namespace OpenLoop.App
         /// <summary>这一轮落盘的消息列表；旧会话没有时为 null。</summary>
         public static IReadOnlyList<LlmMessage> Transcript(ChatTurn turn)
             => turn != null && Transcripts.TryGetValue(turn, out var list) ? list : null;
-
-        private static readonly JsonSerializerOptions Json = new()
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            PropertyNameCaseInsensitive = true,
-            WriteIndented = true,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
-
-        private static string Dir => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenLoop", "chats");
 
         public static List<ChatTurn> Load(string workspace, string kind = null)
         {
@@ -102,54 +88,30 @@ namespace OpenLoop.App
             try
             {
                 File.Delete(ChatHistory.PathFor(workspace, sessionId));
-                var all = ReadIndex();
-                if (all.RemoveAll(e => e.Id == sessionId) > 0)
-                {
-                    string temp = IndexPath + ".tmp";
-                    File.WriteAllText(temp, JsonSerializer.Serialize(all, Json), new UTF8Encoding(false));
-                    File.Move(temp, IndexPath, true);
-                }
             }
             catch
             {
             }
+            ChatHistory.Forget(sessionId);
         }
 
-        /// <summary>会话索引：文件名是哈希，重启后没有索引就无从把会话找回来。</summary>
+        /// <summary>
+        /// 会话索引：文件名是哈希，重启后没有索引就无从把会话找回来。
+        /// A 每轮落盘后自己也会 Touch，所以直接建在 API 上的会话同样进得来。
+        /// </summary>
         public static void Touch(string workspace, string sessionId, string title = null)
-        {
-            if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(sessionId)) return;
-            try
-            {
-                var all = ReadIndex();
-                string full = Path.GetFullPath(workspace.Trim());
-                var item = all.FirstOrDefault(e => e.Id == sessionId);
-                if (item == null) all.Add(new IndexEntry { Id = sessionId, Workspace = full, Title = title ?? "" });
-                else
-                {
-                    item.Workspace = full;
-                    if (title != null) item.Title = title;
-                }
-                Directory.CreateDirectory(Dir);
-                string temp = IndexPath + ".tmp";
-                File.WriteAllText(temp, JsonSerializer.Serialize(all, Json), new UTF8Encoding(false));
-                File.Move(temp, IndexPath, true);
-            }
-            catch
-            {
-            }
-        }
+            => ChatHistory.Touch(workspace, sessionId, title);
 
-        /// <summary>有内容的已存会话（会话 id + 工作目录 + 标题），最近的在前。</summary>
+        /// <summary>有对话文件的已存会话（会话 id + 工作目录 + 标题），最近的在前。</summary>
         public static List<(string Id, string Workspace, string Title)> SavedSessions()
         {
             var result = new List<(string, string, string)>();
             try
             {
-                foreach (var item in ReadIndex().OrderByDescending(e => e.UpdatedAt))
+                foreach (var item in ChatHistory.Index().OrderByDescending(e => e.UpdatedAt))
                 {
                     if (item == null || string.IsNullOrEmpty(item.Id) || string.IsNullOrEmpty(item.Workspace)) continue;
-                    if (Load(item.Workspace, item.Id).Count == 0) continue;
+                    if (!File.Exists(ChatHistory.PathFor(item.Workspace, item.Id))) continue;
                     result.Add((item.Id, item.Workspace, item.Title ?? ""));
                 }
             }
@@ -157,30 +119,6 @@ namespace OpenLoop.App
             {
             }
             return result;
-        }
-
-        private static string IndexPath => Path.Combine(Dir, "index.json");
-
-        private static List<IndexEntry> ReadIndex()
-        {
-            try
-            {
-                string path = IndexPath;
-                if (!File.Exists(path)) return [];
-                return JsonSerializer.Deserialize<List<IndexEntry>>(File.ReadAllText(path, Encoding.UTF8), Json) ?? [];
-            }
-            catch
-            {
-                return [];
-            }
-        }
-
-        private sealed class IndexEntry
-        {
-            public string Id { get; set; }
-            public string Workspace { get; set; }
-            public string Title { get; set; }
-            public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         }
     }
 }

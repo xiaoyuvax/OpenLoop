@@ -39,7 +39,7 @@ namespace OpenLoop.Service.Web
             if (parts.Length < 2 || parts[1] != "sessions") return false;
 
             if (method == "GET" && parts.Length == 2)
-                return Json(req, _host.List());
+                return Json(req, _host.List(summary: req.Queries?["summary"] is "1" or "true"));
 
             if (method == "POST" && parts.Length == 2)
             {
@@ -58,6 +58,9 @@ namespace OpenLoop.Service.Web
                 var snapshot = _host.Get(id);
                 return snapshot == null ? NotFound(req) : Json(req, snapshot);
             }
+
+            if (method == "DELETE" && parts.Length == 3)
+                return _host.Remove(id) ? Json(req, new { ok = true }, 200) : NotFound(req);
 
             if (method != "POST" || parts.Length != 4) return NotFound(req);
 

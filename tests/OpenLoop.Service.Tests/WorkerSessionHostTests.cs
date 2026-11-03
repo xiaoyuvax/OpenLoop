@@ -7,8 +7,24 @@ using Xunit;
 
 namespace OpenLoop.Service.Tests
 {
-    public class WorkerSessionHostTests
+    public class WorkerSessionHostTests : IDisposable
     {
+        /// <summary>每个测试用独立目录，别把会话写进真实的 %APPDATA%\OpenLoop\chats。</summary>
+        private readonly string _chats = Path.Combine(Path.GetTempPath(), "openloop-chat-" + Guid.NewGuid().ToString("N"));
+        private readonly string _previousRoot;
+
+        public WorkerSessionHostTests()
+        {
+            _previousRoot = ChatHistory.Root;
+            ChatHistory.Root = _chats;
+        }
+
+        public void Dispose()
+        {
+            ChatHistory.Root = _previousRoot;
+            try { Directory.Delete(_chats, true); } catch { }
+        }
+
         private static WorkerSessionHost NewHost(
             Func<WorkerRunRequest, CancellationToken, Task<WorkerRunResult>> runner)
             => new(runner);
@@ -184,6 +200,45 @@ namespace OpenLoop.Service.Tests
                 ChatHistory.Root = previous;
                 try { Directory.Delete(dir, true); } catch { }
             }
+        }
+
+        [Fact]
+        public async Task Persisting_a_turn_indexes_the_session_so_the_shell_can_list_it()
+        {
+            var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult
+            {
+                Outcome = "ok",
+                FinalAnswer = "done"
+            }));
+            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "sess02");
+
+            Assert.Empty(ChatHistory.Index());   // 没跑过就没有索引项
+            host.Send(session.Id, "task", "hi");
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+
+            var entry = Assert.Single(ChatHistory.Index());
+            Assert.Equal("sess02", entry.Id);
+            Assert.Equal(Path.GetFullPath("C:/work"), entry.Workspace);
+        }
+
+        [Fact]
+        public async Task List_summary_keeps_state_but_drops_turn_content()
+        {
+            var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult
+            {
+                Outcome = "ok",
+                FinalAnswer = "answer"
+            }));
+            var session = NewSession(host);
+            host.Send(session.Id, "task", "hi");
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+
+            var brief = Assert.Single(host.List(summary: true));
+            Assert.Equal(WorkerSessionHost.Done, brief.State);
+            Assert.Equal(session.Workspace, brief.Workspace);
+            Assert.Empty(brief.Turns);
+
+            Assert.Single(Assert.Single(host.List()).Turns);
         }
 
         [Fact]

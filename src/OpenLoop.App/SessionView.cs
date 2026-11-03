@@ -1180,6 +1180,24 @@ namespace OpenLoop.App
             if (structure) _chat.ScrollToEnd();
         }
 
+        /// <summary>
+        /// 这一轮不是壳发起的（会话是直接走 A 的 API / 网页 / 别的 agent 跑的）：把 A 的快照并进界面，
+        /// 打开的页面上能看到实时进度，跑完也能看到定稿。壳自己正在跑时不插手。
+        /// </summary>
+        internal void SyncFromWorker(WorkerSessionSnapshot snapshot)
+        {
+            if (snapshot == null || _running || Session == null || IsDisposed || !IsHandleCreated) return;
+
+            ApplySnapshot(snapshot);
+            Session.Steps = snapshot.Turns?.LastOrDefault()?.Steps ?? Session.Steps;
+            UpdateContext(snapshot.ContextTokens);
+            _lblStatus.Text = Localization.T("Status") + (snapshot.State == WorkerSessionHost.Running
+                ? ": 运行中…"
+                : string.IsNullOrEmpty(snapshot.Outcome) ? "" : ": " + snapshot.Outcome);
+            if (snapshot.Cost.HasValue)
+                _lblCost.Text = Localization.T("Cost") + $": {snapshot.Cost.Value:0.0000} · {Session.Steps} {Localization.T("Steps")}";
+        }
+
         /// <summary>回答 A 挂起的审批/确认；同一个 prompt 只答一次。</summary>
         private async Task<WorkerSessionSnapshot> AnswerPromptsAsync(WorkerApiClient client,
             WorkerSessionSnapshot snapshot, CancellationToken ct)
