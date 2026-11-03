@@ -28,11 +28,15 @@ namespace OpenLoop.Core.Agent
             if (context.ContextLimit <= 0 || !state.NeedsInference)
                 return AgentStepResult.Pass;
 
-            if (AgentContext.EstimateTokens(state.Messages) < context.ContextLimit * context.Policy.CompressAt)
+            int before = AgentContext.EstimateTokens(state.Messages);
+            if (before < context.ContextLimit * context.Policy.CompressAt)
                 return AgentStepResult.Pass;
 
             var compressed = await CompressAsync(state.Messages, context.Reasoner, ct);
-            if (compressed == null)
+
+            // 尾部（最近几条）自己就超过阈值时，压缩只会把中间换成「摘要的摘要」、长度不再下降；
+            // 没有这道闸，RunAsync 会一直重入本步，每圈打一次模型，永不结束。
+            if (compressed == null || AgentContext.EstimateTokens(compressed) >= before)
                 return AgentStepResult.Pass;
 
             state.Result.Guards.Compressions++;

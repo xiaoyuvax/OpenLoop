@@ -52,9 +52,23 @@ namespace OpenLoop.Core.Tests
         }
     }
 
-    internal sealed class FakeTool : ITool
+    /// <summary>压缩摘要固定返回给定文本，其它调用返回最终答复；用于验证压缩不会无限重试。</summary>
+    internal sealed class SummarizeReasoner(string summary) : IReasoner
     {
-        public Func<ToolArgs, AgentToolResult> Handler { get; init; } = _ => AgentToolResult.Success("ok");
+        public int Summaries { get; private set; }
+
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+        {
+            bool summarizing = messages.Count == 1
+                               && (messages[0].Content ?? "").StartsWith(AgentContext.SummaryInstruction,
+                                   StringComparison.Ordinal);
+            if (summarizing) Summaries++;
+            return Task.FromResult(new CompletionResult { Content = summarizing ? summary : "已完成" });
+        }
+    }
+
+    internal sealed class FakeTool : ITool
+    {        public Func<ToolArgs, AgentToolResult> Handler { get; init; } = _ => AgentToolResult.Success("ok");
 
         public string Name { get; init; } = "echo";
         public string Description => "回显";

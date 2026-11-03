@@ -194,6 +194,28 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task Compression_that_cannot_shrink_any_further_stops_instead_of_spinning()
+        {
+            // 实测：最近几条自己就超过阈值时，压缩只剩「摘要的摘要」，长度不再下降，
+            // 状态机每圈重入压缩、每次打一次模型，永不结束（本地假网关 2500 次/秒）。
+            string chat = new('话', 40);
+            var history = Enumerable.Range(0, 8)
+                .Select(i => new OpenLoop.Core.Messages.LlmMessage(i % 2 == 0 ? "user" : "assistant", chat))
+                .ToList();
+            var reasoner = new SummarizeReasoner(new string('摘', 20));
+            var loop = Loops.Build(new FakeTool(), reasoner, new AgentPolicy { CompressAt = 0.5 });
+
+            var run = loop.RunAsync(history, "hi", contextLimit: 400);
+            var done = await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(10)));
+            Assert.Same(run, done);
+
+            var result = await run;
+            Assert.Equal(1, result.Guards.Compressions);
+            Assert.True(reasoner.Summaries <= 3, $"压缩被反复重试：{reasoner.Summaries} 次");
+            Assert.False(string.IsNullOrWhiteSpace(result.FinalAnswer));
+        }
+
+        [Fact]
         public async Task ContextOverflowErrorCompressesAndRetries()
         {
             var history = Enumerable.Range(0, 8)
