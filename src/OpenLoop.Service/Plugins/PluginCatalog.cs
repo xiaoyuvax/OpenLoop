@@ -65,6 +65,25 @@ namespace OpenLoop.Service.Plugins
             return new PluginCatalog(workspace, found);
         }
 
+        /// <summary>
+        /// 解析 provider 的地址：字面量直接用；写 <c>auto</c> 表示「用这个插件自己的服务」
+        /// （清单里 <c>service</c> 描述怎么起、怎么从 stdout 认地址）。
+        /// </summary>
+        private string Endpoint(PluginManifest plugin, PluginProviderContribution provider, string suffix)
+        {
+            string value = suffix == null ? provider.BaseUrl : provider.ModelsUrl;
+            if (string.IsNullOrWhiteSpace(value)) return value;
+
+            bool isAuto = value.Equals("auto", StringComparison.OrdinalIgnoreCase);
+            bool isAutoPath = value.StartsWith("auto/", StringComparison.OrdinalIgnoreCase);
+            if (!isAuto && !isAutoPath) return value;
+
+            string baseUrl = LocalServices.BaseUrl(plugin.Id, plugin.Service, Workspace, plugin.Root);
+            if (string.IsNullOrWhiteSpace(baseUrl)) return null;
+            if (isAutoPath) return baseUrl + value[4..];
+            return baseUrl + (suffix ?? "/v1");
+        }
+
         /// <summary>按模型名找贡献了它的提供商（工作区优先）：先看清单 models，再看 modelsUrl 拉到的目录。</summary>
         public bool TryProvider(string model, out PluginProviderContribution provider)
         {
@@ -72,45 +91,80 @@ namespace OpenLoop.Service.Plugins
             provider = null;
             if (string.IsNullOrEmpty(id)) return false;
 
-            var declared = _plugins
-                .SelectMany(p => p.Contributions?.Providers ?? [])
-                .Where(p => !string.IsNullOrWhiteSpace(p.BaseUrl))
-                .ToList();
+            foreach (var plugin in _plugins)
+            {
+                foreach (var candidate in plugin.Contributions?.Providers ?? [])
+                {
+                    string prefix = candidate.ModelPrefix ?? "";
+                    bool byPrefix = prefix.Length > 0 && id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+                    string bare = byPrefix ? id[prefix.Length..] : id;
 
-            provider = declared.FirstOrDefault(p => (p.Models ?? [])
-                .Any(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase)));
-            if (provider != null) return true;
+                    bool declared = (candidate.Models ?? [])
+                        .Any(m => string.Equals(m, bare, StringComparison.OrdinalIgnoreCase));
+                    // 前缀就是归属声明：认得前缀就归它，哪怕模型目录还没拉到（服务刚起、目录为空）
+                    bool discovered = !byPrefix && !declared && !string.IsNullOrWhiteSpace(candidate.ModelsUrl) &&
+                        Discover(Endpoint(plugin, candidate, "/v1/models"), candidate.ResolveKey())
+                            .Any(m => string.Equals(m, bare, StringComparison.OrdinalIgnoreCase));
+                    if (!byPrefix && !declared && !discovered) continue;
 
-            provider = declared.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.ModelsUrl) &&
-                Discover(p).Any(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase)));
-            return provider != null;
+                    string baseUrl = Endpoint(plugin, candidate, null);
+                    if (string.IsNullOrWhiteSpace(baseUrl))
+                    {
+                        AppLog.Warn($"服务型插件 {plugin.Id} 没有就绪，模型 {id} 用不了");
+                        candidate.BaseUrl = "";
+                        provider = candidate;
+                        return true;
+                    }
+
+                    candidate.BaseUrl = baseUrl;
+                    provider = candidate;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
-        /// <summary>所有 provider 贡献的模型 id（含发现结果），给模型选择器用。</summary>
+        /// <summary>所有 provider 贡献的模型 id（含发现结果、带界面前缀），给模型选择器用。</summary>
         public IReadOnlyList<string> Models()
         {
             var ids = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var provider in _plugins.SelectMany(p => p.Contributions?.Providers ?? []))
+            foreach (var plugin in _plugins)
             {
-                foreach (string id in (provider.Models ?? []).Concat(Discover(provider)))
-                    if (!string.IsNullOrWhiteSpace(id) && seen.Add(id)) ids.Add(id);
+                foreach (var provider in plugin.Contributions?.Providers ?? [])
+                {
+                    foreach (string id in All(plugin, provider))
+                        if (!string.IsNullOrWhiteSpace(id) && seen.Add(id)) ids.Add(id);
+                }
             }
             return ids;
+        }
+
+        /// <summary>某个 provider 的完整模型清单（声明的 + modelsUrl 拉到的，统一加界面前缀）。</summary>
+        private IEnumerable<string> All(PluginManifest plugin, PluginProviderContribution provider)
+        {
+            string prefix = provider.ModelPrefix ?? "";
+            return (provider.Models ?? [])
+                .Concat(Discover(Endpoint(plugin, provider, "/v1/models"), provider.ResolveKey()))
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? id : prefix + id);
         }
 
         /// <summary>给提供商下拉用的分组：插件声明的 provider 名 + 它的模型，选中后只列这些模型。</summary>
         public IReadOnlyList<(string Name, List<string> Models)> ProviderGroups()
         {
             var groups = new List<(string, List<string>)>();
-            foreach (var provider in _plugins.SelectMany(p => p.Contributions?.Providers ?? []))
+            foreach (var plugin in _plugins)
             {
-                var ids = (provider.Models ?? []).Concat(Discover(provider))
-                    .Where(id => !string.IsNullOrWhiteSpace(id))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                if (ids.Count == 0) continue;
-                groups.Add((string.IsNullOrWhiteSpace(provider.Name) ? provider.Id : provider.Name, ids));
+                foreach (var provider in plugin.Contributions?.Providers ?? [])
+                {
+                    var ids = All(plugin, provider)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (ids.Count == 0) continue;
+                    groups.Add((string.IsNullOrWhiteSpace(provider.Name) ? provider.Id : provider.Name, ids));
+                }
             }
             return groups;
         }
@@ -120,16 +174,17 @@ namespace OpenLoop.Service.Plugins
         private static readonly Dictionary<string, (DateTimeOffset At, List<string> Ids)> Discovered =
             new(StringComparer.OrdinalIgnoreCase);
         private static readonly TimeSpan DiscoveryTtl = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan EmptyDiscoveryTtl = TimeSpan.FromSeconds(20);
 
         /// <summary>拉一次 <c>/v1/models</c>；失败也缓存（空清单），免得每次调用都等超时。</summary>
-        private static List<string> Discover(PluginProviderContribution provider)
+        private static List<string> Discover(string url, string key)
         {
-            if (string.IsNullOrWhiteSpace(provider.ModelsUrl)) return [];
+            if (string.IsNullOrWhiteSpace(url)) return [];
 
-            string url = provider.ModelsUrl;
             lock (DiscoveryLock)
             {
-                if (Discovered.TryGetValue(url, out var cached) && DateTimeOffset.Now - cached.At < DiscoveryTtl)
+                if (Discovered.TryGetValue(url, out var cached) &&
+                    DateTimeOffset.Now - cached.At < (cached.Ids.Count == 0 ? EmptyDiscoveryTtl : DiscoveryTtl))
                     return cached.Ids;
             }
 
@@ -137,7 +192,6 @@ namespace OpenLoop.Service.Plugins
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                string key = provider.ResolveKey();
                 if (!string.IsNullOrWhiteSpace(key))
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
                 using var response = Http.Send(request);
@@ -160,8 +214,7 @@ namespace OpenLoop.Service.Plugins
             }
 
             lock (DiscoveryLock) Discovered[url] = (DateTimeOffset.Now, ids);
-            return ids;
-        }
+            return ids;        }
 
         /// <summary>一次查询用：读清单、找模型，不启动任何进程。</summary>
         public static bool TryProvider(string workspace, string model, out PluginProviderContribution provider,

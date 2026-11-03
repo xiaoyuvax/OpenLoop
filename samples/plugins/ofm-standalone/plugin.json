@@ -1,0 +1,31 @@
+{
+  "id": "ofm",
+  "name": "OFM",
+  "version": "1.0.0",
+  "service": {
+    "command": "node",
+    "args": [
+      "{root}/cli.mjs",
+      "--port",
+      "0",
+      "--no-refresh",
+      "--data-dir",
+      "{root}/data"
+    ],
+    "urlPattern": "(https?://127\\.0\\.0\\.1:\\d+)",
+    "timeoutMs": 20000
+  },
+  "contributions": {
+    "providers": [
+      {
+        "id": "ofm",
+        "name": "OFM",
+        "baseUrl": "auto",
+        "modelsUrl": "auto/v1/models",
+        "modelPrefix": "ofm/",
+        "keyFile": "{root}/data/settings.json",
+        "keyField": "forwardKey"
+      }
+    ]
+  }
+}

@@ -21,7 +21,8 @@ namespace OpenLoop.Service.Models
 
             string pluginWorkspace = string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace;
             if (PluginCatalog.TryProvider(pluginWorkspace, model, out var provider))
-                return new OpenAiCompatibleReasoner(provider.BaseUrl, model, provider.ResolveKey(), effort);
+                return new OpenAiCompatibleReasoner(
+                    provider.BaseUrl, provider.WireModel(model), provider.ResolveKey(), effort);
 
             var (baseUrl, apiKey) = settings.EndpointFor(model);
             return new OpenAiCompatibleReasoner(baseUrl, model, apiKey, effort);

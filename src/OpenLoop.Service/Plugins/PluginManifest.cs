@@ -18,6 +18,9 @@ namespace OpenLoop.Service.Plugins
         /// <summary>可选：接一个 MCP 服务端（Streamable HTTP 或 stdio 子进程），工具在运行时发现</summary>
         public PluginMcpContribution Mcp { get; set; }
 
+        /// <summary>可选：一个本地服务（宿主按清单拉起子进程，provider 的地址可以写 auto）</summary>
+        public PluginServiceContribution Service { get; set; }
+
         /// <summary>清单所在目录（入口的相对参数与工作目录都以它为基准）。</summary>
         [JsonIgnore]
         public string Root { get; set; }
@@ -42,6 +45,15 @@ namespace OpenLoop.Service.Plugins
                 if (hasTools && string.IsNullOrWhiteSpace(manifest.Entry?.Command)) return null;
 
                 manifest.Root = Path.GetFullPath(dir);
+
+                // 清单里的 {root} 指向清单所在目录：服务参数、密钥文件都据此定位
+                foreach (var provider in manifest.Contributions?.Providers ?? [])
+                {
+                    provider.BaseUrl = Expand(provider.BaseUrl, manifest.Root);
+                    provider.ModelsUrl = Expand(provider.ModelsUrl, manifest.Root);
+                    provider.KeyFile = Expand(provider.KeyFile, manifest.Root);
+                }
+
                 return manifest;
             }
             catch
@@ -56,6 +68,11 @@ namespace OpenLoop.Service.Plugins
             ReadCommentHandling = JsonCommentHandling.Skip,
             AllowTrailingCommas = true
         };
+
+        private static string Expand(string value, string root)
+            => string.IsNullOrEmpty(value)
+                ? value
+                : value.Replace("{root}", root, StringComparison.OrdinalIgnoreCase);
     }
 
     public sealed class PluginEntry
@@ -102,9 +119,43 @@ namespace OpenLoop.Service.Plugins
         /// </summary>
         public string ModelsUrl { get; set; }
 
-        public string ResolveKey() => PluginSecret.Resolve(KeyEnv, KeyFile);
+        /// <summary>
+        /// 模型 id 的界面前缀（如 <c>ofm/</c>）：让人能区分「同一 id 由谁提供」，
+        /// 走 wire 时会去掉，不会发给上游。
+        /// </summary>
+        public string ModelPrefix { get; set; }
+
+        /// <summary>密钥文件是 JSON 时，取哪个字段（空表示整份文件就是密钥）。</summary>
+        public string KeyField { get; set; }
+
+        public string ResolveKey() => PluginSecret.Resolve(KeyEnv, KeyFile, KeyField);
+
+        /// <summary>界面上的模型 id → 上游期望的模型 id。</summary>
+        public string WireModel(string model)
+            => string.IsNullOrEmpty(ModelPrefix) || model == null ? model
+                : model.StartsWith(ModelPrefix, StringComparison.OrdinalIgnoreCase) ? model[ModelPrefix.Length..]
+                : model;
 
         internal static string ExpandPath(string path) => PluginSecret.ExpandPath(path);
+    }
+
+    /// <summary>
+    /// 可选：一个本地服务插件。宿主按清单拉起子进程，从 stdout 里认出它的 URL，
+    /// provider 的 <c>baseUrl</c>/<c>modelsUrl</c> 写 <c>auto</c> 就用这个地址。
+    /// 生命周期跟宿主进程一致（退出时杀掉）。
+    /// </summary>
+    public sealed class PluginServiceContribution
+    {
+        public string Command { get; set; }
+        public List<string> Args { get; set; } = [];
+
+        /// <summary>从 stdout 每行里提取服务地址的正则；第一个分组是 URL（没有分组就取整行 0 号）。</summary>
+        public string UrlPattern { get; set; } = @"(https?://[^\s""']+)";
+
+        /// <summary>等 URL 出现的上限。</summary>
+        public int TimeoutMs { get; set; } = 15000;
+
+        public Dictionary<string, string> Env { get; set; } = [];
     }
 
     /// <summary>
@@ -128,10 +179,10 @@ namespace OpenLoop.Service.Plugins
         public string ResolveKey() => PluginSecret.Resolve(KeyEnv, KeyFile);
     }
 
-    /// <summary>provider / mcp 共用的凭据解析：环境变量优先，其次本地文件。</summary>
+    /// <summary>provider / mcp 共用的凭据解析：环境变量优先，其次本地文件（可选 JSON 字段）。</summary>
     internal static class PluginSecret
     {
-        public static string Resolve(string keyEnv, string keyFile)
+        public static string Resolve(string keyEnv, string keyFile, string keyField = null)
         {
             if (!string.IsNullOrWhiteSpace(keyEnv) &&
                 Environment.GetEnvironmentVariable(keyEnv) is { Length: > 0 } fromEnv)
@@ -141,7 +192,15 @@ namespace OpenLoop.Service.Plugins
             try
             {
                 string path = ExpandPath(keyFile);
-                return File.Exists(path) ? File.ReadAllText(path).Trim() : "";
+                if (!File.Exists(path)) return "";
+                string text = File.ReadAllText(path).Trim();
+                if (string.IsNullOrWhiteSpace(keyField) || text.Length == 0 || text[0] != '{') return text;
+
+                using var doc = JsonDocument.Parse(text);
+                return doc.RootElement.TryGetProperty(keyField, out var value) &&
+                       value.ValueKind == JsonValueKind.String
+                    ? value.GetString()?.Trim() ?? ""
+                    : "";
             }
             catch
             {
