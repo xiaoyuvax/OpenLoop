@@ -991,12 +991,35 @@ dsh spike 结论（实测）：
 顺带补了 trace 观测：`requests.jsonl` 每次真正调用模型写一行（`{at, tokens, messages[]}`），
 能看出压缩后实际发出去的是什么；`messages.jsonl` 保持「对话两端」不变。
 
+**2026-11-03 夜 · EAC 授权后复跑：20 轮真模型全过**
+
+用户在 dsh web 里完成 GitHub 授权（`~/.dsh/our-free-model/eac-user.json`：`login=xiaoyuvax`）后，
+`AUTHORIZATION_REQUIRED` 消失，但大多数模型仍被拦：
+
+| 模型 | 补全 | 一轮工具探针 |
+|---|---|---|
+| `our-free-model/minimaxai/minimax-m3.1-flash` | ✅ | **2/2 次正常调 ReadFile** |
+| `our-free-model/stepfun-ai/step-5-preview` | ✅ | 0/2（只说话不动手） |
+| `our-free-model/cohere/north-mini-code:free` | ✅ | 0/2（只说话不动手） |
+| `our-free-model/z-ai/glm-5.3-flash`、`deepseek-ai/deepseek-v4.1-flash` | ❌ 45 秒无响应 | — |
+| `opencode/*`、纯 `*-free`（nemotron / glm / deepseek） | ❌ `Free usage limit reached` | — |
+
+用 `minimaxai/minimax-m3.1-flash` 跑同一份 20 轮脚本（每轮读一个 100 行文件、第 10 轮插取消测试）：
+
+- 20/20 轮 `done/ok`，**每轮恰好 1 次工具调用**（合计 20 步），全程 0 次停滞；
+- 取消测试 `interrupted/stopped`，之后继续跑完；21/21 `run.json` 合法，spool 空；
+- ctx 1682→4143，**每轮只涨 128**（本轮修复前是每轮 +3200）；压缩 0 次——上下文根本没到阈值，
+  这才是应有的样子。
+
+结论：长会话验收（工具调用贯穿、取消、落盘、trace）在真模型上成立；剩下的是模型供给问题，
+不是链路问题。
+
 ## 15. 待办（2026-11-03 记）
 
-- ~~**长会话稳定性**~~（已跑，见 §14「长会话压测」）：流程/压缩/取消/trace 都成立，
+- ~~**长会话稳定性**~~（已跑，见 §14「长会话压测」）：20 轮真模型（`minimax-m3.1-flash`）全过，
   修掉「无限重发」「无限压缩」「system 一轮叠一份」「尾部按条数留」四个问题。
-  **仍欠**：一个「会发 tool-call」的稳定免费模型——当前只有聚合链可用且路由随机，
-  `opencode/*` 要 dsh 侧做 GitHub 授权，纯 `nemotron/glm/deepseek` 免费版仍在限额。
+  **仍欠**：稳定的免费模型池——`opencode/*` 与纯 `*-free` 仍在限额，能用的是 EAC 侧的
+  `minimax-m3.1-flash`（会调工具）、`stepfun-ai/step-5-preview`、`cohere/north-mini-code:free`（不调工具）。
 - ~~**MCP 客户端**~~（已接上，含 stdio）：`mcp: {url, keyEnv|keyFile, timeoutMs}` 走 Streamable HTTP；
   `mcp: {command, args, timeoutMs}` 起本地 stdio 子进程（每行一条 JSON-RPC，id 对不上就跳过）。
   示例见 `samples/plugins/puppet-mcp/`，单测 `McpClientTests`。
