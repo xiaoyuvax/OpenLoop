@@ -30,6 +30,12 @@ namespace OpenLoop.Core.Reasoning
         /// </summary>
         public TimeSpan StreamIdleTimeout { get; set; } = TimeSpan.FromSeconds(90);
 
+        /// <summary>
+        /// 连续多少次「正文停滞」就放弃这一轮（&lt;=0 表示一直重试）。
+        /// 网关彻底不回内容时，无限重试会让界面永远停在运行中。
+        /// </summary>
+        public int StreamStallLimit { get; set; } = 3;
+
         /// <summary>进度回调（等待模型响应 / 第 N 次重试 / 放弃），供宿主给视觉反馈。</summary>
         public Action<ReasonerProgress> OnProgress { get; set; }
 
@@ -101,6 +107,7 @@ namespace OpenLoop.Core.Reasoning
             string json = JsonSerializer.Serialize(payload, PayloadJson);
 
             int attempt = 0;
+            int stalls = 0;
             while (true)
             {
                 string failure;
@@ -119,9 +126,17 @@ namespace OpenLoop.Core.Reasoning
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
+                    stalls++;
                     failure = StreamIdleTimeout > TimeSpan.Zero
                         ? $"正文停滞：{StreamIdleTimeout.TotalSeconds:0} 秒没有新数据"
                         : $"正文 {StreamTimeout.TotalSeconds:0} 秒未吐完";
+                    if (StreamStallLimit > 0 && stalls >= StreamStallLimit)
+                        throw new InvalidOperationException($"模型连续 {stalls} 次{failure}，放弃这一轮");
+                }
+                catch (Exception ex) when (IsTransient(ex) && !ct.IsCancellationRequested)
+                {
+                    stalls = 0;
+                    failure = TransientReason(ex);
                 }
                 catch (Exception ex) when (IsTransient(ex) && !ct.IsCancellationRequested)
                 {

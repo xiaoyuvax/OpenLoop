@@ -149,6 +149,97 @@ public sealed class ReasonerTests
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"空闲超时没有生效：{watch.Elapsed}");
     }
 
+    [Fact]
+    public async Task Stream_that_keeps_stalling_gives_up_instead_of_retrying_forever()
+    {
+        // 实测：网关回 200 后一个字节不吐，无限重试会让界面永远「运行中」
+        using var server = new StallingSseServer();
+        var reasoner = new OpenAiCompatibleReasoner(server.BaseUrl, "m", "")
+        {
+            StreamIdleTimeout = TimeSpan.FromMilliseconds(200),
+            StreamStallLimit = 2,
+            FirstResponseTimeout = TimeSpan.FromSeconds(5)
+        };
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reasoner.StreamAsync([new LlmMessage("user", "hi")], _ => { }, cts.Token));
+
+        Assert.Contains("连续 2 次", ex.Message);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"放弃得太慢：{watch.Elapsed}");
+    }
+
+    /// <summary>回 200 + 一帧 SSE 后再也不发数据（也不断开），模拟网关挂住。</summary>
+    private sealed class StallingSseServer : IDisposable
+    {
+        private readonly System.Net.Sockets.TcpListener _listener =
+            new(System.Net.IPAddress.Loopback, 0);
+        private readonly CancellationTokenSource _cts = new();
+
+        public StallingSseServer()
+        {
+            _listener.Start();
+            BaseUrl = $"http://127.0.0.1:{((System.Net.IPEndPoint)_listener.LocalEndpoint).Port}/v1";
+            _ = Task.Run(AcceptAsync);
+        }
+
+        public string BaseUrl { get; }
+
+        private async Task AcceptAsync()
+        {
+            while (!_cts.IsCancellationRequested)
+            {
+                System.Net.Sockets.TcpClient client;
+                try { client = await _listener.AcceptTcpClientAsync(_cts.Token); }
+                catch { return; }
+                _ = Task.Run(() => ServeAsync(client));
+            }
+        }
+
+        private async Task ServeAsync(System.Net.Sockets.TcpClient client)
+        {
+            using (client)
+            {
+                var stream = client.GetStream();
+                using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, false, 4096, leaveOpen: true);
+                int length = 0;
+                string line;
+                while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
+                {
+                    if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                        int.TryParse(line[(line.IndexOf(':') + 1)..].Trim(), out length);
+                }
+                if (length > 0)
+                {
+                    var body = new char[length];
+                    int read = 0;
+                    while (read < length)
+                    {
+                        int chunk = await reader.ReadAsync(body.AsMemory(read, length - read));
+                        if (chunk == 0) break;
+                        read += chunk;
+                    }
+                }
+
+                await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"));
+                await stream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"半句\"}}]}\n\n"));
+                await stream.FlushAsync();
+
+                try { await Task.Delay(Timeout.Infinite, _cts.Token); } catch { }
+            }
+        }
+
+        public void Dispose()
+        {
+            _cts.Cancel();
+            _listener.Stop();
+            _cts.Dispose();
+        }
+    }
+
     /// <summary>吐一行后不再返回，直到读取被取消（模拟网关半途挂住）。</summary>
     private sealed class StallingReader(string first) : TextReader
     {
