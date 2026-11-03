@@ -967,11 +967,36 @@ dsh spike 结论（实测）：
 限制：当日两条免费通道都返回 `Free usage limit reached`，所以最后一轮用的是本地假端点——
 它证明流程/压缩/取消/落盘，不证明模型质量。配额恢复后按同一脚本复跑真模型 20 轮即可补齐。
 
+**2026-11-03 晚 · 真模型 20 轮复跑，暴露两个上下文问题**
+
+配额部分恢复后（`kilo-auto/free`、`openrouter/free` 可用；`opencode/*` 报 `AUTHORIZATION_REQUIRED`，
+纯 `nemotron/glm/deepseek` 免费版仍 `Free usage limit reached`）用 `kilo-auto/free` 跑了 20 轮：
+
+- 轮次：20/20 `done/ok`，**全程 0 次停滞**，取消测试 `interrupted/stopped`，之后继续跑完；
+  21/21 `run.json` 合法、spool 空、ledger 33 行；
+- 但 **0 次工具调用**：模型全程自言自语，自称「指令要求不要调用工具」——聚合链这次路由到的上游
+  不遵守文本工具协议（同一个 id 上午那轮是 13/20 正常的，路由随机）；
+- 压缩触发 20 次，ctx 仍从 12834 涨到 59543。
+
+查下去是两个真 bug，都已修：
+
+- **system 提示词一轮叠一份**：`BuildHistory` 直接复用上一轮的 transcript，而 transcript 里带着
+  当轮插入的 system；下一轮又插一份 → 第 8 轮时历史里已有 9 份 system（9×2744 字符），
+  白吃约 5k token。现在拼历史时丢掉 transcript 里的 system，只留当前这一份。
+  实测同一条轨迹：单次请求的估算 token 从 18706 降到 **8416**，9 个 run 的压缩次数从 11 降到 1。
+- **尾部按条数留、不按 token**：最近 6 条若都是 6KB 的工具结果，尾部自己就 9k token，压缩换掉中间
+  也降不到阈值以下。现在尾部按 token 预算留（`KeepRecentTokens` 8000，窗口小则 `ContextLimit/4`），
+  至少留最后一条，边界仍不拆 tool-call/tool-result。
+
+顺带补了 trace 观测：`requests.jsonl` 每次真正调用模型写一行（`{at, tokens, messages[]}`），
+能看出压缩后实际发出去的是什么；`messages.jsonl` 保持「对话两端」不变。
+
 ## 15. 待办（2026-11-03 记）
 
 - ~~**长会话稳定性**~~（已跑，见 §14「长会话压测」）：流程/压缩/取消/trace 都成立，
-  并修掉「无限重发」「无限压缩」两个卡死路径。剩下的：免费配额恢复后用同一脚本复跑真模型
-  20 轮，补齐模型质量那一半。
+  修掉「无限重发」「无限压缩」「system 一轮叠一份」「尾部按条数留」四个问题。
+  **仍欠**：一个「会发 tool-call」的稳定免费模型——当前只有聚合链可用且路由随机，
+  `opencode/*` 要 dsh 侧做 GitHub 授权，纯 `nemotron/glm/deepseek` 免费版仍在限额。
 - ~~**MCP 客户端**~~（已接上，含 stdio）：`mcp: {url, keyEnv|keyFile, timeoutMs}` 走 Streamable HTTP；
   `mcp: {command, args, timeoutMs}` 起本地 stdio 子进程（每行一条 JSON-RPC，id 对不上就跳过）。
   示例见 `samples/plugins/puppet-mcp/`，单测 `McpClientTests`。
