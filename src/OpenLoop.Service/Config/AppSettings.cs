@@ -30,6 +30,12 @@ namespace OpenLoop.Service.Config
         public string KeyProtected { get; set; } = "";
         public string Workspace { get; set; } = "";
 
+        /// <summary>dsh 的命令（默认 PATH 里的 <c>dsh</c>）；模型 id 以 <c>dsh/</c> 开头时走 ACP。</summary>
+        public string DshCommand { get; set; } = "dsh";
+
+        /// <summary>dsh 的 profile 名（默认 <c>acp</c>）。</summary>
+        public string DshProfile { get; set; } = "acp";
+
         /// <summary>事件驱动：攒够新证据就自己开一轮演进（默认关，会花模型调用）。</summary>
         public bool AutoEvolve { get; set; }
 

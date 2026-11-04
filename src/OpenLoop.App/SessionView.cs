@@ -34,6 +34,7 @@ namespace OpenLoop.App
         private string _effort = "";
         private bool _onlyFree = true;
         private bool _fillingProviders;
+        private bool _dshModelsWarmed;
         private bool _layoutReady;
         private readonly Dictionary<ChatTurn, TurnUndo> _turnUndo = [];
         private sealed record TurnUndo(FileUndoLog Log, string Checkpoint);
@@ -902,6 +903,23 @@ namespace OpenLoop.App
                         {
                             Tag = new ProviderConfig { Name = name, Kind = "custom", BaseUrl = "", Models = models }
                         });
+                }
+
+                // dsh 的模型走 ACP，清单要起 dsh 才有：先读缓存，后台再刷一次
+                var dshModels = OpenLoop.Service.Models.DshAcpHub.CachedModels();
+                if (dshModels.Count > 0)
+                {
+                    _selProvider.Items.Add(new AntdUI.SelectItem("dsh")
+                    {
+                        Tag = new ProviderConfig { Name = "dsh", Kind = "custom", BaseUrl = "", Models = dshModels.ToList() }
+                    });
+                }
+                if (!_dshModelsWarmed)
+                {
+                    _dshModelsWarmed = true;
+                    var settings = _settings?.Invoke();
+                    if (settings != null)
+                        _ = System.Threading.Tasks.Task.Run(() => OpenLoop.Service.Models.DshAcpHub.Models(settings));
                 }
 
                 int index = 0;

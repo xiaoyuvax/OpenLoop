@@ -1056,6 +1056,29 @@ API Key 保存在：…\settings.json
 
 **本轮测试产物**：`~/.dsh/profiles/` 下的 `acptest`、`web-desktop`、`acp` 三个实验 profile 已删除（`acp` 会在下次 `dsh --profile acp` 时自动重建；要用 EAC 就复制成 `web-desktop`）。测试脚本留在 `%TEMP%\opencode\acp-*.mjs`。
 
+**2026-11-04 · `dsh-acp` 作为 provider（已落地）**
+
+`dsh` 的 ACP 会话现在能当一个模型用：模型 id 形如 `dsh/<provider>/<model>`
+（例：`dsh/our-free-model/kilo-auto/free`），选中后 OpenLoop 把这次要说的话压成一条 prompt
+交给 `dsh --profile <p>`，dsh 自己的 agent 用它的工具干活，结果按 `session/update` 回来。
+
+- 设置：`DshCommand`（默认 `dsh`，Windows 下会自动把 npm 的 `.cmd` 垫片交给 `cmd.exe /c`）、
+  `DshProfile`（默认 `acp`）；模型清单来自 `session/new` 的 `configOptions`，
+  缓存到 `runtime/dsh-models.json`，界面先读缓存、后台再刷（拉起 dsh 太慢，不能卡 UI）。
+- 权限：`session/request_permission` 按 OpenLoop 的 `FullAccess` 回答（允许→`allow_*`，否则 `reject_*`）；
+  客户端声明空能力，所以代理不会反过来调 fs/terminal。
+- 取消：`ct` 取消时发 `session/cancel` 通知。
+- 体验：整段到达（不是打字机）；工具与状态属于 dsh，OpenLoop 的 trace 只记到「这一轮交给 dsh」。
+- 前置：目标 profile 必须包含 `@deepseek-ai/dsh-acp-app` 和你想用的插件
+  （`dsh plugin --profile <p> add <pkg>`）；要 EAC 模型，profile 名得是 `web`/`web-desktop`/`desktop`/`tauri`。
+
+实测：`dsh/our-free-model/kilo-auto/free` 一轮 5 秒拿到回答（`dsh` 真进程、真模型）；
+假代理单测覆盖模型解析、流式拼装、权限拒绝。Core 195 通过 / 1 跳过，Service 82 通过。
+
+顺手修掉一个真 bug：**插件工具的超时从来没生效**——`ReadLineAsync(ct)` 在重定向管道上不响应取消，
+插件睡多久就等多久（`EchoPluginTests` 的 300ms 超时测试一直靠「比 5 秒短」侥幸通过）。
+现在改用 `ReadLineAsync().WaitAsync(timeout, ct)`，并要求测试先热身，别把 node 启动时间算进超时。
+
 ## 16. 待办（2026-11-03 记）
 
 - ~~**长会话稳定性**~~（已跑，见 §14「长会话压测」）：20 轮真模型（`minimax-m3.1-flash`）全过，

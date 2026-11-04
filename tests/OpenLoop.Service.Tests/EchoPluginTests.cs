@@ -82,8 +82,12 @@ namespace OpenLoop.Service.Tests
                 File.ReadAllText(manifest).Replace("\"timeoutMs\": 30000", "\"timeoutMs\": 300"));
 
             using var catalog = PluginCatalog.Load(_workspace);
+            var tool = EchoTool(catalog);
+            // 先跑一次热身：进程启动时间不该算进“超时是否生效”里（并行跑测试时 node 起得慢）
+            Assert.True((await Call(tool, "warm")).Ok);
+
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            var result = await Call(EchoTool(catalog), "__sleep__");
+            var result = await Call(tool, "__sleep__");
             watch.Stop();
 
             Assert.False(result.Ok);

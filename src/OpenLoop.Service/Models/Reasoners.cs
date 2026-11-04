@@ -12,6 +12,9 @@ namespace OpenLoop.Service.Models
     {
         public static IReasoner Create(AppSettings settings, string model, string effort, string workspace = null)
         {
+            if (DshAcpHub.IsDsh(model))
+                return DshAcpHub.Reasoner(settings, model, workspace);
+
             if (model != null && model.StartsWith(OpenCodeModelId.Prefix, StringComparison.OrdinalIgnoreCase))
                 OpenCodeHub.EnsureFresh();
 

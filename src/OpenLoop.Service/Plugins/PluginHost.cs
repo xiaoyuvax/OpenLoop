@@ -209,7 +209,8 @@ namespace OpenLoop.Service.Plugins
 
                 while (true)
                 {
-                    string line = await _process.StandardOutput.ReadLineAsync(cts.Token).ConfigureAwait(false);
+                    string line = await _process.StandardOutput.ReadLineAsync()
+                        .WaitAsync(timeout, ct).ConfigureAwait(false);
                     if (line == null) throw new IOException("插件已退出");
 
                     string trimmed = line.Trim();
@@ -218,6 +219,11 @@ namespace OpenLoop.Service.Plugins
 
                     AppLog.Warn($"[plugin:{_id}] {Trim(trimmed)}");
                 }
+            }
+            catch (TimeoutException)
+            {
+                Kill();
+                throw new TimeoutException("插件响应超时");
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
