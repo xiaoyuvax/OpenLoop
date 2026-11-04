@@ -75,11 +75,7 @@ namespace OpenLoop.App
             }).ToList();
 
             ChatHistory.Write(workspace, kind, entries);
-            if (!string.IsNullOrWhiteSpace(kind) && kind != LoopKind) Touch(workspace, kind);
         }
-
-        /// <summary>Loop 会话与普通会话共用一个目录，但恢复时只认普通会话。</summary>
-        private const string LoopKind = "loop";
 
         /// <summary>删除一个会话的对话文件与索引项。</summary>
         public static void Delete(string workspace, string sessionId)
@@ -97,7 +93,8 @@ namespace OpenLoop.App
 
         /// <summary>
         /// 会话索引：文件名是哈希，重启后没有索引就无从把会话找回来。
-        /// A 每轮落盘后自己也会 Touch，所以直接建在 API 上的会话同样进得来。
+        /// 每轮落盘由 A 自己登记（<c>WorkerSessionHost.Persist</c>）；壳只在改名、
+        /// 以及「A 不知道的会话」（关窗时被淘汰的侧线对话）落盘时写，别在存对话时顺手写。
         /// </summary>
         public static void Touch(string workspace, string sessionId, string title = null)
             => ChatHistory.Touch(workspace, sessionId, title);

@@ -11,6 +11,7 @@ using Xunit;
 namespace OpenLoop.Service.Tests
 {
     /// <summary>界面客户端依赖的 API 形状：显式 id、404、审批回传。</summary>
+    [Collection("chat-index")]
     public class WorkerApiHandlerTests
     {
         private const string Key = "test-key";

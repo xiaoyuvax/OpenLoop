@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using OpenLoop.Service.Logging;
 
 namespace OpenLoop.Service.Storage
 {
@@ -97,11 +98,15 @@ namespace OpenLoop.Service.Storage
         // ---- 会话索引 ----
         //
         // 对话文件按「工作目录 + id」分桶，光靠目录扫不出来（哈希名），所以要一张索引。
-        // 壳和 A 两个进程都会写：A 每轮结束 Touch 一次，壳自己也 Touch。
-        // shortcut: 索引是「读-改-写」，跨进程并发时极端情况下可能丢一条录入；
-        // 丢了只是列表少一条（对话文件还在，A 在线时壳的远端同步会补回来），要严格一致再加文件锁。
+        // 壳和 A 是两个进程：A 每轮落盘 Touch 一次，壳只在改名/侧线会话落盘时写。
+        // 每次写都是「读-改-写」整张表，所以锁必须跨进程（static lock 只管本进程）、
+        // 临时文件名也必须唯一（共用 index.json.tmp 时两个进程会互相顶掉，实测丢过 40 多条）。
+
+        private const string IndexMutexName = "OpenLoop.chats.index";
 
         private static readonly object IndexGate = new();
+        private static Mutex _indexMutex;
+        private static bool _indexMutexBroken;
 
         public static string IndexPath => Path.Combine(Dir, "index.json");
 
@@ -122,48 +127,98 @@ namespace OpenLoop.Service.Storage
         public static void Touch(string workspace, string kind, string title = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(kind)) return;
-            try
+            string full = Path.GetFullPath(workspace.Trim());
+            Mutate(all =>
             {
-                lock (IndexGate)
+                var item = all.FirstOrDefault(e => e.Id == kind);
+                if (item == null)
                 {
-                    var all = Index().ToList();
-                    string full = Path.GetFullPath(workspace.Trim());
-                    var item = all.FirstOrDefault(e => e.Id == kind);
-                    if (item == null)
-                    {
-                        all.Add(new ChatIndexEntry { Id = kind, Workspace = full, Title = title ?? "" });
-                    }
-                    else
-                    {
-                        item.Workspace = full;
-                        item.UpdatedAt = DateTime.UtcNow;
-                        if (title != null) item.Title = title;
-                    }
-
-                    Directory.CreateDirectory(Dir);
-                    string temp = IndexPath + ".tmp";
-                    File.WriteAllText(temp, JsonSerializer.Serialize(all, Json), new UTF8Encoding(false));
-                    File.Move(temp, IndexPath, true);
+                    all.Add(new ChatIndexEntry { Id = kind, Workspace = full, Title = title ?? "" });
                 }
-            }
-            catch
-            {
-            }
+                else
+                {
+                    item.Workspace = full;
+                    item.UpdatedAt = DateTime.UtcNow;
+                    if (title != null) item.Title = title;
+                }
+                return all;
+            });
         }
 
         public static void Forget(string kind)
         {
             if (string.IsNullOrWhiteSpace(kind)) return;
+            Mutate(all => all.Where(e => e.Id != kind).ToList());
+        }
+
+        /// <summary>把「读 index.json → 改 → 写新文件替换」整段放进跨进程锁里。</summary>
+        private static void Mutate(Func<List<ChatIndexEntry>, List<ChatIndexEntry>> change)
+        {
+            lock (IndexGate)
+            {
+                bool locked = false;
+                try
+                {
+                    locked = EnterIndexMutex();
+                    var all = change(Index().ToList());
+
+                    Directory.CreateDirectory(Dir);
+                    string temp = $"{IndexPath}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
+                    try
+                    {
+                        File.WriteAllText(temp, JsonSerializer.Serialize(all, Json), new UTF8Encoding(false));
+                        File.Move(temp, IndexPath, true);
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            if (File.Exists(temp)) File.Delete(temp);
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warn("会话索引写入失败：" + ex.Message);
+                }
+                finally
+                {
+                    if (locked) ExitIndexMutex();
+                }
+            }
+        }
+
+        /// <summary>命名互斥锁；拿到返回 true（必须配 <see cref="ExitIndexMutex"/>）。</summary>
+        private static bool EnterIndexMutex()
+        {
+            if (_indexMutexBroken) return false;
             try
             {
-                lock (IndexGate)
-                {
-                    var all = Index().Where(e => e.Id != kind).ToList();
-                    Directory.CreateDirectory(Dir);
-                    string temp = IndexPath + ".tmp";
-                    File.WriteAllText(temp, JsonSerializer.Serialize(all, Json), new UTF8Encoding(false));
-                    File.Move(temp, IndexPath, true);
-                }
+                _indexMutex ??= new Mutex(false, IndexMutexName);
+                // 等不到（30s）也照写：丢一条比整次落盘失败更糟
+                return _indexMutex.WaitOne(TimeSpan.FromSeconds(30));
+            }
+            catch (AbandonedMutexException)
+            {
+                return true; // 上个进程没释放就退了，锁现在归我们
+            }
+            catch (Exception ex)
+            {
+                // 环境不支持命名锁时退回进程内锁：总比不写强
+                _indexMutexBroken = true;
+                AppLog.Warn("会话索引的跨进程锁不可用，改用进程内锁：" + ex.Message);
+                return false;
+            }
+        }
+
+        private static void ExitIndexMutex()
+        {
+            try
+            {
+                _indexMutex?.ReleaseMutex();
             }
             catch
             {

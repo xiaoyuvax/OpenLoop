@@ -7,6 +7,7 @@ using Xunit;
 
 namespace OpenLoop.Service.Tests
 {
+    [Collection("chat-index")]
     public class WorkerSessionHostTests : IDisposable
     {
         /// <summary>每个测试用独立目录，别把会话写进真实的 %APPDATA%\OpenLoop\chats。</summary>
