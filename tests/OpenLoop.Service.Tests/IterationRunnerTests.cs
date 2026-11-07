@@ -156,6 +156,29 @@ namespace OpenLoop.Service.Tests
             }
         }
 
+        [Fact]
+        public void RolesFor_maps_changed_paths_to_the_binaries_they_affect()
+        {
+            Assert.Equal(["a", "i", "shell"], Sorted("src/OpenLoop.Service/Web/WorkerApiClient.cs"));
+            Assert.Equal(["a", "i", "shell"], Sorted("src/OpenLoop.Core/Tools/ToolRegistry.cs"));
+            Assert.Equal(["shell"], Sorted("src/OpenLoop.App/MainForm.cs", "OpenLoop.ico"));
+            Assert.Equal(["a"], Sorted("src/OpenLoop.A/Program.cs"));
+            Assert.Equal(["i"], Sorted("src/OpenLoop.I/Program.cs"));
+            Assert.Equal(["a", "i", "shell"], Sorted("OpenLoop.slnx"));
+        }
+
+        [Fact]
+        public void RolesFor_ignores_docs_tests_scripts_and_splits_renames()
+        {
+            Assert.Empty(Sorted("docs/PLAN-DUAL-PROCESS.md", "README.md", "tests/OpenLoop.Core.Tests/X.cs",
+                "scripts/publish-role.ps1", "samples/plugins/dsh-free/plugin.json"));
+            Assert.Equal(["a", "i"], Sorted("src/OpenLoop.A/Old.cs -> src/OpenLoop.I/New.cs"));
+            Assert.Equal(["a", "i", "shell"], Sorted("unknown-file.xyz"));
+        }
+
+        private static string[] Sorted(params string[] paths)
+            => IterationRunner.RolesFor(paths).OrderBy(r => r, StringComparer.Ordinal).ToArray();
+
         private static string Temp()
         {
             string root = Path.Combine(Path.GetTempPath(), "ol-iter-" + Guid.NewGuid().ToString("N"));

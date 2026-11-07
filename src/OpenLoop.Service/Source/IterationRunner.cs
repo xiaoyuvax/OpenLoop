@@ -63,7 +63,7 @@ namespace OpenLoop.Service.Source
         public static async Task<List<RolePlan>> PlanAsync(string shellExe = null, CancellationToken ct = default)
         {
             string target = SourceSync.SourceVersion(null);
-            string dirty = await DirtyAsync(ct);
+            var dirtyRoles = RolesFor(await ChangedPathsAsync(ct));
 
             var plans = new List<RolePlan>();
             foreach (var (role, label, note) in new[]
@@ -78,7 +78,7 @@ namespace OpenLoop.Service.Source
                     : RoleVersion(role);
                 bool newer = target.Length > 0 && current.Length > 0 &&
                              SourceSync.Classify(target, current) == SourceState.Newer;
-                plans.Add(new RolePlan(role, label, current, target, dirty.Length > 0 || newer, note));
+                plans.Add(new RolePlan(role, label, current, target, newer || dirtyRoles.Contains(role), note));
             }
 
             // I 要更新就必须重启一次 A（A 才能接手），A 本身不一定重编
@@ -90,6 +90,83 @@ namespace OpenLoop.Service.Source
             }
 
             return plans;
+        }
+
+        /// <summary>
+        /// 改动文件 → 需要重编的部件：Core/Service 是全共享，A/I/App 各管自己，
+        /// 文档、测试、脚本不动二进制。拿不准的路径按「全都重编」处理。
+        /// </summary>
+        internal static HashSet<string> RolesFor(IEnumerable<string> paths)
+        {
+            var roles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string raw in paths ?? [])
+            {
+                string path = (raw ?? "").Replace('\\', '/').Trim().Trim('"');
+                if (path.Length == 0) continue;
+
+                int arrow = path.IndexOf(" -> ", StringComparison.Ordinal);
+                if (arrow >= 0)
+                {
+                    AddRole(roles, path[..arrow]);
+                    AddRole(roles, path[(arrow + 4)..]);
+                    continue;
+                }
+                AddRole(roles, path);
+            }
+            return roles;
+        }
+
+        private static void AddRole(HashSet<string> roles, string path)
+        {
+            path = path.Trim().Trim('"');
+            if (path.Length == 0) return;
+
+            if (path.StartsWith("src/OpenLoop.Core/", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("src/OpenLoop.Service/", StringComparison.OrdinalIgnoreCase))
+            {
+                roles.UnionWith([BusRoles.A, BusRoles.I, "shell"]);
+                return;
+            }
+            if (path.StartsWith("src/OpenLoop.A/", StringComparison.OrdinalIgnoreCase))
+            {
+                roles.Add(BusRoles.A);
+                return;
+            }
+            if (path.StartsWith("src/OpenLoop.I/", StringComparison.OrdinalIgnoreCase))
+            {
+                roles.Add(BusRoles.I);
+                return;
+            }
+            if (path.StartsWith("src/OpenLoop.App/", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("OpenLoop.ico", StringComparison.OrdinalIgnoreCase))
+            {
+                roles.Add("shell");
+                return;
+            }
+            if (path.StartsWith("src/", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("OpenLoop.slnx", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("Directory.Build.", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("global.json", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("NuGet.config", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".props", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".targets", StringComparison.OrdinalIgnoreCase))
+            {
+                roles.UnionWith([BusRoles.A, BusRoles.I, "shell"]);
+                return;
+            }
+            if (path.StartsWith("docs/", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("tests/", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("scripts/", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("samples/", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith(".github/", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals(".gitignore", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals(".gitattributes", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals(".editorconfig", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("LICENSE", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            roles.UnionWith([BusRoles.A, BusRoles.I, "shell"]);
         }
 
         /// <summary>变更摘要：未提交文件、diff 规模、最近提交。给确认弹框用。</summary>
@@ -553,11 +630,18 @@ namespace OpenLoop.Service.Source
             return new("update i", false, $"{(int)timeout.TotalMinutes} 分钟内 A 没回音");
         }
 
-        private static async Task<string> DirtyAsync(CancellationToken ct)
+        private static async Task<List<string>> ChangedPathsAsync(CancellationToken ct)
         {
             var status = await Iteration.ExecAsync("git", ["-C", SourceSync.SourceRoot, "status", "--porcelain"],
                 SourceSync.SourceRoot, ct);
-            return status.Ok ? status.Output.Trim() : "";
+            if (!status.Ok) return [];
+
+            return status.Output.Split('\n')
+                .Select(l => l.TrimEnd('\r'))
+                .Where(l => l.Length > 3)
+                .Select(l => l[3..].Trim())
+                .Where(l => l.Length > 0)
+                .ToList();
         }
 
         public static string RoleVersion(string role)
