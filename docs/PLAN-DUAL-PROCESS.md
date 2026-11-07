@@ -1004,8 +1004,10 @@ dsh spike 结论（实测）：
 | `our-free-model/z-ai/glm-5.3-flash`、`deepseek-ai/deepseek-v4.1-flash` | ❌ 45 秒无响应 | — |
 | `opencode/*`、纯 `*-free`（nemotron / glm / deepseek） | ❌ `Free usage limit reached` | — |
 
-用 `minimaxai/minimax-m3.1-flash` 跑同一份 20 轮脚本（每轮读一个 100 行文件、第 10 轮插取消测试）：
+> 2026-11-04 起，dsh 网关这组 provider 的模型 id 前缀改成 `ofm-dsh/`（网关 `/v1/models` 自己带 `our-free-model/`，
+> 所以完整 id 是 `ofm-dsh/our-free-model/<model>`）；上表是历史记录，仍按当时的 `our-free-model/...` 写。
 
+用 `minimaxai/minimax-m3.1-flash` 跑同一份 20 轮脚本（每轮读一个 100 行文件、第 10 轮插取消测试）：
 - 20/20 轮 `done/ok`，**每轮恰好 1 次工具调用**（合计 20 步），全程 0 次停滞；
 - 取消测试 `interrupted/stopped`，之后继续跑完；21/21 `run.json` 合法，spool 空；
 - ctx 1682→4143，**每轮只涨 128**（本轮修复前是每轮 +3200）；压缩 0 次——上下文根本没到阈值，
@@ -1054,6 +1056,20 @@ API Key 保存在：…\settings.json
 
 `GET /v1/models` 返回 9 个模型（新 data-dir；EAC 需在它自己的 data-dir 里另做一次 GitHub 授权），`/` 是它自己的管理页。所以：**只要跑这个子进程，OpenLoop 就能把 OFM 当普通 OpenAI 兼容 provider 用，完全不需要 dsh**；dsh 只在「要 dsh 的 agent/ACP」「要看 dsh 托管的插件页」时才需要。
 
+**服务型插件的启动不能放在界面路径上（2026-11-04 修）**
+
+`ProviderGroups()` / `Models()` 会在「打开会话页、点开模型下拉」时被调用；它们原来直接走
+`LocalServices.BaseUrl()` —— 那是在调用方线程上起子进程并 `Wait(timeoutMs)` 等 stdout 握手，
+默认 15s、OFM 示例配 20s，等于**界面僵住这么久**。现在拆成两条路：
+
+- 真要用它（`TryProvider` → 发一轮对话）才允许阻塞等握手；
+- 列清单/填下拉只问 `LocalServices.Known()`（本进程已起、或 `runtime/plugin-<id>.json` 里进程还活着），
+  没起就 `Warm()` 丢到后台起（同插件只起一份，失败 30s 内不重试），这一轮先不列它的模型。
+
+代价：服务首次启动的那 ~1 秒里，插件分组不出现在下拉里，再开一次页面/下拉就有了。
+单测 `PluginServiceWarmTests`：假服务 800ms 后才打印地址，`ProviderGroups()` 必须在 500ms 内返回且不含它，
+之后轮询能列出 `fakesvc/m1`。
+
 **本轮测试产物**：`~/.dsh/profiles/` 下的 `acptest`、`web-desktop`、`acp` 三个实验 profile 已删除（`acp` 会在下次 `dsh --profile acp` 时自动重建；要用 EAC 就复制成 `web-desktop`）。测试脚本留在 `%TEMP%\opencode\acp-*.mjs`。
 
 **2026-11-04 · `dsh-acp` 作为 provider（已落地）**
@@ -1069,11 +1085,88 @@ API Key 保存在：…\settings.json
   客户端声明空能力，所以代理不会反过来调 fs/terminal。
 - 取消：`ct` 取消时发 `session/cancel` 通知。
 - 体验：整段到达（不是打字机）；工具与状态属于 dsh，OpenLoop 的 trace 只记到「这一轮交给 dsh」。
+- **作为一等的 provider**（2026-11-04）：`DshAcpHub.UiProvider()` 在「命令能解析到实际文件（`Installed`）+ 缓存里有本 profile 的模型」时
+  返回 `{ Name = "dsh", Kind = "dsh", Models = 缓存 }`；会话页、Loop 页、新建会话页三处下拉都从同一份
+  `ProviderList.All(settings)` 取（设置里的 provider + OpenCode + 插件贡献 + dsh），模型目录（`ModelChoices.Build`）也并进 dsh，
+  所以「全部提供商」里能直接搜到。清单没探测过时它把 `Warm()` 丢后台，这一轮先不出现。
+  只开「免费」筛选时只列 id 带 `free` 的（`stepfun-ai/step-5-preview`、`minimaxai/...` 要关掉筛选才看得到）。
+- 插件贡献的 provider（`ofm/`、`ofm-dsh/`）走同一份清单：装上且启用对应插件就会出现，没装就自然没有（目前全局插件只有
+  `dsh-free`、`puppet-mcp`；`ofm-standalone` 只作为示例放在 `samples/plugins/`）。
+- 实测（2026-11-04）：`dsh web --no-open --port 0` 起来后网关 8326 在听，清单里出现
+  `ofm-dsh -> 31`（`ofm-dsh/our-free-model/beam-free` 等）；把 `samples/plugins/ofm-standalone` 装到
+  `%APPDATA%\OpenLoop\plugins\ofm\`（`service.args` 改成 OFM 仓库 `packages/standalone/cli.mjs` 绝对路径）后，
+  清单里出现 `OFM -> 9`（`ofm/mimo-v2.6-flash-free` 等）。两组都要等后台探测：`ProviderGroups()` 前几次返回空、
+  几秒后才有；界面靠 `PluginRefill`（8 拍 × 1s，条件含 `DshAcpHub.Warming`）补上。
+- 踩到的坑：OFM standalone 的数据目录里残留 `service.lock` 时（上一个实例被强杀），新实例会拒绝启动
+  （`数据目录已有服务运行…请先退出已有服务`）→ 该 provider 一直不出现在清单里。删掉那个 `service.lock` 再开即可。
+- 发送前的那道「必须在设置里填接口地址」的检查对 `dsh/...` 放行：它走 ACP，没有 HTTP 接口地址。
+- 发送前的那道「必须在设置里填接口地址」的检查对 `dsh/...` 放行：它走 ACP，没有 HTTP 接口地址。
 - 前置：目标 profile 必须包含 `@deepseek-ai/dsh-acp-app` 和你想用的插件
   （`dsh plugin --profile <p> add <pkg>`）；要 EAC 模型，profile 名得是 `web`/`web-desktop`/`desktop`/`tauri`。
 
+**为什么 EAC 只认这串 profile 名（2026-11-04 查证）**：不是 ACP 的要求，是 `dsh-our-free-model`
+自己的宿主判定 `detectSealedHost({ env, execPath, argv, profileName })`：
+`web`/`web-desktop` → `web` 版宿主，`desktop`/`tauri` → 桌面版宿主，其余一律 `null`（不开放 sealed 车道），
+另有一条 AIO 分支要求 `DSH_HOME` 含 `com.deepseek.dsh.desktop.aio` + `resources/node/node.exe` + argv 带 `web-desktop`。
+登录态在 `DSH_HOME` 的 vault 里，与 profile 名无关——所以「复制一份 acp 成 web-desktop」就能拿到 EAC，
+不需要重新登录，也不需要换额度。反过来，`--profile acp` 下看不到 EAC 是插件故意收紧，不是链路坏了。
+（`DshProfile` 默认仍是 `acp`；要用 EAC 就在设置里改成 `web-desktop` 并准备好同名 profile。）
+
 实测：`dsh/our-free-model/kilo-auto/free` 一轮 5 秒拿到回答（`dsh` 真进程、真模型）；
 假代理单测覆盖模型解析、流式拼装、权限拒绝。Core 195 通过 / 1 跳过，Service 82 通过。
+
+**2026-11-04 · `DshTask`：把任务交给 dsh（与 `OpenCodeTask` 对称，已落地）**
+
+模型位上的 `dsh/...` 是「整轮换掉 OpenLoop 的 agent」；`DshTask` 是「自己的 agent 还在，把一件子任务外包给 dsh」。
+两者共用同一个 `DshAcpHost`，但任务走**新会话**（`session/new` → 设模型 → `session/prompt` → `session/close`），
+不污染模型那条按工作区缓存的长会话；dsh 不支持 `session/close` 就忽略，进程随宿主退出。
+
+- 权限按会话分流：`AcpClient.OnPermission` 按 `sessionId` 查本会话策略。任务会话把每次
+  `session/request_permission` 转成 `ApprovalRequest`（路径在工作区外 → `OutsideWorkspace`，否则 `SensitiveAction`），
+  用户拒绝即中止任务；模型那条路仍是 `FullAccess` 策略。
+- 两个工具的描述互相指路：要 dsh 的插件生态/EAC 免费模型用 `DshTask`，要 OpenCode 的会话/agent 用 `OpenCodeTask`，
+  简单问答两者都别用。
+- 与 `OpenCodeTask` 一样，执行前给工作区打快照（`Snapshots.Create(workspace, "dsh")`），证据行带 `snapshot <id>`。
+- ACP 权限应答统一优先选「一次性」选项（`allow_once`/`reject_once`），避免替用户拍板时顺手把 `allow_always` 授出去。
+- 暴露条件（`OpenCodeTools.For` / `DshTools.For`）：
+  - OpenCode：端点 `IsReady` 才给（`OpenCodeHub.UiProvider != null`）；
+  - dsh：只读 `runtime/dsh-models.json` 缓存，缓存为空（没装 / 没探测成功）就不给——起 dsh 探测要几秒，
+    不能在建工具表时同步等；
+  - 两条链路各有一个 `QuotaGate`，撞上额度类错误（`402` / `quota` / `usage limit` / `insufficient` / `credits` / `额度` / `余额`）
+    后 10 分钟内不暴露该工具，避免 agent 反复硬撞。失败来源：任务工具自己的异常 + A 一轮执行失败
+    （`QuotaGate.NoteFor(model, message)`，按这一轮的模型分流，不连坐另一条链路）。
+
+实测（Windows，真 dsh）：
+
+- `DshTools.For(AppSettings.Load(), …)` → `1` 个工具 `DshTask`（profile `web-desktop`，缓存 32 个模型）。
+- 真任务：`dsh/our-free-model/stepfun-ai/step-5-preview` → 12.5 秒返回 `ok`（新会话、设模型、prompt、close 全走通）。
+- `beam-free` / `flint-40b-free` / `deepseek-v4.1-flash-free` → 5 秒内抛 `Free usage limit reached`
+  （上游免费额度用尽，不是链路问题；这条错误文本会被闸门识别并冷却）。
+- 单测 `ToolExposureTests`：额度类文本关门、无关错误不关门、未探测过的 profile 不给 `DshTask`。Service 92 通过，Core 195 通过 / 1 跳过。
+
+`shortcut:` 闸门按链路不分模型——一个免费模型限额会把整条 dsh 任务工具一起藏 10 分钟；
+等真的频繁撞限额、且同链路里还有别的可用模型时再拆成按模型计。
+
+**同一处对齐：`opencode/<m>` 的会话权限改走 OpenLoop 的 `ApprovalGate`（2026-11-04）**
+
+原来 `OpenCodeReasoner` 把 OpenCode 会话里的权限请求**一律拒绝**（理由：工具由 OpenLoop 执行）。
+但 OpenCode 自己仍会为内部动作（读文件、跑命令）要权限，一律拒绝会让它撞墙或空转，
+而且拒绝策略和它「工具在 OpenLoop 手里」的分工并不冲突。
+
+现在的分界按「工具在谁手里」定：
+
+| 用法 | 工具在谁手里 | 会话权限 |
+|---|---|---|
+| `opencode/<m>@<p>`（模型位） | OpenLoop | 转 `ApprovalGate`（`OpenCodePermissions` 判工作区内外）；**没有审批通道时仍一律拒绝** |
+| `OpenCodeTask`（任务位） | OpenCode | `ask` 模式逐次转发（once/always） |
+| `dsh/<p>/<m>`（模型位） | dsh | `FullAccess` 二元（没有逐次通道） |
+| `DshTask`（任务位） | dsh | 逐次转发（仅 once/deny） |
+
+- `Reasoners.Create(..., approve)` 把审批通道传给 `OpenCodeReasoner`；A（`WorkerSessionService`）、I（`LoopView`）、
+  侧线（`SideWorkView`）都传自己的 `approve`，标题生成 / 评审基线 / 规则助手这些没有 UI 通道的路径传 `null`（保持拒绝）。
+- 会话一轮结束即删，所以模型位的允许只能是 `once`；OpenCode 若在一轮里连续要多次权限，非 `FullAccess` 下会逐个弹。
+- 未实机验证：本机免费额度打满（`Free usage limit reached`），这条只过了编译与现有单测，
+  真模型下「权限弹窗 → 允许后它继续动手」还没有跑过。
 
 顺手修掉一个真 bug：**插件工具的超时从来没生效**——`ReadLineAsync(ct)` 在重定向管道上不响应取消，
 插件睡多久就等多久（`EchoPluginTests` 的 300ms 超时测试一直靠「比 5 秒短」侥幸通过）。
@@ -1099,6 +1192,105 @@ API Key 保存在：…\settings.json
 另起一个 PowerShell 子进程持有同名互斥量，此时 `Touch` 必须等（证明锁真跨进程，不是 `static lock`）。
 Service 84 通过，Core 195 通过 / 1 跳过。
 
+**2026-11-04 · 章程 + 源码同步 + Loop 的读写边界（已落地一部分）**
+
+`charter.md`（仓库根）记下角色、权限边界、源码同步与迭代归属。落地情况：
+
+- `SourceSync`（`src/OpenLoop.Service/Source/`）：源码放**安装根**下 `<安装根>/source/{openloop,puppetcore}`
+  （`OPENLOOP_HOME` 可覆盖），不再放用户配置目录——源码可见性必须跟二进制一致，否则多用户系统会跨用户竞争。
+  开发环境下当前目录是 OpenLoop 仓库时直接用当前目录，不复制一份。
+  同步只 `clone --depth 1` / `fetch`，**不 reset**（工作树里有 Loop 的改动）；版本从远端读
+  `git show FETCH_HEAD:src/OpenLoop.A/OpenLoop.A.csproj`，运行版本取 `versions/current.json` 或 worker 目录里 A 的版本。
+  PuppetCore 没有 csproj 版本号（版本来自 NuGet/标签），只报提交号。
+- 启动时壳执行一次检查（`MainForm.CheckSourcesAsync`）：源码新→提示可以迭代，源码旧→提示更新源码/放弃迭代/自愈。
+  实测（Puppet `/agent/logs`）：`源码同步：UpToDate source=0.1.0 running=0.1.0`、`PuppetCore 同步：UpToDate source=23f8b01`。
+- Loop 工具边界（`LoopScope` + `ToolRegistry.Loop(read, write, …)`）：读与 Worker 同宽（任意路径、克隆仓库、查配置），
+  写只允许配置目录（`%APPDATA%\OpenLoop`）与安装路径（源码 + 二进制）；越界写直接拒绝，不走审批。
+- 项目列表底部固定项 `[Loop]`：列出全部项目的 Loop 会话（`%APPDATA%\OpenLoop\loops.json` 索引，
+  对话正文仍是 `工作区|loop` 文件）；点一行 → 打开对应项目的 Loop 页签。实测 `MainForm.OpenLoop` 后索引写入了当前项目。
+- 单测 `SourceSyncTests`：版本比较、csproj/带后缀版本解析、Loop 读放行/写拒绝。Service 100 通过，Core 195 通过 / 1 跳过。
+- Puppet 检查面（`MainForm` 暴露，供 agent 自测）：`OverviewMenu` / `OverviewSelection` / `OverviewRows` /
+  `SelectLoopOverview` / `LoopWorkspaces` / `LoopTabs` / `Providers` / `ModelsOf(provider)` / `LoopScopeProbe(path)`。
+  实测 22 项全过：`[Loop]` 在项目列表末尾、选中后列出全部 Loop 会话、打开两个项目的 Loop 生成两个页签、
+  provider 清单 `OpenRouter,TeamRouter,OpenCode,ofm-dsh,OFM,dsh`（dsh 32 / OFM 9 / ofm-dsh 31 个模型）、
+  Loop 边界 `配置读+写 / 源码读+写 / C:\Windows 读+写拒绝`、启动日志里源码与 PuppetCore 均已同步。
+- 顺带发现一个环境坑：应用被强杀后 OFM 子进程会成孤儿（`service.lock` 仍指向它、`plugin-ofm.json` 指向已死 pid），
+  下次启动既复用不了也起不来，`OFM` provider 就消失。清掉 lock 与 handshake 再启动即可恢复；自动接管/清理还未做。
+
+**2026-11-06 · 迭代轮次（编译 → 发布 → 登记 → 换版）**
+
+`Iteration`（`src/OpenLoop.Service/Source/`）把章程 §4 的一轮做成可执行代码，**入口在壳、不在 Loop 的工具集里**：
+
+| 步骤 | 做什么 | 失败时 |
+|---|---|---|
+| `BuildAsync` | 在源码根跑 `dotnet build OpenLoop.slnx -c Release` | 停在这里，不产半成品版本 |
+| `PublishAsync(role)` | `dotnet publish src/OpenLoop.<R> -c Release` → 拷到 `versions/<role>/<版本>-<exe sha8>/` | 同上 |
+| `StageAsync(role)` | `POST /bus/stage`（带 bus.key、协议号、sha256） | 停在 stage，不重启 |
+| `RestartAsync(role)` | `POST /bus/restart`；忙时 409，不硬砸 | 留在 staged，稍后再来 |
+
+- Loop 页签工具栏加了「迭代」按钮（在模型/强度选择右边）：跑整轮，成功后弹窗问要不要重启；
+  选否就只登记。选是则 A 先换、I 后换（各隔 1.5 s），`versions/current.json` 由去旧进程侧写入。
+- 换版动作只经壳（`MainForm.RunIterationAsync` / `ApplyStagedAsync`），Loop 会话既没有编译工具也没有重启工具，
+  避免「Loop 改到自己头上来」。`charter.md` §4 的「不立即替换、按阶段批量」由此落到按钮上。
+- Puppet 检查面：`StartIteration()` / `ApplyStaged()` / `IterationStatus` / `IterationSteps` / `LoopIterateEntry`。
+- 实测（Puppet，21:01–21:02）：`build 0 错误` → `publish a versions\a\0.1.0-ef57c6e5`（sha `ef57c6e5…`）
+  → `stage a 200` → `publish i versions\i\0.1.0-a8d71723` → `stage i 200` → `restart a/i 202`
+  → `runtime\a.json`/`i.json` 的 `dir` 换成对应 versions 目录、pid 变化、`current.json` 双角色齐全，
+  壳的 3 个会话未受影响。测完删掉 `current.json` 并重启，回到 Debug 的 `worker/` 双进程（开发态）。
+- `IterationTests`：目录名 `版本-sha8` / 版本不可用回落 `adhoc` / 日志裁剪只留最后几行。Service **103** 通过，Core 195 通过 / 1 跳过。
+
+**版本号查看**
+
+三个部件各带自己的版本号，来源分别是：
+
+| 部件 | 版本来源 | 位置 |
+|---|---|---|
+| 壳 | `src/OpenLoop.App/OpenLoop.App.csproj` 的 `<Version>`（本次补上，之前没有） | exe 的 `ProductVersion` |
+| Worker（A） | `src/OpenLoop.A/OpenLoop.A.csproj` | 运行中读 `runtime/a.json` 的 `version`；没跑就退回 exe |
+| Loop（I） | `src/OpenLoop.I/OpenLoop.I.csproj` | 运行中读 `runtime/i.json` 的 `version`；没跑就退回 exe |
+
+主菜单（左上 ☰）新增「关于」，弹窗按行列出「壳 / Worker / Loop」的版本；同一份数据由
+`MainForm.Versions`（Puppet）暴露，实测 `壳：0.1.0 | Worker：0.1.0 | Loop：0.1.0`。
+`+sha` 这类构建后缀用 `SourceSync.ParseVersion` 去掉，避免同一版本显示成两个。
+
+**2026-11-06 · 输入框可继续输入 + 两种插入时机的队列**
+
+之前 Loop 页读到运行中就 `_txtInput.Enabled = false`，提交后没法再打字。现在两个会话页（Worker / Loop）
+的输入框在运行中始终可编辑，提交的内容进队列，而不是被丢弃或硬塞给模型。
+
+- 队列控件 `PendingQueueView` 在输入框正上方（Worker 页挂在聊天区底部，Loop 页挂在 `_upperSplit.Panel1` 底部），
+  每行：`模式标记 + 文本 + 编辑 / 删除 / 立即`。空队列时不占位。
+- 两种模式在 `PendingQueue`（`src/OpenLoop.Service/Pending/`）：
+  - `AfterTurn`（默认）：当前这一轮跑完再发，`DrainQueue` 按入队顺序取；
+  - `NextStep`：点「立即」切过去 —— 会话在**下一个 step 之前**收尾（进行中的工具不打断），
+    收尾后队列优先发这一条。取队规则：先「立即」，再按顺序。
+- 软停止：Worker 新增 `POST /api/sessions/{id}/interrupt`（`WorkerSessionHost.Interrupt` →
+  `WorkerRunRequest.ShouldStop` → `AgentLoop` 的 `shouldStop`），与 `/stop`（硬取消）分开；
+  Loop 页在进程内用 `_interrupt` 标记走同一个判断。
+- 「编辑」把文本放回输入框，发送按钮变成「保存」（`SettingsSave`）；保存只改这一条，不发送。
+  条目被删除时自动退出编辑态，按钮回到「发送」。
+- 颜色：排队文本 `UiStyle.Muted`，切到「立即」后 `UiStyle.Accent` —— 都从主题取，三套配色自动跟随。
+- `/complain` 投递也并进这个队列（原来是一个独立 `List<string>`），等本轮返回时再处理。
+- Puppet 面：`EnqueuePending(text)` / `PendingCount` / `PendingSummary`（带 `[等本轮]`/`[立即]` 标记）/
+  `RetractPending` / `RemovePending` / `ComposerSendText`。
+
+实测（Puppet + `CaptureAction` 应用内截图）：入队两条 → `PendingCount=2`、摘要两条 `[等本轮]`；
+「编辑」后 `ComposerText=first queued`、按钮变「保存」；删除后按钮回到「发送」、计数正确；
+截图确认行渲染为「等本轮 second queued ⌷ 编辑 删除 立即」、文字为暗色。
+`POST /api/sessions/{id}/interrupt` 在 A 上实测 200（revision +1）。
+`PendingQueueTests` 5 条：默认模式、空文本忽略、双向切换、立即优先出队、暂停不出队。Service **108** 通过，Core 195 / 1 跳过。
+
+未验证：真跑一轮时点「立即」的端到端效果（要花一次模型额度），以及运行中输入框的实际手感；
+这两项只到代码路径和接口层。
+
+**尚未落地**：
+
+- 源码过旧时的**自愈模式**（用 Puppet 探测补齐源码）；
+- 构建失败时的**自动回退**（目前失败就停在原地，`versions/current.json` 不动，等于没换）；
+- 壳（`OpenLoop.exe`）自身的换版：现在只发 A/I，壳要换得重启壳进程，还没纳入这一轮；
+- 迭代结果回写到 Loop 会话（现在是通知 + `update-log.jsonl`，没有自动生成待办条目）。
+
+
 ## 16. 待办（2026-11-03 记）
 
 - ~~**长会话稳定性**~~（已跑，见 §14「长会话压测」）：20 轮真模型（`minimax-m3.1-flash`）全过，
@@ -1110,4 +1302,57 @@ Service 84 通过，Core 195 通过 / 1 跳过。
   示例见 `samples/plugins/puppet-mcp/`，单测 `McpClientTests`。
 - **更新通道的生产者**：`scripts/publish-role.ps1` 把某个角色 `dotnet publish` 到
   `versions/<role>/<ver>-<sha8>/`，再 `POST /bus/stage`（加 `-Restart` 才 `POST /bus/restart`）。
-  已验证发布 + stage 返回 `ok`；整链重启/回滚没在 Windows 复跑（此前只在 Linux 手验过一次）。
+  **2026-11-04 在 Windows 复验整链（role = a，Debug 实例）**：
+  - 正常换版：`0.1.1` 发布 → stage `ok` → restart 返回 `accepted` → A 退出（code 0）→
+    壳拉起 `versions/a/0.1.1-ef57c6e5/OpenLoop.A.exe`（新 pid）→ `current.json` 记 `a.dir` →
+    `update-log` 写 `ok` → `/api/sessions` 200；
+  - 回滚：把一个目录里的 exe 换成立刻退出的 PE（`whoami.exe` 改名），stage 通过、restart 接受，
+    A 新进程起来后 10s 没报到 → `update-log` 写 `rollback`（`did not report within 10s`）→
+    壳退回原 exe（`current.json` 不动）→ API 恢复 200；
+  - 协议号不符（`protocol: 99`）→ 409 `协议号不一致，两边一起升级`。
+  - 注意：PowerShell 执行策略会挡 `.\scripts\publish-role.ps1`（`PSSecurityException`），
+    用 `powershell -ExecutionPolicy Bypass -File scripts\publish-role.ps1 …` 跑，不要改机器策略。
+  - 注意：换版成功后 `current.json` 存在，之后重启都用 `versions/` 里的产物、不再用 `bin/worker`；
+    开发期想回到 Debug 构建就删掉 `versions/current.json` 再重启壳。
+  - 未验：`-Role i` 的同类链路；`Prune`（只留 2 份）没有制造第三个版本去观察。
+
+**2026-11-06 · 迭代确认弹框 + 由 I 驱动、壳执行的自更新**
+
+之前「迭代」按钮直接编译登记 A/I，然后 MessageBox 问要不要重启；壳（`OpenLoop.exe`）本身
+还得用户手工编译替换。现在一整轮都从 Loop 会话发起、在弹框里确认并看进度。
+
+- 确认框 `IterationForm`：表格列出 **Worker(A) / Loop(I) / 壳** 的「现版本 → 目标版本、动作、说明」
+  （动作 = 升版 / 重编 / 不变），下面给 `git status` 文件数、diff 规模、最近提交；按钮「开始迭代 / 取消」。
+- 顺序固定：`build` →（壳）`publish shell` → `publish a` → `stage a` → `restart a` →
+  等 A **新 pid** 报到 → A 读交接单 `runtime/loop-update.json`，自己 `publish i` / `stage i` / `restart i`
+  并等 I 新 pid 报到 → 写 `runtime/loop-update-result.json` → 壳收尾 → 3 秒后重启壳。
+  A 与 I 不同时换；I 不能换自己，也不能在运行中替换壳。
+- 壳自更新（`IterationRunner.LaunchRestarter` + 生成的临时 `.ps1`）：
+  - 只覆盖新壳带的文件，**不再 `robocopy /MIR`**（避免删掉 `source/`、`worker/` 等不相关目录）；
+    覆盖前把会被覆盖的旧文件备份到 `versions/shell/rollback-<时间>/`。
+  - 新壳在 `OnFormLoad` 写 `runtime/shell-started.json`；脚本最多等 30 秒，没等到（或进程提前退出）
+    就从备份还原、写 `runtime/iteration-shell-failed.txt`、再拉起旧壳。
+  - 拉起参数 `--loop <工作区> --iteration`；新壳回到原来的 Loop 页（`Startup.Loop`），
+    `ShowIterationReportOnStartup` 把报告弹出来，并在有失败标记时改成失败 + 写一步 `restart shell`。
+  - 通过 `OPENLOOP_SOURCE` 把源码根带给新进程：重启后 cwd 变成安装目录，否则会对着安装目录里的
+    旧克隆迭代（`SourceSync.SourceRoot` 新增该环境变量分支）。
+- 失败回退：`IterationRunner.RolesToRollback` 比较迭代前 `current.json` 与当前登记，找出真正换过的
+  A/I（旧目录还在），按 I → A 重新 `stage` 旧目录并 `restart`；报告里带 `RolledBack`。
+- 报告文本 `ReportText` 同时用于进度框和重启后的结果窗口；`OK/FAIL` 逐步列出。
+- 壳版本目录/回退备份会占空间：`PruneShell` 只留最近 3 个壳版本 + 2 份回退（默认参数）。
+- 弹框注册为第二个 Puppet 实例 `IterationForm`，可直接读 `PlanText` / `LogText` / `StatusText` 并截图；
+  它开着时其它调用要带 `?name=MainForm`（Puppet 多实例规则），关掉后恢复原样。
+- 顺带：`dotnet`/`git` 子进程输出改按 UTF-8 解码（原来中文告警会变乱码）；bus `stage`/`restart`
+  成功时只记状态码，报告不再塞整段 JSON。
+
+实测（Puppet + 应用内 `CaptureAction`，本机 250% DPI）：
+- 确认框渲染正确：`Worker(A)/Loop(I)/壳` 三行，版本列 0.1.0，动作为「重编 · …」，变更摘要可读。
+- 完整一轮从点「开始迭代」到新壳弹报告约 40 秒：`build` → `publish shell` → `publish a` →
+  `stage a 200` → `restart a 202` → `restart a pid=5292` → `update i … pid=31296 …` →
+  `restart ok`（`iteration-restart.log`）→ 新壳 `SelectedTabText = "Loop · OpenLoop"`，
+  报告 `成功（壳已重启）`。
+- 回退脚本用假 exe（立刻退出）跑过一遍：旧 `OpenLoop.exe` 字节还原、`old.txt` 恢复 `OLD`、
+  未被覆盖的 `keep.txt` 保留、失败标记与日志都写入（`RestartScript_rolls_back_when_new_shell_never_reports`）。
+- 单测：`PendingQueueTests` 5 条、`IterationRunnerTests` 6 条（含脚本回退）；Service **113** 通过，
+  Core 195 / 1 跳过。
+- 未验：A/I 真失败时的自动回退（要制造「新 A/I 起不来」）；壳重启超过 30 秒的慢启动会被误判回退。

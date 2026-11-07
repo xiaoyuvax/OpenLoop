@@ -88,6 +88,9 @@
   <data name="MenuLanguageEn" xml:space="preserve">
     <value>语言：English</value>
   </data>
+  <data name="MenuAbout" xml:space="preserve">
+    <value>关于</value>
+  </data>
   <data name="MenuSettings" xml:space="preserve">
     <value>设置…</value>
   </data>

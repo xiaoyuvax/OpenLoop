@@ -13,6 +13,7 @@ using OpenLoop.Core.Skills;
 using OpenLoop.Core.Trace;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Loop;
+using OpenLoop.Service.Pending;
 using OpenLoop.Service.Plugins;
 using OpenLoop.Service.Worker;
 using OpenLoop.Service.Web;
@@ -34,7 +35,6 @@ namespace OpenLoop.App
         private string _effort = "";
         private bool _onlyFree = true;
         private bool _fillingProviders;
-        private bool _dshModelsWarmed;
         private bool _layoutReady;
         private readonly Dictionary<ChatTurn, TurnUndo> _turnUndo = [];
         private sealed record TurnUndo(FileUndoLog Log, string Checkpoint);
@@ -50,12 +50,9 @@ namespace OpenLoop.App
         private WorkerApiClient Client => _client ??= new WorkerApiClient();
         private LoopApiClient Loop => _loopClient ??= new LoopApiClient();
 
-        /// <summary>运行中提交的请求排队，当前轮结束后自动发送。</summary>
-        private readonly List<QueuedRequest> _queue = [];
-        private QueuedRequest _interruptNext;
-        private bool _queuePaused;
-
-        private sealed record QueuedRequest(string Text, string Mode);
+        /// <summary>运行中提交的文本排队：默认等这一轮返回，可切「立即」插到下一步。</summary>
+        private readonly PendingQueue _queue = new();
+        private PendingItem _editing;
 
         public SessionView()
         {
@@ -86,6 +83,10 @@ namespace OpenLoop.App
             _freeSwitch.Checked = _onlyFree;
             FillModels();
             SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort);
+            _pending.Bind(_queue);
+            _pending.EditRequested += BeginEdit;
+            _pending.ImmediateRequested += OnImmediateRequested;
+            _pending.Removed += DropEdit;
             SetMode("task");
             RefreshLedgerInfo();
             UpdateContext(null);
@@ -157,32 +158,50 @@ namespace OpenLoop.App
         public int PendingCount => _queue.Count;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string PendingSummary => string.Join("\n", _queue.Select(q => q.Text));
+        public string PendingSummary => string.Join("\n",
+            _queue.Items.Select(i => (i.Immediate ? "[立即] " : "[等本轮] ") + i.Text));
 
         /// <summary>A 面驱动：移除第 index 个排队请求。</summary>
         public void RemovePending(int index)
         {
             if (index < 0 || index >= _queue.Count) return;
-            _queue.RemoveAt(index);
-            RefreshQueue();
+            var item = _queue.Items[index];
+            _queue.Remove(item);
+            DropEdit(item);
+            _pending.Sync();
         }
 
-        /// <summary>A 面驱动：撤回第 index 个排队请求到输入框。</summary>
+        /// <summary>A 面驱动：把第 index 个排队请求放回输入框编辑。</summary>
         public void RetractPending(int index)
         {
             if (index < 0 || index >= _queue.Count) return;
-            Retract(_queue[index]);
+            BeginEdit(_queue.Items[index]);
         }
 
-        /// <summary>A 面驱动：打断当前轮，立即发送第 index 个排队请求。</summary>
+        /// <summary>A 面驱动：把第 index 个排队请求切换为「立即」。</summary>
         public void SendPendingNow(int index)
         {
             if (index < 0 || index >= _queue.Count) return;
-            SendNow(_queue[index]);
+            OnImmediateRequested(_queue.Toggle(_queue.Items[index]));
         }
 
         /// <summary>A 面驱动：恢复被 Stop 暂停的队列并按序发送。</summary>
-        public void SendAllPending() => OnQueueSendAll(null, EventArgs.Empty);
+        public void SendAllPending()
+        {
+            _queue.Paused = false;
+            DrainQueue();
+        }
+
+        /// <summary>Puppet 用：只入队不发送（验证队列控件与两种模式）。</summary>
+        public void EnqueueText(string text)
+        {
+            if (_queue.Add(text, _mode) == null) return;
+            _queue.Paused = false;
+            _pending.Sync();
+        }
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string SendText => _btnSend.Text;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool EvolveEnabled => _btnEvolve.Enabled;
@@ -301,7 +320,7 @@ namespace OpenLoop.App
             _layoutReady = true;
         }
 
-        private static void ApplySplit(
+        internal static void ApplySplit(
             SplitContainer split, bool vertical, int panel1Min, int panel2Min, int targetPanel2)
         {
             int total = vertical ? split.Width : split.Height;
@@ -513,11 +532,14 @@ namespace OpenLoop.App
             return line.Length <= 20 ? line : line[..20];
         }
 
-        /// <summary>运行中：输入框有内容 = 发送（排队），清空 = 停止；只有一个按钮。</summary>
+        /// <summary>运行中：输入框有内容 = 发送（排队），清空 = 停止；编辑排队项时按钮是「保存」。</summary>
         private void UpdateSendButton()
         {
-            bool stop = _running && _txtInput.Text.Trim().Length == 0;
-            _btnSend.Text = Localization.T(stop ? "Stop" : "Send");
+            bool editing = _editing != null;
+            bool stop = !editing && _running && _txtInput.Text.Trim().Length == 0;
+            _btnSend.Text = editing
+                ? Localization.T("SettingsSave")
+                : Localization.T(stop ? "Stop" : "Send");
             _btnSend.IconSvg = UiIcons.Of(stop ? UiIcons.Stop : UiIcons.Send,
                 stop ? UiStyle.Error : Color.White);
             _btnSend.Type = stop ? AntdUI.TTypeMini.Error : AntdUI.TTypeMini.Primary;
@@ -527,6 +549,19 @@ namespace OpenLoop.App
         private void Submit()
         {
             string text = _txtInput.Text.Trim();
+
+            // 正在编辑排队项：这一下只保存，不发送
+            if (_editing != null)
+            {
+                if (text.Length == 0) _queue.Remove(_editing);
+                else _editing.Text = text;
+                _editing = null;
+                _txtInput.Clear();
+                _pending.Sync();
+                UpdateSendButton();
+                return;
+            }
+
             //「/命令」先在这里分流：命令不走普通对话
             if (TryRunCommand(text))
             {
@@ -540,7 +575,7 @@ namespace OpenLoop.App
             {
                 if (text.Length == 0)
                 {
-                    _queuePaused = true;
+                    _queue.Paused = true;
                     StopRun();
                     return;
                 }
@@ -600,7 +635,7 @@ namespace OpenLoop.App
             return false;
         }
 
-        private static bool IsCommand(string text, string command)
+        internal static bool IsCommand(string text, string command)
             => text.Equals(command, StringComparison.OrdinalIgnoreCase)
                 || (text.StartsWith(command, StringComparison.OrdinalIgnoreCase)
                     && text.Length > command.Length
@@ -624,159 +659,65 @@ namespace OpenLoop.App
 
         private void Enqueue(string text, string mode)
         {
-            _queue.Add(new QueuedRequest(text, mode));
-            _queuePaused = false;
-            RefreshQueue();
+            _queue.Add(text, mode);
+            _queue.Paused = false;
+            _pending.Sync();
         }
 
-        private void OnQueueSendAll(object sender, EventArgs e)
+        /// <summary>「立即」：先让当前轮在下一个 step 前停下，停下后 DrainQueue 会先发这一条。</summary>
+        private void OnImmediateRequested(PendingItem item)
         {
-            _queuePaused = false;
-            if (!_running) DrainQueue();
-        }
-
-        private void SendNow(QueuedRequest item)
-        {
-            if (!_queue.Remove(item)) return;
-            RefreshQueue();
-            _queuePaused = false;
-
+            if (item == null || !item.Immediate) return;
+            _queue.Paused = false;
+            _pending.Sync();
             if (!_running)
             {
-                SendTask(item.Mode, item.Text);
+                DrainQueue();
                 return;
             }
-
-            // 打断当前轮；结束后先发这一条，再按队列顺序继续
-            _interruptNext = item;
-            StopRun();
-            BeginInvoke(new Action(() => { if (!_running) DrainQueue(); }));
+            RequestInterrupt();
         }
 
-        private void Retract(QueuedRequest item)
+        private async void RequestInterrupt()
         {
-            if (!_queue.Remove(item)) return;
-            string draft = _txtInput.Text.Trim();
-            _txtInput.Text = draft.Length == 0 ? item.Text : draft + "\n\n" + item.Text;
-            _txtInput.Focus();
-            RefreshQueue();
+            try
+            {
+                await Client.InterruptAsync(Session.Id);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("打断当前轮失败：" + ex.Message);
+            }
         }
 
-        /// <summary>当前轮结束后调用；打断项优先，其次队列顺序。</summary>
+        /// <summary>队列里的条目被删掉时退出编辑态，别让「保存」留在按钮上。</summary>
+        private void DropEdit(PendingItem item)
+        {
+            if (!ReferenceEquals(_editing, item)) return;
+            _editing = null;
+            UpdateSendButton();
+        }
+
+        /// <summary>把排队文本放回输入框编辑，发送按钮变成「保存」。</summary>
+        private void BeginEdit(PendingItem item)
+        {
+            if (item == null || !_queue.Items.Contains(item)) return;
+            _editing = item;
+            _txtInput.Text = item.Text;
+            _txtInput.SelectionStart = _txtInput.Text.Length;
+            _txtInput.Focus();
+            UpdateSendButton();
+        }
+
+        /// <summary>当前轮结束后调用：优先「立即」，其次按队列顺序。</summary>
         private void DrainQueue()
         {
             if (IsDisposed || _running) return;
 
-            if (_interruptNext != null)
-            {
-                var item = _interruptNext;
-                _interruptNext = null;
-                SendTask(item.Mode, item.Text);
-                return;
-            }
-
-            if (_queuePaused || _queue.Count == 0) return;
-            var next = _queue[0];
-            _queue.RemoveAt(0);
-            RefreshQueue();
-            SendTask(next.Mode, next.Text);
-        }
-
-        private void RefreshQueue()
-        {
-            if (IsDisposed || _queueList == null) return;
-
-            while (_queueList.Controls.Count > 0)
-            {
-                var old = _queueList.Controls[0];
-                _queueList.Controls.RemoveAt(0);
-                // 行按钮的 Click 正在执行，销毁延后一拍，避免控件在自己的事件里被 Dispose
-                if (IsHandleCreated) BeginInvoke(new Action(old.Dispose));
-                else old.Dispose();
-            }
-
-            _lblQueue.Text = $"待发送 {_queue.Count}";
-            _btnQueueSendAll.Visible = _queue.Count > 1;
-            foreach (var item in _queue)
-                _queueList.Controls.Add(CreateQueueRow(item));
-
-            _queueHost.Height = Math.Min(Dip(150), Dip(36) + _queue.Count * Dip(30));
-            _queueHost.Visible = _queue.Count > 0;
-            FitQueueRows();
-        }
-
-        private Control CreateQueueRow(QueuedRequest item)
-        {
-            var row = new TableLayoutPanel
-            {
-                ColumnCount = 2,
-                RowCount = 1,
-                Height = Dip(26),
-                Margin = new Padding(0, 0, 0, Dip(4)),
-                BackColor = UiStyle.Surface,
-                Padding = new Padding(Dip(6), 0, 0, 0)
-            };
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            row.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-            var label = new AntdUI.Label
-            {
-                Dock = DockStyle.Fill,
-                AutoEllipsis = true,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Text = item.Text.Replace("\r", " ").Replace("\n", " "),
-                ForeColor = UiStyle.Text,
-                Font = new Font("Segoe UI", 9F),
-                Margin = new Padding(0)
-            };
-            _tips.SetToolTip(label, item.Text);
-
-            var actions = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.RightToLeft,
-                WrapContents = false,
-                AutoSize = true,
-                Margin = new Padding(0)
-            };
-
-            var send = QueueButton("立即发送", primary: true);
-            var remove = QueueButton("移除");
-            var retract = QueueButton("撤回");
-            send.Click += (_, _) => SendNow(item);
-            remove.Click += (_, _) => { _queue.Remove(item); RefreshQueue(); };
-            retract.Click += (_, _) => Retract(item);
-
-            actions.Controls.Add(send);
-            actions.Controls.Add(remove);
-            actions.Controls.Add(retract);
-
-            row.Controls.Add(label, 0, 0);
-            row.Controls.Add(actions, 1, 0);
-            return row;
-        }
-
-        private AntdUI.Button QueueButton(string text, bool primary = false)
-            => new()
-            {
-                Text = text,
-                Ghost = !primary,
-                Type = primary ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default,
-                Radius = 6,
-                Width = Dip(text.Length > 2 ? 76 : 52),
-                Height = Dip(24),
-                Font = new Font("Segoe UI", 8.5F),
-                Margin = new Padding(Dip(6), 0, 0, 0)
-            };
-
-        private void FitQueueRows()
-        {
-            if (_queueList == null) return;
-            int width = Math.Max(Dip(200),
-                _queueList.ClientSize.Width - Dip(4) - SystemInformation.VerticalScrollBarWidth);
-            foreach (Control row in _queueList.Controls)
-                row.Width = width;
+            var next = _queue.TakeNext();
+            if (next == null) return;
+            _pending.Sync();
+            SendTask(next.Tag, next.Text);
         }
 
         private void OnModeChanged(object sender, AntdUI.IntEventArgs e)
@@ -887,40 +828,8 @@ namespace OpenLoop.App
             {
                 _selProvider.Items.Clear();
                 _selProvider.Items.Add(new AntdUI.SelectItem(Localization.T("AllProviders")) { Tag = null });
-                foreach (var provider in (_settings?.Invoke()?.Providers ?? []).Concat(OpenCodeHub.Providers))
-                {
-                    _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
-                    {
-                        Tag = provider
-                    });
-                }
-
-                //插件贡献的提供商（如 dsh / our-free-model）不在设置里，但选中后能只列它自己的模型
-                using (var plugins = PluginCatalog.Load(_settings?.Invoke()?.Workspace ?? ""))
-                {
-                    foreach (var (name, models) in plugins.ProviderGroups())
-                        _selProvider.Items.Add(new AntdUI.SelectItem(name)
-                        {
-                            Tag = new ProviderConfig { Name = name, Kind = "custom", BaseUrl = "", Models = models }
-                        });
-                }
-
-                // dsh 的模型走 ACP，清单要起 dsh 才有：先读缓存，后台再刷一次
-                var dshModels = OpenLoop.Service.Models.DshAcpHub.CachedModels();
-                if (dshModels.Count > 0)
-                {
-                    _selProvider.Items.Add(new AntdUI.SelectItem("dsh")
-                    {
-                        Tag = new ProviderConfig { Name = "dsh", Kind = "custom", BaseUrl = "", Models = dshModels.ToList() }
-                    });
-                }
-                if (!_dshModelsWarmed)
-                {
-                    _dshModelsWarmed = true;
-                    var settings = _settings?.Invoke();
-                    if (settings != null)
-                        _ = System.Threading.Tasks.Task.Run(() => OpenLoop.Service.Models.DshAcpHub.Models(settings));
-                }
+                foreach (var (name, tag) in ProviderList.All(_settings?.Invoke()))
+                    _selProvider.Items.Add(new AntdUI.SelectItem(name) { Tag = tag });
 
                 int index = 0;
                 for (int i = 1; i < _selProvider.Items.Count; i++)
@@ -939,6 +848,9 @@ namespace OpenLoop.App
             {
                 _fillingProviders = false;
             }
+
+            // 后台还在起服务/拉目录时补几拍重填，用户不用自己再点一次
+            PluginRefill.WhenReady(this, FillModels);
         }
 
         private void OnProviderChanged(object sender, AntdUI.ObjectNEventArgs e)
@@ -1042,7 +954,8 @@ namespace OpenLoop.App
             string model = _model?.Trim() ?? "";
             var (baseUrl, _) = settings.EndpointFor(model);
             baseUrl = baseUrl?.Trim() ?? "";
-            if (baseUrl.Length == 0 || model.Length == 0)
+            // dsh 走 ACP（A 进程拉起），没有 HTTP 接口地址
+            if ((baseUrl.Length == 0 && !DshAcpHub.IsDsh(model)) || model.Length == 0)
             {
                 Notify("缺少配置", "先在设置里填写接口地址与模型。", error: true);
                 return;

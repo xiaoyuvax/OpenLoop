@@ -82,6 +82,7 @@ namespace OpenLoop.App
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLanguageAuto")) { Tag = "lang-auto" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLanguageZh")) { Tag = "lang-zh" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLanguageEn")) { Tag = "lang-en" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuAbout")) { Tag = "about" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuSettings")) { Tag = "settings" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuExit")) { Tag = "exit" });
 

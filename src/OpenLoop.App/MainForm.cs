@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using ChatFlow;
 using ChatMessage = ChatFlow.ChatMessage;
+using OpenLoop.Service.Shell;
+using OpenLoop.Service.Source;
 using OpenLoop.Service.Web;
 using OpenLoop.Service.Worker;
 using Puppet.Core;
@@ -62,6 +64,10 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ActiveTabText => Active?.Page?.Text ?? "";
+
+        /// <summary>Puppet 用：当前选中的标签页文字（Loop 页不算 Session，ActiveTabText 会是空的）。</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string SelectedTabText => (_tabs.SelectedTab as AntdUI.TabPage)?.Text ?? "";
 
         /// <summary>A 面自检：当前会话用的模型。</summary>
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -125,12 +131,17 @@ namespace OpenLoop.App
         public string PendingSummary => Active?.View.PendingSummary ?? "";
 
         public void RemovePending(int index) => Active?.View.RemovePending(index);
-
         public void RetractPending(int index) => Active?.View.RetractPending(index);
 
         public void SendPendingNow(int index) => Active?.View.SendPendingNow(index);
 
         public void SendAllPending() => Active?.View.SendAllPending();
+
+        /// <summary>Puppet 用：只入队不发送，验证队列控件与两种插入模式。</summary>
+        public void EnqueuePending(string text) => Active?.View.EnqueueText(text);
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ComposerSendText => Active?.View.SendText ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool EvolveEnabled => Active?.View.EvolveEnabled ?? false;
@@ -231,6 +242,53 @@ namespace OpenLoop.App
 
         public void OpenLoop(string workspace = null) => EnsureLoop(workspace, select: true);
 
+        // ---- Puppet 检查面：项目 / [Loop] / provider 的状态与选中 ----
+
+        public string[] OverviewMenu() => _overview.MenuItems();
+
+        public string LoopEntry => _overview.LoopEntryText;
+
+        public string OverviewSelection => _overview.Selection;
+
+        public string[] OverviewRows() => _overview.RowTitles();
+
+        public bool SelectLoopOverview()
+        {
+            ShowOverview();
+            return _overview.SelectLoop();
+        }
+
+        public string[] LoopWorkspaces() => LoopIndex.List().Select(l => l.Workspace).ToArray();
+
+        public int LoopTabs => _loops.Count;
+
+        public string LoopIterateEntry => _loopView?.IterateEntry ?? "";
+
+        public string LoopSideTabs => _loopView?.SideTabNames ?? "";
+
+        public int LoopModelOptionCount => _loopView?.ModelOptionCount ?? 0;
+
+        public bool LoopOnlyFree => _loopView?.OnlyFreeModels ?? false;
+
+        public string[] Providers() => ProviderList.All(_settings).Select(p => p.Name).ToArray();
+
+        public string[] ModelsOf(string provider)
+        {
+            foreach (var (name, tag) in ProviderList.All(_settings))
+                if (string.Equals(name, provider, StringComparison.OrdinalIgnoreCase))
+                    return (tag.Models ?? []).ToArray();
+            return [];
+        }
+
+        /// <summary>Puppet 用：不落盘，只看一个路径在 Loop 的读/写边界里是否放行。</summary>
+        public string LoopScopeProbe(string path)
+        {
+            var (read, write) = global::OpenLoop.Service.Source.LoopScope.Create();
+            bool canRead = read.TryResolve(path, out _, out _);
+            bool canWrite = write.TryResolve(path, out _, out _);
+            return (canRead ? "read=ok" : "read=denied") + " " + (canWrite ? "write=ok" : "write=denied");
+        }
+
         /// <summary>Worker 的 /complain：投到该项目自己的 Loop 会话；忙则排队，且不抢当前标签页。</summary>
         private void OnComplaint(Session session, string text)
             => EnsureLoop(session.Workspace, select: false)?.Post(text);
@@ -260,6 +318,7 @@ namespace OpenLoop.App
 
             var view = new LoopView { Dock = DockStyle.Fill };
             view.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
+            view.Iterate = () => ShowIterationAsync(target);
             view.Initialize(target, () => _settings);
             var page = new AntdUI.TabPage
             {
@@ -309,8 +368,11 @@ namespace OpenLoop.App
 
         private async void OnFormLoad(object sender, EventArgs e)
         {
+            // 重启脚本靠这个标记判断新壳已经进到界面（比只看进程存活可靠）
+            IterationRunner.MarkShellStarted();
             _overview.Initialize();
             _overview.OpenRequested += ShowSession;
+            _overview.LoopRequested += workspace => EnsureLoop(workspace, true);
             _overview.NewSessionRequested += OpenNewSessionTab;
             _overview.DeleteRequested += OnDeleteRequested;
             _overview.RemoveProjectRequested += OnRemoveProjectRequested;
@@ -327,12 +389,194 @@ namespace OpenLoop.App
 
             RestoreWindowBounds();
             _ = RefreshCatalogAsync();
+            _ = CheckSourcesAsync();
+
+            // 壳刚被迭代重启过：回到原来的 Loop 会话，再把结果报告弹出来
+            if (!string.IsNullOrWhiteSpace(Startup.Loop)) OpenLoop(Startup.Loop);
+            ShowIterationReportOnStartup();
 
             _workerSync.Tick += OnWorkerSyncTick;
             _workerSync.Start();
         }
 
         private void OnWorkerSyncTick(object sender, EventArgs e) => _ = SyncWorkerSessionsAsync();
+
+        /// <summary>
+        /// 启动时对比源码与运行版本（章程 §3）。这里只报状态：
+        /// 迭代轮次由 Loop 执行，不在这里偷偷编译/替换。
+        /// </summary>
+        private async Task CheckSourcesAsync()
+        {
+            try
+            {
+                var check = await global::OpenLoop.Service.Source.SourceSync.CheckAsync();
+                AppLog.Info("源码同步：" + check);
+
+                if (check.State == global::OpenLoop.Service.Source.SourceState.Newer)
+                    AntdUI.Notification.info(this, "源码有更新",
+                        $"源码 {check.SourceVersion} 高于运行版本 {check.RunningVersion}，可以迭代。",
+                        AntdUI.TAlignFrom.TR, null, 5);
+                else if (check.State == global::OpenLoop.Service.Source.SourceState.Older)
+                    AntdUI.Notification.warn(this, "源码过旧",
+                        $"源码 {check.SourceVersion} 低于运行版本 {check.RunningVersion}：" +
+                        "更新源码、放弃迭代，或用 Puppet 自愈。",
+                        AntdUI.TAlignFrom.TR, null, 6);
+
+                var puppet = await global::OpenLoop.Service.Source.SourceSync.CheckPuppetCoreAsync();
+                AppLog.Info("PuppetCore 同步：" + puppet);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("源码同步失败：" + ex.Message);
+            }
+        }
+
+        private readonly List<string> _iterationSteps = new();
+        private string _iterationStatus = "idle";
+        private IterationForm _iterationForm;
+
+        /// <summary>Puppet 用：上一轮迭代状态（idle / running / ok / staged / failed）与逐步结果。</summary>
+        public string IterationStatus => _iterationStatus;
+
+        public string IterationSteps => string.Join("\n", _iterationSteps);
+
+        /// <summary>Puppet 用：打开迭代确认窗口（只出计划，不自动开始）。</summary>
+        public void OpenIterationDialog() => _ = ShowIterationAsync(null);
+
+        /// <summary>Puppet 用：在确认窗口里点「开始迭代」。</summary>
+        public bool StartIterationDialog()
+        {
+            if (_iterationForm is not { IsDisposed: false }) return false;
+            _iterationForm.StartFromPuppet();
+            return true;
+        }
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string IterationPlanText => _iterationForm?.PlanText ?? "";
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string IterationDialogLog => _iterationForm?.LogText ?? "";
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string IterationDialogStatus => _iterationForm?.StatusText ?? "";
+
+        /// <summary>Puppet 用：不开窗口跑一轮（编译/发布/登记 + 换 A/I，不动壳），轮询 IterationStatus。</summary>
+        public void StartIteration() => _ = RunIterationAsync();
+
+        /// <summary>Puppet 用：重启 A/I 到已登记版本。</summary>
+        public void ApplyStaged() => _ = ApplyStagedAsync();
+
+        private async Task<string> ApplyStagedAsync()
+        {
+            _iterationStatus = "restarting";
+            bool applied = true;
+            foreach (string role in new[] { global::OpenLoop.Service.Bus.BusRoles.A, global::OpenLoop.Service.Bus.BusRoles.I })
+            {
+                var step = await global::OpenLoop.Service.Source.Iteration.RestartAsync(role);
+                _iterationSteps.Add(step.ToString());
+                applied &= step.Ok;
+                await Task.Delay(1500);   // A 先回来，再换 I
+            }
+            AppLog.Info("迭代换版：" + string.Join(" | ", _iterationSteps.TakeLast(2)));
+            _iterationStatus = applied ? "ok" : "staged";
+            return applied ? "已请求重启" : "重启被拒（忙），稍后再试";
+        }
+
+        /// <summary>
+        /// Loop 页「迭代」：先弹确认框（谁、从哪个版本到哪个版本、改了什么），用户点头才编译与换版。
+        /// 无窗口版本留给 Puppet：跳过壳，只换 A/I。
+        /// </summary>
+        private async Task<string> ShowIterationAsync(string workspace)
+        {
+            if (_iterationForm is { IsDisposed: false })
+            {
+                _iterationForm.Activate();
+                return "迭代窗口已经打开";
+            }
+
+            var plan = await IterationRunner.PlanAsync();
+            string summary = await IterationRunner.ChangeSummaryAsync();
+            var before = new Dictionary<string, VersionEntry>(
+                new VersionStore().Read(), StringComparer.OrdinalIgnoreCase);
+
+            string target = workspace;
+            if (string.IsNullOrWhiteSpace(target)) target = _loopView?.Workspace ?? "";
+            if (string.IsNullOrWhiteSpace(target)) target = Workspace;
+            if (string.IsNullOrWhiteSpace(target)) target = _lastSession?.Workspace ?? "";
+            if (string.IsNullOrWhiteSpace(target)) target = _settings.Workspace ?? "";
+            var form = new IterationForm(target, plan, summary, before);
+            form.ShellRestart = report =>
+            {
+                IterationRunner.WriteReport(report);
+                IterationRunner.LaunchRestarter(new ShellStage(report.ShellDir, report.Version), report.Workspace);
+                Application.Exit();
+            };
+            form.FormClosed += (_, _) => _iterationForm = null;
+            _iterationForm = form;
+            form.Show(this);
+            form.Activate();
+
+            return "已打开迭代确认：" + string.Join("；",
+                plan.Where(p => p.Update).Select(p => $"{p.Label} {p.Current}→{p.Target}")
+                    .DefaultIfEmpty("无需升版"));
+        }
+
+        /// <summary>无窗口的一轮（Puppet）：不碰壳，失败按迭代前的版本回退。</summary>
+        private async Task<string> RunIterationAsync()
+        {
+            if (_iterationStatus is "running" or "restarting") return "已有迭代在跑";
+            _iterationStatus = "running";
+            _iterationSteps.Clear();
+            try
+            {
+                var plan = (await IterationRunner.PlanAsync())
+                    .Select(p => p.Role == "shell" ? p with { Update = false } : p).ToList();
+                _iterationSteps.Add("plan " + string.Join(" | ",
+                    plan.Select(p => $"{p.Label} {p.Current}→{p.Target} {(p.Update ? "升版" : "不变")}")));
+
+                var before = new Dictionary<string, VersionEntry>(
+                    new VersionStore().Read(), StringComparer.OrdinalIgnoreCase);
+                var report = await IterationRunner.RunAsync(plan, Workspace, line => _iterationSteps.Add(line));
+                if (!report.Ok)
+                {
+                    foreach (var step in await IterationRunner.RollbackAsync(before, line => _iterationSteps.Add(line)))
+                        if (!_iterationSteps.Contains(step.ToString())) _iterationSteps.Add(step.ToString());
+                    _iterationStatus = "failed";
+                    return "迭代失败：" + (_iterationSteps.LastOrDefault() ?? "");
+                }
+
+                _iterationStatus = "ok";
+                return "迭代完成：" + report.Version;
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("迭代失败", ex);
+                _iterationSteps.Add("FAIL " + ex.Message);
+                _iterationStatus = "failed";
+                return "迭代失败：" + ex.Message;
+            }
+        }
+
+        /// <summary>壳刚被迭代重启过：回到原来的 Loop 会话，并把结果/回退情况弹出来。</summary>
+        private void ShowIterationReportOnStartup()
+        {
+            var report = IterationRunner.TakeReport();
+            if (report == null) return;
+
+            if (IterationRunner.TakeShellFailure())
+            {
+                report.Ok = false;
+                report.Steps.Add(new Iteration.Step("restart shell", false, "新壳没起来，已回退旧版本"));
+            }
+            report.ShellRestarted = report.Ok;
+
+            if (!string.IsNullOrWhiteSpace(report.Workspace)) EnsureLoop(report.Workspace, select: true);
+            var form = new IterationForm(report);
+            form.FormClosed += (_, _) => _iterationForm = null;
+            _iterationForm = form;
+            form.Show(this);
+            form.Activate();
+        }
 
         /// <summary>恢复上次窗口位置：原屏幕还在就原位启动，不在则回主屏居中（保留尺寸）。</summary>
         private void RestoreWindowBounds()
@@ -915,6 +1159,7 @@ namespace OpenLoop.App
                     case "lang-zh": ApplyLanguage("zh"); break;
                     case "lang-en": ApplyLanguage("en"); break;
                     case "settings": OpenSettings(); break;
+                    case "about": ShowAbout(); break;
                     case "exit": Close(); break;
                 }
             }
@@ -925,6 +1170,64 @@ namespace OpenLoop.App
         }
 
         private void OnSettings(object sender, EventArgs e) => OpenSettings();
+
+        /// <summary>Puppet 用：与「关于」弹窗同一份版本数据（壳 / Worker / Loop）。</summary>
+        public string Versions => string.Join(" | ", VersionLines());
+
+        /// <summary>Puppet 用：主菜单的条目文本（确认「关于」在菜单里）。</summary>
+        public string MenuTexts
+        {
+            get
+            {
+                var names = new List<string>();
+                foreach (var item in _btnMenu.Items)
+                    if (item is AntdUI.SelectItem select) names.Add(select.Text ?? "");
+                return string.Join(",", names);
+            }
+        }
+
+        private void ShowAbout()
+            => MessageBox.Show(this, string.Join(Environment.NewLine, VersionLines()),
+                Localization.T("MenuAbout"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+        /// <summary>各部件版本：壳取自身 exe，A/I 取运行中的 runtime/&lt;role&gt;.json，没跑就退回 exe。</summary>
+        private string[] VersionLines() =>
+        [
+            "壳：" + OrUnknown(ExeVersion(Application.ExecutablePath)),
+            "Worker：" + OrUnknown(RoleVersion(global::OpenLoop.Service.Bus.BusRoles.A)),
+            "Loop：" + OrUnknown(RoleVersion(global::OpenLoop.Service.Bus.BusRoles.I))
+        ];
+
+        private static string RoleVersion(string role)
+        {
+            var runtime = global::OpenLoop.Service.Runtime.RuntimeInfo.TryLoad(
+                global::OpenLoop.Service.Runtime.AppPaths.RuntimeFile(role));
+            if (!string.IsNullOrWhiteSpace(runtime?.Version)) return runtime.Version;
+
+            var store = new global::OpenLoop.Service.Shell.VersionStore();
+            string exe = store.Exe(role);
+            if (string.IsNullOrWhiteSpace(exe))
+                exe = System.IO.Path.Combine(AppContext.BaseDirectory, "worker",
+                    global::OpenLoop.Service.Shell.VersionStore.ExeName(role));
+            return ExeVersion(exe);
+        }
+
+        private static string ExeVersion(string exe)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe)) return "";
+                string raw = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe).ProductVersion ?? "";
+                return global::OpenLoop.Service.Source.SourceSync.ParseVersion(raw);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static string OrUnknown(string version)
+            => string.IsNullOrWhiteSpace(version) ? "未知" : version;
 
         private void ApplyLanguage(string language)
         {

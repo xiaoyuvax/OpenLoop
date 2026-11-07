@@ -216,6 +216,23 @@ namespace OpenLoop.Service.Worker
             return true;
         }
 
+        /// <summary>
+        /// 软停止：只标记，让当前轮在下一个 step 之前收尾（进行中的工具不打断），
+        /// 用于「立即」插队 —— 轮次结束后由界面把排队文本当新的一轮发出去。
+        /// </summary>
+        public bool Interrupt(string id)
+        {
+            lock (_lock)
+            {
+                if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
+                session.Interrupt = true;
+                session.Revision++;
+            }
+
+            Changed?.Invoke(id);
+            return true;
+        }
+
         /// <summary>恢复自动续跑：队列里有东西就立刻发下一条。</summary>
         public bool Resume(string id)
         {
@@ -329,6 +346,7 @@ namespace OpenLoop.Service.Worker
             var cts = new CancellationTokenSource();
             session.Cancel?.Dispose();
             session.Cancel = cts;
+            session.Interrupt = false;
 
             string id = session.Id;
             var request = new WorkerRunRequest
@@ -342,6 +360,7 @@ namespace OpenLoop.Service.Worker
                 History = history,
                 Approve = approval => Approve(session, approval, cts.Token),
                 ConfirmContinue = message => Ask(session, "continue", "", message, "", "", "", cts.Token) > 0,
+                ShouldStop = () => session.Interrupt,
                 Started = ctx =>
                 {
                     lock (_lock)
@@ -617,6 +636,9 @@ namespace OpenLoop.Service.Worker
             public string State { get; set; } = Idle;
             public int Revision { get; set; }
             public bool Paused { get; set; }
+
+            /// <summary>软停止：让当前轮在下一个 step 前收尾（进行中的工具不打断）。</summary>
+            public bool Interrupt { get; set; }
             public int Steps { get; set; }
             public string TraceDirectory { get; set; }
             public string Outcome { get; set; }

@@ -136,7 +136,9 @@ namespace OpenLoop.App
             OpenLoop.Core.Safety.ApprovalHandler approve =
                 fullAccess ? _ => OpenLoop.Core.Safety.ApprovalDecision.AllowOnce : AskApproval;
             scope.Approve = approve;
-            var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess, OpenCodeTools.For(_workspace, approve, settings.OpenCodeAskPermissions));
+            var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess,
+                OpenCodeTools.For(_workspace, approve, settings.OpenCodeAskPermissions)
+                    .Concat(DshTools.For(settings, _workspace, approve)));
             TraceWriter trace;
             try
             {
@@ -149,7 +151,7 @@ namespace OpenLoop.App
             }
 
             var history = new List<LlmMessage>(context ?? []);
-            var reasoner = Reasoners.Create(settings, model, _effort, _workspace);
+            var reasoner = Reasoners.Create(settings, model, _effort, _workspace, approve);
             var turn = new ChatTurn
             {
                 User = new ChatMessage("user", text),

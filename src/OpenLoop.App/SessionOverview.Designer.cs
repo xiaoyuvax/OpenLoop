@@ -13,6 +13,7 @@ namespace OpenLoop.App
         private AntdUI.Button _btnRemoveProject;
         private AntdUI.Menu _menu;
         private FlowLayoutPanel _leftFooter;
+        private AntdUI.Button _btnLoop;
         private AntdUI.Button _btnSettings;
         private Panel _right;
         private TableLayoutPanel _rightLayout;
@@ -46,6 +47,7 @@ namespace OpenLoop.App
             _btnRemoveProject = new AntdUI.Button();
             _menu = new AntdUI.Menu();
             _leftFooter = new FlowLayoutPanel();
+            _btnLoop = new AntdUI.Button();
             _btnSettings = new AntdUI.Button();
             _right = new Panel();
             _rightLayout = new TableLayoutPanel();
@@ -83,7 +85,7 @@ namespace OpenLoop.App
             _leftLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
             _leftLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            _leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+            _leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 78F));
 
             _leftHeader.Dock = DockStyle.Fill;
             _leftHeader.ColumnCount = 3;
@@ -136,6 +138,17 @@ namespace OpenLoop.App
             _leftFooter.WrapContents = false;
             _leftFooter.Margin = new Padding(0);
 
+            _btnLoop.Name = "btnLoop";
+            _btnLoop.Text = "[Loop]";
+            _btnLoop.Ghost = true;
+            _btnLoop.Radius = 8;
+            _btnLoop.Height = 34;
+            _btnLoop.Width = 250;
+            _btnLoop.IconSvg = UiIcons.Dot(UiStyle.Loop);
+            _btnLoop.ForeColor = UiStyle.Muted;
+            _btnLoop.Margin = new Padding(0, 0, 0, 2);
+            _btnLoop.Click += OnLoopOverview;
+
             _btnSettings.Name = "btnSettings";
             _btnSettings.Text = Localization.T("Settings");
             _btnSettings.Ghost = true;
@@ -147,6 +160,7 @@ namespace OpenLoop.App
             _btnSettings.Margin = new Padding(0, 0, 0, 2);
             _btnSettings.Click += OnSettings;
 
+            _leftFooter.Controls.Add(_btnLoop);
             _leftFooter.Controls.Add(_btnSettings);
 
             _leftLayout.Controls.Add(_leftHeader, 0, 0);

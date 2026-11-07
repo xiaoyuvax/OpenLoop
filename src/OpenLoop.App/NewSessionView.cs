@@ -58,24 +58,34 @@ namespace OpenLoop.App
 
         private void FillProviders()
         {
+            string selected = (_selProvider.SelectedValue as ProviderConfig)?.Name;
             _fillingProviders = true;
             try
             {
                 _selProvider.Items.Clear();
                 _selProvider.Items.Add(new AntdUI.SelectItem(Localization.T("AllProviders")) { Tag = null });
-                foreach (var provider in (_settings?.Providers ?? []).Concat(OpenCodeHub.Providers))
+                foreach (var (name, tag) in ProviderList.All(_settings))
+                    _selProvider.Items.Add(new AntdUI.SelectItem(name) { Tag = tag });
+
+                int index = 0;
+                for (int i = 1; i < _selProvider.Items.Count; i++)
                 {
-                    _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
+                    if (_selProvider.Items[i] is AntdUI.SelectItem item
+                        && item.Tag is ProviderConfig provider
+                        && string.Equals(provider.Name, selected, StringComparison.OrdinalIgnoreCase))
                     {
-                        Tag = provider
-                    });
+                        index = i;
+                        break;
+                    }
                 }
-                _selProvider.SelectedIndex = 0;
+                _selProvider.SelectedIndex = index;
             }
             finally
             {
                 _fillingProviders = false;
             }
+
+            PluginRefill.WhenReady(this, FillProviders);
         }
 
         private void OnProviderChanged(object sender, AntdUI.ObjectNEventArgs e)

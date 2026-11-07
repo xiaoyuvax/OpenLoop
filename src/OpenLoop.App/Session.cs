@@ -19,7 +19,7 @@ namespace OpenLoop.App
         public string Id { get; init; } = Guid.NewGuid().ToString("N")[..8];
         public ChatTurnBook Book { get; } = new();
         public SessionState State { get; set; } = SessionState.Idle;
-        public DateTime StartedAt { get; } = DateTime.Now;
+        public DateTime StartedAt { get; init; } = DateTime.Now;
         public int Steps { get; set; }
         public string Workspace { get; set; } = "";
         public AntdUI.TabPage Page { get; set; }

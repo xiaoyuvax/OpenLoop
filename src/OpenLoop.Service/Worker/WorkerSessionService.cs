@@ -36,6 +36,9 @@ namespace OpenLoop.Service.Worker
         /// <summary>探索护栏触发时询问是否继续。</summary>
         public Func<string, bool> ConfirmContinue { get; set; }
 
+        /// <summary>软停止信号：true 时当前轮在下一个 step 前收尾（进行中的工具不打断）。</summary>
+        public Func<bool> ShouldStop { get; set; }
+
         /// <summary>设置完成、开始调用模型前触发一次；拿 undo/checkpoint/trace 路径。</summary>
         public Action<WorkerRunContext> Started { get; set; }
 
@@ -98,6 +101,9 @@ namespace OpenLoop.Service.Worker
             var settings = request.Settings ?? new AppSettings();
             string workspace = request.Workspace?.Trim() ?? "";
             bool fullAccess = settings.FullAccess;
+            var approve = fullAccess
+                ? (ApprovalHandler)(_ => ApprovalDecision.AllowOnce)
+                : request.Approve ?? (_ => ApprovalDecision.Deny);
 
             var undo = new FileUndoLog();
             var scope = new WorkspaceScope(workspace, fullAccess ? [] : null, fullAccess) { Undo = undo };
@@ -106,7 +112,7 @@ namespace OpenLoop.Service.Worker
             string checkpoint = Snapshots.Create(workspace, "worker");
             if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
 
-            var reasoner = Reasoners.Create(settings, request.Model, request.Effort, workspace);
+            var reasoner = Reasoners.Create(settings, request.Model, request.Effort, workspace, approve);
             if (request.ModelProgress != null)
                 Reasoners.AttachProgress(reasoner, progress => request.ModelProgress(progress));
 
@@ -125,13 +131,12 @@ namespace OpenLoop.Service.Worker
             if (skillProblems.Count > 0)
                 AppLog.Warn("技能不可用：" + string.Join("；", skillProblems));
 
-            var approve = fullAccess
-                ? (ApprovalHandler)(_ => ApprovalDecision.AllowOnce)
-                : request.Approve ?? (_ => ApprovalDecision.Deny);
             scope.Approve = approve;
             var tools = ToolRegistry.Workspace(
                 scope, approve, skills, fullAccess,
-                OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions).Concat(plugins.Tools()));
+                OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions)
+                    .Concat(DshTools.For(settings, workspace, approve))
+                    .Concat(plugins.Tools()));
 
             var trace = TraceWriter.Start(workspace, request.Tag, request.Text, request.Model);
             var ctx = new WorkerRunContext
@@ -174,7 +179,7 @@ namespace OpenLoop.Service.Worker
                 int contextLimit = ModelCatalog.ContextLimit(request.Model);
                 var run = await Task.Run(
                     () => loop.RunAsync(request.History, request.Text, ct, contextLimit,
-                        () => ct.IsCancellationRequested,
+                        () => ct.IsCancellationRequested || (request.ShouldStop?.Invoke() ?? false),
                         request.Delta, request.Reasoning, request.ResetStream,
                         trace.Request),
                     ct);
@@ -212,6 +217,7 @@ namespace OpenLoop.Service.Worker
             catch (Exception ex)
             {
                 AppLog.Error("任务执行失败", ex);
+                QuotaGate.NoteFor(request.Model, ex.Message);
                 result.Outcome = "error";
                 result.ErrorMessage = ex.Message;
                 result.FinalAnswer = ex.Message;

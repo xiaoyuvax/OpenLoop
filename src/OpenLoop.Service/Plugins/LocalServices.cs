@@ -16,6 +16,8 @@ namespace OpenLoop.Service.Plugins
     {
         private static readonly object Gate = new();
         private static readonly Dictionary<string, Running> Started = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> Starting = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, DateTimeOffset> RetryAfter = new(StringComparer.OrdinalIgnoreCase);
 
         static LocalServices()
         {
@@ -46,6 +48,70 @@ namespace OpenLoop.Service.Plugins
                 Save(pluginId, started.BaseUrl, started.Process.Id);
                 return started.BaseUrl;
             }
+        }
+
+        /// <summary>还有服务在后台预热（界面据此决定要不要过一会儿重填下拉）。</summary>
+        public static bool AnyStarting
+        {
+            get
+            {
+                lock (Gate) return Starting.Count > 0;
+            }
+        }
+
+        /// <summary>
+        /// 只问「现在能不能用」：本进程起的，或者 runtime 握手文件里还活着的。**绝不拉起子进程**——
+        /// 界面刷新走这条，否则会在 UI 线程上等 stdout 握手（最长一个 timeoutMs），整个界面僵住。
+        /// </summary>
+        public static string Known(string pluginId)
+        {
+            if (string.IsNullOrWhiteSpace(pluginId)) return null;
+            lock (Gate)
+            {
+                if (Started.TryGetValue(pluginId, out var running))
+                {
+                    if (running.Process != null && !running.Process.HasExited) return running.BaseUrl;
+                    running.Dispose();
+                    Started.Remove(pluginId);
+                }
+                return Shared(pluginId);
+            }
+        }
+
+        /// <summary>在后台把服务起起来（同一插件只起一份，失败 30s 内不重试）；调用方立刻返回。</summary>
+        public static void Warm(string pluginId, PluginServiceContribution spec, string cwd, string root = null)
+        {
+            if (spec == null || string.IsNullOrWhiteSpace(spec.Command) || string.IsNullOrWhiteSpace(pluginId))
+                return;
+
+            lock (Gate)
+            {
+                if (Starting.Contains(pluginId)) return;
+                if (Started.TryGetValue(pluginId, out var running) && running.Process is { HasExited: false }) return;
+                if (RetryAfter.TryGetValue(pluginId, out var at) && DateTimeOffset.Now < at) return;
+                Starting.Add(pluginId);
+            }
+
+            _ = Task.Run(() =>
+            {
+                string url = null;
+                try
+                {
+                    url = BaseUrl(pluginId, spec, cwd, root);
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warn($"服务型插件 {pluginId} 后台启动失败：{ex.Message}");
+                }
+                finally
+                {
+                    lock (Gate)
+                    {
+                        Starting.Remove(pluginId);
+                        if (string.IsNullOrWhiteSpace(url)) RetryAfter[pluginId] = DateTimeOffset.Now.AddSeconds(30);
+                    }
+                }
+            });
         }
 
         private static string HandshakePath(string pluginId) =>

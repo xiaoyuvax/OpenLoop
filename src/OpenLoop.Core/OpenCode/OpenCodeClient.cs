@@ -113,16 +113,18 @@ namespace OpenLoop.Core.OpenCode
         }
 
         /// <summary>
-        /// 跑一次「模型调用」：临时会话 + 全量 prompt。工具权限全部设为 ask，收到请求一律拒绝 ——
-        /// 这样原生工具在 OpenCode 侧不可能执行，又不会像 deny 那样把整轮跑挂；工具只落到 OpenLoop。
+        /// 跑一次「模型调用」：临时会话 + 全量 prompt。权限一律 deny —— OpenCode 的原生工具
+        /// （read/grep/edit/shell）因此不进入模型的工具表，工具只走 OpenLoop 的 tool-call 文本协议。
+        /// 用 ask 时模型会照旧看到原生工具并偷偷读文件，答案有内容但 Loop 一步都记不到。
         /// 思维链与正文经事件流回调；会话用完即删，OpenCode 不保留任何历史。
         /// </summary>
         public async Task<OpenCodeTurn> RunTurnAsync(
             string prompt, OpenCodeModelRef? model, string workspace,
             Action<string> onDelta = null, Action<string> onReasoning = null,
-            int timeoutSeconds = 600, CancellationToken ct = default)
+            int timeoutSeconds = 600, Func<OpenCodePermission, bool> decide = null,
+            CancellationToken ct = default)
         {
-            string sessionID = await CreateSessionAsync("OpenLoop turn", workspace, model, null, "ask", ct);
+            string sessionID = await CreateSessionAsync("OpenLoop turn", workspace, model, null, "deny", ct);
             if (string.IsNullOrWhiteSpace(sessionID))
                 throw new InvalidOperationException("OpenCode 没有返回会话 ID");
 
@@ -146,7 +148,7 @@ namespace OpenLoop.Core.OpenCode
                         throw new TimeoutException($"OpenCode 超过 {timeoutSeconds} 秒未完成（会话 {sessionID}）");
 
                     await Task.Delay(700, ct);
-                    await RejectPermissionsAsync(sessionID, answered, ct);
+                    await HandlePermissionsAsync(sessionID, answered, decide, ct);
                     snapshot = await GetSessionAsync(sessionID, ct);
                     if (snapshot.Outcome.Length > 0) break;
                 }
@@ -249,17 +251,27 @@ namespace OpenLoop.Core.OpenCode
             return text;
         }
 
-        /// <summary>把 OpenCode 的权限请求一律拒掉：工具只由 OpenLoop 执行，拒绝后模型会改走文本协议。</summary>
-        private async Task RejectPermissionsAsync(string sessionID, HashSet<string> answered, CancellationToken ct)
+        /// <summary>
+        /// 处理本会话的权限询问：有审批通道就转给使用者（OpenLoop 的 ApprovalGate），
+        /// 没有就一律拒绝——工具实际由 OpenLoop 执行，它自己不该动手。
+        /// </summary>
+        private async Task HandlePermissionsAsync(
+            string sessionID, HashSet<string> answered, Func<OpenCodePermission, bool> decide, CancellationToken ct)
         {
             try
             {
                 foreach (var permission in await GetPermissionsAsync(sessionID, ct))
                 {
                     if (!answered.Add(permission.ID)) continue;
-                    await ReplyPermissionAsync(sessionID, permission.ID, "reject",
-                        "工具由调用方执行，不要提及这次拒绝。" +
-                        "改用文本协议：输出一行 tool-call: {\"tool\":\"<name>\",\"args\":{...}}。", ct);
+                    if (decide == null)
+                    {
+                        await ReplyPermissionAsync(sessionID, permission.ID, "reject",
+                            "工具由调用方执行，不要提及这次拒绝。" +
+                            "改用文本协议：输出一行 tool-call: {\"tool\":\"<name>\",\"args\":{...}}。", ct);
+                        continue;
+                    }
+
+                    await ReplyPermissionAsync(sessionID, permission.ID, decide(permission) ? "once" : "reject", null, ct);
                 }
             }
             catch (OperationCanceledException)

@@ -76,6 +76,8 @@ namespace OpenLoop.Service.Web
                 }
                 case "stop":
                     return _host.Stop(id) ? Json(req, _host.Get(id)) : NotFound(req);
+                case "interrupt":
+                    return _host.Interrupt(id) ? Json(req, _host.Get(id)) : NotFound(req);
                 case "resume":
                     return _host.Resume(id) ? Json(req, _host.Get(id)) : NotFound(req);
                 case "model":

@@ -31,7 +31,7 @@ namespace OpenLoop.App
             Icon = UiIcons.App;
             _colSkillOn.Render = (value, row, index) => SkillBadge(row as SkillRow);
             _tblSkills.DataSource = _skillRows;
-            LoadSkills();
+            _ = LoadSkillsAsync();
 
             foreach (var provider in _source.Providers ?? [])
                 _providers.Add(Clone(provider));
@@ -350,7 +350,11 @@ namespace OpenLoop.App
             }
         }
 
-        private void LoadSkills()
+        /// <summary>
+        /// 技能列表：文件扫描和 I 的激活集都不该在 UI 线程上等——同步等待 HTTP 会把消息循环堵死
+        /// （`GetResult()` 等续体、续体又排在同一个循环里，就是死锁）。
+        /// </summary>
+        private async Task LoadSkillsAsync()
         {
             _skillRows.Clear();
             if (string.IsNullOrWhiteSpace(_workspace) || !Directory.Exists(_workspace))
@@ -365,9 +369,9 @@ namespace OpenLoop.App
             var enabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                catalog = SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath);
+                catalog = await Task.Run(() => SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath));
                 //账本归 I：这里只读它的激活集（I 会顺带启用首次出现的技能）
-                var payload = Loop.GetActivation(_workspace);
+                var payload = await Loop.GetActivationAsync(_workspace);
                 foreach (string name in payload?.Skills ?? []) enabled.Add(name);
                 if (payload is { Problems.Count: > 0 })
                     AppLog.Warn("技能不可用：" + string.Join("；", payload.Problems));
@@ -394,13 +398,15 @@ namespace OpenLoop.App
 
         private void OnSkillDisable(object sender, EventArgs e) => ToggleSelectedSkill(false);
 
-        private void ToggleSelectedSkill(bool enabled)
+        private void ToggleSelectedSkill(bool enabled) => _ = ToggleSelectedSkillAsync(enabled);
+
+        private async Task ToggleSelectedSkillAsync(bool enabled)
         {
             var row = SelectedSkill();
             if (row == null) return;
             try
             {
-                Loop.SetSkill(_workspace, row.Name, enabled);
+                await Loop.SetSkillAsync(_workspace, row.Name, enabled);
             }
             catch (Exception ex)
             {
@@ -408,7 +414,7 @@ namespace OpenLoop.App
                 AntdUI.Notification.error(this, "技能", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
-            LoadSkills();
+            await LoadSkillsAsync();
         }
 
         private SkillRow SelectedSkill()

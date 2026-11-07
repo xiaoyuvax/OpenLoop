@@ -111,7 +111,7 @@ public sealed class TaskDraftsTests : IDisposable
     {
         using var scope = new WorkspaceScopeForTest(_root);
         Assert.Null(ToolRegistry.Workspace(scope.Scope).Find("ProposeTask"));
-        var tool = ToolRegistry.Loop(scope.Scope, _root).Find("ProposeTask");
+        var tool = ToolRegistry.Loop(scope.Scope, scope.Scope, _root).Find("ProposeTask");
         Assert.NotNull(tool);
 
         var args = new ToolArgs(new Dictionary<string, object>

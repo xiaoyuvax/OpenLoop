@@ -76,6 +76,10 @@ namespace OpenLoop.Service.Web
         public async Task<WorkerSessionSnapshot> StopAsync(string id, CancellationToken ct = default)
             => await PostAsync(Path(id) + "/stop", new { }, ct);
 
+        /// <summary>软停止：当前轮在下一个 step 前收尾，忙着的工具不打断。</summary>
+        public async Task<WorkerSessionSnapshot> InterruptAsync(string id, CancellationToken ct = default)
+            => await PostAsync(Path(id) + "/interrupt", new { }, ct);
+
         /// <summary>让 A 丢掉这个会话（正在跑的先停）；A 不认识它也算成功。</summary>
         public async Task DeleteAsync(string id, CancellationToken ct = default)
         {

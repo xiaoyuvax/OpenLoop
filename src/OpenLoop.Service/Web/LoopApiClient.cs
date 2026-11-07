@@ -33,32 +33,33 @@ namespace OpenLoop.Service.Web
 
         public async Task<LoopEvolveState> EvolveAsync(string workspace, string model, string effort,
             CancellationToken ct = default)
-            => await PostAsync<LoopEvolveState>("/api/loop/evolve", new { workspace, model, effort }, ct);
+            => await PostAsync<LoopEvolveState>("/api/loop/evolve", new { workspace, model, effort }, ct)
+                .ConfigureAwait(false);
 
         public async Task<LoopEvolveState> EvolveStateAsync(string workspace, CancellationToken ct = default)
             => await SendAsync<LoopEvolveState>(HttpMethod.Get,
-                "/api/loop/evolve?workspace=" + Uri.EscapeDataString(workspace ?? ""), null, ct);
+                "/api/loop/evolve?workspace=" + Uri.EscapeDataString(workspace ?? ""), null, ct).ConfigureAwait(false);
 
         public async Task<bool> StopEvolveAsync(string workspace, CancellationToken ct = default)
-            => (await PostAsync<StopResult>("/api/loop/evolve/stop", new { workspace }, ct))?.Stopped == true;
+            => (await PostAsync<StopResult>("/api/loop/evolve/stop", new { workspace }, ct).ConfigureAwait(false))?.Stopped == true;
 
         public async Task<int?> RollbackAsync(string workspace, int? version = null, CancellationToken ct = default)
-            => (await PostAsync<RollbackResult>("/api/loop/rollback", new { workspace, version }, ct))?.Version;
+            => (await PostAsync<RollbackResult>("/api/loop/rollback", new { workspace, version }, ct).ConfigureAwait(false))?.Version;
 
         public async Task<string> AddRuleAsync(string workspace, string name, string text, CancellationToken ct = default)
-            => (await PostAsync<RuleResult>("/api/loop/rule", new { workspace, name, text }, ct))?.Id;
+            => (await PostAsync<RuleResult>("/api/loop/rule", new { workspace, name, text }, ct).ConfigureAwait(false))?.Id;
 
         /// <summary>工具/权限策略与技能要用的账本投影；A 每轮运行前拉一次。</summary>
         public async Task<ActivationPayload> GetActivationAsync(string workspace, CancellationToken ct = default)
             => await SendAsync<ActivationPayload>(HttpMethod.Get,
-                "/api/loop/activation?workspace=" + Uri.EscapeDataString(workspace ?? ""), null, ct);
+                "/api/loop/activation?workspace=" + Uri.EscapeDataString(workspace ?? ""), null, ct).ConfigureAwait(false);
 
         public async Task SetSkillAsync(string workspace, string name, bool enabled, CancellationToken ct = default)
-            => await PostAsync<OkResult>("/api/loop/skills", new { workspace, name, enabled }, ct);
+            => await PostAsync<OkResult>("/api/loop/skills", new { workspace, name, enabled }, ct).ConfigureAwait(false);
 
         /// <summary>把 A 投在 spool 里的运行记录并进账本。</summary>
         public async Task<int> DrainSpoolAsync(string workspace, CancellationToken ct = default)
-            => (await PostAsync<DrainResult>("/api/loop/spool/drain", new { workspace }, ct))?.Drained ?? 0;
+            => (await PostAsync<DrainResult>("/api/loop/spool/drain", new { workspace }, ct).ConfigureAwait(false))?.Drained ?? 0;
 
         /// <summary>给界面里那些同步调用的地方用（设置页、loop 面板）。</summary>
         public ActivationPayload GetActivation(string workspace)
@@ -79,16 +80,16 @@ namespace OpenLoop.Service.Web
                 {
                     using var request = new HttpRequestMessage(method, path);
                     if (body != null) request.Content = JsonContent.Create(body, options: BusProtocol.Json);
-                    using var response = await _http.SendAsync(request, ct);
+                    using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
                     if (!response.IsSuccessStatusCode)
                     {
-                        string detail = await response.Content.ReadAsStringAsync(ct);
+                        string detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                         throw new InvalidOperationException(
                             detail.Length > 0 && detail != "not found"
                                 ? detail
                                 : $"Loop 请求失败（{(int)response.StatusCode}）");
                     }
-                    return await response.Content.ReadFromJsonAsync<T>(BusProtocol.Json, ct);
+                    return await response.Content.ReadFromJsonAsync<T>(BusProtocol.Json, ct).ConfigureAwait(false);
                 }
                 catch (HttpRequestException) when (attempt == 0 && Rediscover())
                 {

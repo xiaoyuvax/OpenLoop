@@ -23,12 +23,16 @@ namespace OpenLoop.App
         private bool _ready;
         private bool _building;
 
+        /// <summary>项目列表底部的固定项 [Loop]：列出全部项目的 Loop 会话。</summary>
+        internal const string LoopTag = "\u0001loop";
+
         public SessionOverview()
         {
             InitializeComponent();
         }
 
         internal event Action<Session> OpenRequested;
+        internal event Action<string> LoopRequested;
         internal event Action<string> NewSessionRequested;
         internal event Action<IReadOnlyList<Session>> DeleteRequested;
         internal event Action<string> RemoveProjectRequested;
@@ -71,7 +75,7 @@ namespace OpenLoop.App
                 .OrderBy(w => w, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            if (!projects.Any(p => Paths.Same(p, _project)))
+            if (!projects.Any(p => Paths.Same(p, _project)) && _project != LoopTag)
                 _project = projects.FirstOrDefault() ?? "";
 
             _building = true;
@@ -88,7 +92,9 @@ namespace OpenLoop.App
                     _menu.Items.Add(item);
                 }
 
-                var selected = _menu.Items.FirstOrDefault(i => Paths.Same(i.Tag as string, _project));
+                // 固定项 [Loop] 不在列表里：它是控件底部的按钮，固定在设置按钮上方
+                var selected = _menu.Items.FirstOrDefault(i =>
+                    i.Tag is string tag && Paths.Same(tag, _project));
                 if (selected != null) _menu.Select(selected, true);
             }
             finally
@@ -103,16 +109,38 @@ namespace OpenLoop.App
         {
             string q = _txtSearch.Text?.Trim() ?? "";
             _rows.Clear();
-            _rows.AddRange(_all
-                .Where(s => Paths.Same(s.Workspace, _project))
-                .Where(s => q.Length == 0 || s.Title.Contains(q, StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(s => s.StartedAt));
 
-            _lblProjectPath.Text = _project;
+            if (_project == LoopTag)
+            {
+                foreach (var loop in LoopIndex.List()
+                             .Where(l => q.Length == 0 ||
+                                         ProjectName(l.Workspace).Contains(q, StringComparison.OrdinalIgnoreCase))
+                             .OrderByDescending(l => l.UpdatedAt))
+                {
+                    string name = ProjectName(loop.Workspace);
+                    _rows.Add(new Session
+                    {
+                        Id = "loop:" + loop.Workspace,
+                        Workspace = loop.Workspace,
+                        CustomTitle = "[Loop] " + name,
+                        StartedAt = loop.UpdatedAt.LocalDateTime
+                    });
+                }
+            }
+            else
+            {
+                _rows.AddRange(_all
+                    .Where(s => Paths.Same(s.Workspace, _project))
+                    .Where(s => q.Length == 0 || s.Title.Contains(q, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(s => s.StartedAt));
+            }
+
+            bool loops = _project == LoopTag;
+            _lblProjectPath.Text = loops ? "Loop 会话（全部项目）" : _project;
             _table.DataSource = null;
             _table.DataSource = _rows;
-            _btnNewSession.Enabled = !string.IsNullOrEmpty(_project);
-            _btnRemoveProject.Enabled = !string.IsNullOrEmpty(_project);
+            _btnNewSession.Enabled = !loops && !string.IsNullOrEmpty(_project);
+            _btnRemoveProject.Enabled = !loops && !string.IsNullOrEmpty(_project);
         }
 
         /// <summary>勾选（多选行）后删除；没勾选就用当前高亮行。</summary>
@@ -185,6 +213,8 @@ namespace OpenLoop.App
 
         private void OnAddProject(object sender, EventArgs e) => NewSessionRequested?.Invoke("");
 
+        private void OnLoopOverview(object sender, EventArgs e) => SelectLoop();
+
         private void OnRemoveProject(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(_project)) return;
@@ -197,7 +227,35 @@ namespace OpenLoop.App
 
         private void OnCellClick(object sender, AntdUI.TableClickEventArgs e)
         {
-            if (e?.Record is Session session) OpenRequested?.Invoke(session);
+            if (e?.Record is not Session session) return;
+            if (session.Id.StartsWith("loop:", StringComparison.Ordinal)) LoopRequested?.Invoke(session.Workspace);
+            else OpenRequested?.Invoke(session);
         }
+
+        // ---- Puppet 检查面：只读 + 选中，不改业务语义 ----
+
+        internal string[] MenuItems() => _menu.Items.Select(i => i.Text ?? "").ToArray();
+
+        internal string Selection => _project == LoopTag ? "[Loop]" : _project;
+
+        internal string[] RowTitles() => _rows.Select(r => r.Title).ToArray();
+
+        internal bool SelectLoop()
+        {
+            _project = LoopTag;
+            _building = true;
+            try
+            {
+                _menu.USelect();
+            }
+            finally
+            {
+                _building = false;
+            }
+            RefreshRows();
+            return _project == LoopTag;
+        }
+
+        internal string LoopEntryText => _btnLoop.Text;
     }
 }

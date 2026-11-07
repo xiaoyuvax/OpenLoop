@@ -17,16 +17,19 @@ namespace OpenLoop.Core.Acp
     public sealed class DshAcpHost : IDisposable
     {
         private readonly AcpClient _client;
+        private readonly Func<bool> _allow;
         private readonly object _gate = new();
         private readonly Dictionary<string, string> _sessionIds = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Dictionary<string, AcpModel>> _models = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _appliedModel = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Func<AcpPermissionRequest, bool>> _permissionBySession = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Run> _runs = new(StringComparer.OrdinalIgnoreCase);
         private bool _disposed;
         private volatile bool _initialized;
 
         public DshAcpHost(string command, IReadOnlyList<string> prefixArgs, string profile, Func<bool> allow)
         {
+            _allow = allow ?? (() => false);
             var startInfo = new ProcessStartInfo(command)
             {
                 UseShellExecute = false,
@@ -46,8 +49,21 @@ namespace OpenLoop.Core.Acp
                 startInfo.ArgumentList.Add(profile);
             }
 
-            _client = new AcpClient(startInfo, allow);
+            _client = new AcpClient(startInfo, _allow);
+            _client.OnPermission = DecidePermission;
             _client.Notification += OnNotification;
+        }
+
+        /// <summary>权限按会话分流：任务工具那段用「逐次问用户」，模型那路仍是 FullAccess 策略。</summary>
+        private bool DecidePermission(AcpPermissionRequest request)
+        {
+            if (!string.IsNullOrEmpty(request.SessionId))
+            {
+                Func<AcpPermissionRequest, bool> decide;
+                lock (_gate) _permissionBySession.TryGetValue(request.SessionId, out decide);
+                if (decide != null) return decide(request);
+            }
+            return _allow();
         }
 
         public async Task InitializeAsync(CancellationToken ct)
@@ -113,6 +129,80 @@ namespace OpenLoop.Core.Acp
             };
         }
 
+        /// <summary>
+        /// 一件任务交给 dsh：新开一个会话（不污染模型那条缓存会话），跑完关掉。
+        /// <paramref name="decide"/> 是这次任务的权限策略（逐次问用户），返回 false 即拒绝。
+        /// </summary>
+        public async Task<CompletionResult> RunTaskAsync(
+            string workspace, string modelId, string task,
+            Func<AcpPermissionRequest, bool> decide, CancellationToken ct)
+        {
+            await InitializeAsync(ct).ConfigureAwait(false);
+
+            var created = await _client.RequestAsync("session/new",
+                new { cwd = workspace, mcpServers = Array.Empty<object>() }, ct).ConfigureAwait(false);
+
+            string sessionId = created.TryGetProperty("sessionId", out var id) ? id.GetString() ?? "" : "";
+            if (sessionId.Length == 0) throw new InvalidOperationException("ACP 没有给 sessionId");
+
+            lock (_gate)
+            {
+                _models[sessionId] = ParseModels(created);
+                if (decide != null) _permissionBySession[sessionId] = decide;
+            }
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(modelId))
+                {
+                    string value = ValueOf(modelId);
+                    if (value != null)
+                    {
+                        await _client.RequestAsync("session/set_config_option",
+                            new { sessionId, configId = "model", value }, ct).ConfigureAwait(false);
+                        lock (_gate) _appliedModel[sessionId] = value;
+                    }
+                }
+
+                var run = new Run(null, null);
+                lock (_gate) _runs[sessionId] = run;
+                using var cancel = ct.Register(() =>
+                    _ = _client.NotifyAsync("session/cancel", new { sessionId }, CancellationToken.None));
+
+                try
+                {
+                    await _client.RequestAsync("session/prompt",
+                        new { sessionId, prompt = new[] { new { type = "text", text = task } } }, ct)
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    lock (_gate) _runs.Remove(sessionId);
+                }
+
+                return new CompletionResult
+                {
+                    Content = run.Text.ToString(),
+                    Reasoning = run.Reasoning.Length == 0 ? null : run.Reasoning.ToString(),
+                    FinishReason = "stop"
+                };
+            }
+            finally
+            {
+                lock (_gate) _permissionBySession.Remove(sessionId);
+                using var closeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                try
+                {
+                    await _client.RequestAsync("session/close", new { sessionId }, closeCts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    // 有的代理不支持 close：进程随宿主退出，不影响正确性
+                }
+            }
+        }
+
         private async Task<string> EnsureSessionAsync(string workspace, CancellationToken ct)
         {
             lock (_gate)
@@ -126,50 +216,7 @@ namespace OpenLoop.Core.Acp
             string sessionId = result.TryGetProperty("sessionId", out var id) ? id.GetString() ?? "" : "";
             if (sessionId.Length == 0) throw new InvalidOperationException("ACP 没有给 sessionId");
 
-            var map = new Dictionary<string, AcpModel>(StringComparer.OrdinalIgnoreCase);
-            if (result.TryGetProperty("configOptions", out var options) && options.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var option in options.EnumerateArray())
-                {
-                    if (!option.TryGetProperty("id", out var optionId) ||
-                        optionId.GetString() != "model") continue;
-                    if (!option.TryGetProperty("options", out var groups) || groups.ValueKind != JsonValueKind.Array)
-                        continue;
-
-                    foreach (var group in groups.EnumerateArray())
-                    {
-                        string groupName = group.TryGetProperty("group", out var g) ? g.GetString() ?? "" : "";
-                        if (!group.TryGetProperty("options", out var entries) || entries.ValueKind != JsonValueKind.Array)
-                            continue;
-
-                        foreach (var entry in entries.EnumerateArray())
-                        {
-                            string value = entry.TryGetProperty("value", out var v) ? v.GetString() ?? "" : "";
-                            string name = entry.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                            if (value.Length == 0) continue;
-
-                            // 值形如 ["provider","model"]；界面 id 用 dsh/provider/model
-                            string raw = value;
-                            try
-                            {
-                                using var doc = JsonDocument.Parse(value);
-                                if (doc.RootElement.ValueKind == JsonValueKind.Array &&
-                                    doc.RootElement.GetArrayLength() == 2)
-                                {
-                                    string provider = doc.RootElement[0].GetString() ?? "";
-                                    string model = doc.RootElement[1].GetString() ?? "";
-                                    raw = $"{DshAcpIds.Prefix}{provider}/{model}";
-                                }
-                            }
-                            catch (JsonException)
-                            {
-                            }
-
-                            map[raw] = new AcpModel(raw, value, name, groupName);
-                        }
-                    }
-                }
-            }
+            var map = ParseModels(result);
 
             lock (_gate)
             {
@@ -177,6 +224,56 @@ namespace OpenLoop.Core.Acp
                 _models[sessionId] = map;
             }
             return sessionId;
+        }
+
+        private static Dictionary<string, AcpModel> ParseModels(JsonElement result)
+        {
+            var map = new Dictionary<string, AcpModel>(StringComparer.OrdinalIgnoreCase);
+            if (!result.TryGetProperty("configOptions", out var options) || options.ValueKind != JsonValueKind.Array)
+                return map;
+
+            foreach (var option in options.EnumerateArray())
+            {
+                if (!option.TryGetProperty("id", out var optionId) ||
+                    optionId.GetString() != "model") continue;
+                if (!option.TryGetProperty("options", out var groups) || groups.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                foreach (var group in groups.EnumerateArray())
+                {
+                    string groupName = group.TryGetProperty("group", out var g) ? g.GetString() ?? "" : "";
+                    if (!group.TryGetProperty("options", out var entries) || entries.ValueKind != JsonValueKind.Array)
+                        continue;
+
+                    foreach (var entry in entries.EnumerateArray())
+                    {
+                        string value = entry.TryGetProperty("value", out var v) ? v.GetString() ?? "" : "";
+                        string name = entry.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                        if (value.Length == 0) continue;
+
+                        // 值形如 ["provider","model"]；界面 id 用 dsh/provider/model
+                        string raw = value;
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(value);
+                            if (doc.RootElement.ValueKind == JsonValueKind.Array &&
+                                doc.RootElement.GetArrayLength() == 2)
+                            {
+                                string provider = doc.RootElement[0].GetString() ?? "";
+                                string model = doc.RootElement[1].GetString() ?? "";
+                                raw = $"{DshAcpIds.Prefix}{provider}/{model}";
+                            }
+                        }
+                        catch (JsonException)
+                        {
+                        }
+
+                        map[raw] = new AcpModel(raw, value, name, groupName);
+                    }
+                }
+            }
+
+            return map;
         }
 
         private string ValueOf(string modelId)

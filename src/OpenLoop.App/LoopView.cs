@@ -26,12 +26,21 @@ namespace OpenLoop.App
         private string _workspace = "";
         private string _model = "";
         private string _effort = "";
+        private bool _onlyFree = true;
+        private string _lastCost = "—";
+        private int? _contextTokens;
         private bool _running;
         private bool _filling;
         private bool _fillingProviders;
+        private bool _iterating;
+        private bool _layoutReady;
 
-        /// <summary>忙时收到的外部反馈（如 Worker 的 /complain），当前轮结束后按顺序处理。</summary>
-        private readonly List<string> _pending = [];
+        /// <summary>运行中提交的文本排队（含 /complain 投递）：默认等本轮返回，可切「立即」插到下一步。</summary>
+        private readonly OpenLoop.Service.Pending.PendingQueue _queue = new();
+        private OpenLoop.Service.Pending.PendingItem _editing;
+
+        /// <summary>「立即」标记：当前轮在下一个 step 前收尾（进行中的工具不打断）。</summary>
+        private bool _interrupt;
 
         /// <summary>账本归 I 所有：技能激活集从这里读，本进程不写账本。</summary>
         private OpenLoop.Service.Web.LoopApiClient _loopClient;
@@ -53,6 +62,33 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Model => _model;
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool OnlyFreeModels
+        {
+            get => _onlyFree;
+            set
+            {
+                _onlyFree = value;
+                _filling = true;
+                try { _freeSwitch.Checked = value; }
+                finally { _filling = false; }
+                Persist(s => s.OnlyFreeModels = value);
+                FillModels();
+            }
+        }
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int ModelOptionCount => _selModel.Items.Count;
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string SideTabNames => string.Join("\n",
+            _sideTabs.Items.OfType<AntdUI.SegmentedItem>().Select(i => i.Text));
+
+        public void ShowSidePage(int index)
+        {
+            _sideTabs.SelectIndex = index;
+            UpdateSideVisibility(index);
+        }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ComposerText
@@ -72,18 +108,34 @@ namespace OpenLoop.App
             var current = settings();
             _model = string.IsNullOrWhiteSpace(current.Model) ? "openrouter/free" : current.Model;
             _effort = current.ReasoningEffort ?? "";
+            _onlyFree = current.OnlyFreeModels;
+
+            _filling = true;
+            try { _freeSwitch.Checked = _onlyFree; }
+            finally { _filling = false; }
 
             FillProviders();
             FillModels();
             SelectEffort(_effort);
             SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort);
+            _tips.SetToolTip(_btnIterate, "把当前源码编译并登记为 A/I 新版本（不自动重启）");
+            _pending.Bind(_queue);
+            _pending.EditRequested += BeginEdit;
+            _pending.ImmediateRequested += OnImmediateRequested;
+            _pending.Removed += DropEdit;
+            _txtInput.TextChanged += (_, _) => UpdateSendButton();
 
             _book.ReplaceAll(ChatStore.Load(_workspace, "loop"), null);
+            LoopIndex.Touch(_workspace);
             _chat.PlaceholderText = Localization.T("NoMessages");
             _chat.Bind(_book);
             _lblSub.Text = "工作区 · " + UiStyle.ShortPath(_workspace);
             _tips.SetToolTip(_lblSub, _workspace);
             _chat.ScrollToEnd();
+
+            _lblStatus.TextChanged += (_, _) => ApplyDetail();
+            _sideBtw.Initialize(_workspace, settings);
+            ApplyDetail();
 
             ModelCatalog.Changed += OnCatalogChanged;
             Disposed += (_, _) =>
@@ -110,28 +162,27 @@ namespace OpenLoop.App
 
         public void Send(string text = null)
         {
-            if (!string.IsNullOrWhiteSpace(text)) _txtInput.Text = text;
-            SendAsync();
+            if (!string.IsNullOrWhiteSpace(text)) SendAsync(text);
+            else SendAsync(null);
         }
 
         /// <summary>外部投递（/complain）：空闲就立即处理，忙就排队等当前轮结束后按顺序处理。</summary>
         internal void Post(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
-            if (_running)
-            {
-                _pending.Add(text);
-                return;
-            }
-            Send(text);
+            _queue.Add(text);
+            _pending.Sync();
+            DrainQueue();
         }
 
-        private void DrainPending()
+        /// <summary>当前轮结束后调用：优先「立即」，其次按入队顺序。</summary>
+        private void DrainQueue()
         {
-            if (_running || _pending.Count == 0) return;
-            string next = _pending[0];
-            _pending.RemoveAt(0);
-            Send(next);
+            if (IsDisposed || _running) return;
+            var next = _queue.TakeNext();
+            if (next == null) return;
+            _pending.Sync();
+            Send(next.Text);
         }
 
         public void Stop() => _cts?.Cancel();
@@ -139,20 +190,36 @@ namespace OpenLoop.App
         public void Shutdown()
         {
             _cts?.Cancel();
+            _sideBtw.Shutdown();
+            SaveLoopChat();
+        }
+
+        /// <summary>对话正文按「工作区|loop」存；顺带把项目记进 Loop 索引，供 [Loop] 页列出。</summary>
+        private void SaveLoopChat()
+        {
             ChatStore.Save(_workspace, _book.Turns, "loop");
+            LoopIndex.Touch(_workspace);
         }
 
         private void OnViewLoad(object sender, EventArgs e)
         {
             if (_book.Turns.Count > 0) _chat.ScrollToEnd();
+            BeginInvoke(new Action(ApplyLayout));
         }
 
-        private async void SendAsync()
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (!_layoutReady) ApplyLayout();
+        }
+
+        private async void SendAsync(string text = null)
         {
             if (_running) return;
 
             var settings = _settings();
-            string text = _txtInput.Text.Trim();
+            bool fromInput = text == null;
+            text = (fromInput ? _txtInput.Text : text).Trim();
             if (text.Length == 0) return;
             if (!Directory.Exists(_workspace))
             {
@@ -169,17 +236,19 @@ namespace OpenLoop.App
                 return;
             }
 
-            var scope = new WorkspaceScope(_workspace);
             var skillCatalog = SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath);
             var skills = ActiveSkills(skillCatalog, out var skillProblems);
             OpenLoop.Core.Safety.ApprovalHandler approve = AskApproval;
-            scope.Approve = approve;
-            var loopTools = ToolRegistry.Loop(scope, _workspace, approve, skills, OpenCodeTools.For(_workspace, approve, settings.OpenCodeAskPermissions));
+            // 章程 §2：Loop 读与 Worker 同宽，写只限配置/源码/安装路径
+            var (readScope, writeScope) = OpenLoop.Service.Source.LoopScope.Create(approve);
+            var loopTools = ToolRegistry.Loop(readScope, writeScope, _workspace, approve, skills,
+                OpenCodeTools.For(writeScope.Root, approve, settings.OpenCodeAskPermissions)
+                    .Concat(DshTools.For(settings, writeScope.Root, approve)));
             var tools = new ToolRegistry(loopTools.Tools.Concat(
                 [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
-            string checkpoint = Snapshots.Create(_workspace, "loop");
+            string checkpoint = Snapshots.Create(writeScope.Root, "loop");
             if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
-            var reasoner = Reasoners.Create(settings, model, _effort, _workspace);
+            var reasoner = Reasoners.Create(settings, model, _effort, writeScope.Root, approve);
             var policy = new AgentPolicy { MaxSteps = 12 };
 
             TraceWriter trace;
@@ -202,7 +271,7 @@ namespace OpenLoop.App
                 ThinkingExpanded = _settings().ThinkingExpandedByDefault
             };
             _book.AddTurn(turn);
-            _txtInput.Clear();
+            if (fromInput) _txtInput.Clear();
             SetRunning(true);
             _lblStatus.Text = "状态: 运行中";
             trace.SkillSet(skills, skillProblems);
@@ -295,12 +364,14 @@ namespace OpenLoop.App
 
             _cts = new CancellationTokenSource();
             var ct = _cts.Token;
+            _interrupt = false;
             string outcome = "error";
 
             try
             {
                 var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, ModelChoices.ContextLimit(model), () => ct.IsCancellationRequested, onDelta, onReasoning, ResetStream),
+                    () => loop.RunAsync(history, text, ct, ModelChoices.ContextLimit(model),
+                        () => ct.IsCancellationRequested || _interrupt, onDelta, onReasoning, ResetStream),
                     ct);
 
                 turn.Streaming = false;
@@ -313,7 +384,10 @@ namespace OpenLoop.App
                     : result.StoppedByUser || result.StoppedByGuard ? "stopped"
                     : "ok";
                 trace.Finish(outcome, turn.AssistantText, result.ChatCost, result.Guards);
-                _lblStatus.Text = $"状态: {outcome} · {result.Steps.Count} 步 · 成本 {(result.ChatCost?.ToString("0.0000") ?? "—")}";
+                _lastCost = result.ChatCost?.ToString("0.0000") ?? "—";
+                _contextTokens = result.ContextTokens;
+                _lblStatus.Text = $"状态: {outcome} · {result.Steps.Count} 步 · 成本 {_lastCost}";
+                ApplyDetail();
             }
             catch (OperationCanceledException)
             {
@@ -343,9 +417,9 @@ namespace OpenLoop.App
                 SetRunning(false);
                 RefreshChat();
                 _chat.ScrollToEnd();
-                ChatStore.Save(_workspace, _book.Turns, "loop");
-                // 排队的外部反馈：当前轮收尾后再处理，避免重入
-                if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainPending));
+                SaveLoopChat();
+                // 排队文本：当前轮收尾后再发，避免重入
+                if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
             }
         }
 
@@ -380,7 +454,7 @@ namespace OpenLoop.App
                 {
                     User = new ChatMessage("user", $"[调查回答] 「{title}」：{summary}")
                 });
-                ChatStore.Save(_workspace, _book.Turns, "loop");
+                SaveLoopChat();
                 RefreshChat();
                 _chat.ScrollToEnd();
             }
@@ -403,22 +477,34 @@ namespace OpenLoop.App
 
         private void FillProviders()
         {
+            string selected = (_selProvider.SelectedValue as ProviderConfig)?.Name;
             _fillingProviders = true;
             try
             {
                 _selProvider.Items.Clear();
                 _selProvider.Items.Add(new AntdUI.SelectItem(Localization.T("AllProviders")) { Tag = null });
-                foreach (var provider in (_settings?.Invoke()?.Providers ?? []).Concat(OpenCodeHub.Providers))
-                    _selProvider.Items.Add(new AntdUI.SelectItem(provider.Name)
+                foreach (var (name, tag) in ProviderList.All(_settings?.Invoke()))
+                    _selProvider.Items.Add(new AntdUI.SelectItem(name) { Tag = tag });
+
+                int index = 0;
+                for (int i = 1; i < _selProvider.Items.Count; i++)
+                {
+                    if (_selProvider.Items[i] is AntdUI.SelectItem item
+                        && item.Tag is ProviderConfig provider
+                        && string.Equals(provider.Name, selected, StringComparison.OrdinalIgnoreCase))
                     {
-                        Tag = provider
-                    });
-                _selProvider.SelectedIndex = 0;
+                        index = i;
+                        break;
+                    }
+                }
+                _selProvider.SelectedIndex = index;
             }
             finally
             {
                 _fillingProviders = false;
             }
+
+            PluginRefill.WhenReady(this, FillProviders);
         }
 
         private void OnProviderChanged(object sender, AntdUI.ObjectNEventArgs e)
@@ -434,7 +520,7 @@ namespace OpenLoop.App
             {
                 _selModel.Items.Clear();
                 var provider = _selProvider.SelectedValue as ProviderConfig;
-                var models = ModelChoices.FilterByProvider(ModelChoices.Build(_settings(), onlyFree: false), provider);
+                var models = ModelChoices.FilterByProvider(ModelChoices.Build(_settings(), _onlyFree), provider);
 
                 foreach (var model in models)
                     _selModel.Items.Add(new AntdUI.SelectItem(model.Name)
@@ -480,6 +566,8 @@ namespace OpenLoop.App
         {
             if (_filling) return;
             _model = _selModel.SelectedValue as string ?? _model;
+            Persist(s => s.Model = _model);
+            ApplyDetail();
         }
 
         private void OnEffortChanged(object sender, EventArgs e)
@@ -487,19 +575,153 @@ namespace OpenLoop.App
             if (_filling) return;
             _effort = _selEffort.SelectedValue as string ?? "";
             Persist(s => s.ReasoningEffort = _effort);
+            ApplyDetail();
+        }
+
+        private void OnFreeToggle(object sender, AntdUI.BoolEventArgs e)
+        {
+            if (_settings == null || _filling) return;
+            _onlyFree = e.Value;
+            Persist(s => s.OnlyFreeModels = _onlyFree);
+            FillModels();
+        }
+
+        private void OnToggleSide(object sender, EventArgs e)
+        {
+            _upperSplit.Panel2Collapsed = !_upperSplit.Panel2Collapsed;
+            _btnPanel.IconSvg = UiIcons.Of(
+                _upperSplit.Panel2Collapsed ? UiIcons.PanelOpen : UiIcons.PanelClose, UiStyle.Text);
+            if (!_upperSplit.Panel2Collapsed) ApplyLayout();
+        }
+
+        private void OnSidePageChanged(object sender, AntdUI.IntEventArgs e)
+            => UpdateSideVisibility(e?.Value ?? 0);
+
+        private void UpdateSideVisibility(int index)
+        {
+            _detailFlow.Visible = index == 0;
+            _sideBtw.Visible = index == 1;
+            if (index == 0) ApplyDetail();
+        }
+
+        private void ApplyDetail()
+        {
+            string effort = _effort switch
+            {
+                "low" => Localization.T("EffortLow"),
+                "medium" => Localization.T("EffortMedium"),
+                "high" => Localization.T("EffortHigh"),
+                _ => Localization.T("EffortAuto")
+            };
+            string status = _lblStatus.Text;
+            string prefix = Localization.Translate("状态") + ": ";
+            if (status.StartsWith(prefix, StringComparison.Ordinal)) status = status[prefix.Length..];
+            if (string.IsNullOrWhiteSpace(status)) status = "—";
+
+            _lblDModel.Text = Localization.T("Model") + ": " + (string.IsNullOrWhiteSpace(_model) ? "—" : _model);
+            _lblDEffort.Text = Localization.T("Effort") + ": " + effort;
+            _lblDCtx.Text = Localization.T("Context") + ": "
+                + (_contextTokens.HasValue ? _contextTokens.Value.ToString("N0") : "—")
+                + " / " + ModelChoices.ContextLimit(_model).ToString("N0");
+            _lblDCost.Text = Localization.T("Cost") + ": " + _lastCost;
+            _lblDStatus.Text = Localization.T("Status") + ": " + status;
+        }
+
+        private void RunSideWork(string request)
+        {
+            if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
+            ShowSidePage(1);
+            _sideBtw.SetModel(_model);
+            _sideBtw.SetEffort(_effort);
+            _sideBtw.Run(request, BuildHistory());
+        }
+
+        private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
+
+        private void ApplyLayout()
+        {
+            if (IsDisposed || _upperSplit.Width < Dip(700)) return;
+            SessionView.ApplySplit(_upperSplit, vertical: true,
+                panel1Min: Dip(400), panel2Min: Dip(280), targetPanel2: Dip(320));
+            _layoutReady = true;
         }
 
         private void Submit()
         {
-            if (_running)
+            string text = _txtInput.Text.Trim();
+
+            // 正在编辑排队项：这一下只保存，不发送
+            if (_editing != null)
             {
-                Stop();
+                if (text.Length == 0) _queue.Remove(_editing);
+                else _editing.Text = text;
+                _editing = null;
+                _txtInput.Clear();
+                _pending.Sync();
+                UpdateSendButton();
                 return;
             }
-            SendAsync();
+
+            if (!_running && SessionView.IsCommand(text, "/btw"))
+            {
+                string request = text[4..].Trim();
+                if (request.Length == 0)
+                {
+                    Notify("缺少请求", "/btw 后面要写具体请求，例如：/btw 顺便看看还有哪些调用点。", error: true);
+                    return;
+                }
+                _txtInput.Clear();
+                RunSideWork(request);
+                return;
+            }
+
+            if (_running)
+            {
+                if (text.Length == 0)
+                {
+                    Stop();
+                    return;
+                }
+                _queue.Add(text);
+                _txtInput.Clear();
+                _pending.Sync();
+                return;
+            }
+
+            if (text.Length == 0) return;
+            SendAsync(null);
         }
 
         private void OnSendClick(object sender, EventArgs e) => Submit();
+
+        /// <summary>壳注入的迭代动作：编译 + 发布 + 登记 A/I。Loop 的工具里没有这个入口。</summary>
+        public Func<Task<string>> Iterate { get; set; }
+
+        internal string IterateEntry => _btnIterate.Text;
+
+        private async void OnIterateClick(object sender, EventArgs e)
+        {
+            if (_iterating || Iterate == null) return;
+            _iterating = true;
+            _btnIterate.Enabled = false;
+            _lblStatus.Text = "状态: 迭代中…";
+            try
+            {
+                string summary = await Iterate();
+                _lblStatus.Text = "状态: " + summary;
+                Notify("迭代", summary);
+            }
+            catch (Exception ex)
+            {
+                _lblStatus.Text = "状态: 迭代失败";
+                Notify("迭代失败", ex.Message, error: true);
+            }
+            finally
+            {
+                _iterating = false;
+                _btnIterate.Enabled = true;
+            }
+        }
 
         private void OnInputKeyDown(object sender, KeyEventArgs e)
         {
@@ -544,12 +766,49 @@ namespace OpenLoop.App
         private void SetRunning(bool running)
         {
             _running = running;
-            _btnSend.Text = Localization.T(running ? "Stop" : "Send");
-            _btnSend.IconSvg = UiIcons.Of(running ? UiIcons.Stop : UiIcons.Send,
-                running ? UiStyle.Error : Color.White);
-            _btnSend.Type = running ? AntdUI.TTypeMini.Error : AntdUI.TTypeMini.Primary;
-            _btnSend.Ghost = running;
-            _txtInput.Enabled = !running;
+            UpdateSendButton();
+        }
+
+        /// <summary>运行中且输入为空 = 停止；有内容 = 排队发送；编辑排队项时 = 保存。</summary>
+        private void UpdateSendButton()
+        {
+            bool editing = _editing != null;
+            bool stop = !editing && _running && _txtInput.Text.Trim().Length == 0;
+            _btnSend.Text = editing
+                ? Localization.T("SettingsSave")
+                : Localization.T(stop ? "Stop" : "Send");
+            _btnSend.IconSvg = UiIcons.Of(stop ? UiIcons.Stop : UiIcons.Send,
+                stop ? UiStyle.Error : Color.White);
+            _btnSend.Type = stop ? AntdUI.TTypeMini.Error : AntdUI.TTypeMini.Primary;
+            _btnSend.Ghost = stop;
+        }
+
+        /// <summary>「立即」：先让当前轮在下一个 step 前收尾，收尾后 DrainQueue 会先发这一条。</summary>
+        private void OnImmediateRequested(OpenLoop.Service.Pending.PendingItem item)
+        {
+            if (item == null || !item.Immediate) return;
+            _pending.Sync();
+            if (_running) _interrupt = true;
+            else DrainQueue();
+        }
+
+        /// <summary>队列里的条目被删掉时退出编辑态，别让「保存」留在按钮上。</summary>
+        private void DropEdit(OpenLoop.Service.Pending.PendingItem item)
+        {
+            if (!ReferenceEquals(_editing, item)) return;
+            _editing = null;
+            UpdateSendButton();
+        }
+
+        /// <summary>把排队文本放回输入框编辑，发送按钮变成「保存」。</summary>
+        private void BeginEdit(OpenLoop.Service.Pending.PendingItem item)
+        {
+            if (item == null || !_queue.Items.Contains(item)) return;
+            _editing = item;
+            _txtInput.Text = item.Text;
+            _txtInput.SelectionStart = _txtInput.Text.Length;
+            _txtInput.Focus();
+            UpdateSendButton();
         }
 
         private void RefreshChat() => _book.RaiseTextChanged();

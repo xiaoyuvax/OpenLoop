@@ -45,7 +45,7 @@ namespace OpenLoop.Service.Models
         {
             if (_endpoint is { IsReady: true }) return;
             if (DateTimeOffset.Now < _nextRetry) return;
-            try { RefreshAsync().GetAwaiter().GetResult(); } catch { }
+            try { Task.Run(async () => await RefreshAsync()).GetAwaiter().GetResult(); } catch { }
             if (_endpoint is not { IsReady: true }) _nextRetry = DateTimeOffset.Now.AddSeconds(30);
         }
 

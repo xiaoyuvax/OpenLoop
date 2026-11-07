@@ -47,7 +47,7 @@ public sealed class OpenCodeTests
     }
 
     [Fact]
-    public async Task Turn_asks_and_rejects_tool_permissions()
+    public async Task Turn_denies_native_tools_and_rejects_stray_permissions()
     {
         var calls = new List<string>();
         string createBody = null;
@@ -91,7 +91,7 @@ public sealed class OpenCodeTests
 
         Assert.Contains("read_file", result.Content);
         Assert.Equal("想一想", result.Reasoning);
-        Assert.Contains("\"effect\":\"ask\"", createBody);
+        Assert.Contains("\"effect\":\"deny\"", createBody);
         Assert.Contains("\"providerID\":\"teamorouter\"", createBody);
         Assert.Contains("\"decision\":\"reject\"", reply);
         Assert.Contains("POST /api/session/ses_t/prompt", calls);

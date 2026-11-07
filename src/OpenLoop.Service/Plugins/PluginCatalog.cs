@@ -69,7 +69,8 @@ namespace OpenLoop.Service.Plugins
         /// 解析 provider 的地址：字面量直接用；写 <c>auto</c> 表示「用这个插件自己的服务」
         /// （清单里 <c>service</c> 描述怎么起、怎么从 stdout 认地址）。
         /// </summary>
-        private string Endpoint(PluginManifest plugin, PluginProviderContribution provider, string suffix)
+        private string Endpoint(PluginManifest plugin, PluginProviderContribution provider, string suffix,
+            bool start = false)
         {
             string value = suffix == null ? provider.BaseUrl : provider.ModelsUrl;
             if (string.IsNullOrWhiteSpace(value)) return value;
@@ -78,10 +79,20 @@ namespace OpenLoop.Service.Plugins
             bool isAutoPath = value.StartsWith("auto/", StringComparison.OrdinalIgnoreCase);
             if (!isAuto && !isAutoPath) return value;
 
-            string baseUrl = LocalServices.BaseUrl(plugin.Id, plugin.Service, Workspace, plugin.Root);
+            // 真要用它（发一轮对话）才允许阻塞等握手；列清单/填下拉走后台预热
+            string baseUrl = start
+                ? LocalServices.BaseUrl(plugin.Id, plugin.Service, Workspace, plugin.Root)
+                : WarmAndKnown(plugin);
             if (string.IsNullOrWhiteSpace(baseUrl)) return null;
             if (isAutoPath) return baseUrl + value[4..];
             return baseUrl + (suffix ?? "/v1");
+        }
+
+        /// <summary>界面路径：服务没起就在后台起，这一轮先不列它的模型。</summary>
+        private string WarmAndKnown(PluginManifest plugin)
+        {
+            LocalServices.Warm(plugin.Id, plugin.Service, Workspace, plugin.Root);
+            return LocalServices.Known(plugin.Id);
         }
 
         /// <summary>按模型名找贡献了它的提供商（工作区优先）：先看清单 models，再看 modelsUrl 拉到的目录。</summary>
@@ -103,11 +114,11 @@ namespace OpenLoop.Service.Plugins
                         .Any(m => string.Equals(m, bare, StringComparison.OrdinalIgnoreCase));
                     // 前缀就是归属声明：认得前缀就归它，哪怕模型目录还没拉到（服务刚起、目录为空）
                     bool discovered = !byPrefix && !declared && !string.IsNullOrWhiteSpace(candidate.ModelsUrl) &&
-                        Discover(Endpoint(plugin, candidate, "/v1/models"), candidate.ResolveKey())
+                        Discover(Endpoint(plugin, candidate, "/v1/models", start: true), candidate.ResolveKey(), wait: true)
                             .Any(m => string.Equals(m, bare, StringComparison.OrdinalIgnoreCase));
                     if (!byPrefix && !declared && !discovered) continue;
 
-                    string baseUrl = Endpoint(plugin, candidate, null);
+                    string baseUrl = Endpoint(plugin, candidate, null, start: true);
                     if (string.IsNullOrWhiteSpace(baseUrl))
                     {
                         AppLog.Warn($"服务型插件 {plugin.Id} 没有就绪，模型 {id} 用不了");
@@ -151,6 +162,16 @@ namespace OpenLoop.Service.Plugins
                 .Select(id => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? id : prefix + id);
         }
 
+        /// <summary>后台还有服务预热或模型目录刷新在跑：界面填完下拉后据此决定要不要过一会儿重填。</summary>
+        public static bool AnyPending
+        {
+            get
+            {
+                if (LocalServices.AnyStarting) return true;
+                lock (DiscoveryLock) return Discovering.Count > 0;
+            }
+        }
+
         /// <summary>给提供商下拉用的分组：插件声明的 provider 名 + 它的模型，选中后只列这些模型。</summary>
         public IReadOnlyList<(string Name, List<string> Models)> ProviderGroups()
         {
@@ -173,11 +194,15 @@ namespace OpenLoop.Service.Plugins
         private static readonly object DiscoveryLock = new();
         private static readonly Dictionary<string, (DateTimeOffset At, List<string> Ids)> Discovered =
             new(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> Discovering = new(StringComparer.OrdinalIgnoreCase);
         private static readonly TimeSpan DiscoveryTtl = TimeSpan.FromMinutes(5);
         private static readonly TimeSpan EmptyDiscoveryTtl = TimeSpan.FromSeconds(20);
 
-        /// <summary>拉一次 <c>/v1/models</c>；失败也缓存（空清单），免得每次调用都等超时。</summary>
-        private static List<string> Discover(string url, string key)
+        /// <summary>
+        /// 拉一次 <c>/v1/models</c>；失败也缓存（空清单），免得每次调用都等超时。
+        /// <paramref name="wait"/> 为假时（界面路径）只给缓存，过期就后台刷，绝不在调用方线程上等 HTTP。
+        /// </summary>
+        private static List<string> Discover(string url, string key, bool wait = false)
         {
             if (string.IsNullOrWhiteSpace(url)) return [];
 
@@ -188,6 +213,33 @@ namespace OpenLoop.Service.Plugins
                     return cached.Ids;
             }
 
+            if (wait) Fetch(url, key);
+
+            // 界面路径（列模型、填下拉）不能等 HTTP：过期就后台刷，先给旧值，没有就空
+            else WarmDiscovery(url, key);
+
+            lock (DiscoveryLock)
+                return Discovered.TryGetValue(url, out var stale) ? stale.Ids : [];
+        }
+
+        /// <summary>后台刷新某个模型目录（同一地址只刷一份）。</summary>
+        private static void WarmDiscovery(string url, string key)
+        {
+            lock (DiscoveryLock)
+            {
+                if (!Discovering.Add(url)) return;
+            }
+
+            _ = Task.Run(() =>
+            {
+                try { Fetch(url, key); }
+                catch (Exception ex) { AppLog.Warn($"插件模型目录刷新失败：{url} {ex.Message}"); }
+                finally { lock (DiscoveryLock) Discovering.Remove(url); }
+            });
+        }
+
+        private static void Fetch(string url, string key)
+        {
             var ids = new List<string>();
             try
             {
@@ -197,7 +249,8 @@ namespace OpenLoop.Service.Plugins
                 using var response = Http.Send(request);
                 if (response.IsSuccessStatusCode)
                 {
-                    using var doc = JsonDocument.Parse(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                    using var doc = JsonDocument.Parse(response.Content.ReadAsStringAsync()
+                        .ConfigureAwait(false).GetAwaiter().GetResult());
                     if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
                         foreach (var item in data.EnumerateArray())
                             if (item.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
@@ -214,7 +267,7 @@ namespace OpenLoop.Service.Plugins
             }
 
             lock (DiscoveryLock) Discovered[url] = (DateTimeOffset.Now, ids);
-            return ids;        }
+        }
 
         /// <summary>一次查询用：读清单、找模型，不启动任何进程。</summary>
         public static bool TryProvider(string workspace, string model, out PluginProviderContribution provider,

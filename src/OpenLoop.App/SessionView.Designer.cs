@@ -50,11 +50,7 @@ namespace OpenLoop.App
         private AntdUI.Label _lblFree;
         private AntdUI.Progress _ctx;
         private AntdUI.Button _btnSend;
-        private Panel _queueHost;
-        private TableLayoutPanel _queueHeader;
-        private AntdUI.Label _lblQueue;
-        private AntdUI.Button _btnQueueSendAll;
-        private FlowLayoutPanel _queueList;
+        private PendingQueueView _pending;
         private AntdUI.Label _lblPath;
         private ToolTip _tips;
         private CommandPopup _cmdPopup;
@@ -119,11 +115,7 @@ namespace OpenLoop.App
             _selEffort = new AntdUI.Select();
             _ctx = new AntdUI.Progress();
             _btnSend = new AntdUI.Button();
-            _queueHost = new Panel();
-            _queueHeader = new TableLayoutPanel();
-            _lblQueue = new AntdUI.Label();
-            _btnQueueSendAll = new AntdUI.Button();
-            _queueList = new FlowLayoutPanel();
+            _pending = new PendingQueueView();
             _lblPath = new AntdUI.Label();
 
             SuspendLayout();
@@ -552,49 +544,8 @@ namespace OpenLoop.App
             _btnSend.Margin = new Padding(0);
             _btnSend.Click += OnSendClick;
 
-            // pending request drawer：贴在聊天区下方、输入框上方，有排队请求时才出现
-            _queueHost.Dock = DockStyle.Bottom;
-            _queueHost.Height = 0;
-            _queueHost.Visible = false;
-            _queueHost.BackColor = UiStyle.SecondaryBack;
-            _queueHost.Padding = new Padding(16, 6, 16, 6);
-
-            _queueHeader.Dock = DockStyle.Top;
-            _queueHeader.Height = 24;
-            _queueHeader.ColumnCount = 2;
-            _queueHeader.RowCount = 1;
-            _queueHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            _queueHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            _queueHeader.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            _queueHeader.Margin = new Padding(0);
-
-            _lblQueue.AutoSize = true;
-            _lblQueue.Text = "待发送 0";
-            _lblQueue.Font = new Font("Segoe UI", 9F);
-            _lblQueue.ForeColor = UiStyle.Muted;
-            _lblQueue.TextAlign = ContentAlignment.MiddleLeft;
-            _lblQueue.Margin = new Padding(0);
-
-            _btnQueueSendAll.Text = "全部发送";
-            _btnQueueSendAll.Ghost = true;
-            _btnQueueSendAll.Radius = 6;
-            _btnQueueSendAll.Height = 24;
-            _btnQueueSendAll.Width = 80;
-            _btnQueueSendAll.Margin = new Padding(0);
-            _btnQueueSendAll.Click += OnQueueSendAll;
-
-            _queueHeader.Controls.Add(_lblQueue, 0, 0);
-            _queueHeader.Controls.Add(_btnQueueSendAll, 1, 0);
-
-            _queueList.Dock = DockStyle.Fill;
-            _queueList.FlowDirection = FlowDirection.TopDown;
-            _queueList.WrapContents = false;
-            _queueList.AutoScroll = true;
-            _queueList.Margin = new Padding(0);
-            _queueList.SizeChanged += (_, _) => FitQueueRows();
-
-            _queueHost.Controls.Add(_queueList);
-            _queueHost.Controls.Add(_queueHeader);
+            // pending drawer：贴在聊天区下方、输入框上方，有排队文本时才出现
+            _pending.Dock = DockStyle.Bottom;
 
             _toolbarRight.Controls.Add(_btnSend);
             _toolbarRight.Controls.Add(_selEffort);
@@ -613,7 +564,7 @@ namespace OpenLoop.App
 
             // 队列抽屉在 Panel1 内 Dock=Bottom；先加 Fill 再加 Bottom，Bottom 先占位
             _mainSplit.Panel1.Controls.Add(_upperSplit);
-            _mainSplit.Panel1.Controls.Add(_queueHost);
+            _mainSplit.Panel1.Controls.Add(_pending);
 
             _root.Controls.Add(_header, 0, 0);
             _root.Controls.Add(_headerLine, 0, 1);

@@ -45,6 +45,16 @@ namespace OpenLoop.App
                 if (seen.Add(model.Id)) result.Add(model);
             }
 
+            if (settings != null && DshAcpHub.Installed(settings))
+            {
+                foreach (string id in DshAcpHub.CachedModels(settings))
+                {
+                    if (onlyFree && !LooksFree(id)) continue;
+                    if (seen.Add(id))
+                        result.Add(new ModelInfo { Id = id, Name = id, SupportsTools = true, IsFree = LooksFree(id) });
+                }
+            }
+
             // shortcut: provider 贡献不声明价格，这里一律按免费列出来；要区分收费通道再加字段
             using (var plugins = PluginCatalog.Load(settings?.Workspace ?? ""))
             {

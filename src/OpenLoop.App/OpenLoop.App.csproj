@@ -9,6 +9,7 @@
     <LangVersion>13</LangVersion>
     <RootNamespace>OpenLoop.App</RootNamespace>
     <AssemblyName>OpenLoop</AssemblyName>
+    <Version>0.1.0</Version>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <ApplicationIcon>..\..\OpenLoop.ico</ApplicationIcon>
     <NoWarn>WFO1000</NoWarn>

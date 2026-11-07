@@ -5,9 +5,10 @@
     "providers": [
       {
         "id": "our-free-model",
-        "name": "dsh / our-free-model 免费模型",
+        "name": "ofm-dsh",
         "baseUrl": "http://127.0.0.1:8326/v1",
         "modelsUrl": "http://127.0.0.1:8326/v1/models",
+        "modelPrefix": "ofm-dsh/",
         "keyFile": "~/.dsh/openai-gateway/api-key"
       }
     ]

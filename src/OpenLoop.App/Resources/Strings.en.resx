@@ -88,6 +88,9 @@
   <data name="MenuLanguageEn" xml:space="preserve">
     <value>Language: English</value>
   </data>
+  <data name="MenuAbout" xml:space="preserve">
+    <value>About</value>
+  </data>
   <data name="MenuSettings" xml:space="preserve">
     <value>Settings…</value>
   </data>

@@ -16,23 +16,27 @@ namespace OpenLoop.Core.OpenCode
         private readonly ApprovalHandler _approve;
         private readonly bool _askAllPermissions;
         private readonly string _workspace;
+        private readonly Action<string> _onFailure;
 
         public OpenCodeTaskTool(Func<OpenCodeClient> client, string workspace,
             Func<string, OpenCodeModelRef?> resolve = null, ApprovalHandler approve = null,
-            bool askAllPermissions = true)
+            bool askAllPermissions = true, Action<string> onFailure = null)
         {
             _client = client;
             _workspace = workspace;
             _resolve = resolve;
             _approve = approve;
             _askAllPermissions = askAllPermissions;
+            _onFailure = onFailure;
         }
 
         public string Name => "OpenCodeTask";
 
         public string Description =>
             "把一件完整任务交给本机 OpenCode agent（它有独立工具，会直接改当前工作目录里的文件）。" +
-            "OpenCode 的权限请求会转给用户审批；返回最终答复、会话 ID、花费与改动文件。适合需要多步探索和编辑的独立任务；简单问答不要用它。";
+            "OpenCode 的权限请求会转给用户审批；返回最终答复、会话 ID、花费与改动文件。" +
+            "适合需要多步探索和编辑的独立任务；简单问答不要用它。" +
+            "需要 dsh 的插件生态（如 our-free-model 的免费模型）或 dsh 专属工具时改用它旁边的 DshTask。";
 
         public string ParamsSchema =>
             "task: string（必填，交代完整目标与验收标准）；model: string 可选（opencode/<模型>@<提供商>，缺省用 OpenCode 默认模型）；" +
@@ -83,15 +87,16 @@ namespace OpenLoop.Core.OpenCode
                         if (!answered.Add(permission.ID)) continue;
                         if (_approve == null)
                             return AgentToolResult.Failure(
-                                $"OpenCode 请求权限但当前没有审批通道（会话 {sessionID}）：{Describe(permission)}");
+                                $"OpenCode 请求权限但当前没有审批通道（会话 {sessionID}）：{OpenCodePermissions.Describe(permission)}");
 
                         var decision = _approve(new ApprovalRequest(
-                            KindFor(permission), Name, Describe(permission), "OpenCode"));
+                            OpenCodePermissions.KindFor(_workspace, permission), Name,
+                            OpenCodePermissions.Describe(permission), "OpenCode"));
                         if (decision == ApprovalDecision.Deny)
                         {
                             await client.ReplyPermissionAsync(sessionID, permission.ID, "reject", "用户拒绝", ct);
                             return AgentToolResult.Failure(
-                                $"用户拒绝 OpenCode 的权限请求：{Describe(permission)}");
+                                $"用户拒绝 OpenCode 的权限请求：{OpenCodePermissions.Describe(permission)}");
                         }
 
                         await client.ReplyPermissionAsync(sessionID, permission.ID,
@@ -120,6 +125,7 @@ namespace OpenLoop.Core.OpenCode
             }
             catch (Exception ex)
             {
+                _onFailure?.Invoke(ex.Message);
                 return AgentToolResult.Failure("OpenCode 执行失败：" + ex.Message);
             }
         }
@@ -155,17 +161,40 @@ namespace OpenLoop.Core.OpenCode
             return AgentToolResult.Success(text + meta);
         }
 
-        private ApprovalKind KindFor(OpenCodePermission permission)
+        private static string CheckpointText(string checkpoint)
+            => string.IsNullOrEmpty(checkpoint)
+                ? ""
+                : " snapshot " + (checkpoint.Length <= 8 ? checkpoint : checkpoint[..8]);
+
+        private static async Task SafeInterruptAsync(OpenCodeClient client, string sessionID)
+        {
+            try { await client.InterruptAsync(sessionID, CancellationToken.None); }
+            catch { }
+        }
+    }
+
+    /// <summary>OpenCode 权限 → OpenLoop 审批的映射（模型位和任务工具共用一套判定）。</summary>
+    internal static class OpenCodePermissions
+    {
+        /// <summary>没有审批通道就返回 null（调用方据此一律拒绝）。</summary>
+        public static Func<OpenCodePermission, bool> Decider(string workspace, ApprovalHandler approve)
+            => approve == null
+                ? null
+                : permission => approve(new ApprovalRequest(
+                    KindFor(workspace, permission), "OpenCode", Describe(permission), "OpenCode"))
+                    != ApprovalDecision.Deny;
+
+        public static ApprovalKind KindFor(string workspace, OpenCodePermission permission)
         {
             foreach (string resource in permission.Resources ?? [])
             {
                 if (!Path.IsPathRooted(resource)) continue;
-                if (!IsInsideWorkspace(resource)) return ApprovalKind.OutsideWorkspace;
+                if (!IsInsideWorkspace(workspace, resource)) return ApprovalKind.OutsideWorkspace;
             }
             return ApprovalKind.SensitiveAction;
         }
 
-        private bool IsInsideWorkspace(string resource)
+        public static bool IsInsideWorkspace(string workspace, string resource)
         {
             try
             {
@@ -173,7 +202,7 @@ namespace OpenLoop.Core.OpenCode
                 string path = wildcard >= 0 ? resource[..wildcard] : resource;
                 if (path.Length == 0) return true;
 
-                string root = Path.GetFullPath(_workspace).TrimEnd(Path.DirectorySeparatorChar);
+                string root = Path.GetFullPath(workspace).TrimEnd(Path.DirectorySeparatorChar);
                 string full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
                 return full.Equals(root, StringComparison.OrdinalIgnoreCase)
                     || full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
@@ -184,24 +213,13 @@ namespace OpenLoop.Core.OpenCode
             }
         }
 
-        private static string Describe(OpenCodePermission permission)
+        public static string Describe(OpenCodePermission permission)
         {
             string resources = permission.Resources is { Count: > 0 }
                 ? " " + string.Join(", ", permission.Resources)
                 : "";
             string message = string.IsNullOrWhiteSpace(permission.Message) ? "" : $"（{permission.Message}）";
             return permission.Action + resources + message;
-        }
-
-        private static string CheckpointText(string checkpoint)
-            => string.IsNullOrEmpty(checkpoint)
-                ? ""
-                : " snapshot " + (checkpoint.Length <= 8 ? checkpoint : checkpoint[..8]);
-
-        private static async Task SafeInterruptAsync(OpenCodeClient client, string sessionID)
-        {
-            try { await client.InterruptAsync(sessionID, CancellationToken.None); }
-            catch { }
         }
     }
 }
