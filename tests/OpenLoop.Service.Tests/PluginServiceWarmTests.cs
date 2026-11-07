@@ -96,6 +96,35 @@ namespace OpenLoop.Service.Tests
             Assert.Contains("fakesvc/m1", group.Models);
         }
 
+        [Fact]
+        public void Failed_start_cools_down_instead_of_relaunching_on_every_call()
+        {
+            if (!HasNode()) return;
+
+            string attempts = Path.Combine(_root, "attempts.txt").Replace('\\', '/');
+            var spec = new PluginServiceContribution
+            {
+                Command = "node",
+                Args = ["-e", $"require('fs').appendFileSync('{attempts}','x');process.exit(1)"],
+                UrlPattern = @"(https?://[^\s""']+)",
+                TimeoutMs = 5000
+            };
+
+            Assert.Null(LocalServices.BaseUrl(_id, spec, _root, _root));
+            int afterFirst = ForcedStarts(attempts);
+            Assert.True(afterFirst > 0);
+
+            var watch = Stopwatch.StartNew();
+            Assert.Null(LocalServices.BaseUrl(_id, spec, _root, _root));
+            watch.Stop();
+
+            Assert.Equal(afterFirst, ForcedStarts(attempts));   // 冷却期内不再拉子进程
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"冷却期还等了 {watch.ElapsedMilliseconds}ms");
+        }
+
+        private static int ForcedStarts(string attempts)
+            => File.Exists(attempts) ? File.ReadAllText(attempts).Length : 0;
+
         private static bool HasNode()
         {
             string name = OperatingSystem.IsWindows() ? "node.exe" : "node";

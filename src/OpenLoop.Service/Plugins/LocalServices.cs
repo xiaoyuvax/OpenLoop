@@ -17,6 +17,7 @@ namespace OpenLoop.Service.Plugins
         private static readonly object Gate = new();
         private static readonly Dictionary<string, Running> Started = new(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> Starting = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> Warming = new(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, DateTimeOffset> RetryAfter = new(StringComparer.OrdinalIgnoreCase);
 
         static LocalServices()
@@ -38,16 +39,46 @@ namespace OpenLoop.Service.Plugins
                     Started.Remove(pluginId);
                 }
 
-                var started = Start(pluginId, spec, cwd, root);
+                // 冷却期内别再拉子进程：插件自己的 service.lock 没释放时会立刻失败，
+                // 直接调用方（提供商/模型刷新）会被反复触发，日志一秒一条。
+                if (RetryAfter.TryGetValue(pluginId, out var retryAt))
+                {
+                    if (DateTimeOffset.Now < retryAt) return Shared(pluginId);
+                    RetryAfter.Remove(pluginId);
+                }
 
-                // 起不来常见原因是「已有别的进程把它起好了」（插件自己的 service.lock）。
-                // 宿主这边留了 runtime 握手文件，照着用就行。
-                if (started == null) return Shared(pluginId);
-
-                Started[pluginId] = started;
-                Save(pluginId, started.BaseUrl, started.Process.Id);
-                return started.BaseUrl;
+                // 已经有人在起这份服务：不重复拉，也不在这里等
+                if (!Starting.Add(pluginId)) return Shared(pluginId);
             }
+
+            // 起进程（可能等 stdout 握手）不能占着 Gate：Known() 要能立刻回答，
+            // 否则界面刷新会跟着等满一个 timeoutMs。
+            Running started = null;
+            try
+            {
+                started = Start(pluginId, spec, cwd, root);
+            }
+            finally
+            {
+                lock (Gate)
+                {
+                    Starting.Remove(pluginId);
+                    if (started == null)
+                    {
+                        RetryAfter[pluginId] = DateTimeOffset.Now.AddMinutes(1);
+                    }
+                    else
+                    {
+                        RetryAfter.Remove(pluginId);
+                        Started[pluginId] = started;
+                        Save(pluginId, started.BaseUrl, started.Process.Id);
+                    }
+                }
+            }
+
+            // 起不来常见原因是「已有别的进程把它起好了」（插件自己的 service.lock）。
+            // 宿主这边留了 runtime 握手文件，照着用就行。
+            return started?.BaseUrl ?? Shared(pluginId);
         }
 
         /// <summary>还有服务在后台预热（界面据此决定要不要过一会儿重填下拉）。</summary>
@@ -55,7 +86,7 @@ namespace OpenLoop.Service.Plugins
         {
             get
             {
-                lock (Gate) return Starting.Count > 0;
+                lock (Gate) return Starting.Count > 0 || Warming.Count > 0;
             }
         }
 
@@ -78,7 +109,7 @@ namespace OpenLoop.Service.Plugins
             }
         }
 
-        /// <summary>在后台把服务起起来（同一插件只起一份，失败 30s 内不重试）；调用方立刻返回。</summary>
+        /// <summary>在后台把服务起起来（同一插件只起一份，失败 1 分钟内不重试）；调用方立刻返回。</summary>
         public static void Warm(string pluginId, PluginServiceContribution spec, string cwd, string root = null)
         {
             if (spec == null || string.IsNullOrWhiteSpace(spec.Command) || string.IsNullOrWhiteSpace(pluginId))
@@ -86,18 +117,18 @@ namespace OpenLoop.Service.Plugins
 
             lock (Gate)
             {
+                if (Warming.Contains(pluginId)) return;
                 if (Starting.Contains(pluginId)) return;
                 if (Started.TryGetValue(pluginId, out var running) && running.Process is { HasExited: false }) return;
                 if (RetryAfter.TryGetValue(pluginId, out var at) && DateTimeOffset.Now < at) return;
-                Starting.Add(pluginId);
+                Warming.Add(pluginId);
             }
 
             _ = Task.Run(() =>
             {
-                string url = null;
                 try
                 {
-                    url = BaseUrl(pluginId, spec, cwd, root);
+                    BaseUrl(pluginId, spec, cwd, root);
                 }
                 catch (Exception ex)
                 {
@@ -105,11 +136,7 @@ namespace OpenLoop.Service.Plugins
                 }
                 finally
                 {
-                    lock (Gate)
-                    {
-                        Starting.Remove(pluginId);
-                        if (string.IsNullOrWhiteSpace(url)) RetryAfter[pluginId] = DateTimeOffset.Now.AddSeconds(30);
-                    }
+                    lock (Gate) Warming.Remove(pluginId);
                 }
             });
         }
@@ -147,7 +174,12 @@ namespace OpenLoop.Service.Plugins
                 if (pid > 0)
                 {
                     try { using var _ = Process.GetProcessById(pid); }
-                    catch { return null; }
+                    catch
+                    {
+                        // 握手文件指向的进程早没了：清掉，别让下一位继续拿它当「已有实例」
+                        try { File.Delete(path); } catch { }
+                        return null;
+                    }
                 }
 
                 AppLog.Info($"服务型插件 {pluginId} 复用已在跑的实例：{value}");

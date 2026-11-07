@@ -1355,4 +1355,22 @@ Service 84 通过，Core 195 通过 / 1 跳过。
   未被覆盖的 `keep.txt` 保留、失败标记与日志都写入（`RestartScript_rolls_back_when_new_shell_never_reports`）。
 - 单测：`PendingQueueTests` 5 条、`IterationRunnerTests` 6 条（含脚本回退）；Service **113** 通过，
   Core 195 / 1 跳过。
+- 升版范围不再「工作树一脏就三个都升」：按 `git status` 的路径映射，Core/Service → A+I+壳，
+  `src/OpenLoop.A` / `.I` / `.App` 各管自己，`OpenLoop.slnx`/`props`/未知路径保守全升，
+  文档、测试、脚本、样本不触发重编；重命名行两边都算，版本号变新时仍然全体升版。
+  实测：只改 `src/OpenLoop.App` 时计划为「A 不变 / I 不变 / 壳 重编」。
 - 未验：A/I 真失败时的自动回退（要制造「新 A/I 起不来」）；壳重启超过 30 秒的慢启动会被误判回退。
+  回退链路本身已用 bus 实测：把 A 切到 `versions/a/probe-*` 副本再 stage 回原 `worker`，
+  新 pid 报到且 `current.json.a.dir` 复原（`RolesToRollback` 的判定由单测覆盖）。
+
+**2026-11-07 · 服务型插件启动失败后冷却**
+
+- `LocalServices.BaseUrl` 起子进程时不再持有 `Gate`：`Known()` / 界面刷新不会被 stdout 握手堵满
+  一个 `timeoutMs`（这是「列模型卡 1 秒多」的根因）。
+- 启动失败后 1 分钟内不再重拉；插件自己的 `service.lock` 没释放时不再每秒刷
+  `[ofm] 启动失败：数据目录已有服务在运行`。`Warm` 用独立的 `Warming` 集合去重，
+  `AnyStarting` 同时看 `Warming` 与 `Starting`。
+- `runtime/plugin-<id>.json` 指向的 pid 已死就删掉，不再当成「已有实例」。
+- 未做：删插件自己的锁文件（锁在插件数据目录里，宿主不解析它的私有格式）；锁一直不放时仍需
+  手工结束占锁进程。单测 `Failed_start_cools_down_instead_of_relaunching_on_every_call`；
+  Service **116** 通过。
