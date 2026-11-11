@@ -5,6 +5,7 @@
         private System.ComponentModel.IContainer components = null;
 
         private TableLayoutPanel _root;
+        private Panel _planScroll;
         private TableLayoutPanel _planHost;
         private AntdUI.Label _lblSummary;
         private AntdUI.Input _txtSummary;
@@ -13,6 +14,8 @@
         private AntdUI.Label _lblStatus;
         private FlowLayoutPanel _buttons;
         private AntdUI.Button _btnStart;
+        private AntdUI.Button _btnCommit;
+        private AntdUI.Button _btnPush;
         private AntdUI.Button _btnClose;
 
         protected override void Dispose(bool disposing)
@@ -26,6 +29,7 @@
             components = new System.ComponentModel.Container();
 
             _root = new TableLayoutPanel();
+            _planScroll = new Panel();
             _planHost = new TableLayoutPanel();
             _lblSummary = new AntdUI.Label();
             _txtSummary = new AntdUI.Input();
@@ -34,6 +38,8 @@
             _lblStatus = new AntdUI.Label();
             _buttons = new FlowLayoutPanel();
             _btnStart = new AntdUI.Button();
+            _btnCommit = new AntdUI.Button();
+            _btnPush = new AntdUI.Button();
             _btnClose = new AntdUI.Button();
 
             SuspendLayout();
@@ -42,7 +48,7 @@
             _root.ColumnCount = 1;
             _root.RowCount = 7;
             _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 220F));
             _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 160F));
             _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -52,7 +58,13 @@
             _root.Padding = new Padding(16, 12, 16, 8);
             _root.Margin = new Padding(0);
 
-            _planHost.Dock = DockStyle.Fill;
+            // 部件会越来越多：固定高度 + 滚动，新增节点不必再调窗口布局
+            _planScroll.Dock = DockStyle.Fill;
+            _planScroll.AutoScroll = true;
+            _planScroll.Margin = new Padding(0, 0, 0, 8);
+            _planScroll.BackColor = Color.Transparent;
+
+            _planHost.Dock = DockStyle.Top;
             _planHost.ColumnCount = 4;
             _planHost.RowCount = 1;
             _planHost.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24F));
@@ -61,7 +73,7 @@
             _planHost.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48F));
             _planHost.AutoSize = true;
             _planHost.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            _planHost.Margin = new Padding(0, 0, 0, 8);
+            _planHost.Margin = new Padding(0);
 
             _lblSummary.AutoSize = true;
             _lblSummary.Text = "变更内容";
@@ -112,6 +124,22 @@
             _btnStart.Margin = new Padding(8, 0, 0, 0);
             _btnStart.Click += OnStart;
 
+            _btnCommit.Text = "仅提交";
+            _btnCommit.Ghost = true;
+            _btnCommit.Radius = 8;
+            _btnCommit.Width = 96;
+            _btnCommit.Height = 32;
+            _btnCommit.Margin = new Padding(8, 0, 0, 0);
+            _btnCommit.Click += OnCommit;
+
+            _btnPush.Text = "提交并推送";
+            _btnPush.Ghost = true;
+            _btnPush.Radius = 8;
+            _btnPush.Width = 120;
+            _btnPush.Height = 32;
+            _btnPush.Margin = new Padding(8, 0, 0, 0);
+            _btnPush.Click += OnCommitPush;
+
             _btnClose.Text = "取消";
             _btnClose.Ghost = true;
             _btnClose.Radius = 8;
@@ -121,9 +149,12 @@
             _btnClose.Click += OnClose;
 
             _buttons.Controls.Add(_btnStart);
+            _buttons.Controls.Add(_btnCommit);
+            _buttons.Controls.Add(_btnPush);
             _buttons.Controls.Add(_btnClose);
 
-            _root.Controls.Add(_planHost, 0, 0);
+            _planScroll.Controls.Add(_planHost);
+            _root.Controls.Add(_planScroll, 0, 0);
             _root.Controls.Add(_lblSummary, 0, 1);
             _root.Controls.Add(_txtSummary, 0, 2);
             _root.Controls.Add(_lblLog, 0, 3);

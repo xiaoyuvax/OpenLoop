@@ -354,7 +354,7 @@ namespace OpenLoop.Service.Loop
             return new AgentTaskRunner(
                 _ => Reasoners.Create(settings, model, effort, workspace),
                 features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath, settings.UseAgentsMd,
-                AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(model));
+                AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(model, settings));
         }
 
         private static string DivergedWorkerExe()

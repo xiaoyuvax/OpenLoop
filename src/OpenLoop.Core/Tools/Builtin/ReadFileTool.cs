@@ -6,6 +6,7 @@ namespace OpenLoop.Core.Tools.Builtin
     public sealed class ReadFileTool : ITool
     {
         private const long MaxBytes = 2 * 1024 * 1024;
+        private const int MaxChars = 6000;
         private const int DefaultLimit = 400;
 
         private readonly WorkspaceScope _scope;
@@ -50,11 +51,27 @@ namespace OpenLoop.Core.Tools.Builtin
             int end = Math.Min(lines.Length, start + limit);
 
             var sb = new StringBuilder();
-            sb.AppendLine($"{_scope.Relative(full)}（第 {start + 1}-{end} 行，共 {lines.Length} 行）");
             for (int i = start; i < end; i++)
                 sb.Append(i + 1).Append(": ").AppendLine(lines[i]);
 
-            return Task.FromResult(AgentToolResult.Success(ToolText.Truncate(sb.ToString(), 6000)));
+            string relative = _scope.Relative(full);
+            string text = sb.ToString();
+            string header = $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行）\n";
+            if (text.Length <= MaxChars)
+                return Task.FromResult(AgentToolResult.Success(header + text));
+
+            int cut = text.LastIndexOf('\n', MaxChars);
+            if (cut <= 0)
+                return Task.FromResult(AgentToolResult.Success(
+                    $"{relative}（第 {start + 1} 行，共 {lines.Length} 行；单行超过 {MaxChars} 字符，已截断）\n"
+                    + ToolText.Truncate(text, MaxChars)));
+
+            string shown = text[..(cut + 1)];
+            int shownLines = shown.Count(c => c == '\n');
+            int shownEnd = start + shownLines;
+            return Task.FromResult(AgentToolResult.Success(
+                $"{relative}（第 {start + 1}-{shownEnd} 行，共 {lines.Length} 行；输出上限 {MaxChars} 字符，" +
+                $"第 {shownEnd + 1}-{end} 行未显示，继续读请设 offset={shownEnd + 1}）\n" + shown));
         }
     }
 }

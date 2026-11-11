@@ -36,7 +36,11 @@
 - `GET /agent/get?instance=MainForm&path=<属性>`；`POST /agent/set` body 为 `{"path":..,"value":..}`。
 - 复杂对象判空看 `type` 不看 `value`：`value:null` + 真实 `type` = 有值；`type:null` 才是空。
 - `POST /agent/invoke ... method=CaptureAction` body `[x,y,w,h]`（相对元素），返回 base64 PNG（用于看真实渲染）。
-- `/agent/control` 只支持原生 WinForms 控件；AntdUI 的按钮/菜单点不了 → 给 MainForm/SessionView 暴露公开方法供 A 面驱动。
+- AntdUI 等自绘控件点不到 → 统一走 `POST /agent/invoke ... method=Test`，body `["动词", 控件, 参数2]`（实现 `TestSurface`，`[PuppetTest]` 标记）：`tree` 列控件（路径|类型|名字|文本|坐标|可见可用）；`click`（按钮 / 下拉框 / Dropdown / 勾选框 / 订阅了 Click 的标签）；`settext`；`select`；`menu`；`key`（只发 Enter/Escape/Tab/方向键这类命名键）；`wheel`；`clicknowait`；`close`。控件先按 `Name`、再按可见文本找。
+- 开模态窗口的按钮必须用 `clicknowait`（排队后立刻返回），轮询 `tree` 等到窗口出现，操作完用 `close`；直接 `click` 会一直阻塞到窗口关闭。
+- 下拉列表 / 右键菜单等弹层不在控件树里：只能验证「展开了 / 选中了什么」，别指望 `tree` / `CaptureAction` 看到弹层内容。
+- 同类不兼容控件的新动作加到 `TestSurface`，不要再往 MainForm 堆测试方法；整体移除 = 删 `PuppetTestSurface.cs` + MainForm 里 `Test` 字段与方法。
+- 不要把测试面注册成第二个 Puppet 实例：那会让所有 `/agent/*` 调用必须带 `?name=`，已有脚本全失效。
 - 截图前若窗口被最小化，先 `ShowWindow(hwnd, 9)`。
 - **远程 API 测试须先经用户同意**：会调用真实模型/网关（产生费用）的操作，未经同意不得通过 UI、Puppet 或单测触发；纯本地测试（纯函数、控件状态、文件解析）不受限。
 - **测试会话要保留**：用 Puppet 造的会话、项目和临时工作区一律不删，留给用户自己查看；需要清理时先问。

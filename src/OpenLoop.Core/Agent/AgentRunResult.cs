@@ -31,12 +31,24 @@ namespace OpenLoop.Core.Agent
     public sealed class AgentGuardStats
     {
         public int RepeatCallStops { get; set; }
+        public int RepeatNudges { get; set; }
+        public int RepeatBans { get; set; }
         public int ExplorationStops { get; set; }
         public int ExplorationContinues { get; set; }
+        public int ExplorationNudges { get; set; }
         public int ClaimNudges { get; set; }
         public int PromiseNudges { get; set; }
         public int EmptyRetries { get; set; }
         public int MalformedRetries { get; set; }
+
+        /// <summary>坏 JSON 在本地修复成功、直接执行掉的次数。</summary>
+        public int MalformedRepairs { get; set; }
+
+        /// <summary>轮询声明放行的次数（被封顶削减的声明也计入）。</summary>
+        public int PollExemptions { get; set; }
+
+        /// <summary>步数上限自动追加的次数。</summary>
+        public int BudgetExtensions { get; set; }
         public int ArgRepairAttempts { get; set; }
         public int ArgRepairSuccesses { get; set; }
         public int Compressions { get; set; }

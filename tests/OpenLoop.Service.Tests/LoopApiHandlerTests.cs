@@ -24,7 +24,7 @@ namespace OpenLoop.Service.Tests
             if (workspace != null) req.Queries["workspace"] = workspace;
             req.Headers[BusProtocol.KeyHeader] = Key;
             req.Response = new WebResponse();
-            Assert.True(new LoopApiHandler(loop, Key).Handle(req), $"{method} {path} 未被处理");
+            Assert.True(new LoopApiHandler(loop, new IterationService(), Key).Handle(req), $"{method} {path} 未被处理");
             return req;
         }
 

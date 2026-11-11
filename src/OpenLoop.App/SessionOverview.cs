@@ -1,4 +1,5 @@
 using System.Drawing;
+using OpenLoop.Service.Source;
 
 namespace OpenLoop.App
 {
@@ -32,7 +33,9 @@ namespace OpenLoop.App
         }
 
         internal event Action<Session> OpenRequested;
-        internal event Action<string> LoopRequested;
+
+        /// <summary>(工作区, Loop 会话 id)；id 为空 = 新建一个新会话。</summary>
+        internal event Action<string, string> LoopRequested;
         internal event Action<string> NewSessionRequested;
         internal event Action<IReadOnlyList<Session>> DeleteRequested;
         internal event Action<string> RemoveProjectRequested;
@@ -120,7 +123,7 @@ namespace OpenLoop.App
                     string name = ProjectName(loop.Workspace);
                     _rows.Add(new Session
                     {
-                        Id = "loop:" + loop.Workspace,
+                        Id = "loop:" + loop.SessionId,
                         Workspace = loop.Workspace,
                         CustomTitle = "[Loop] " + name,
                         StartedAt = loop.UpdatedAt.LocalDateTime
@@ -139,20 +142,23 @@ namespace OpenLoop.App
             _lblProjectPath.Text = loops ? "Loop 会话（全部项目）" : _project;
             _table.DataSource = null;
             _table.DataSource = _rows;
-            _btnNewSession.Enabled = !loops && !string.IsNullOrEmpty(_project);
+            // [Loop] 页也能开会话：没有项目可依附，工作区用安装目录
+            _btnNewSession.Enabled = loops || !string.IsNullOrEmpty(_project);
             _btnRemoveProject.Enabled = !loops && !string.IsNullOrEmpty(_project);
         }
 
-        /// <summary>勾选（多选行）后删除；没勾选就用当前高亮行。</summary>
+        /// <summary>勾选（复选列 / Ctrl+Shift 多选）后删除；没勾选什么都不做。</summary>
         private void OnDelete(object sender, EventArgs e)
         {
-            var picked = (_table.SelectedIndexs ?? [])
-                .Where(i => i >= 1 && i <= _rows.Count)
-                .Select(i => _rows[i - 1])
+            var picked = _rows.Where(r => r.Selected)
+                .Concat((_table.SelectedIndexs ?? [])
+                    .Where(i => i >= 1 && i <= _rows.Count)
+                    .Select(i => _rows[i - 1]))
                 .Distinct()
                 .ToList();
             if (picked.Count == 0) return;
             DeleteRequested?.Invoke(picked);
+            foreach (var row in _rows) row.Selected = false;
             _table.SelectedIndexs = [];
             RefreshRows();
         }
@@ -190,7 +196,7 @@ namespace OpenLoop.App
         private void SizeColumns()
         {
             float scale = DeviceDpi / 96f;
-            int fixedDip = 96 + 150 + 70;
+            int fixedDip = 48 + 96 + 150 + 70;
             int titleDip = (int)(_table.ClientSize.Width / scale) - fixedDip - 12;
             _colState.Width = "96";
             _colStarted.Width = "150";
@@ -221,14 +227,23 @@ namespace OpenLoop.App
             RemoveProjectRequested?.Invoke(_project);
         }
 
-        private void OnNewSession(object sender, EventArgs e) => NewSessionRequested?.Invoke(_project);
+        private void OnNewSession(object sender, EventArgs e)
+        {
+            // [Loop] 页没有项目：新建的 Loop 会话工作区取安装目录；空 id = 开一个新的会话，不续用同工作区旧对话
+            if (_project == LoopTag) LoopRequested?.Invoke(SourceSync.InstallRoot, "");
+            else NewSessionRequested?.Invoke(_project);
+        }
 
         private void OnSettings(object sender, EventArgs e) => SettingsRequested?.Invoke();
 
         private void OnCellClick(object sender, AntdUI.TableClickEventArgs e)
         {
             if (e?.Record is not Session session) return;
-            if (session.Id.StartsWith("loop:", StringComparison.Ordinal)) LoopRequested?.Invoke(session.Workspace);
+            // 复选列只勾选，Ctrl/Shift 多选也不打开会话（AntdUI 在触发 CellClick 前已经处理完选择）
+            if (e.Column is AntdUI.ColumnCheck) return;
+            if ((ModifierKeys & (Keys.Control | Keys.Shift)) != 0) return;
+            if (session.Id.StartsWith("loop:", StringComparison.Ordinal))
+                LoopRequested?.Invoke(session.Workspace, session.Id["loop:".Length..]);
             else OpenRequested?.Invoke(session);
         }
 
@@ -239,6 +254,8 @@ namespace OpenLoop.App
         internal string Selection => _project == LoopTag ? "[Loop]" : _project;
 
         internal string[] RowTitles() => _rows.Select(r => r.Title).ToArray();
+
+        internal string[] CheckedRows() => _rows.Where(r => r.Selected).Select(r => r.Title).ToArray();
 
         internal bool SelectLoop()
         {

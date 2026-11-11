@@ -106,12 +106,40 @@ namespace OpenLoop.Service.Bus
                 !string.Equals(sha, body.Sha256, StringComparison.OrdinalIgnoreCase))
                 return Json(req, new { ok = false, error = "sha256 不匹配" }, 409);
 
+            // 有清单就以包自己为准：请求里的 protocol 只代表发起方，查不出「旧壳推新协议包」。
+            string version = body.Version;
+            var manifest = VersionManifest.TryRead(dir);
+            if (manifest != null)
+            {
+                if (manifest.Protocol != BusProtocol.Version)
+                    return Json(req, new
+                    {
+                        ok = false,
+                        error = $"协议号不一致（包 {manifest.Protocol}，本进程 {BusProtocol.Version}），两边一起升级"
+                    }, 409);
+
+                if (!string.IsNullOrWhiteSpace(manifest.Role) &&
+                    !string.Equals(manifest.Role, _role, StringComparison.OrdinalIgnoreCase))
+                    return Json(req, new { ok = false, error = $"包里是 {manifest.Role} 的产物，不能装到 {_role}" }, 409);
+
+                string files = VersionManifest.ComputeFilesSha256(dir);
+                if (!string.IsNullOrWhiteSpace(manifest.FilesSha256) &&
+                    !string.Equals(files, manifest.FilesSha256, StringComparison.OrdinalIgnoreCase))
+                    return Json(req, new { ok = false, error = "文件清单与 manifest 不一致（包被改过）" }, 409);
+
+                if (!string.IsNullOrWhiteSpace(manifest.Version)) version = manifest.Version;
+            }
+            else if (body.Protocol != 0 && body.Protocol != BusProtocol.Version)
+            {
+                return Json(req, new { ok = false, error = "协议号不一致，两边一起升级" }, 409);
+            }
+
             _staged = new UpdateRequest
             {
                 Role = _role,
-                Version = string.IsNullOrWhiteSpace(body.Version)
+                Version = string.IsNullOrWhiteSpace(version)
                     ? Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar))
-                    : body.Version,
+                    : version,
                 Dir = dir,
                 Sha256 = sha,
                 At = DateTimeOffset.Now.ToString("O")

@@ -13,6 +13,7 @@ namespace OpenLoop.App
         private readonly AppSettings _source;
         private readonly List<ProviderConfig> _providers = [];
         private readonly List<SkillRow> _skillRows = [];
+        private readonly Dictionary<string, ModelProps> _modelProps = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _workspace;
         private ProviderConfig _loaded;
         private bool _filling;
@@ -35,6 +36,8 @@ namespace OpenLoop.App
 
             foreach (var provider in _source.Providers ?? [])
                 _providers.Add(Clone(provider));
+            foreach (var pair in _source.ModelProps ?? [])
+                _modelProps[pair.Key] = new ModelProps { Name = pair.Value?.Name ?? "", ContextLimit = pair.Value?.ContextLimit ?? 0 };
 
             _filling = true;
             _cboLanguage.SelectedValue = _source.Language ?? "";
@@ -115,6 +118,7 @@ namespace OpenLoop.App
                 _btnRemoveProvider.Enabled = has;
                 _btnAddModel.Enabled = has;
                 _btnRemoveModel.Enabled = has;
+                _btnModelProps.Enabled = has;
                 _btnTest.Enabled = has;
             }
             finally
@@ -299,6 +303,47 @@ namespace OpenLoop.App
             ReloadModelList(provider);
         }
 
+        /// <summary>编辑选中模型的 id / 显示名称 / 上下文上限；取消则原样保留。</summary>
+        private void OnModelProps(object sender, EventArgs e)
+        {
+            var provider = Current;
+            string id = _lstModels.SelectedItem as string;
+            if (provider == null || string.IsNullOrWhiteSpace(id))
+            {
+                if (ReferenceEquals(sender, _btnModelProps))
+                    AntdUI.Notification.warn(this, "先选模型", "在下面的列表里选中一个模型再改属性。",
+                        AntdUI.TAlignFrom.TR, null, 4);
+                return;
+            }
+
+            _modelProps.TryGetValue(id, out var current);
+            using var form = new ModelPropsForm();
+            // 自动值按「不带用户覆盖」算，否则打开属性页会把自己的值当成基准。
+            form.Initialize(id, current?.Name ?? "", current?.ContextLimit ?? 0, ModelCatalog.ContextLimit(id));
+            if (form.ShowDialog(this) != DialogResult.OK) return;
+
+            string newId = form.ModelId;
+            if (!string.Equals(newId, id, StringComparison.OrdinalIgnoreCase))
+            {
+                if (provider.Models.Contains(newId, StringComparer.OrdinalIgnoreCase))
+                {
+                    AntdUI.Notification.warn(this, "模型已存在", $"列表里已有 {newId}，换个 id。",
+                        AntdUI.TAlignFrom.TR, null, 4);
+                    return;
+                }
+                int at = provider.Models.FindIndex(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase));
+                if (at >= 0) provider.Models[at] = newId;
+                _modelProps.Remove(id);
+            }
+
+            var props = new ModelProps { Name = form.DisplayName, ContextLimit = form.ContextLimit };
+            if (props.Name.Length == 0 && props.ContextLimit <= 0) _modelProps.Remove(newId);
+            else _modelProps[newId] = props;
+
+            ReloadModelList(provider);
+            _lstModels.SelectedItem = newId;
+        }
+
         private void OnClearModels(object sender, EventArgs e)
         {
             var provider = Current;
@@ -463,6 +508,7 @@ namespace OpenLoop.App
                 AutoEvolvePerDay = _source.AutoEvolvePerDay,
                 ReasoningEffort = _source.ReasoningEffort,
                 LoopCommand = _source.LoopCommand,
+                ModelProps = new Dictionary<string, ModelProps>(_modelProps, StringComparer.OrdinalIgnoreCase),
                 Providers = _providers
             };
             DialogResult = DialogResult.OK;

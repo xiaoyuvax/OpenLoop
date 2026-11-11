@@ -48,7 +48,7 @@ namespace OpenLoop.Service.Worker
                     features,
                     workspace, Path.Combine(workspace, ".openloop", "eval"),
                     AppSettings.GlobalAgentsPath, settings.UseAgentsMd,
-                    AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(spec.Model));
+                    AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(spec.Model, settings));
 
                 var outcome = runner.RunAsync(spec.Task, activation, CancellationToken.None)
                     .GetAwaiter().GetResult();

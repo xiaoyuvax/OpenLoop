@@ -73,16 +73,32 @@ namespace OpenLoop.App
             }
 
             return result
+                .Select(m => Rename(m, settings))
                 .OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        /// <summary>设置里配了显示名称就用它；其余字段照抄目录项（ModelInfo 是 init-only，只能新建）。</summary>
+        private static ModelInfo Rename(ModelInfo model, AppSettings settings)
+        {
+            string name = settings?.PropsFor(model.Id)?.Name;
+            if (string.IsNullOrWhiteSpace(name)) return model;
+            return new ModelInfo
+            {
+                Id = model.Id,
+                Name = name.Trim(),
+                ContextLength = model.ContextLength,
+                IsFree = model.IsFree,
+                SupportsTools = model.SupportsTools
+            };
         }
 
         private static bool LooksFree(string id)
             => !string.IsNullOrWhiteSpace(id)
                 && id.Contains("free", StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>模型上下文上限：用目录/OpenCode 报的真实值，未知时回退保守默认。</summary>
-        public static int ContextLimit(string model) => ModelCatalog.ContextLimit(model);
+        /// <summary>模型上下文上限：设置覆盖 → 目录/OpenCode → 内置表 → 保守默认。</summary>
+        public static int ContextLimit(string model, AppSettings settings) => ModelCatalog.ContextLimit(model, settings);
 
         /// <summary>按提供商筛选模型；provider 为 null 表示全部。</summary>
         public static List<ModelInfo> FilterByProvider(List<ModelInfo> models, ProviderConfig provider)

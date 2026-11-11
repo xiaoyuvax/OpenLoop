@@ -78,6 +78,8 @@ namespace OpenLoop.App
         private AntdUI.Button _btnAddModel;
         private AntdUI.Button _btnClearModels;
         private AntdUI.Button _btnRemoveModel;
+        private AntdUI.Button _btnModelProps;
+        private FlowLayoutPanel _modelActions;
         private ListBox _lstModels;
 
         private FlowLayoutPanel _buttons;
@@ -172,6 +174,8 @@ namespace OpenLoop.App
             _btnAddModel = new AntdUI.Button();
             _btnClearModels = new AntdUI.Button();
             _btnRemoveModel = new AntdUI.Button();
+            _btnModelProps = new AntdUI.Button();
+            _modelActions = new FlowLayoutPanel();
             _lstModels = new ListBox();
 
             _buttons = new FlowLayoutPanel();
@@ -535,8 +539,22 @@ namespace OpenLoop.App
             _btnRemoveModel.Text = "删除选中";
             _btnRemoveModel.Radius = 8;
             _btnRemoveModel.Size = new Size(100, 30);
-            _btnRemoveModel.Margin = new Padding(0, 4, 0, 4);
+            _btnRemoveModel.Margin = new Padding(0);
             _btnRemoveModel.Click += OnRemoveModel;
+
+            _btnModelProps.Text = "属性";
+            _btnModelProps.Radius = 8;
+            _btnModelProps.Size = new Size(72, 30);
+            _btnModelProps.Margin = new Padding(0, 0, 6, 0);
+            _btnModelProps.Click += OnModelProps;
+
+            _modelActions.Dock = DockStyle.Fill;
+            _modelActions.FlowDirection = FlowDirection.LeftToRight;
+            _modelActions.WrapContents = false;
+            _modelActions.AutoSize = true;
+            _modelActions.Margin = new Padding(0, 4, 0, 4);
+            _modelActions.Controls.Add(_btnModelProps);
+            _modelActions.Controls.Add(_btnRemoveModel);
 
             _lstModels.Dock = DockStyle.Fill;
             _lstModels.BorderStyle = BorderStyle.FixedSingle;
@@ -545,6 +563,7 @@ namespace OpenLoop.App
             _lstModels.BackColor = UiStyle.Surface;
             _lstModels.ForeColor = UiStyle.Text;
             _lstModels.Margin = new Padding(0, 2, 0, 0);
+            _lstModels.DoubleClick += OnModelProps;
 
             _models.Controls.Add(_lblProvider, 0, 0);
             _models.Controls.Add(_cboProvider, 1, 0);
@@ -565,7 +584,7 @@ namespace OpenLoop.App
             _models.Controls.Add(_lblStatus, 2, 5);
             _models.Controls.Add(_lblModels, 0, 6);
             _models.Controls.Add(_modelAdd, 1, 6);
-            _models.Controls.Add(_btnRemoveModel, 2, 6);
+            _models.Controls.Add(_modelActions, 2, 6);
             _models.Controls.Add(_lstModels, 0, 7);
             _models.SetColumnSpan(_lstModels, 3);
             _pageModels.Controls.Add(_models);

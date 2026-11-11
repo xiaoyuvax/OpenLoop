@@ -54,6 +54,28 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task ReadReportsActuallyReturnedLinesWhenCapped()
+        {
+            var scope = new WorkspaceScope(_root);
+            await File.WriteAllLinesAsync(Path.Combine(_root, "big.txt"),
+                Enumerable.Range(1, 1200).Select(i => $"line {i} {new string('x', 40)}"));
+            var read = new ReadFileTool(scope);
+
+            var result = await read.ExecuteAsync(Args(("path", "big.txt"), ("limit", "400")), default);
+
+            Assert.True(result.Ok);
+            Assert.Contains("行未显示", result.Data);
+            string header = result.Data.Split('\n')[0];
+            var match = System.Text.RegularExpressions.Regex.Match(header, @"第 1-(\d+) 行，共 1200 行");
+            Assert.True(match.Success, header);
+            int shown = int.Parse(match.Groups[1].Value);
+            Assert.InRange(shown, 1, 399);
+            int bodyLines = result.Data.Split('\n')
+                .Count(line => System.Text.RegularExpressions.Regex.IsMatch(line, @"^\d+: "));
+            Assert.Equal(shown, bodyLines);
+        }
+
+        [Fact]
         public async Task ReadRejectsMissingFile()
         {
             var read = new ReadFileTool(new WorkspaceScope(_root));

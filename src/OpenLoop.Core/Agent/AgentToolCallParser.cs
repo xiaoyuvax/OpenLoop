@@ -8,6 +8,16 @@ namespace OpenLoop.Core.Agent
     {
         public string Tool { get; init; }
         public Dictionary<string, object> Args { get; init; } = [];
+
+        /// <summary>轮询声明：模型说明这是有意重复的等待/轮询，不是空转。次数由宿主封顶。</summary>
+        public AgentPoll Poll { get; init; }
+    }
+
+    /// <summary>轮询声明（&lt;c&gt;"poll":{"id":"build-1","max":8}&lt;/c&gt;）。</summary>
+    public sealed class AgentPoll
+    {
+        public string Id { get; init; }
+        public int Max { get; init; }
     }
 
     /// <summary>
@@ -288,8 +298,15 @@ namespace OpenLoop.Core.Agent
         {
             if (string.IsNullOrWhiteSpace(modelOutput)) return false;
             if (modelOutput.Contains(Marker, StringComparison.OrdinalIgnoreCase)) return true;
-            if (modelOutput.Contains("\"tool\"", StringComparison.Ordinal)
-                && modelOutput.Contains("\"args\"", StringComparison.Ordinal)) return true;
+
+            // 模型会把协议分隔符写成全角（实测 deepseek：<｜tool":"ReadEvidence","args":{…}），
+            // 归一化后再判定，否则这段坏调用会被当成最终答复原样显示。
+            string normalized = NormalizeDelimiters(modelOutput);
+            if (normalized.Contains("\"tool\":", StringComparison.Ordinal)) return true;
+            if (normalized.Contains("\"tool\"", StringComparison.Ordinal)
+                && normalized.Contains("\"args\"", StringComparison.Ordinal)) return true;
+            if (normalized.Contains("\"args\":", StringComparison.Ordinal)
+                && normalized.Contains("\"tool\"", StringComparison.Ordinal)) return true;
             // 其它协议的等价形态（实测模型会自发用这些）：标签式 / OpenAI 函数调用 JSON
             if (modelOutput.Contains("<|tool_call_start|>", StringComparison.OrdinalIgnoreCase)
                 || modelOutput.Contains("<tool_call", StringComparison.OrdinalIgnoreCase)
@@ -302,6 +319,12 @@ namespace OpenLoop.Core.Agent
             return modelOutput.Contains("\"name\"", StringComparison.Ordinal)
                 && modelOutput.Contains("\"arguments\"", StringComparison.Ordinal);
         }
+
+        /// <summary>全角引号/竖线归一化成 ASCII，供协议判定使用（不改动原文本）。</summary>
+        private static string NormalizeDelimiters(string text) => text
+            .Replace('｜', '"').Replace('＂', '"')
+            .Replace('“', '"').Replace('”', '"')
+            .Replace('‘', '\'').Replace('’', '\'');
 
         /// <summary>
         /// 从 start（应为 '{'）起做括号配对扫描，返回完整的 JSON 对象文本；未闭合（被截断）返回 null。
@@ -336,6 +359,88 @@ namespace OpenLoop.Core.Agent
             return null;
         }
 
+        /// <summary>
+        /// 轻量修复后重新解析：尾逗号、缺失的收尾括号、被吞掉开头的「"tool":…,"args":{…}」。
+        /// 只做能确定含义的修补；修不出来就返回空，交给上层纠正重试。
+        /// </summary>
+        public static IReadOnlyList<AgentToolCall> TryRepair(string modelOutput)
+        {
+            if (string.IsNullOrWhiteSpace(modelOutput)) return [];
+            string text = NormalizeDelimiters(modelOutput.Replace("\r\n", "\n"));
+
+            var calls = new List<AgentToolCall>();
+            for (int i = text.IndexOf('{'); i >= 0; i = text.IndexOf('{', i + 1))
+            {
+                string raw = ExtractJsonObject(text, i) ?? text[i..];
+                foreach (string candidate in RepairedVariants(raw))
+                    if (TryParseJson(candidate, out var call)) { calls.Add(call); break; }
+            }
+            if (calls.Count > 0) return calls;
+
+            // 开头被吞掉：<"tool":"X","args":{…> 这种没有外层花括号的碎片
+            var tool = ToolFieldRegex.Match(text);
+            if (!tool.Success) return [];
+            string argsJson = "{}";
+            var argsAt = ArgsFieldRegex.Match(text, tool.Index + tool.Length);
+            if (argsAt.Success)
+            {
+                int brace = text.IndexOf('{', argsAt.Index + argsAt.Length);
+                if (brace >= 0 && ExtractJsonObject(text, brace) is { } extracted) argsJson = extracted;
+            }
+            string shell = $"{{\"tool\":\"{tool.Groups["name"].Value}\",\"args\":{argsJson}}}";
+            foreach (string candidate in RepairedVariants(shell))
+                if (TryParseJson(candidate, out var repaired)) return [repaired];
+            return [];
+        }
+
+        private static readonly Regex ToolFieldRegex = new(
+            @"""tool""\s*:\s*""(?<name>[^""\s]+)""", RegexOptions.Compiled);
+        private static readonly Regex ArgsFieldRegex = new(
+            @"""args""\s*:", RegexOptions.Compiled);
+        private static readonly Regex TrailingCommaRegex = new(
+            @",\s*(?=[}\]])", RegexOptions.Compiled);
+
+        /// <summary>在原文基础上给出几种可解析的变体（原文优先，避免把合法内容改坏）。</summary>
+        private static IEnumerable<string> RepairedVariants(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) yield break;
+            yield return json;
+
+            string noTrailing = TrailingCommaRegex.Replace(json, "");
+            if (noTrailing != json) yield return noTrailing;
+
+            foreach (string source in new[] { json, noTrailing })
+            {
+                string closed = CloseOpenBrackets(source);
+                if (closed != source) yield return closed;
+            }
+        }
+
+        /// <summary>补齐被截断的结尾括号（字符串内的括号不算）。</summary>
+        private static string CloseOpenBrackets(string text)
+        {
+            var stack = new Stack<char>();
+            bool inString = false, escaped = false;
+            foreach (char c in text)
+            {
+                if (inString)
+                {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == '"') inString = false;
+                    continue;
+                }
+                if (c == '"') { inString = true; continue; }
+                if (c is '{' or '[') stack.Push(c);
+                else if (c is '}' or ']') { if (stack.Count > 0) stack.Pop(); }
+            }
+            if (stack.Count == 0) return text;
+            var sb = new System.Text.StringBuilder(text);
+            foreach (char open in stack)
+                sb.Append(open == '{' ? '}' : ']');
+            return sb.ToString();
+        }
+
         private static bool TryParseJson(string json, out AgentToolCall call)
         {
             call = null;
@@ -368,13 +473,28 @@ namespace OpenLoop.Core.Agent
                         }
                     }
                 }
-                call = new AgentToolCall { Tool = toolEl.GetString(), Args = args };
+                call = new AgentToolCall { Tool = toolEl.GetString(), Args = args, Poll = ReadPoll(root) };
                 return true;
             }
             catch (JsonException)
             {
                 return false;
             }
+        }
+
+        /// <summary>轮询声明：id 非空、max 为正整数才算数；写错就当没声明，走普通判重。</summary>
+        private static AgentPoll ReadPoll(JsonElement root)
+        {
+            if (!root.TryGetProperty("poll", out var poll) || poll.ValueKind != JsonValueKind.Object)
+                return null;
+            if (!poll.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.String)
+                return null;
+            string id = idEl.GetString()?.Trim();
+            if (string.IsNullOrEmpty(id) || id.Length > 32) return null;
+            if (!poll.TryGetProperty("max", out var maxEl) || maxEl.ValueKind != JsonValueKind.Number
+                || !maxEl.TryGetInt32(out int max) || max <= 0)
+                return null;
+            return new AgentPoll { Id = id, Max = max };
         }
     }
 }

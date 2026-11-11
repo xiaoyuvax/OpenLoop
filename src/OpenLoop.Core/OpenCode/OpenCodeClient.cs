@@ -113,18 +113,22 @@ namespace OpenLoop.Core.OpenCode
         }
 
         /// <summary>
-        /// 跑一次「模型调用」：临时会话 + 全量 prompt。权限一律 deny —— OpenCode 的原生工具
+        /// 跑一次「模型调用」：临时会话 + 全量 prompt。默认权限一律 deny —— OpenCode 的原生工具
         /// （read/grep/edit/shell）因此不进入模型的工具表，工具只走 OpenLoop 的 tool-call 文本协议。
-        /// 用 ask 时模型会照旧看到原生工具并偷偷读文件，答案有内容但 Loop 一步都记不到。
+        /// 免费模型例外：OpenCode Zen 的门禁要求请求里的工具表非空，deny 会被判成 free-limit，
+        /// 所以 keepTools 时用 ask 保留工具表，权限请求仍由调用方拒绝。
         /// 思维链与正文经事件流回调；会话用完即删，OpenCode 不保留任何历史。
         /// </summary>
         public async Task<OpenCodeTurn> RunTurnAsync(
             string prompt, OpenCodeModelRef? model, string workspace,
             Action<string> onDelta = null, Action<string> onReasoning = null,
             int timeoutSeconds = 600, Func<OpenCodePermission, bool> decide = null,
-            CancellationToken ct = default)
+            bool keepTools = false, CancellationToken ct = default)
         {
-            string sessionID = await CreateSessionAsync("OpenLoop turn", workspace, model, null, "deny", ct);
+            // shortcut: 免费模型用 ask 保留工具表；原生只读工具可能直接执行、trace 会漏步，
+            // 等上游放宽门禁再回到 deny。
+            string sessionID = await CreateSessionAsync(
+                "OpenLoop turn", workspace, model, null, keepTools ? "ask" : "deny", ct);
             if (string.IsNullOrWhiteSpace(sessionID))
                 throw new InvalidOperationException("OpenCode 没有返回会话 ID");
 

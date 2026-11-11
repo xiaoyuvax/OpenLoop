@@ -237,7 +237,7 @@ public interface ITool
 ```csharp
 public sealed class AgentPolicy
 {
-    public int MaxSteps = 100;
+    public int MaxSteps = 0;               // 0 或负数 = 不设上限
     public double CompressAt = 0.8;
 
     public bool RepeatCallGuard = true;   public int MaxRepeatCalls = 3;
@@ -513,10 +513,10 @@ key 落在 `%APPDATA%\OpenLoop\puppet.key`，见 `docs/PLAN-DUAL-PROCESS.md`。
 - **路径牢笼**：`WorkspaceScope` 先解析 symlink/junction（`ResolveLinkTarget`，最深已存在祖先 + 拼回尾部），再按平台比较大小写（Windows/macOS 忽略，Linux 敏感）。
 - **环境白名单**：`ChildEnvironment` 只放行 PATH/TEMP/HOME/LANG 等，API Key 等敏感变量不进子进程。
 - **命令策略**：`CommandPolicy` 分 Safe/Risky/Denied。Denied（`rm -rf /`、`format`、`shutdown`、`dd of=/dev/*`）直接拒绝；Risky（shell 解释器、`git reset --hard`、`git clean -f`、`git push`、包管理器安装、`rm/del`、`curl/wget`、`taskkill/reg/sc/net`）经 `Func<CommandRequest,bool>` 审批，无审批通道即失败。
-- **快照**：任务开始前 `git stash create` + `refs/openloop/<时间戳>`，不触碰工作区；`Snapshots.Restore` 为显式回滚入口。
+- **快照**：任务开始前用临时索引 `git add -A` + `git write-tree` 记录整个工作树（已跟踪 + 未被 `.gitignore` 忽略的未跟踪文件），`refs/openloop/<时间戳>` 钉住 tree 对象，不触碰真实索引/工作区/分支；`Snapshots.Restore` 恢复内容并删除快照之后新建的文件（忽略文件不动），是显式回滚入口。
 - **资源**：超时（1–600s，杀进程树）、输出截断（6KB）。
 
-测试：`tests/OpenLoop.Core.Tests/SafetyTests.cs`（拒绝/风险/安全分类、`..` 与 symlink 逃逸、环境无密钥、argv 执行、快照）。
+测试：`tests/OpenLoop.Core.Tests/SafetyTests.cs`（拒绝/风险/安全分类、`..` 与 symlink 逃逸、环境无密钥、argv 执行、快照）、`tests/OpenLoop.Core.Tests/SnapshotsTests.cs`（新建文件删除、忽略文件保留、索引不变）。
 
 未做（P1）：Linux 的 bubblewrap/Landlock、Windows 的低完整性令牌/AppContainer、出网限制、内存上限。
 
@@ -531,7 +531,8 @@ key 落在 `%APPDATA%\OpenLoop\puppet.key`，见 `docs/PLAN-DUAL-PROCESS.md`。
   （Streamable HTTP 或本地 stdio 子进程）；MCP 工具在每轮开始前 `tools/list` 动态注册。
   没有沙箱，插件就是本机进程，只装可信来源。
 - **更新通道**：`POST /bus/stage`（只校验登记）+ `POST /bus/restart`（忙 409）+ 壳侧
-  `ApplyUpdate`/回滚；生产者是 `scripts/publish-role.ps1`（publish → `versions/<role>/<ver>-<sha8>` → stage）。
+  `ApplyUpdate`/回滚；发布与换版由 I 执行（`/api/loop/iteration` → `versions/<role>/<ver>-<contentSha8>` → stage），
+  不再有发布脚本。版本规则见 `docs/PLAN-VERSION-MANAGEMENT.md`。
 - **流式的两道闸**：单次静默 90 秒（`StreamIdleTimeout`）重发；连续 3 次停滞（含首包无响应）
   判这一轮失败，避免界面永远停在「运行中」。
 - **压缩闸**：只有估算 token 真的下降才替换消息。尾部消息自己就超阈值时不再压缩，

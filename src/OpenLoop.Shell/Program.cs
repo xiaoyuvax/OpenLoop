@@ -12,6 +12,9 @@ namespace OpenLoop.Shell
     {
         private static int Main(string[] args)
         {
+            if (ShellUpdate.IsRequested(args))
+                return ShellUpdate.Run(args);
+
             // 更新过的版本记在 current.json：先看它，再看随包 worker/（与 Windows 壳一致）
             var store = new VersionStore();
             string aPath = Resolve(args, "--a", "OPENLOOP_A_PATH", BusRoles.A, store);
@@ -26,6 +29,8 @@ namespace OpenLoop.Shell
             using var supervisor = new Supervisor();
             var infoI = supervisor.Ensure(BusRoles.I, iPath);
             var infoA = supervisor.Ensure(BusRoles.A, aPath);
+            // 壳自更新的 helper 靠这个标记判断「新壳真的起来了」
+            OpenLoop.Service.Source.IterationRunner.MarkShellStarted();
 
             if (infoA != null && infoI != null)
             {

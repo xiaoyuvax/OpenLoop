@@ -19,28 +19,43 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
-        public async Task Stops_After_One_Retry_When_Still_Empty()
+        public async Task Stops_After_Three_Retries_When_Still_Empty()
         {
             var reasoner = new ScriptedReasoner("User Safety: safe", "Response Safety: safe");
             var loop = Loops.Build(new FakeTool(), reasoner);
 
             var result = await loop.RunAsync([], "hi");
 
-            Assert.Equal(2, reasoner.Calls.Count);
-            Assert.Equal("Response Safety: safe", result.FinalAnswer);
+            Assert.Equal(3, reasoner.Calls.Count);
+            Assert.Equal(2, result.Guards.EmptyRetries);
+            Assert.Equal("完成", result.FinalAnswer);
         }
 
         [Fact]
-        public async Task Empty_Content_Falls_Back_To_Reasoning_Without_Retry()
+        public async Task Empty_Content_Is_Retried_Not_Replaced_By_Reasoning()
         {
             var reasoner = new ReasoningOnlyReasoner("先看目录，再逐个确认问题。");
             var loop = Loops.Build(new FakeTool(), reasoner);
 
             var result = await loop.RunAsync([], "hi");
 
-            Assert.Equal("先看目录，再逐个确认问题。", result.FinalAnswer);
-            Assert.Equal(1, reasoner.Calls);
-            Assert.Equal(0, result.Guards.EmptyRetries);
+            Assert.True(string.IsNullOrEmpty(result.FinalAnswer));
+            Assert.Equal(4, reasoner.Calls);
+            Assert.Equal(3, result.Guards.EmptyRetries);
+        }
+
+        [Fact]
+        public async Task ToolCall_Carried_In_Reasoning_Is_Executed()
+        {
+            var tool = new FakeTool();
+            var reasoner = new ReasoningOnlyReasoner(Loops.Call("echo", "{\"x\":\"1\"}"));
+            var loop = Loops.Build(tool, reasoner);
+
+            var result = await loop.RunAsync([], "hi");
+
+            Assert.Single(result.Steps);
+            Assert.Equal("echo", result.Steps[0].Tool);
+            Assert.Equal(1, tool.Calls);
         }
 
         [Fact]
@@ -60,23 +75,39 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
-        public async Task RepeatCallGuardStopsLoop()
+        public async Task RepeatCallGuardNudgesThenBansInsteadOfStopping()
         {
+            // 4 次完全相同：第 2 次提醒、第 3 次提醒+禁用、第 4 次被拒收后仍给模型一次改做法的机会
             var tool = new FakeTool();
             var reasoner = new ScriptedReasoner(
-                Loops.Call("echo"), Loops.Call("echo"), Loops.Call("echo"), Loops.Call("echo"), Loops.Call("echo"));
-            var loop = Loops.Build(tool, reasoner, new AgentPolicy { MaxRepeatCalls = 3 });
+                Loops.Call("echo"), Loops.Call("echo"), Loops.Call("echo"), Loops.Call("echo"));
+            var loop = Loops.Build(tool, reasoner, new AgentPolicy { MaxRepeatCalls = 2 });
 
             var result = await loop.RunAsync([], "做点事");
 
-            Assert.Contains("无进展", result.FinalAnswer);
-            Assert.Equal(3, result.Steps.Count);
-            Assert.Equal(1, result.Guards.RepeatCallStops);
-            Assert.True(result.StoppedByGuard);
+            Assert.Equal("完成", result.FinalAnswer);
+            Assert.Equal(4, result.Steps.Count);
+            Assert.Equal(3, tool.Calls);
+            Assert.Equal(2, result.Guards.RepeatNudges);
+            Assert.Equal(1, result.Guards.RepeatBans);
+            Assert.False(result.StoppedByGuard);
         }
 
         [Fact]
-        public async Task BudgetExhaustedAfterMaxSteps()
+        public async Task RepeatCallGuardStopsAfterBanIsIgnored()
+        {
+            var tool = new FakeTool();
+            var calls = Enumerable.Repeat(Loops.Call("echo"), 6).ToArray();
+            var loop = Loops.Build(tool, new ScriptedReasoner(calls), new AgentPolicy { MaxRepeatCalls = 2 });
+
+            var result = await loop.RunAsync([], "做点事");
+
+            Assert.True(result.StoppedByGuard);
+            Assert.Equal(1, result.Guards.RepeatCallStops);
+        }
+
+        [Fact]
+        public async Task BudgetAutoExtendsBeforeGivingUp()
         {
             var tool = new FakeTool();
             var reasoner = new ScriptedReasoner(Loops.Call("echo", "{\"x\":\"1\"}"), Loops.Call("echo", "{\"x\":\"2\"}"));
@@ -84,8 +115,75 @@ namespace OpenLoop.Core.Tests
 
             var result = await loop.RunAsync([], "做点事");
 
+            Assert.False(result.BudgetExhausted);
+            Assert.Equal(1, result.Guards.BudgetExtensions);
+            Assert.Equal("完成", result.FinalAnswer);
+        }
+
+        [Fact]
+        public async Task BudgetStopsAfterExtensionLimit()
+        {
+            var tool = new FakeTool();
+            var calls = Enumerable.Range(0, 6).Select(i => Loops.Call("echo", $"{{\"x\":\"{i}\"}}")).ToArray();
+            var loop = Loops.Build(tool, new ScriptedReasoner(calls), new AgentPolicy
+            {
+                MaxSteps = 1,
+                BudgetExtendSteps = 1,
+                MaxBudgetExtensions = 3
+            });
+
+            var result = await loop.RunAsync([], "做点事");
+
             Assert.True(result.BudgetExhausted);
-            Assert.Equal(2, result.Steps.Count);
+            Assert.Equal(3, result.Guards.BudgetExtensions);
+            Assert.Equal(4, result.Steps.Count);
+        }
+
+        [Fact]
+        public async Task NoStepLimitWhenMaxStepsIsZero()
+        {
+            var tool = new FakeTool();
+            var reasoner = new ScriptedReasoner(
+                Loops.Call("echo", "{\"x\":\"1\"}"),
+                Loops.Call("echo", "{\"x\":\"2\"}"),
+                Loops.Call("echo", "{\"x\":\"3\"}"),
+                Loops.Call("echo", "{\"x\":\"4\"}"),
+                "最终答案");
+            var loop = Loops.Build(tool, reasoner);
+
+            var result = await loop.RunAsync([], "做点事");
+
+            Assert.False(result.BudgetExhausted);
+            Assert.Equal(4, result.Steps.Count);
+            Assert.Equal("最终答案", result.FinalAnswer);
+        }
+
+        [Fact]
+        public async Task TruncatedToolCallIsRepairedAndExecuted()
+        {
+            var tool = new FakeTool();
+            const string truncated = "tool-call: {\"tool\":\"echo\",\"args\":{\"x\":\"1\"";
+            var loop = Loops.Build(tool, new ScriptedReasoner(truncated, "完成"));
+
+            var result = await loop.RunAsync([], "做点事");
+
+            Assert.Equal(1, tool.Calls);
+            Assert.Equal(1, result.Guards.MalformedRepairs);
+            Assert.Equal("完成", result.FinalAnswer);
+        }
+
+        [Fact]
+        public async Task FullWidthLeakedToolCallIsRecovered()
+        {
+            const string leak = "<｜tool\":\"ReadEvidence\",\"args\":{\"path\":\"loop/findings.jsonl\",\"limit\":40}}";
+            var tool = new FakeTool { Name = "ReadEvidence" };
+            var loop = Loops.Build(tool, new ScriptedReasoner(leak, "完成"));
+
+            var result = await loop.RunAsync([], "继续");
+
+            Assert.Equal(1, tool.Calls);
+            Assert.False(result.StoppedByGuard);
+            Assert.Equal("完成", result.FinalAnswer);
         }
 
         [Fact]
@@ -158,22 +256,71 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
-        public async Task ExplorationGuardUsesToolIsReadOnly()
+        public async Task ExplorationGuardNudgesBeforeStopping()
         {
             var tool = new FakeTool { IsReadOnly = true };
             var reasoner = new ScriptedReasoner(
                 Loops.Call("echo", "{\"x\":\"1\"}"),
                 Loops.Call("echo", "{\"x\":\"2\"}"),
-                Loops.Call("echo", "{\"x\":\"3\"}"),
-                "不会到这里");
+                Loops.Call("echo", "{\"x\":\"3\"}"));
             var loop = Loops.Build(tool, reasoner, new AgentPolicy { MaxExplorationSteps = 2 });
 
             var result = await loop.RunAsync([], "做点事");
 
-            Assert.Contains("原地打转", result.FinalAnswer);
-            Assert.Equal(2, result.Steps.Count);
-            Assert.Equal(1, result.Guards.ExplorationStops);
+            Assert.Equal(2, result.Guards.ExplorationNudges);
+            Assert.Equal(0, result.Guards.ExplorationStops);
+            Assert.False(result.StoppedByGuard);
+            Assert.Equal("完成", result.FinalAnswer);
+        }
+
+        [Fact]
+        public async Task ExplorationGuardStopsAfterNudgesAreIgnored()
+        {
+            var tool = new FakeTool { IsReadOnly = true };
+            var calls = Enumerable.Range(0, 5)
+                .Select(i => Loops.Call("echo", $"{{\"x\":\"{i}\"}}")).ToArray();
+            var loop = Loops.Build(tool, new ScriptedReasoner(calls), new AgentPolicy { MaxExplorationSteps = 2 });
+
+            var result = await loop.RunAsync([], "做点事");
+
             Assert.True(result.StoppedByGuard);
+            Assert.Equal(1, result.Guards.ExplorationStops);
+            Assert.Contains("原地打转", result.FinalAnswer);
+        }
+
+        [Fact]
+        public async Task PollDeclarationExemptsRepeatsWithinItsBudget()
+        {
+            var tool = new FakeTool();
+            var script = Enumerable.Range(0, 5)
+                .Select(i => i == 0
+                    ? Loops.PollCall("echo", "{\"x\":\"1\"}", "build-1", 5)
+                    : Loops.Call("echo", "{\"x\":\"1\"}"))
+                .ToArray();
+            var loop = Loops.Build(tool, new ScriptedReasoner(script));
+
+            var result = await loop.RunAsync([], "等构建");
+
+            Assert.Equal(5, tool.Calls);
+            Assert.Equal(4, result.Guards.PollExemptions);
+            Assert.Equal(0, result.Guards.RepeatNudges);
+            Assert.False(result.StoppedByGuard);
+        }
+
+        [Fact]
+        public async Task PollBudgetIsCappedByPolicy()
+        {
+            var tool = new FakeTool();
+            var script = Enumerable.Range(0, 5)
+                .Select(i => Loops.PollCall("echo", "{\"x\":\"1\"}", "build-1", 8))
+                .ToArray();
+            var loop = Loops.Build(tool, new ScriptedReasoner(script),
+                new AgentPolicy { MaxPollRepeats = 1 });
+
+            var result = await loop.RunAsync([], "等构建");
+
+            Assert.Equal(1, result.Guards.PollExemptions);
+            Assert.True(result.Guards.RepeatNudges >= 1);
         }
 
         [Fact]
@@ -250,12 +397,44 @@ namespace OpenLoop.Core.Tests
             Assert.Contains("此前对话摘要", reasoner.Calls[2][0].Content);
         }
 
+        [Fact]
+        public void LongArgPreviewElidesMiddleAndKeepsFileTail()
+        {
+            string path = @"C:\root\" + new string('a', 80) + @"\Main.cs";
+            string preview = AgentLoop.SummarizeArgs(new Dictionary<string, object> { ["path"] = path });
+
+            Assert.StartsWith(@"path=C:\root\aaaa", preview);
+            Assert.EndsWith($@"Main.cs（共 {path.Length} 字符）", preview);
+            Assert.DoesNotContain("截断", preview);
+        }
+
+        [Fact]
+        public void MultilineArgsStayOneLineAndKeepEveryName()
+        {
+            // 工具行是一条文本：值里的换行会把「(…)」撑开，参数名/等号必须全在
+            string content = "line1\nline2\n\t" + new string('x', 200) + "\nTAIL";
+            string preview = AgentLoop.SummarizeArgs(new Dictionary<string, object>
+            {
+                ["path"] = "src/A.cs",
+                ["content"] = content,
+                ["append"] = false,
+            });
+
+            Assert.DoesNotContain("\n", preview);
+            Assert.DoesNotContain("\t", preview);
+            Assert.StartsWith("path=src/A.cs, content=line1 line2", preview);
+            Assert.Contains("TAIL", preview);
+            Assert.EndsWith($"{content.Length} 字符）, append=False", preview);
+        }
+
         [Theory]
         [InlineData("我看了目录和部分源文件。项目是一个 .NET 控制台应用。让我继续检查其他文件以全面了解。")]
         [InlineData("让我继续读剩下的代码")]
         [InlineData("我接着看其他文件")]
         [InlineData("接下来我会扫描全部模块")]
         [InlineData("I'll continue checking the rest of the files")]
+        [InlineData("First let me re-read the chunk. Let me get the exact content of lines 124-129 that got truncated.")]
+        [InlineData("Let me fetch the remaining part of the file")]
         public void Detects_Continuation_Promises(string text)
             => Assert.True(AgentLoop.LooksLikeActionPromise(text));
 

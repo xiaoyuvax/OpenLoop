@@ -129,5 +129,15 @@ namespace OpenLoop.Core.Tests
             Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt("<tool_call>"));
             Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt("这是普通回答。"));
         }
+
+        [Fact]
+        public void LooksLikeAttemptDetectsFullWidthDelimiters()
+        {
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt(
+                "<｜tool\":\"ReadEvidence\",\"args\":{\"path\":\"loop/findings.jsonl\",\"limit\":40}}"));
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt(
+                "{\"tool\":\"ReadFile\"}"));
+            Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt("工具调用会返回 tool-result。"));
+        }
     }
 }

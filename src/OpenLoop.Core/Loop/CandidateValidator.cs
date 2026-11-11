@@ -69,7 +69,7 @@ namespace OpenLoop.Core.Loop
                         CheckNumber(problems, reference, feature, "max", 0, 5);
                         break;
                     case FeatureCatalog.MaxSteps:
-                        CheckNumber(problems, reference, feature, "value", 1, 100);
+                        CheckNumber(problems, reference, feature, "value", 0, 100);
                         break;
                     case FeatureCatalog.ToolResultLimit:
                         CheckNumber(problems, reference, feature, "value", 500, 200_000);

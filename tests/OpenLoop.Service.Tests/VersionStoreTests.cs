@@ -53,6 +53,82 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Activate_remembers_the_previous_version_for_crash_rollback()
+        {
+            string old = MakeVersion("a", "1.0.0-aaa");
+            string next = MakeVersion("a", "1.0.1-bbb");
+            var store = new VersionStore(_root);
+
+            store.Activate("a", new VersionEntry { Version = "1.0.0", Dir = old });
+            store.Activate("a", new VersionEntry { Version = "1.0.1", Dir = next });
+
+            Assert.Equal(old, store.Previous("a")?.Dir);
+        }
+
+        [Fact]
+        public void Crash_rollback_does_not_record_the_bad_version_as_previous()
+        {
+            string good = MakeVersion("a", "1.0.0-aaa");
+            string bad = MakeVersion("a", "1.0.1-bbb");
+            var store = new VersionStore(_root);
+            store.Activate("a", new VersionEntry { Version = "1.0.0", Dir = good });
+            store.Activate("a", new VersionEntry { Version = "1.0.1", Dir = bad });
+
+            store.Activate("a", new VersionEntry { Version = "1.0.0", Dir = good }, rememberPrevious: false);
+
+            Assert.Equal(good, store.Current("a")?.Dir);
+            Assert.Equal(good, store.Previous("a")?.Dir);
+        }
+
+        [Fact]
+        public void Corrupt_current_json_is_recovered_from_the_backup()
+        {
+            string a = MakeVersion("a", "1.0.0-aaa");
+            string i = MakeVersion("i", "0.9.0-iii");
+            var store = new VersionStore(_root);
+            store.Activate("a", new VersionEntry { Version = "1.0.0", Dir = a });
+            store.Activate("i", new VersionEntry { Version = "0.9.0", Dir = i });
+            File.WriteAllText(store.CurrentPath, "{ broken");
+
+            var all = store.ReadOrRecover(out bool recovered);
+
+            Assert.True(recovered);
+            Assert.Equal(a, all["a"].Dir);
+            Assert.Equal(i, all["i"].Dir);
+        }
+
+        [Fact]
+        public void Activate_after_corruption_keeps_the_other_role_and_keeps_the_bad_file()
+        {
+            string a = MakeVersion("a", "1.0.0-aaa");
+            string i = MakeVersion("i", "0.9.0-iii");
+            string next = MakeVersion("a", "1.0.1-bbb");
+            var store = new VersionStore(_root);
+            store.Activate("a", new VersionEntry { Version = "1.0.0", Dir = a });
+            store.Activate("i", new VersionEntry { Version = "0.9.0", Dir = i });
+            File.WriteAllText(store.CurrentPath, "{ broken");
+
+            store.Activate("a", new VersionEntry { Version = "1.0.1", Dir = next });
+
+            var all = new VersionStore(_root).Read();
+            Assert.Equal(next, all["a"].Dir);
+            Assert.Equal(i, all["i"].Dir);
+        }
+
+        [Fact]
+        public void Corrupt_current_json_without_a_backup_is_preserved()
+        {
+            string a = MakeVersion("a", "1.0.0-aaa");
+            var store = new VersionStore(_root);
+            store.Activate("a", new VersionEntry { Version = "1.0.0", Dir = a });
+            File.Delete(store.CurrentPath + ".bak");
+            File.WriteAllText(store.CurrentPath, "{ broken");
+
+            Assert.Empty(store.ReadOrRecover(out _));
+            Assert.NotEmpty(Directory.GetFiles(_root, "current.json.bad-*"));
+        }
+
+        [Fact]
         public void Prune_keeps_the_current_and_the_newest_other()
         {
             string old1 = MakeVersion("a", "0.9.0-aaa");
@@ -67,6 +143,26 @@ namespace OpenLoop.Service.Tests
 
             Assert.False(Directory.Exists(old1));
             Assert.True(Directory.Exists(old2));
+            Assert.True(Directory.Exists(current));
+        }
+
+        [Fact]
+        public void Prune_never_deletes_the_version_it_could_roll_back_to()
+        {
+            string previous = MakeVersion("a", "0.9.0-aaa");
+            string middle = MakeVersion("a", "1.0.0-bbb");
+            string current = MakeVersion("a", "1.0.1-ccc");
+            Directory.SetLastWriteTimeUtc(previous, DateTime.UtcNow.AddDays(-3));
+            Directory.SetLastWriteTimeUtc(middle, DateTime.UtcNow.AddDays(-2));
+            Directory.SetLastWriteTimeUtc(current, DateTime.UtcNow.AddDays(-1));
+
+            var store = new VersionStore(_root);
+            store.Activate("a", new VersionEntry { Version = "0.9.0", Dir = previous });
+            store.Activate("a", new VersionEntry { Version = "1.0.0", Dir = middle });
+            store.Activate("a", new VersionEntry { Version = "1.0.1", Dir = current });
+            store.Prune("a", keep: 2);
+
+            Assert.True(Directory.Exists(previous));
             Assert.True(Directory.Exists(current));
         }
     }

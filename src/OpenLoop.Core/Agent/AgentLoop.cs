@@ -45,12 +45,12 @@ namespace OpenLoop.Core.Agent
 
         public string BuildSystemPrompt(string role = null, IReadOnlyList<string> rules = null, string instructions = null, string workspace = null)
             => SystemPromptBuilder.Build(
-                _tools.Tools, Math.Clamp(_policy.MaxSteps, 1, 100), role, rules, instructions, _skills, workspace);
+                _tools.Tools, _policy.MaxSteps, role, rules, instructions, _skills, workspace);
 
         public AgentStateMachine CreateMachine() => new(AgentPipeline.Create());
 
         public AgentState CreateState(IReadOnlyList<LlmMessage> history, string userMessage)
-            => new(history, userMessage) { MaxSteps = Math.Clamp(_policy.MaxSteps, 1, 100) };
+            => new(history, userMessage) { MaxSteps = _policy.MaxSteps };
 
         public AgentRunContext CreateContext(
             int contextLimit = 0,
@@ -97,7 +97,9 @@ namespace OpenLoop.Core.Agent
         }
 
         internal static string BudgetText(AgentState state)
-            => $"已达单次任务步数上限（{state.MaxSteps} 步）。已执行的步骤：\n"
+            => $"已达单次任务步数上限（{state.MaxSteps} 步"
+               + (state.BudgetExtensions > 0 ? $"，已自动追加 {state.BudgetExtensions} 次" : "")
+               + "）。已执行的步骤：\n"
                + string.Join("\n", state.Result.Steps.Select(s =>
                    $"{s.Index}. {s.Tool}({s.ArgsSummary}) → {(s.Ok ? "成功" : "失败")}"));
 
@@ -115,9 +117,11 @@ namespace OpenLoop.Core.Agent
         /// <summary>
         /// 「要做但还没做」的意图：意图词 + 动作动词（允许中间夹「再/继续/进一步」等）。
         /// 固定词表容易漏（例如「让我继续检查其他文件」），所以补一条句式规则。
+        /// 英文动词表要够宽：只有 continue/check/read 时，「Let me get…」「let me re-read…」会漏网，
+        /// 模型随后就被当成最终答案收尾。
         /// </summary>
         private static readonly Regex ActionPromiseRegex = new(
-            @"(?:(?:让我|我将|我会|我来|我继续|我接着|然后我|接下来我?|下一步我?|现在我|下面我)\s*(?:再|继续|进一步|去|先|马上)?\s*(?:检查|查看|读取|读|浏览|分析|阅读|搜索|查找|查|运行|执行|跑|修改|编辑|更新|改|生成|整理|确认|了解|处理)|(?:let me|i'?ll|i will|i'?m going to)\s+(?:continue|check|look|read|examine|review|inspect|analyze|search|run|execute|update|modify|edit))",
+            @"(?:(?:让我|我将|我会|我来|我继续|我接着|然后我|接下来我?|下一步我?|现在我|下面我)\s*(?:再|继续|进一步|去|先|马上)?\s*(?:检查|查看|读取|读|浏览|分析|阅读|搜索|查找|查|运行|执行|跑|修改|编辑|更新|改|生成|整理|确认|了解|处理)|(?:let me|i'?ll|i will|i'?m going to)\s+(?:continue|check|look|read|re-?read|examine|review|inspect|analyze|search|run|execute|update|modify|edit|get|fetch|retrieve|open|verify|write|apply|fix|patch))",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         internal static bool LooksLikeActionPromise(string content)
@@ -150,7 +154,25 @@ namespace OpenLoop.Core.Agent
         internal static string SummarizeArgs(Dictionary<string, object> args)
         {
             if (args == null || args.Count == 0) return "";
-            return string.Join(", ", args.Select(kv => $"{kv.Key}={Truncate(kv.Value?.ToString() ?? "null", 40)}"));
+            // 每个参数名与 "=" 都保留；只压缩过长/多行的值——值里带换行会把「(…)」撑成多行，括号看着就断了
+            return string.Join(", ", args.Select(kv =>
+                $"{kv.Key}={OneLine(Elide(kv.Value?.ToString() ?? "null", 40))}"));
+        }
+
+        /// <summary>把参数值压成一行（连续空白折成一个空格）：工具行是一行文本，换行/制表符会破坏括号外形。</summary>
+        private static string OneLine(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            var sb = new StringBuilder(text.Length);
+            bool gap = false;
+            foreach (char c in text)
+            {
+                if (char.IsWhiteSpace(c)) { gap = true; continue; }
+                if (gap && sb.Length > 0) sb.Append(' ');
+                gap = false;
+                sb.Append(c);
+            }
+            return sb.ToString();
         }
 
         internal static string SignatureOf(string tool, Dictionary<string, object> args)
@@ -174,10 +196,10 @@ namespace OpenLoop.Core.Agent
                     null => "null",
                     JsonElement je => je.ValueKind == JsonValueKind.Object
                         ? MapKeys(je.EnumerateObject().Select(p => p.Name), je.EnumerateObject().Count())
-                        : Truncate(je.ToString(), 400),
+                        : Elide(je.ToString(), 400),
                     System.Collections.IDictionary d => MapKeys(d.Keys.Cast<object>().Select(k => k?.ToString() ?? ""), d.Count),
-                    string s => Truncate(s, 400),
-                    _ => Truncate(kv.Value.ToString(), 400)
+                    string s => Elide(s, 400),
+                    _ => Elide(kv.Value.ToString(), 400)
                 };
                 parts.Add($"{kv.Key}={v}");
             }
@@ -319,6 +341,18 @@ namespace OpenLoop.Core.Agent
         {
             if (string.IsNullOrEmpty(text)) return "";
             return text.Length <= max ? text : text[..max] + $"…（截断，共 {text.Length} 字符）";
+        }
+
+        /// <summary>
+        /// 参数预览用：超长时省略中段、保留尾部（尾部常是文件名这类可识别信息），末尾只标总字符数。
+        /// 不能拿去截工具结果正文——那种场景要保留开头，走 <see cref="Truncate"/>。
+        /// </summary>
+        internal static string Elide(string text, int max)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            if (text.Length <= max) return text;
+            int tail = max / 2;
+            return $"{text[..(max - tail)]}…{text[^tail..]}（共 {text.Length} 字符）";
         }
     }
 }

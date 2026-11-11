@@ -93,6 +93,45 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Stage_uses_the_manifest_protocol_not_the_callers()
+        {
+            // 旧壳推新协议包：请求里写的是本进程的协议号，包里 manifest 声明的是另一个
+            VersionManifest.Write(_dir, Role, "9.9.9", BusProtocol.Version + 1);
+            var (handler, _) = Build(false);
+            var req = Post("/bus/stage", StageBody(_dir, protocol: BusProtocol.Version));
+
+            Assert.True(handler.Handle(req));
+            Assert.Equal(409, req.Response.StatusCode);
+            Assert.Contains("协议号", Error(req));
+        }
+
+        [Fact]
+        public void Stage_rejects_a_package_whose_payload_was_tampered_after_manifest()
+        {
+            VersionManifest.Write(_dir, Role, "9.9.9", BusProtocol.Version);
+            File.WriteAllText(Path.Combine(_dir, "OpenLoop.Service.dll"), "tampered");
+            var (handler, _) = Build(false);
+            var req = Post("/bus/stage", StageBody(_dir));
+
+            Assert.True(handler.Handle(req));
+            Assert.Equal(409, req.Response.StatusCode);
+            Assert.Contains("manifest", Error(req));
+        }
+
+        [Fact]
+        public void Stage_accepts_a_matching_manifest_and_takes_its_version()
+        {
+            VersionManifest.Write(_dir, Role, "7.7.7", BusProtocol.Version);
+            var (handler, _) = Build(false);
+            var req = Post("/bus/stage", StageBody(_dir));
+
+            Assert.True(handler.Handle(req));
+            Assert.True(req.Response.StatusCode is 0 or 200);   // 0 = 默认成功码，真实服务端会写成 200
+            Assert.True(handler.Handle(Post("/bus/restart", new { reason = "test" })));
+            Assert.Equal("7.7.7", UpdateRequest.TryLoad(Role)?.Version);
+        }
+
+        [Fact]
         public void Restart_without_a_stage_is_409_and_keeps_running()
         {
             var (handler, stopped) = Build(false);

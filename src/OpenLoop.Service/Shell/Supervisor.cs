@@ -17,6 +17,10 @@ namespace OpenLoop.Service.Shell
         private readonly HashSet<string> _updating = new();
         private readonly RestartGuard _guard = new(3, TimeSpan.FromMinutes(1));
         private readonly RestartGuard _updates = new(2, TimeSpan.FromMinutes(10));
+        private readonly Dictionary<string, DateTime> _started = new();
+        private readonly Dictionary<string, int> _shortLived = new();
+        private static readonly TimeSpan ShortLife = TimeSpan.FromSeconds(20);
+        private const int FlapLimit = 3;
         private readonly object _lock = new();
         private readonly Action<string> _log;
         private readonly VersionStore _store;
@@ -117,6 +121,7 @@ namespace OpenLoop.Service.Shell
             var process = Process.Start(startInfo);
             if (process == null) throw new InvalidOperationException($"无法启动 {exePath}");
             Log($"[shell] {role} spawn ok: pid {process.Id}");
+            lock (_lock) _started[role] = DateTime.UtcNow;
 
             string log = RoleLog(role);
             Capture(log, $"[shell] {role} 启动 {exePath}（pid {process.Id}，{DateTime.Now:HH:mm:ss}）");
@@ -142,7 +147,9 @@ namespace OpenLoop.Service.Shell
                 Thread.Sleep(100);
             }
 
-            Log($"[shell] {role} 未在 {wait.TotalSeconds:0}s 内就绪（pid {process.Id}）");
+            Log(process.HasExited
+                ? $"[shell] {role} 没起来就退出（pid {process.Id}，code {SafeExitCode(process)}）"
+                : $"[shell] {role} 未在 {wait.TotalSeconds:0}s 内就绪（pid {process.Id}）");
             return null;
         }
 
@@ -206,6 +213,9 @@ namespace OpenLoop.Service.Shell
                 return;
             }
 
+            // 起来就退（20 秒内、非 0 退出）连算三次：判这个版本坏了，回退到换版前的目录。
+            if (CountsAsCrash(role, process) && RollbackToPrevious(role)) return;
+
             if (!_guard.Allow(role))
             {
                 Log($"[shell] {role} 反复退出，停止自动重启（崩溃循环保护）");
@@ -214,6 +224,60 @@ namespace OpenLoop.Service.Shell
 
             Log($"[shell] {role} 退出（code {process.ExitCode}），1s 后重启");
             Task.Delay(1000).ContinueWith(_ => Restart(role, exePath));
+        }
+
+        /// <summary>短命且非正常退出算一次「坏包」；连到 <see cref="FlapLimit"/> 次就回退。</summary>
+        private bool CountsAsCrash(string role, Process process)
+        {
+            DateTime started;
+            lock (_lock)
+            {
+                if (!_started.TryGetValue(role, out started)) return false;
+            }
+
+            bool shortLived = DateTime.UtcNow - started < ShortLife;
+            bool failed = !string.Equals(SafeExitCode(process), "0", StringComparison.Ordinal);
+            if (!shortLived || !failed)
+            {
+                lock (_lock) _shortLived[role] = 0;
+                return false;
+            }
+
+            int count;
+            lock (_lock)
+            {
+                count = _shortLived.TryGetValue(role, out int previous) ? previous + 1 : 1;
+                _shortLived[role] = count;
+            }
+            Log($"[shell] {role} 起来 {(DateTime.UtcNow - started).TotalSeconds:0.0}s 就退（第 {count} 次）");
+            return count >= FlapLimit;
+        }
+
+        /// <summary>回退到上一个好版本：把它重新登记成 current，再拉起来；没有可回退的就返回 false 交给防抖。</summary>
+        private bool RollbackToPrevious(string role)
+        {
+            var current = _store.Current(role);
+            var previous = _store.Previous(role);
+            if (previous == null || string.IsNullOrWhiteSpace(previous.Dir)) return false;
+
+            string exe = VersionStore.ExePath(previous.Dir, role);
+            if (!File.Exists(exe)) return false;
+            if (current?.Dir != null && string.Equals(
+                    Path.GetFullPath(current.Dir).TrimEnd(Path.DirectorySeparatorChar),
+                    Path.GetFullPath(previous.Dir).TrimEnd(Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            Log($"[shell] {role} 连续 {FlapLimit} 次起来就退，回退到上一版本 {previous.Version}（{previous.Dir}）");
+            _store.Log(role, "rollback", previous.Version, previous.Dir, "crash loop fallback");
+            _store.Activate(role, previous, rememberPrevious: false);
+            lock (_lock)
+            {
+                _shortLived[role] = 0;
+                _exePaths[role] = exe;
+            }
+            Restart(role, exe);
+            return true;
         }
 
         /// <summary>

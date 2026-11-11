@@ -152,7 +152,7 @@
     <value>Correction</value>
   </data>
   <data name="ComposerHint" xml:space="preserve">
-    <value>Describe a task, or state criteria / corrections (Ctrl+Enter to send)</value>
+    <value>Describe a task, or state criteria / corrections (Enter to send, Shift+Enter for a new line, Ctrl+Enter to queue)</value>
   </data>
   <data name="TabLoop" xml:space="preserve">
     <value>Loop</value>
@@ -173,7 +173,7 @@
     <value>Observe the Worker and user verdicts, accumulate the next version</value>
   </data>
   <data name="LoopHint" xml:space="preserve">
-    <value>Talk to the Loop: share friction, complaints or improvement ideas (Ctrl+Enter to send)</value>
+    <value>Talk to the Loop: share friction, complaints or improvement ideas (Enter to send, Shift+Enter for a new line, Ctrl+Enter to queue)</value>
   </data>
   <data name="NewSessionSubtitle" xml:space="preserve">
     <value>Pick a project, describe a task, start a new session</value>

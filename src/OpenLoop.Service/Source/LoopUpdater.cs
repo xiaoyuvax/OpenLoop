@@ -11,7 +11,7 @@ namespace OpenLoop.Service.Source
     {
         public static Task StartAsync() => Task.Run(async () =>
         {
-            var (version, present) = IterationRunner.TakeLoopUpdate();
+            var (version, sourceTree, present) = IterationRunner.TakeLoopUpdate();
             if (!present) return;
 
             await Task.Delay(3000);   // 等 A 自己的 bus / runtime 文件就位
@@ -23,6 +23,7 @@ namespace OpenLoop.Service.Source
                     IterationRunner.WriteLoopResult(publish, version);
                     return;
                 }
+                Iteration.PinSource(publish.Detail, BusRoles.I, version, sourceTree);
 
                 var stage = await Iteration.StageAsync(BusRoles.I, publish.Detail, version);
                 if (!stage.Ok)

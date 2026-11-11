@@ -61,7 +61,7 @@ namespace OpenLoop.Core.Store
             {
                 Id = MaxSteps, Kind = "limit", Source = "user", CreatedAt = Now(),
                 Problem = "任务无进展时限不住步数，成本失控。",
-                Payload = J(new { value = 100 })
+                Payload = J(new { value = 0 })
             },
             new FeatureRecord
             {
@@ -109,7 +109,7 @@ namespace OpenLoop.Core.Store
                 Ref(Promise, ("enabled", true)),
                 Ref(ArgRepair, ("enabled", true)),
                 Ref(MalformedRetry, ("enabled", true), ("max", 2)),
-                Ref(MaxSteps, ("value", 100)),
+                Ref(MaxSteps, ("value", 0)),
                 Ref(ToolResultLimit, ("value", 6000)),
                 Ref(CompressAt, ("value", 0.8)),
                 Ref("rule.read_before_write"),

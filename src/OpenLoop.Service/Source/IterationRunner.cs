@@ -59,33 +59,39 @@ namespace OpenLoop.Service.Source
             }
         }
 
-        /// <summary>三个部件各自的现版本、目标版本与是否需要更新。</summary>
+        /// <summary>
+        /// 七个节点的「现版本 → 目标版本」：先 restore（指纹取的是解析后的包闭包），
+        /// 再按依赖图算指纹并级联升版。上游的内容或号一变，下游的指纹必然变，不需要另写级联规则。
+        /// </summary>
         public static async Task<List<RolePlan>> PlanAsync(string shellExe = null, CancellationToken ct = default)
         {
-            string target = SourceSync.SourceVersion(null);
-            var dirtyRoles = RolesFor(await ChangedPathsAsync(ct));
+            string root = SourceSync.SourceRoot;
+            // restore 失败不在这里拦：真正的错误由 build 给出，但指纹会退化成「没有包闭包」
+            await Iteration.ExecAsync("dotnet",
+                ["restore", "OpenLoop.slnx", "--nologo", "-v", "q"], root, ct);
 
-            var plans = new List<RolePlan>();
-            foreach (var (role, label, note) in new[]
-                     {
-                         (BusRoles.A, "Worker（A）", "先换 A，由它接管 I 的更新"),
-                         (BusRoles.I, "Loop（I）", "由启动后的 A 更新"),
-                         ("shell", "壳", "最后重启，会退出界面")
-                     })
-            {
-                string current = role == "shell"
-                    ? ExeVersion(string.IsNullOrWhiteSpace(shellExe) ? Environment.ProcessPath : shellExe)
-                    : RoleVersion(role);
-                bool newer = target.Length > 0 && current.Length > 0 &&
-                             SourceSync.Classify(target, current) == SourceState.Newer;
-                plans.Add(new RolePlan(role, label, current, target, newer || dirtyRoles.Contains(role), note));
-            }
+            var state = VersionState.Read();
+            var planned = VersionState.ReadFile(VersionState.PendingPath);
+            var scan = new VersionScan();
+            var pending = new Dictionary<string, NodeState>(StringComparer.OrdinalIgnoreCase);
+
+            var plans = Decide(
+                VersionScan.ActiveNodes(),
+                state,
+                planned,
+                DeclaredVersion,
+                (node, declared) => CurrentVersion(node.Id, declared, state, shellExe),
+                scan.Fingerprint,
+                (node, version) => VersionBump.WriteVersion(node.Id, null, version),
+                (node, nodeState) => pending[node.Id] = nodeState);
+
+            VersionState.SavePending(pending);
 
             // I 要更新就必须重启一次 A（A 才能接手），A 本身不一定重编
-            if (plans.First(p => p.Role == BusRoles.I).Update)
+            if (plans.FirstOrDefault(p => p.Role == BusRoles.I)?.Update == true)
             {
                 int index = plans.FindIndex(p => p.Role == BusRoles.A);
-                if (!plans[index].Update)
+                if (index >= 0 && !plans[index].Update)
                     plans[index] = plans[index] with { Note = "只为接手 I 的更新而重启" };
             }
 
@@ -93,81 +99,108 @@ namespace OpenLoop.Service.Source
         }
 
         /// <summary>
-        /// 改动文件 → 需要重编的部件：Core/Service 是全共享，A/I/App 各管自己，
-        /// 文档、测试、脚本不动二进制。拿不准的路径按「全都重编」处理。
+        /// 计划判断本身（不碰 git、不碰 dotnet）：冷启动（没有基准）时所有节点都算污染，
+        /// 只升 patch；指纹或人工改过的号与基准不一致时也要重编。
         /// </summary>
-        internal static HashSet<string> RolesFor(IEnumerable<string> paths)
+        internal static List<RolePlan> Decide(
+            IReadOnlyList<VersionNode> nodes,
+            IReadOnlyDictionary<string, NodeState> state,
+            IReadOnlyDictionary<string, NodeState> planned,
+            Func<VersionNode, string> declaredOf,
+            Func<VersionNode, string, string> currentOf,
+            Func<VersionNode, IReadOnlyDictionary<string, string>, IReadOnlyDictionary<string, string>, NodeFingerprint> fingerprintOf,
+            Action<VersionNode, string> write,
+            Action<VersionNode, NodeState> record = null)
         {
-            var roles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string raw in paths ?? [])
-            {
-                string path = (raw ?? "").Replace('\\', '/').Trim().Trim('"');
-                if (path.Length == 0) continue;
+            var plans = new List<RolePlan>();
+            var versions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var fingerprints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            bool cold = state == null || state.Count == 0;
+            string at = DateTimeOffset.Now.ToString("O");
 
-                int arrow = path.IndexOf(" -> ", StringComparison.Ordinal);
-                if (arrow >= 0)
+            foreach (var node in nodes ?? [])
+            {
+                string declared = declaredOf(node) ?? "";
+                string current = currentOf(node, declared) ?? "";
+                var fingerprint = fingerprintOf(node, fingerprints, versions);
+
+                NodeState previous = null;
+                bool known = !cold && state.TryGetValue(node.Id, out previous) && previous != null;
+                bool polluted = !known
+                                || !string.Equals(previous.Fingerprint, fingerprint.Value, StringComparison.Ordinal)
+                                // 号被人手工改过（没经过上一轮计划）：按新号重编，不能悄悄跳过
+                                || !SourceSync.SameVersion(previous.Version, declared);
+
+                string target = declared;
+                if (polluted)
                 {
-                    AddRole(roles, path[..arrow]);
-                    AddRole(roles, path[(arrow + 4)..]);
-                    continue;
+                    // 上一轮计划过、但还没发布成功：沿用同一个号重试，不再往上跳
+                    bool retry = planned != null
+                                 && planned.TryGetValue(node.Id, out var earlier) && earlier != null
+                                 && string.Equals(earlier.Fingerprint, fingerprint.Value, StringComparison.Ordinal)
+                                 && SourceSync.SameVersion(earlier.Version, declared);
+                    if (!retry)
+                    {
+                        target = VersionBump.NextVersion(declared, current) ?? declared;
+                        if (target.Length > 0 && target != declared) write?.Invoke(node, target);
+                    }
                 }
-                AddRole(roles, path);
+
+                versions[node.Id] = target;
+                fingerprints[node.Id] = fingerprint.Value;
+                record?.Invoke(node, new NodeState
+                {
+                    Version = target,
+                    Fingerprint = fingerprint.Value,
+                    Deps = fingerprint.Deps,
+                    At = at
+                });
+                plans.Add(new RolePlan(node.Id, node.Label, current, target, polluted, NoteFor(node.Id)));
             }
-            return roles;
+
+            return plans;
         }
 
-        private static void AddRole(HashSet<string> roles, string path)
+        /// <summary>节点声明的版本（版本文件里那一行）；读不到返回空串。</summary>
+        private static string DeclaredVersion(VersionNode node)
         {
-            path = path.Trim().Trim('"');
-            if (path.Length == 0) return;
-
-            if (path.StartsWith("src/OpenLoop.Core/", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("src/OpenLoop.Service/", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                roles.UnionWith([BusRoles.A, BusRoles.I, "shell"]);
-                return;
+                string path = Path.IsPathRooted(node.VersionFile)
+                    ? node.VersionFile
+                    : Path.Combine(node.RepoRoot, node.VersionFile);
+                return File.Exists(path) ? SourceSync.ParseVersion(File.ReadAllText(path, Encoding.UTF8)) : "";
             }
-            if (path.StartsWith("src/OpenLoop.A/", StringComparison.OrdinalIgnoreCase))
+            catch
             {
-                roles.Add(BusRoles.A);
-                return;
+                return "";
             }
-            if (path.StartsWith("src/OpenLoop.I/", StringComparison.OrdinalIgnoreCase))
-            {
-                roles.Add(BusRoles.I);
-                return;
-            }
-            if (path.StartsWith("src/OpenLoop.App/", StringComparison.OrdinalIgnoreCase) ||
-                path.Equals("OpenLoop.ico", StringComparison.OrdinalIgnoreCase))
-            {
-                roles.Add("shell");
-                return;
-            }
-            if (path.StartsWith("src/", StringComparison.OrdinalIgnoreCase) ||
-                path.Equals("OpenLoop.slnx", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("Directory.Build.", StringComparison.OrdinalIgnoreCase) ||
-                path.Equals("global.json", StringComparison.OrdinalIgnoreCase) ||
-                path.Equals("NuGet.config", StringComparison.OrdinalIgnoreCase) ||
-                path.EndsWith(".props", StringComparison.OrdinalIgnoreCase) ||
-                path.EndsWith(".targets", StringComparison.OrdinalIgnoreCase))
-            {
-                roles.UnionWith([BusRoles.A, BusRoles.I, "shell"]);
-                return;
-            }
-            if (path.StartsWith("docs/", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("tests/", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("scripts/", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("samples/", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith(".github/", StringComparison.OrdinalIgnoreCase) ||
-                path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
-                path.Equals(".gitignore", StringComparison.OrdinalIgnoreCase) ||
-                path.Equals(".gitattributes", StringComparison.OrdinalIgnoreCase) ||
-                path.Equals(".editorconfig", StringComparison.OrdinalIgnoreCase) ||
-                path.Equals("LICENSE", StringComparison.OrdinalIgnoreCase))
-                return;
-
-            roles.UnionWith([BusRoles.A, BusRoles.I, "shell"]);
         }
+
+        /// <summary>现版本：A/I/壳看运行态，库与外部组件看基准；都读不到就用声明号（冷启动时它会被 patch+1）。</summary>
+        private static string CurrentVersion(
+            string id, string declared, IReadOnlyDictionary<string, NodeState> state, string shellExe)
+        {
+            string current = id switch
+            {
+                BusRoles.A or BusRoles.I => RoleVersion(id),
+                "shell" => ExeVersion(string.IsNullOrWhiteSpace(shellExe) ? Environment.ProcessPath : shellExe),
+                _ => ""
+            };
+            if (!string.IsNullOrWhiteSpace(current)) return current;
+            if (state != null && state.TryGetValue(id, out var node) && !string.IsNullOrWhiteSpace(node?.Version))
+                return node.Version;
+            return declared;
+        }
+
+        private static string NoteFor(string id) => id switch
+        {
+            BusRoles.A => "先换 A，由它接管 I 的更新",
+            BusRoles.I => "由启动后的 A 更新",
+            "shell" => "最后重启，会退出界面",
+            "core" or "service" => "被引用的库，随依赖方一起重编",
+            _ => "组件仓库，版本号由 I 一并维护"
+        };
 
         /// <summary>变更摘要：未提交文件、diff 规模、最近提交。给确认弹框用。</summary>
         public static async Task<string> ChangeSummaryAsync(CancellationToken ct = default)
@@ -205,7 +238,8 @@ namespace OpenLoop.Service.Source
             List<RolePlan> plan, string workspace, Action<string> progress, CancellationToken ct = default)
         {
             plan ??= [];
-            var report = new IterationReport { Workspace = workspace, Version = plan.FirstOrDefault()?.Target ?? "" };
+            var report = new IterationReport { Workspace = workspace, Version = UpdatedVersionText(plan) };
+            string VersionOf(string role) => plan.FirstOrDefault(p => p.Role == role)?.Target ?? "";
             void Add(Iteration.Step step)
             {
                 report.Steps.Add(step);
@@ -216,30 +250,36 @@ namespace OpenLoop.Service.Source
             bool needI = plan.FirstOrDefault(p => p.Role == BusRoles.I)?.Update == true;
             bool needShell = plan.FirstOrDefault(p => p.Role == "shell")?.Update == true;
 
+            // 构建前把工作树定格成一个 tree 对象：发布后把 refs/openloop/version/… 指回它，
+            // 这样每个版本目录都能追到「究竟是哪份源码编出来的」（不需要提交）
+            string sourceTree = OpenLoop.Core.Safety.Snapshots.Tree(SourceSync.SourceRoot);
+
             var build = await Iteration.BuildAsync(ct);
             Add(build);
             if (!build.Ok) return Finish(report, false);
 
             if (needShell)
             {
-                var publish = await PublishShellAsync(report.Version, ct);
+                var publish = await PublishShellAsync(VersionOf("shell"), ct);
                 Add(publish);
                 if (!publish.Ok) return Finish(report, false);
                 report.ShellDir = publish.Detail;
+                Iteration.PinSource(publish.Detail, "shell", VersionOf("shell"), sourceTree);
             }
 
             if (needA || needI)
             {
-                var publish = await Iteration.PublishAsync(BusRoles.A, report.Version, ct);
+                var publish = await Iteration.PublishAsync(BusRoles.A, VersionOf(BusRoles.A), ct);
                 Add(publish);
                 if (!publish.Ok) return Finish(report, false);
+                Iteration.PinSource(publish.Detail, BusRoles.A, VersionOf(BusRoles.A), sourceTree);
 
-                var stage = await Iteration.StageAsync(BusRoles.A, publish.Detail, report.Version, ct);
+                var stage = await Iteration.StageAsync(BusRoles.A, publish.Detail, VersionOf(BusRoles.A), ct);
                 Add(stage);
                 if (!stage.Ok) return Finish(report, false);
 
                 // 交接单：A 起来以后自己发布 / 登记 / 重启 I
-                if (needI) WriteLoopUpdate(report.Version);
+                if (needI) WriteLoopUpdate(VersionOf(BusRoles.I), sourceTree);
                 else ClearLoopUpdate();
 
                 int previousPid = RuntimeInfo.TryLoad(AppPaths.RuntimeFile(BusRoles.A))?.Pid ?? 0;
@@ -260,6 +300,8 @@ namespace OpenLoop.Service.Source
                 }
             }
 
+            // 整轮成功才把本轮指纹提升为基准；失败保持旧基准，下一轮按同一个号重试
+            VersionState.Promote();
             return Finish(report, true);
         }
 
@@ -309,6 +351,14 @@ namespace OpenLoop.Service.Source
             return steps;
         }
 
+        /// <summary>报告头里的版本：本次真正要更新的角色各自的目标版本（三个组件版本可以各不相同）。</summary>
+        private static string UpdatedVersionText(List<RolePlan> plan)
+        {
+            var versions = plan.Where(p => p.Update && !string.IsNullOrWhiteSpace(p.Target))
+                .Select(p => p.Target.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return versions.Count > 0 ? string.Join(" / ", versions) : plan.FirstOrDefault()?.Target ?? "";
+        }
+
         /// <summary>纯文本报告：进度框与重启后的结果窗口共用。</summary>
         public static string ReportText(IterationReport report)
         {
@@ -327,18 +377,20 @@ namespace OpenLoop.Service.Source
         public static async Task<Iteration.Step> PublishShellAsync(string version, CancellationToken ct = default)
         {
             string root = SourceSync.SourceRoot;
+            string project = Path.Combine("src", OperatingSystem.IsWindows() ? "OpenLoop.App" : "OpenLoop.Shell");
             string temp = Path.Combine(Path.GetTempPath(), "openloop-shell-" + Guid.NewGuid().ToString("N"));
             try
             {
                 var (ok, output) = await Iteration.ExecAsync("dotnet",
-                    ["publish", Path.Combine("src", "OpenLoop.App"), "-c", "Release", "-o", temp, "--nologo", "-v", "q"],
+                    ["publish", project, "-c", "Release", "-o", temp, "--nologo", "-v", "q"],
                     root, ct);
                 if (!ok) return new("publish shell", false, Iteration.Tail(output, 12));
 
                 string exe = Path.Combine(temp, OperatingSystem.IsWindows() ? "OpenLoop.exe" : "OpenLoop");
                 if (!File.Exists(exe)) return new("publish shell", false, "没有产物 " + exe);
 
-                string dir = Path.Combine(AppPaths.VersionsDir, "shell", Iteration.VersionDirName(version, Sha256(exe)));
+                string dir = Path.Combine(AppPaths.VersionsDir, "shell",
+                    Iteration.VersionDirName(version, VersionManifest.ComputeFilesSha256(temp)));
                 Directory.CreateDirectory(dir);
                 foreach (string file in Directory.EnumerateFiles(temp, "*", SearchOption.AllDirectories))
                 {
@@ -347,6 +399,10 @@ namespace OpenLoop.Service.Source
                     File.Copy(file, target, true);
                 }
                 return new("publish shell", true, dir);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -368,33 +424,30 @@ namespace OpenLoop.Service.Source
             if (string.IsNullOrWhiteSpace(shell?.Dir) || !Directory.Exists(shell.Dir)) return;
 
             string install = AppContext.BaseDirectory.TrimEnd('\\', '/');
-            string exe = Path.Combine(install, OperatingSystem.IsWindows() ? "OpenLoop.exe" : "OpenLoop");
             string from = Path.GetFullPath(shell.Dir).TrimEnd('\\', '/');
-            string backup = Path.Combine(AppPaths.VersionsDir, "shell",
-                "rollback-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
-            string script = Path.Combine(Path.GetTempPath(), "openloop-restart-" + Guid.NewGuid().ToString("N") + ".ps1");
-            string args = $"--loop \"{(workspace ?? "").Trim()}\" --iteration";
-            int pid = Environment.ProcessId;
 
             if (string.Equals(from, Path.GetFullPath(install), StringComparison.OrdinalIgnoreCase))
                 return;
 
             PruneShell(shell.Dir);
 
-            File.WriteAllText(script,
-                RestartScript(pid, install, exe, args, from, backup, ShellFailedPath, ShellStartedPath, RestartLogPath),
-                new UTF8Encoding(true));
-
-            var start = new ProcessStartInfo("powershell.exe")
+            string exe = Path.Combine(from, OperatingSystem.IsWindows() ? "OpenLoop.exe" : "OpenLoop");
+            var start = new ProcessStartInfo(exe)
             {
                 UseShellExecute = false,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden
+                WorkingDirectory = from
             };
+            start.ArgumentList.Add(ShellUpdate.Flag);
+            start.ArgumentList.Add(install);
+            start.ArgumentList.Add("--apply-shell-pid");
+            start.ArgumentList.Add(Environment.ProcessId.ToString());
+            if (!string.IsNullOrWhiteSpace(workspace))
+            {
+                start.ArgumentList.Add("--apply-shell-workspace");
+                start.ArgumentList.Add(workspace.Trim());
+            }
             // 新壳的 cwd 会变成安装目录：把源码根带给它，后续迭代仍对着同一份源码
             start.Environment["OPENLOOP_SOURCE"] = SourceSync.SourceRoot;
-            foreach (string arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script })
-                start.ArgumentList.Add(arg);
             Process.Start(start);
         }
 
@@ -424,59 +477,6 @@ namespace OpenLoop.Service.Source
             catch
             {
             }
-        }
-
-        internal static string RestartScript(
-            int pid, string install, string exe, string args, string from, string backup,
-            string failedMarker, string startedMarker, string log)
-        {
-            string q(string value) => "'" + (value ?? "").Replace("'", "''") + "'";
-            return $$"""
-                $ErrorActionPreference = 'Continue'
-                while (Get-Process -Id {{pid}} -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }
-
-                New-Item -ItemType Directory -Force -Path {{q(backup)}} | Out-Null
-                $fromLen = {{q(from)}}.Length + 1
-                foreach ($f in (Get-ChildItem -LiteralPath {{q(from)}} -Recurse -File)) {
-                    $rel = $f.FullName.Substring($fromLen)
-                    $old = Join-Path {{q(install)}} $rel
-                    if (Test-Path -LiteralPath $old) {
-                        $dst = Join-Path {{q(backup)}} $rel
-                        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
-                        Copy-Item -LiteralPath $old -Destination $dst -Force
-                    }
-                    $target = Join-Path {{q(install)}} $rel
-                    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-                    Copy-Item -LiteralPath $f.FullName -Destination $target -Force
-                }
-
-                Remove-Item -LiteralPath {{q(startedMarker)}} -Force -ErrorAction SilentlyContinue
-                $proc = Start-Process -FilePath {{q(exe)}} -WorkingDirectory {{q(install)}} -ArgumentList {{q(args)}} -PassThru
-                # 新壳进到界面会写 startedMarker；只看进程存活会把「起来后又崩」当成成功
-                $back = $false
-                for ($i = 0; $i -lt 60; $i++) {
-                    Start-Sleep -Milliseconds 500
-                    if (Test-Path -LiteralPath {{q(startedMarker)}}) { break }
-                    if (-not (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)) { $back = $true; break }
-                }
-                if (-not (Test-Path -LiteralPath {{q(startedMarker)}})) { $back = $true }
-
-                if ($back) {
-                    $code = 'unknown'
-                    try { $proc.Refresh(); if ($proc.HasExited) { $code = $proc.ExitCode } } catch { }
-                    Add-Content -LiteralPath {{q(log)}} -Value ("restart failed " + (Get-Date -Format o) + " pid=" + $proc.Id + " code=" + $code) -Encoding utf8
-                    $backupLen = {{q(backup)}}.Length + 1
-                    foreach ($f in (Get-ChildItem -LiteralPath {{q(backup)}} -Recurse -File)) {
-                        $rel = $f.FullName.Substring($backupLen)
-                        Copy-Item -LiteralPath $f.FullName -Destination (Join-Path {{q(install)}} $rel) -Force
-                    }
-                    Set-Content -LiteralPath {{q(failedMarker)}} -Value 'new shell failed to start' -Encoding utf8
-                    Remove-Item -LiteralPath {{q(startedMarker)}} -Force -ErrorAction SilentlyContinue
-                    Start-Process -FilePath {{q(exe)}} -WorkingDirectory {{q(install)}} -ArgumentList {{q(args)}} | Out-Null
-                } else {
-                    Add-Content -LiteralPath {{q(log)}} -Value ("restart ok " + (Get-Date -Format o) + " pid=" + $proc.Id) -Encoding utf8
-                }
-                """;
         }
 
         public static void WriteReport(IterationReport report)
@@ -529,18 +529,18 @@ namespace OpenLoop.Service.Source
         }
 
         /// <summary>A 启动时读交接单；读到就删掉，保证只跑一次。</summary>
-        public static (string Version, bool Present) TakeLoopUpdate()
+        public static (string Version, string SourceTree, bool Present) TakeLoopUpdate()
         {
             try
             {
-                if (!File.Exists(RequestPath)) return ("", false);
+                if (!File.Exists(RequestPath)) return ("", "", false);
                 var request = JsonSerializer.Deserialize<LoopUpdateRequest>(File.ReadAllBytes(RequestPath), BusProtocol.Json);
                 File.Delete(RequestPath);
-                return (request?.Version ?? "", true);
+                return (request?.Version ?? "", request?.SourceTree ?? "", true);
             }
             catch
             {
-                return ("", false);
+                return ("", "", false);
             }
         }
 
@@ -563,7 +563,7 @@ namespace OpenLoop.Service.Source
             }
         }
 
-        private static void WriteLoopUpdate(string version)
+        private static void WriteLoopUpdate(string version, string sourceTree)
         {
             try
             {
@@ -571,7 +571,7 @@ namespace OpenLoop.Service.Source
                 // 上一轮的 result 必须清掉，否则 WaitLoopUpdateAsync 会立刻读到旧报告、以为 I 已经更完
                 File.Delete(ResultPath);
                 File.WriteAllBytes(RequestPath,
-                    JsonSerializer.SerializeToUtf8Bytes(new LoopUpdateRequest { Version = version }, BusProtocol.Json));
+                    JsonSerializer.SerializeToUtf8Bytes(new LoopUpdateRequest { Version = version, SourceTree = sourceTree }, BusProtocol.Json));
             }
             catch
             {
@@ -630,20 +630,6 @@ namespace OpenLoop.Service.Source
             return new("update i", false, $"{(int)timeout.TotalMinutes} 分钟内 A 没回音");
         }
 
-        private static async Task<List<string>> ChangedPathsAsync(CancellationToken ct)
-        {
-            var status = await Iteration.ExecAsync("git", ["-C", SourceSync.SourceRoot, "status", "--porcelain"],
-                SourceSync.SourceRoot, ct);
-            if (!status.Ok) return [];
-
-            return status.Output.Split('\n')
-                .Select(l => l.TrimEnd('\r'))
-                .Where(l => l.Length > 3)
-                .Select(l => l[3..].Trim())
-                .Where(l => l.Length > 0)
-                .ToList();
-        }
-
         public static string RoleVersion(string role)
         {
             var runtime = RuntimeInfo.TryLoad(AppPaths.RuntimeFile(role));
@@ -670,15 +656,11 @@ namespace OpenLoop.Service.Source
             }
         }
 
-        private static string Sha256(string path)
-        {
-            using var stream = File.OpenRead(path);
-            return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-        }
-
         private sealed class LoopUpdateRequest
         {
             public string Version { get; set; }
+            /// <summary>本次构建的源码树（refs/openloop/version/i/&lt;版本&gt; 要指向它）。</summary>
+            public string SourceTree { get; set; }
         }
 
         private sealed class LoopUpdateResult

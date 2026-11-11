@@ -24,16 +24,17 @@ namespace OpenLoop.Core.Tests
     /// <summary>只回推理文本、正文为空的推理模型（OpenRouter 推理模型的常见形态）。</summary>
     internal sealed class ReasoningOnlyReasoner : IReasoner
     {
-        private readonly string _reasoning;
+        private readonly Queue<string> _reasoning;
 
-        public ReasoningOnlyReasoner(string reasoning) => _reasoning = reasoning;
+        public ReasoningOnlyReasoner(params string[] reasoning) => _reasoning = new Queue<string>(reasoning);
 
         public int Calls { get; private set; }
 
         public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
         {
             Calls++;
-            return Task.FromResult(new CompletionResult { Content = "", Reasoning = _reasoning });
+            string next = _reasoning.Count > 0 ? _reasoning.Dequeue() : "";
+            return Task.FromResult(new CompletionResult { Content = "", Reasoning = next });
         }
     }
 
@@ -93,5 +94,8 @@ namespace OpenLoop.Core.Tests
 
         public static string Call(string tool, string argsJson = "{}")
             => $"tool-call: {{\"tool\":\"{tool}\",\"args\":{argsJson}}}";
+
+        public static string PollCall(string tool, string argsJson, string id, int max)
+            => $"tool-call: {{\"tool\":\"{tool}\",\"args\":{argsJson},\"poll\":{{\"id\":\"{id}\",\"max\":{max}}}}}";
     }
 }

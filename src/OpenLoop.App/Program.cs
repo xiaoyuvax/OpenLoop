@@ -8,6 +8,13 @@ namespace OpenLoop.App
         [STAThread]
         private static void Main(string[] args)
         {
+            // 壳自更新 helper：新壳把自己这份覆盖到安装目录，成功/失败都不用脚本
+            if (ShellUpdate.IsRequested(args))
+            {
+                ShellUpdate.Run(args);
+                return;
+            }
+
             ApplicationConfiguration.Initialize();
             Startup.Parse(args);
 

@@ -100,6 +100,37 @@ public sealed class OpenCodeTests
     }
 
     [Fact]
+    public async Task Turn_keeps_tool_table_for_free_models()
+    {
+        string createBody = null;
+        var handler = new StubHandler(async request =>
+        {
+            string path = request.RequestUri.AbsolutePath;
+            if (path == "/api/event") return Sse("");
+            if (path == "/api/session")
+            {
+                createBody = await request.Content.ReadAsStringAsync();
+                return Json("""{"data":{"id":"ses_free"}}""");
+            }
+            if (path == "/api/session/ses_free/prompt") return Json("{}");
+            if (path == "/api/session/ses_free/permission") return Json("""{"data":[]}""");
+            if (path == "/api/session/ses_free")
+                return Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded"}}""");
+            if (path == "/api/session/ses_free/message")
+                return Json("""{"data":[{"type":"assistant","content":[{"type":"text","text":"ok"}]}]}""");
+            return Json("{}");
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+        var reasoner = new OpenCodeReasoner(
+            client, new OpenCodeModelRef("opencode", "m"), Path.GetTempPath(), keepTools: true);
+
+        var result = await reasoner.CompleteAsync([new LlmMessage("user", "hi")]);
+
+        Assert.Equal("ok", result.Content);
+        Assert.Contains("\"effect\":\"ask\"", createBody);
+    }
+
+    [Fact]
     public void Protocol_sits_right_after_system_prompt()
     {
         string text = OpenCodeReasoner.Flatten(

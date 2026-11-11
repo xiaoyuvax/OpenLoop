@@ -36,6 +36,13 @@ namespace OpenLoop.Core.Reasoning
         /// </summary>
         public int StreamStallLimit { get; set; } = 3;
 
+        /// <summary>
+        /// 模型把聊天模板标记泄进正文并退化成复读时的提示。这种输出是确定性的，重发只会再来一遍。
+        /// </summary>
+        internal const string DegenerateMessage =
+            "模型输出退化：正文在反复输出同一段标记/片段（常见于网关把聊天模板标记泄进正文），已中止本轮。"
+            + "换一个支持工具调用的文本模型再试。";
+
         /// <summary>进度回调（等待模型响应 / 第 N 次重试 / 放弃），供宿主给视觉反馈。</summary>
         public Action<ReasonerProgress> OnProgress { get; set; }
 
@@ -310,6 +317,25 @@ namespace OpenLoop.Core.Reasoning
             return body.Length <= 500 ? body : body[..500] + "…";
         }
 
+        /// <summary>
+        /// 退化检测：正常行文里 6 字窗口几乎都不相同；模型退化成复读模板标记时，
+        /// 最后 256 个字符里只剩十几种窗口，据此立刻判失败，不必等满超时。
+        /// </summary>
+        internal static bool LooksDegenerate(StringBuilder text)
+        {
+            const int window = 6;
+            const int tail = 256;
+            const int enough = 40;   // 窗口种数达到这个数就认为还在正常输出
+            if (text == null || text.Length < tail) return false;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = text.Length - tail; i + window <= text.Length; i++)
+            {
+                seen.Add(text.ToString(i, window));
+                if (seen.Count >= enough) return false;
+            }
+            return true;
+        }
+
         internal static async Task<CompletionResult> ParseStreamAsync(
             TextReader reader, Action<string> onDelta, CancellationToken ct = default,
             Action<string> onReasoning = null, TimeSpan idleTimeout = default)
@@ -361,6 +387,7 @@ namespace OpenLoop.Core.Reasoning
                         reasoning.Append(piece);
                         onReasoning?.Invoke(piece);
                     }
+                    if (LooksDegenerate(reasoning)) throw new InvalidOperationException(DegenerateMessage);
                 }
                 if (choice.TryGetProperty("delta", out delta)
                     && delta.TryGetProperty("content", out var pieceEl)
@@ -371,6 +398,7 @@ namespace OpenLoop.Core.Reasoning
                     {
                         content.Append(piece);
                         onDelta?.Invoke(piece);
+                        if (LooksDegenerate(content)) throw new InvalidOperationException(DegenerateMessage);
                     }
                 }
                 if (choice.TryGetProperty("finish_reason", out var f) && f.ValueKind == JsonValueKind.String)

@@ -1,0 +1,8 @@
+<Project>
+
+  <!-- 壳的两种产物（Windows 界面 / 其他平台控制台）共用一个版本号：只在这里写，两个项目都导入本文件。 -->
+  <PropertyGroup>
+    <Version>0.1.10</Version>
+  </PropertyGroup>
+
+</Project>

@@ -11,8 +11,17 @@ namespace OpenLoop.Service.Storage
         public string Assistant { get; set; }
         public string Reasoning { get; set; }
         public string ToolLines { get; set; }
+
+        /// <summary>思维与工具调用按时间顺序穿插后的文本；旧文件没有该字段，读出来为 null。</summary>
+        public string Timeline { get; set; }
         public int Steps { get; set; }
         public long Ms { get; set; }
+
+        /// <summary>写这份 transcript 时用的模型；旧文件没有该字段（null = 未知）。</summary>
+        public string Model { get; set; }
+
+        /// <summary>同一份 transcript 的推理力度；旧文件没有该字段（null = 未知）。</summary>
+        public string Effort { get; set; }
         public List<ChatMessageEntry> Messages { get; set; }
     }
 
@@ -63,6 +72,20 @@ namespace OpenLoop.Service.Storage
             {
                 return [];
             }
+        }
+
+        /// <summary>会话最后使用的模型与推理力度（旧文件没有时为 null）：重开会话按它恢复，而不是全局上次的。</summary>
+        public static (string Model, string Effort) LastModel(string workspace, string kind)
+        {
+            var entries = Read(workspace, kind);
+            for (int i = entries.Count - 1; i >= 0; i--)
+            {
+                var entry = entries[i];
+                if (entry == null) continue;
+                if (!string.IsNullOrWhiteSpace(entry.Model) || !string.IsNullOrWhiteSpace(entry.Effort))
+                    return (entry.Model, entry.Effort);
+            }
+            return (null, null);
         }
 
         public static void Write(string workspace, string kind, IEnumerable<ChatEntry> entries)

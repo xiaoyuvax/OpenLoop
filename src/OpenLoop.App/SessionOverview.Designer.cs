@@ -23,6 +23,7 @@ namespace OpenLoop.App
         private AntdUI.Button _btnNewSession;
         private AntdUI.Label _lblProjectPath;
         private AntdUI.Table _table;
+        private AntdUI.ColumnCheck _colCheck;
         private AntdUI.Column _colState;
         private AntdUI.Column _colTitle;
         private AntdUI.Column _colStarted;
@@ -57,6 +58,7 @@ namespace OpenLoop.App
             _btnNewSession = new AntdUI.Button();
             _lblProjectPath = new AntdUI.Label();
             _table = new AntdUI.Table();
+            _colCheck = new AntdUI.ColumnCheck("Selected");
             _colState = new AntdUI.Column("State", Localization.T("ColState"));
             _colTitle = new AntdUI.Column("Title", Localization.T("ColSession"));
             _colStarted = new AntdUI.Column("Started", Localization.T("ColStarted"));
@@ -182,10 +184,9 @@ namespace OpenLoop.App
             _rightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             _rightBar.Dock = DockStyle.Fill;
-            _rightBar.ColumnCount = 4;
+            _rightBar.ColumnCount = 3;
             _rightBar.RowCount = 1;
             _rightBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            _rightBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 420F));
             _rightBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110F));
             _rightBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
             _rightBar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
@@ -218,10 +219,9 @@ namespace OpenLoop.App
             _btnNewSession.Margin = new Padding(0, 9, 0, 9);
             _btnNewSession.Click += OnNewSession;
 
-            _rightBar.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) }, 0, 0);
-            _rightBar.Controls.Add(_txtSearch, 1, 0);
-            _rightBar.Controls.Add(_btnDelete, 2, 0);
-            _rightBar.Controls.Add(_btnNewSession, 3, 0);
+            _rightBar.Controls.Add(_txtSearch, 0, 0);
+            _rightBar.Controls.Add(_btnDelete, 1, 0);
+            _rightBar.Controls.Add(_btnNewSession, 2, 0);
 
             _table.Name = "tableSessions";
             _table.Dock = DockStyle.Fill;
@@ -235,6 +235,11 @@ namespace OpenLoop.App
             _table.Resize += OnTableResize;
 
             _colTitle.Ellipsis = true;
+            _colCheck.Width = "48";
+            _colCheck.SetFixed();
+            // 勾选状态写回 Session.Selected（AntdUI 只有在 SetRender 提供 OUT 时才回写记录）
+            _colCheck.SetRender(value => value is true, value => value);
+            _table.Columns.Add(_colCheck);
             _table.Columns.Add(_colState);
             _table.Columns.Add(_colTitle);
             _table.Columns.Add(_colStarted);

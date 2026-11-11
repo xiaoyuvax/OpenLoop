@@ -16,14 +16,16 @@ namespace OpenLoop.Core.OpenCode
         private readonly OpenCodeModelRef _model;
         private readonly string _workspace;
         private readonly Func<OpenCodePermission, bool> _decide;
+        private readonly bool _keepTools;
 
         public OpenCodeReasoner(OpenCodeClient client, OpenCodeModelRef model, string workspace = null,
-            ApprovalHandler approve = null)
+            ApprovalHandler approve = null, bool keepTools = false)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _model = model;
             _workspace = string.IsNullOrWhiteSpace(workspace) ? Environment.CurrentDirectory : workspace;
             _decide = OpenCodePermissions.Decider(_workspace, approve);
+            _keepTools = keepTools;
         }
 
         public Action<OpenAiCompatibleReasoner.ReasonerProgress> OnProgress { get; set; }
@@ -53,9 +55,11 @@ namespace OpenLoop.Core.OpenCode
         {
             OnProgress?.Invoke(new OpenAiCompatibleReasoner.ReasonerProgress("等待 OpenCode 响应", 0, TimeSpan.Zero));
             string prompt = Flatten(messages);
-            var turn = await _client.RunTurnAsync(prompt, _model, _workspace, onDelta, onReasoning, decide: _decide, ct: ct);
+            var turn = await _client.RunTurnAsync(prompt, _model, _workspace, onDelta, onReasoning,
+                decide: _decide, keepTools: _keepTools, ct: ct);
             if (string.IsNullOrWhiteSpace(turn.Text) && string.IsNullOrWhiteSpace(turn.Reasoning))
-                turn = await _client.RunTurnAsync(prompt + RetryHint, _model, _workspace, onDelta, onReasoning, decide: _decide, ct: ct);
+                turn = await _client.RunTurnAsync(prompt + RetryHint, _model, _workspace, onDelta, onReasoning,
+                    decide: _decide, keepTools: _keepTools, ct: ct);
 
             return new CompletionResult
             {

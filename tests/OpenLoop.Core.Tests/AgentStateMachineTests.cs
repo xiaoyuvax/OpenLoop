@@ -87,6 +87,7 @@ namespace OpenLoop.Core.Tests
                 Loops.Call("echo", "{\"x\":\"1\"}"),
                 Loops.Call("echo", "{\"x\":\"2\"}"),
                 Loops.Call("echo", "{\"x\":\"3\"}"),
+                Loops.Call("echo", "{\"x\":\"4\"}"),
                 "结束");
 
             int approvals = 0;
@@ -101,7 +102,7 @@ namespace OpenLoop.Core.Tests
             Assert.Equal(1, result.Guards.ExplorationContinues);
             Assert.Equal(0, result.Guards.ExplorationStops);
             Assert.Equal("结束", result.FinalAnswer);
-            Assert.Equal(3, tool.Calls);
+            Assert.Equal(4, tool.Calls);
         }
 
         private sealed class DelegateStep : IAgentStep

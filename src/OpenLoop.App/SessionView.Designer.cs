@@ -8,10 +8,11 @@ namespace OpenLoop.App
         private TableLayoutPanel _header;
         private AntdUI.Label _lblTitle;
         private FlowLayoutPanel _headerRight;
+        private AntdUI.Checkbox _chkSelect;
+        private AntdUI.Dropdown _selMenu;
         private AntdUI.Button _btnPanel;
         private AntdUI.Button _btnSummary;
         private Panel _headerLine;
-        private SplitContainer _mainSplit;
         private SplitContainer _upperSplit;
         private ChatFlow.ChatFlowControl _chat;
         private TableLayoutPanel _side;
@@ -21,12 +22,13 @@ namespace OpenLoop.App
         private FlowLayoutPanel _loopFlow;
         private FlowLayoutPanel _detailFlow;
         private SideWorkView _sideBtw;
+        private FilePreviewView _fileView;
         private AntdUI.Button _btnOpenLoop;
-        private AntdUI.Label _lblDModel;
+        private System.Windows.Forms.Label _lblDModel;
         private AntdUI.Label _lblDEffort;
         private AntdUI.Label _lblDCtx;
         private AntdUI.Label _lblDCost;
-        private AntdUI.Label _lblDStatus;
+        private System.Windows.Forms.Label _lblDStatus;
         private AntdUI.Label _lblDef;
         private AntdUI.Label _lblTasks;
         private AntdUI.Label _lblTrace;
@@ -74,10 +76,11 @@ namespace OpenLoop.App
             _header = new TableLayoutPanel();
             _lblTitle = new AntdUI.Label();
             _headerRight = new FlowLayoutPanel();
+            _chkSelect = new AntdUI.Checkbox();
+            _selMenu = new AntdUI.Dropdown();
             _btnPanel = new AntdUI.Button();
             _btnSummary = new AntdUI.Button();
             _headerLine = new Panel();
-            _mainSplit = new SplitContainer();
             _upperSplit = new SplitContainer();
             _chat = new ChatFlow.ChatFlowControl();
             _side = new TableLayoutPanel();
@@ -87,11 +90,11 @@ namespace OpenLoop.App
             _btnPendingSurveys = new AntdUI.Button();
             _detailFlow = new FlowLayoutPanel();
             _btnOpenLoop = new AntdUI.Button();
-            _lblDModel = new AntdUI.Label();
+            _lblDModel = new System.Windows.Forms.Label();
             _lblDEffort = new AntdUI.Label();
             _lblDCtx = new AntdUI.Label();
             _lblDCost = new AntdUI.Label();
-            _lblDStatus = new AntdUI.Label();
+            _lblDStatus = new System.Windows.Forms.Label();
             _lblDef = new AntdUI.Label();
             _lblTasks = new AntdUI.Label();
             _lblTrace = new AntdUI.Label();
@@ -119,10 +122,6 @@ namespace OpenLoop.App
             _lblPath = new AntdUI.Label();
 
             SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)_mainSplit).BeginInit();
-            _mainSplit.Panel1.SuspendLayout();
-            _mainSplit.Panel2.SuspendLayout();
-            _mainSplit.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)_upperSplit).BeginInit();
             _upperSplit.Panel1.SuspendLayout();
             _upperSplit.Panel2.SuspendLayout();
@@ -140,8 +139,9 @@ namespace OpenLoop.App
 
             // session header
             _header.Dock = DockStyle.Fill;
-            _header.ColumnCount = 2;
+            _header.ColumnCount = 3;
             _header.RowCount = 1;
+            _header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _header.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
@@ -163,46 +163,63 @@ namespace OpenLoop.App
             _headerRight.AutoSize = true;
             _headerRight.Margin = new Padding(0);
 
+            _chkSelect.Name = "chkSelect";
+            _chkSelect.Text = "选择";
+            // AutoSize 会让勾选框比同排按钮高一截（250% DPI 下实测 78 vs 69），顶对齐就变成“下沉”；
+            // 固定成和按钮一样的 30，整排才真正垂直居中。
+            _chkSelect.AutoSize = false;
+            _chkSelect.Width = 56;
+            _chkSelect.Height = 30;
+            _chkSelect.ForeColor = UiStyle.Muted;
+            _chkSelect.Margin = new Padding(0, 5, 10, 5);
+            _chkSelect.CheckedChanged += OnSelectModeChanged;
+
+            _selMenu.Name = "selMenu";
+            _selMenu.Text = "操作";
+            _selMenu.Width = 84;
+            _selMenu.Height = 30;
+            _selMenu.Ghost = true;
+            _selMenu.Radius = 8;
+            _selMenu.Margin = new Padding(0, 5, 8, 5);
+            _selMenu.SelectedValueChanged += OnSelectAction;
+            _selMenu.Items.Add(new AntdUI.SelectItem("复制") { Tag = "copy" });
+            _selMenu.Items.Add(new AntdUI.SelectItem("转给 Loop") { Tag = "loop" });
+            _selMenu.Items.Add(new AntdUI.SelectItem("删除") { Tag = "delete" });
+
             _btnPanel.Name = "btnPanel";
             _btnPanel.Width = 36;
             _btnPanel.Height = 30;
             _btnPanel.Ghost = true;
             _btnPanel.Radius = 8;
-            _btnPanel.IconSvg = UiIcons.Of(UiIcons.PanelClose, UiStyle.Text);
+            _btnPanel.IconSvg = UiIcons.Of(UiIcons.PanelOpen, UiStyle.Text);
             _btnPanel.Margin = new Padding(0, 5, 0, 5);
             _btnPanel.Click += OnToggleSide;
 
             _btnSummary.Name = "btnSummary";
-            _btnSummary.Text = "总结";
-            _btnSummary.Width = 62;
+            _btnSummary.Width = 30;
             _btnSummary.Height = 30;
             _btnSummary.Ghost = true;
             _btnSummary.Radius = 8;
-            _btnSummary.Font = new Font("Microsoft YaHei UI", 9F);
+            _btnSummary.IconSvg = UiIcons.Of(UiIcons.Refresh, UiStyle.Muted);
             _btnSummary.Margin = new Padding(0, 5, 6, 5);
             _btnSummary.Click += OnSummarize;
 
-            _header.Controls.Add(_lblTitle, 0, 0);
-            _header.Controls.Add(_headerRight, 1, 0);
-            _headerRight.Controls.Add(_btnPanel);
-            _headerRight.Controls.Add(_btnSummary);
+            _header.Controls.Add(_btnSummary, 0, 0);
+            _header.Controls.Add(_lblTitle, 1, 0);
+            _header.Controls.Add(_headerRight, 2, 0);
 
             _headerLine.Dock = DockStyle.Fill;
             _headerLine.BackColor = UiStyle.Border;
             _headerLine.Margin = new Padding(0);
 
-            // main split (chat+side / input)
-            _mainSplit.Dock = DockStyle.Fill;
-            _mainSplit.Orientation = Orientation.Horizontal;
-            _mainSplit.SplitterWidth = 8;
-            _mainSplit.FixedPanel = FixedPanel.Panel2;
-            _mainSplit.BackColor = UiStyle.Page;
-
+            // 一个纵向拆分：左栏 = 聊天流 + 队列 + 输入区，右栏 = Loop/详情/旁路/文件
             _upperSplit.Dock = DockStyle.Fill;
             _upperSplit.Orientation = Orientation.Vertical;
             _upperSplit.SplitterWidth = 8;
             _upperSplit.FixedPanel = FixedPanel.Panel2;
             _upperSplit.BackColor = UiStyle.Page;
+            // 右侧栏默认收起
+            _upperSplit.Panel2Collapsed = true;
 
             _chat.Dock = DockStyle.Fill;
             _chat.BackColor = UiStyle.Surface;
@@ -244,6 +261,7 @@ namespace OpenLoop.App
             _detailFlow.Visible = false;
 
             _sideBtw = new SideWorkView { Dock = DockStyle.Fill, Visible = false };
+            _fileView = new FilePreviewView { Dock = DockStyle.Fill, Visible = false };
 
             _lblDef.AutoSize = true;
             _lblDef.MaximumSize = new Size(260, 0);
@@ -360,6 +378,8 @@ namespace OpenLoop.App
             _lblDCtx.Font = new Font("Segoe UI", 9F);
             _lblDCtx.ForeColor = UiStyle.Muted;
             _lblDCtx.Margin = new Padding(0, 0, 0, 8);
+            _lblDCtx.Cursor = Cursors.Hand;
+            _lblDCtx.Click += OnEditContext;
 
             _lblDCost.AutoSize = true;
             _lblDCost.Text = Localization.T("Cost") + ": —";
@@ -406,12 +426,14 @@ namespace OpenLoop.App
             _sideHost.Controls.Add(_loopFlow);
             _sideHost.Controls.Add(_detailFlow);
             _sideHost.Controls.Add(_sideBtw);
+            _sideHost.Controls.Add(_fileView);
             _side.Controls.Add(_sideTabs, 0, 0);
             _side.Controls.Add(_sideHost, 0, 1);
             _upperSplit.Panel2.Controls.Add(_side);
 
             // input area
-            _inputArea.Dock = DockStyle.Fill;
+            _inputArea.Dock = DockStyle.Bottom;
+            _inputArea.Height = 196;
             _inputArea.ColumnCount = 1;
             _inputArea.RowCount = 3;
             _inputArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -524,15 +546,20 @@ namespace OpenLoop.App
             _selEffort.SelectedValueChanged += OnEffortChanged;
 
             _ctx.Name = "ctx";
-            _ctx.Width = 32;
-            _ctx.Height = 32;
+            _ctx.Width = 30;
+            _ctx.Height = 30;
             _ctx.Shape = AntdUI.TShapeProgress.Circle;
             _ctx.TextUnit = "%";
             _ctx.Value = 0F;
             _ctx.Margin = new Padding(0, 5, 8, 5);
             _ctx.Cursor = Cursors.Hand;
             _ctx.Click += OnContextClick;
+
+            // RightToLeft：先加的靠右。可见顺序（左→右）与 Loop 页一致：选择 | 操作 | 上下文 | 侧栏
+            _headerRight.Controls.Add(_btnPanel);
             _headerRight.Controls.Add(_ctx);
+            _headerRight.Controls.Add(_selMenu);
+            _headerRight.Controls.Add(_chkSelect);
 
             _btnSend.Name = "btnSend";
             _btnSend.Text = Localization.T("Send");
@@ -560,15 +587,14 @@ namespace OpenLoop.App
             _inputArea.Controls.Add(_cmdPopup, 0, 0);
             _inputArea.Controls.Add(_txtInput, 0, 1);
             _inputArea.Controls.Add(_toolbar, 0, 2);
-            _mainSplit.Panel2.Controls.Add(_inputArea);
 
-            // 队列抽屉在 Panel1 内 Dock=Bottom；先加 Fill 再加 Bottom，Bottom 先占位
-            _mainSplit.Panel1.Controls.Add(_upperSplit);
-            _mainSplit.Panel1.Controls.Add(_pending);
+            // 左栏：聊天流 + 队列抽屉 + 输入区（后加的先贴底，输入区在最下面）
+            _upperSplit.Panel1.Controls.Add(_pending);
+            _upperSplit.Panel1.Controls.Add(_inputArea);
 
             _root.Controls.Add(_header, 0, 0);
             _root.Controls.Add(_headerLine, 0, 1);
-            _root.Controls.Add(_mainSplit, 0, 2);
+            _root.Controls.Add(_upperSplit, 0, 2);
 
             // “/” 命令联想下拉：占用输入框上方的一行，关闭时行高收成 0
             _cmdPopup.Name = "cmdPopup";
@@ -587,10 +613,6 @@ namespace OpenLoop.App
             _upperSplit.Panel2.ResumeLayout(false);
             _upperSplit.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)_upperSplit).EndInit();
-            _mainSplit.Panel1.ResumeLayout(false);
-            _mainSplit.Panel2.ResumeLayout(false);
-            _mainSplit.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)_mainSplit).EndInit();
             ResumeLayout(false);
         }
     }

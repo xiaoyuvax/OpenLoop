@@ -587,7 +587,7 @@ OpenLoop.A.exe --eval-run <spec.json> --out <dir>    # 跑一题、出 final.md 
 
 已落地：
 
-- `scripts/publish-linux.ps1`：一条命令产出 `artifacts/linux-x64/`，布局与 Windows 一致——
+- `scripts/publish-linux.ps1`（**已删除**，见 `docs/PLAN-VERSION-MANAGEMENT.md` §11.1）：一条命令产出 `artifacts/linux-x64/`，布局与 Windows 一致——
   `OpenLoop`（壳）+ `worker/OpenLoop.A` + `worker/OpenLoop.I` + 各自 `wwwroot/`，全部 self-contained；
 - 无界面壳（`OpenLoop.Shell`）：默认先找 `<壳目录>/worker/OpenLoop.A`、`worker/OpenLoop.I`，再找同目录；
   启动后打印浏览器入口 `http://127.0.0.1:19180/?key=<bus.key>`（`?key=` 换 HttpOnly Cookie）；
@@ -1300,7 +1300,9 @@ Service 84 通过，Core 195 通过 / 1 跳过。
 - ~~**MCP 客户端**~~（已接上，含 stdio）：`mcp: {url, keyEnv|keyFile, timeoutMs}` 走 Streamable HTTP；
   `mcp: {command, args, timeoutMs}` 起本地 stdio 子进程（每行一条 JSON-RPC，id 对不上就跳过）。
   示例见 `samples/plugins/puppet-mcp/`，单测 `McpClientTests`。
-- **更新通道的生产者**：`scripts/publish-role.ps1` 把某个角色 `dotnet publish` 到
+- **更新通道的生产者**（**脚本已删除**：2026-11-11 起发布/换版由 I 的 `/api/loop/iteration` 执行，
+  见 `docs/PLAN-VERSION-MANAGEMENT.md`；下面保留的是当时用 `scripts/publish-role.ps1` 的验证记录）：
+  `scripts/publish-role.ps1` 把某个角色 `dotnet publish` 到
   `versions/<role>/<ver>-<sha8>/`，再 `POST /bus/stage`（加 `-Restart` 才 `POST /bus/restart`）。
   **2026-11-04 在 Windows 复验整链（role = a，Debug 实例）**：
   - 正常换版：`0.1.1` 发布 → stage `ok` → restart 返回 `accepted` → A 退出（code 0）→
@@ -1310,8 +1312,9 @@ Service 84 通过，Core 195 通过 / 1 跳过。
     A 新进程起来后 10s 没报到 → `update-log` 写 `rollback`（`did not report within 10s`）→
     壳退回原 exe（`current.json` 不动）→ API 恢复 200；
   - 协议号不符（`protocol: 99`）→ 409 `协议号不一致，两边一起升级`。
-  - 注意：PowerShell 执行策略会挡 `.\scripts\publish-role.ps1`（`PSSecurityException`），
+  - 注意（历史）：PowerShell 执行策略会挡 `.\scripts\publish-role.ps1`（`PSSecurityException`），
     用 `powershell -ExecutionPolicy Bypass -File scripts\publish-role.ps1 …` 跑，不要改机器策略。
+    该脚本已删除，现行入口是 I 的 `/api/loop/iteration`。
   - 注意：换版成功后 `current.json` 存在，之后重启都用 `versions/` 里的产物、不再用 `bin/worker`；
     开发期想回到 Debug 构建就删掉 `versions/current.json` 再重启壳。
   - 未验：`-Role i` 的同类链路；`Prune`（只留 2 份）没有制造第三个版本去观察。

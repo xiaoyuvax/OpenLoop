@@ -6,6 +6,16 @@ using OpenLoop.Service.Models;
 
 namespace OpenLoop.Service.Config
 {
+    /// <summary>用户对一个模型的覆盖项：服务商 /models 不提供名称或上下文时用。</summary>
+    public sealed class ModelProps
+    {
+        /// <summary>显示名称；空表示沿用目录里的名字或 id。</summary>
+        public string Name { get; set; } = "";
+
+        /// <summary>上下文窗口（token）；0 表示自动（目录 / 内置表 / 默认值）。</summary>
+        public int ContextLimit { get; set; }
+    }
+
     /// <summary>
     /// 应用设置，存放在 %APPDATA%\OpenLoop\settings.json。
     /// 密钥用当前用户 DPAPI 保护后保存，绝不写进工作目录。
@@ -50,6 +60,19 @@ namespace OpenLoop.Service.Config
 
         /// <summary>多提供商配置；旧的单 BaseUrl/KeyProtected 仍作为回退。</summary>
         public List<ProviderConfig> Providers { get; set; } = [];
+
+        /// <summary>按模型 id 的用户覆盖：显示名称、上下文上限（服务商接口不报这些值时用）。</summary>
+        public Dictionary<string, ModelProps> ModelProps { get; set; } = [];
+
+        /// <summary>取一个模型的覆盖项（id 不区分大小写）；没有则返回 null。</summary>
+        public ModelProps PropsFor(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id) || ModelProps == null || ModelProps.Count == 0) return null;
+            if (ModelProps.TryGetValue(id.Trim(), out var exact)) return exact;
+            foreach (var pair in ModelProps)
+                if (string.Equals(pair.Key, id.Trim(), StringComparison.OrdinalIgnoreCase)) return pair.Value;
+            return null;
+        }
 
         /// <summary>已使用的项目（工作区路径），用于启动时恢复项目列表。</summary>
         public List<string> Projects { get; set; } = [];
@@ -127,6 +150,7 @@ namespace OpenLoop.Service.Config
         {
             settings.Providers ??= [];
             foreach (var provider in settings.Providers) provider.Models ??= [];
+            settings.ModelProps ??= [];
 
             if (settings.Providers.Count == 0 && !string.IsNullOrWhiteSpace(settings.BaseUrl))
             {

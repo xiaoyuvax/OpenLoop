@@ -80,104 +80,202 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
-        public void RestartScript_backs_up_before_overwrite_and_never_mirrors()
+        public void ShellUpdate_copy_backs_up_overwritten_files_and_keeps_extra_ones()
         {
-            string script = IterationRunner.RestartScript(
-                pid: 4321,
-                install: @"C:\apps\OpenLoop",
-                exe: @"C:\apps\OpenLoop\OpenLoop.exe",
-                args: "--loop \"C:\\work space\" --iteration",
-                from: @"C:\data\versions\shell\0.2.0-abcdef12",
-                backup: @"C:\data\versions\shell\rollback-1",
-                failedMarker: @"C:\data\runtime\iteration-shell-failed.txt",
-                startedMarker: @"C:\data\runtime\shell-started.json",
-                log: @"C:\data\runtime\iteration-restart.log");
-
-            Assert.Contains("'C:\\apps\\OpenLoop'", script);
-            Assert.Contains("--loop \"C:\\work space\" --iteration", script);
-            Assert.Contains("Copy-Item", script);
-            Assert.Contains("'new shell failed to start'", script);
-            Assert.Contains("shell-started.json", script);
-            Assert.DoesNotContain("robocopy", script, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("/MIR", script, StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// 真的跑一遍重启脚本：新壳起不来（假 exe 立刻退出）时必须恢复旧文件、写失败标记、再拉起旧壳。
-        /// </summary>
-        [Fact]
-        public void RestartScript_rolls_back_when_new_shell_never_reports()
-        {
-            if (!OperatingSystem.IsWindows()) return;
-
             string root = Temp();
             try
             {
+                string source = Dir(root, "source");
                 string install = Dir(root, "install");
-                string from = Dir(root, "from");
                 string backup = Path.Combine(root, "backup");
-                string failed = Path.Combine(root, "failed.txt");
-                string started = Path.Combine(root, "started.json");
-                string log = Path.Combine(root, "restart.log");
+                File.WriteAllText(Path.Combine(source, "OpenLoop.exe"), "NEW");
+                File.WriteAllText(Path.Combine(source, "new.txt"), "ADDED");
+                Directory.CreateDirectory(Path.Combine(install, "worker"));
+                File.WriteAllText(Path.Combine(install, "OpenLoop.exe"), "OLD");
+                File.WriteAllText(Path.Combine(install, "worker", "own.txt"), "KEEP");
 
-                string fake = Path.Combine(Environment.SystemDirectory, "whoami.exe");
-                string oldExe = Path.Combine(install, "OpenLoop.exe");
-                File.Copy(fake, oldExe);
-                byte[] oldBytes = File.ReadAllBytes(oldExe);
-                File.WriteAllText(Path.Combine(install, "old.txt"), "OLD");
-                File.WriteAllText(Path.Combine(install, "keep.txt"), "KEEP");
-                File.Copy(fake, Path.Combine(from, "OpenLoop.exe"));
-                File.WriteAllText(Path.Combine(from, "old.txt"), "NEW");
+                ShellUpdate.Copy(source, install, backup);
 
-                string script = Path.Combine(root, "restart.ps1");
-                File.WriteAllText(script, IterationRunner.RestartScript(
-                    999999, install, Path.Combine(install, "OpenLoop.exe"), "--iteration",
-                    from, backup, failed, started, log), new System.Text.UTF8Encoding(true));
+                Assert.Equal("NEW", File.ReadAllText(Path.Combine(install, "OpenLoop.exe")));
+                Assert.Equal("OLD", File.ReadAllText(Path.Combine(backup, "OpenLoop.exe")));
+                Assert.Equal("ADDED", File.ReadAllText(Path.Combine(install, "new.txt")));
+                Assert.Equal("KEEP", File.ReadAllText(Path.Combine(install, "worker", "own.txt")));   // 不镜像
 
-                var start = new System.Diagnostics.ProcessStartInfo("powershell.exe")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                foreach (string arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script })
-                    start.ArgumentList.Add(arg);
-                using var process = System.Diagnostics.Process.Start(start);
-                process.WaitForExit(60_000);
-
-                Assert.True(File.Exists(failed), "应写失败标记");
-                Assert.Equal(oldBytes, File.ReadAllBytes(oldExe));
-                Assert.Equal("OLD", File.ReadAllText(Path.Combine(install, "old.txt")));
-                Assert.Equal("KEEP", File.ReadAllText(Path.Combine(install, "keep.txt")));
-                Assert.Contains("restart failed", File.ReadAllText(log));
+                ShellUpdate.Restore(backup, install);
+                Assert.Equal("OLD", File.ReadAllText(Path.Combine(install, "OpenLoop.exe")));
             }
             finally
             {
-                try { Directory.Delete(root, true); } catch { }
+                Directory.Delete(root, true);
             }
         }
 
         [Fact]
-        public void RolesFor_maps_changed_paths_to_the_binaries_they_affect()
+        public void Decide_cold_start_bumps_every_node_once()
         {
-            Assert.Equal(["a", "i", "shell"], Sorted("src/OpenLoop.Service/Web/WorkerApiClient.cs"));
-            Assert.Equal(["a", "i", "shell"], Sorted("src/OpenLoop.Core/Tools/ToolRegistry.cs"));
-            Assert.Equal(["shell"], Sorted("src/OpenLoop.App/MainForm.cs", "OpenLoop.ico"));
-            Assert.Equal(["a"], Sorted("src/OpenLoop.A/Program.cs"));
-            Assert.Equal(["i"], Sorted("src/OpenLoop.I/Program.cs"));
-            Assert.Equal(["a", "i", "shell"], Sorted("OpenLoop.slnx"));
+            var harness = new PlanHarness();
+
+            var plans = harness.Plan();
+
+            Assert.All(plans, p => Assert.True(p.Update));
+            Assert.All(plans, p => Assert.Equal("0.1.1", p.Target));
+            Assert.Equal("0.1.1", harness.Declared["core"]);
+            Assert.Equal("0.1.1", harness.Declared["shell"]);
         }
 
         [Fact]
-        public void RolesFor_ignores_docs_tests_scripts_and_splits_renames()
+        public void Decide_does_nothing_when_fingerprints_match_the_last_publish()
         {
-            Assert.Empty(Sorted("docs/PLAN-DUAL-PROCESS.md", "README.md", "tests/OpenLoop.Core.Tests/X.cs",
-                "scripts/publish-role.ps1", "samples/plugins/dsh-free/plugin.json"));
-            Assert.Equal(["a", "i"], Sorted("src/OpenLoop.A/Old.cs -> src/OpenLoop.I/New.cs"));
-            Assert.Equal(["a", "i", "shell"], Sorted("unknown-file.xyz"));
+            var harness = new PlanHarness();
+            harness.Plan();
+            harness.Promote();
+
+            var plans = harness.Plan();
+
+            Assert.Equal(harness.State["core"].Fingerprint, harness.Pending["core"].Fingerprint);
+            Assert.Equal(harness.State["core"].Version, harness.Declared["core"]);
+            Assert.All(plans, p => Assert.False(p.Update));
+            Assert.Empty(harness.Written);
         }
 
-        private static string[] Sorted(params string[] paths)
-            => IterationRunner.RolesFor(paths).OrderBy(r => r, StringComparer.Ordinal).ToArray();
+        [Fact]
+        public void Decide_cascades_a_core_change_to_every_dependent()
+        {
+            var harness = new PlanHarness();
+            harness.Plan();
+            harness.Promote();
+
+            harness.Content["core"] = "core-2";
+            var plans = harness.Plan();
+
+            Assert.True(plans.Single(p => p.Role == "core").Update);
+            Assert.True(plans.Single(p => p.Role == "service").Update);
+            Assert.True(plans.Single(p => p.Role == "a").Update);
+            Assert.True(plans.Single(p => p.Role == "i").Update);
+            Assert.True(plans.Single(p => p.Role == "shell").Update);
+            Assert.False(plans.Single(p => p.Role == "chatflow").Update);
+        }
+
+        [Fact]
+        public void Decide_keeps_leaf_changes_local()
+        {
+            var harness = new PlanHarness();
+            harness.Plan();
+            harness.Promote();
+
+            harness.Content["a"] = "a-2";
+            var plans = harness.Plan();
+
+            Assert.True(plans.Single(p => p.Role == "a").Update);
+            Assert.False(plans.Single(p => p.Role == "service").Update);
+            Assert.False(plans.Single(p => p.Role == "i").Update);
+            Assert.False(plans.Single(p => p.Role == "shell").Update);
+        }
+
+        [Fact]
+        public void Decide_respects_a_manual_bump_and_cascades_it()
+        {
+            var harness = new PlanHarness();
+            harness.Plan();
+            harness.Promote();
+
+            harness.Declared["core"] = "0.5.0";   // 人工改号，内容没变
+            var plans = harness.Plan();
+
+            Assert.Equal("0.5.0", plans.Single(p => p.Role == "core").Target);
+            Assert.True(plans.Single(p => p.Role == "service").Update);
+        }
+
+        [Fact]
+        public void Decide_retries_the_same_number_when_the_last_run_failed()
+        {
+            var harness = new PlanHarness();
+            harness.Plan();
+            harness.Promote();
+
+            harness.Content["core"] = "core-2";
+            var first = harness.Plan();           // 没 Promote：模拟构建失败
+
+            harness.Content["core"] = "core-3";
+            var second = harness.Plan();
+
+            Assert.Equal("0.1.2", first.Single(p => p.Role == "core").Target);
+            Assert.Equal("0.1.2", second.Single(p => p.Role == "core").Target);
+        }
+
+        [Fact]
+        public void Decide_retries_the_planned_number_when_no_baseline_was_promoted()
+        {
+            var harness = new PlanHarness();
+
+            var first = harness.Plan();           // 冷启动：0.1.1，但没 Promote
+            var second = harness.Plan();          // 同一份内容：不往上再跳一版
+
+            Assert.Equal("0.1.1", first.Single(p => p.Role == "core").Target);
+            Assert.Equal("0.1.1", second.Single(p => p.Role == "core").Target);
+            Assert.True(second.Single(p => p.Role == "core").Update);
+        }
+
+        /// <summary>把 Decide 接到内存里的节点图上：不碰磁盘，但保留「用上游本轮目标版本算指纹」的语义。</summary>
+        private sealed class PlanHarness
+        {
+            public readonly Dictionary<string, string> Content = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["core"] = "core-1", ["service"] = "service-1", ["chatflow"] = "chatflow-1",
+                ["a"] = "a-1", ["i"] = "i-1", ["shell"] = "shell-1"
+            };
+
+            public readonly Dictionary<string, string> Declared = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["core"] = "0.1.0", ["service"] = "0.1.0", ["chatflow"] = "0.1.0",
+                ["a"] = "0.1.0", ["i"] = "0.1.0", ["shell"] = "0.1.0"
+            };
+
+            public readonly Dictionary<string, string> Written = new(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, NodeState> Pending = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, NodeState> State;
+
+            private static VersionNode[] Graph() =>
+            [
+                new("core", "Core", "", "src/OpenLoop.Core", "", []),
+                new("service", "Service", "", "src/OpenLoop.Service", "", ["core"]),
+                new("chatflow", "ChatFlow", "", "ChatFlow", "", []),
+                new("a", "Worker（A）", "", "src/OpenLoop.A", "", ["service"]),
+                new("i", "Loop（I）", "", "src/OpenLoop.I", "", ["service"]),
+                new("shell", "壳", "", "src/OpenLoop.App", "", ["service", "chatflow"])
+            ];
+
+            public List<RolePlan> Plan()
+            {
+                var planned = new Dictionary<string, NodeState>(Pending, StringComparer.OrdinalIgnoreCase);
+                Pending.Clear();
+                Written.Clear();
+                return IterationRunner.Decide(
+                    Graph(),
+                    State,
+                    planned,
+                    node => Declared[node.Id],
+                    (node, declared) => State != null && State.TryGetValue(node.Id, out var state)
+                        ? state.Version
+                        : declared,
+                    (node, fingerprints, versions) =>
+                    {
+                        var deps = node.Upstream.Select(up => new NodeDep(
+                            up, "project",
+                            versions.TryGetValue(up, out var version) ? version : "",
+                            fingerprints.TryGetValue(up, out var print) ? print : "")).ToList();
+                        return new NodeFingerprint(VersionScan.Combine(Content[node.Id], "", [], deps), deps);
+                    },
+                    (node, version) =>
+                    {
+                        Declared[node.Id] = version;
+                        Written[node.Id] = version;
+                    },
+                    (node, state) => Pending[node.Id] = state);
+            }
+
+            public void Promote() => State = new Dictionary<string, NodeState>(Pending, StringComparer.OrdinalIgnoreCase);
+        }
 
         private static string Temp()
         {

@@ -45,6 +45,7 @@ namespace OpenLoop.App
                     ReasoningText = entry.Reasoning ?? "",
                     ToolCallLines = entry.ToolLines ?? "",
                     ToolTraceText = entry.ToolLines ?? "",
+                    TimelineText = entry.Timeline ?? "",
                     ToolStepCount = entry.Steps,
                     ToolTotalMs = entry.Ms
                 };
@@ -58,7 +59,8 @@ namespace OpenLoop.App
             return turns;
         }
 
-        public static void Save(string workspace, IEnumerable<ChatTurn> turns, string kind = null)
+        public static void Save(string workspace, IEnumerable<ChatTurn> turns, string kind = null,
+            string model = null, string effort = null)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return;
             var entries = (turns ?? []).Select(t => new ChatEntry
@@ -67,14 +69,78 @@ namespace OpenLoop.App
                 Assistant = t.AssistantText,
                 Reasoning = t.ReasoningText,
                 ToolLines = t.ToolCallLines,
+                Timeline = t.TimelineText,
                 Steps = t.ToolStepCount,
                 Ms = t.ToolTotalMs,
+                Model = model,
+                Effort = effort,
                 Messages = Transcripts.TryGetValue(t, out var transcript)
                     ? transcript.Select(m => new ChatMessageEntry { Role = m.Role, Content = m.Content }).ToList()
                     : null
             }).ToList();
 
             ChatHistory.Write(workspace, kind, entries);
+        }
+
+        /// <summary>
+        /// 下一轮要带的上下文：以最近一份 transcript 为准（与 Worker 一致），
+        /// 没有 transcript 的旧会话退回 user/assistant 正文。
+        /// </summary>
+        public static List<LlmMessage> History(IReadOnlyList<ChatTurn> turns)
+        {
+            var list = new List<LlmMessage>();
+            if (turns == null) return list;
+
+            for (int i = turns.Count - 1; i >= 0; i--)
+            {
+                var stored = Transcript(turns[i]);
+                if (stored == null || stored.Count == 0) continue;
+
+                foreach (var message in stored)
+                {
+                    if (string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase)) continue;
+                    list.Add(new LlmMessage(message.Role, message.Content));
+                }
+                for (int j = i + 1; j < turns.Count; j++) AppendText(list, turns[j]);
+                return list;
+            }
+
+            foreach (var turn in turns) AppendText(list, turn);
+            return list;
+        }
+
+        private static void AppendText(List<LlmMessage> list, ChatTurn turn)
+        {
+            if (!string.IsNullOrWhiteSpace(turn?.UserText)) list.Add(new LlmMessage("user", turn.UserText));
+            if (!string.IsNullOrWhiteSpace(turn?.AssistantText)) list.Add(new LlmMessage("assistant", turn.AssistantText));
+        }
+
+        /// <summary>
+        /// 冷启动整理历史：文件空闲超过一小时（服务端前缀缓存必然过期）或换了模型时做一次。
+        /// 会话进行中不得调用，否则会改写已提交的前缀、打断前缀缓存。
+        /// </summary>
+        public static int PruneCold(string workspace, string kind, string model, IReadOnlyList<ChatTurn> turns)
+        {
+            if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return 0;
+
+            string path = ChatHistory.PathFor(workspace, kind);
+            bool idle = !File.Exists(path)
+                || DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromMinutes(60);
+            bool modelChanged = ChatHistory.Read(workspace, kind).Any(e =>
+                !string.IsNullOrWhiteSpace(e?.Model)
+                && !string.Equals(e.Model, model, StringComparison.OrdinalIgnoreCase));
+            if (!idle && !modelChanged) return 0;
+
+            for (int i = turns.Count - 1; i >= 0; i--)
+            {
+                if (!Transcripts.TryGetValue(turns[i], out var stored) || stored.Count == 0) continue;
+                int changed = OpenLoop.Core.Agent.HistoryPruner.Prune(stored);
+                if (changed > 0)
+                    OpenLoop.Service.Logging.AppLog.Info(
+                        $"Loop 会话冷启动整理历史：删除/改写 {changed} 条（换模型={modelChanged}）");
+                return changed;
+            }
+            return 0;
         }
 
         /// <summary>删除一个会话的对话文件与索引项。</summary>

@@ -1,3 +1,4 @@
+using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.Safety;
 using OpenLoop.Service.Config;
@@ -12,6 +13,12 @@ namespace OpenLoop.Service.Worker
         public string Assistant { get; set; } = "";
         public string Reasoning { get; set; } = "";
         public string ToolLines { get; set; } = "";
+
+        /// <summary>思维片段与工具调用按发生顺序穿插后的文本；旧记录为空，界面回退到两段式。</summary>
+        public string Timeline { get; set; } = "";
+
+        /// <summary>采集中的顺序块，只在本进程内用，投影出去的是 <see cref="Timeline"/>。</summary>
+        internal RunTimeline TimelineRun { get; set; }
         public int Steps { get; set; }
         public long Ms { get; set; }
         public bool Streaming { get; set; }
@@ -113,7 +120,8 @@ namespace OpenLoop.Service.Worker
                 Settings = settings ?? (() => new AppSettings())
             };
 
-            foreach (var entry in ChatHistory.Read(session.Workspace, session.Id))
+            var entries = ChatHistory.Read(session.Workspace, session.Id);
+            foreach (var entry in entries)
             {
                 if (entry == null) continue;
                 session.Turns.Add(new WorkerTurn
@@ -122,6 +130,7 @@ namespace OpenLoop.Service.Worker
                     Assistant = entry.Assistant ?? "",
                     Reasoning = entry.Reasoning ?? "",
                     ToolLines = entry.ToolLines ?? "",
+                    Timeline = entry.Timeline ?? "",
                     Steps = entry.Steps,
                     Ms = entry.Ms,
                     Transcript = entry.Messages?
@@ -130,6 +139,12 @@ namespace OpenLoop.Service.Worker
                         .ToList()
                 });
             }
+
+            // 冷启动判定用：文件最后写入时间（缓存已冷）+ 是否换了模型（前缀对不上，缓存本来也没有）。
+            string path = ChatHistory.PathFor(session.Workspace, session.Id);
+            if (File.Exists(path)) session.LastSavedAt = File.GetLastWriteTimeUtc(path);
+            session.ModelChanged = entries.Any(e => !string.IsNullOrWhiteSpace(e?.Model)
+                && !string.Equals(e.Model, session.Model, StringComparison.OrdinalIgnoreCase));
 
             lock (_lock) _sessions[session.Id] = session;
             return snapshot(session);
@@ -297,6 +312,26 @@ namespace OpenLoop.Service.Worker
             return true;
         }
 
+        /// <summary>
+        /// 冷启动整理：空闲超过一小时（服务端缓存必然过期）或换了模型时才做，
+        /// 且每个会话只做一次——之后只追加，不再改写前缀。
+        /// </summary>
+        private static void MaybePruneHistory(Session session)
+        {
+            bool cold = session.ModelChanged
+                || (session.LastSavedAt is { } saved && DateTime.UtcNow - saved > IdleBeforePrune);
+            if (!cold) return;
+
+            var turn = session.Turns.LastOrDefault(t => t.Transcript is { Count: > 0 });
+            if (turn?.Transcript == null) return;
+
+            int changed = HistoryPruner.Prune(turn.Transcript);
+            if (changed > 0)
+                AppLog.Info($"冷启动整理历史：删除/改写 {changed} 条（换模型={session.ModelChanged}）");
+        }
+
+        private static readonly TimeSpan IdleBeforePrune = TimeSpan.FromMinutes(60);
+
         /// <summary>从历史里拼下一轮要带的消息：以最近一份 transcript 为准。</summary>
         internal static List<LlmMessage> BuildHistory(IReadOnlyList<WorkerTurn> turns)
         {
@@ -337,6 +372,11 @@ namespace OpenLoop.Service.Worker
         private void Start(Session session, string tag, string text)
         {
             // 调用方持有 _lock
+            if (!session.HistoryPruned)
+            {
+                session.HistoryPruned = true;
+                MaybePruneHistory(session);
+            }
             List<LlmMessage> history = BuildHistory(session.Turns);
             var turn = new WorkerTurn { User = text, Streaming = true };
             session.Turns.Add(turn);
@@ -386,6 +426,7 @@ namespace OpenLoop.Service.Worker
                     lock (_lock)
                     {
                         turn.Reasoning += piece;
+                        (turn.TimelineRun ??= new RunTimeline()).Thinking(piece);
                         session.Revision++;
                     }
                 },
@@ -395,6 +436,7 @@ namespace OpenLoop.Service.Worker
                     {
                         turn.Assistant = "";
                         turn.Reasoning = "";
+                        turn.TimelineRun?.DropThinking();
                         session.Revision++;
                     }
                 },
@@ -414,6 +456,7 @@ namespace OpenLoop.Service.Worker
                         turn.Ms += step.DurationMs;
                         string line = $"{step.Tool}({step.ArgsSummary}) · {step.DurationText}{(step.Ok ? "" : " · 失败")}";
                         turn.ToolLines = string.IsNullOrEmpty(turn.ToolLines) ? line : turn.ToolLines + "\n" + line;
+                        (turn.TimelineRun ??= new RunTimeline()).Tool(line);
                         session.Revision++;
                     }
                 }
@@ -469,6 +512,7 @@ namespace OpenLoop.Service.Worker
                     turn.Failed = result.Outcome == "error";
                     turn.FinishReason = result.FinishReason;
                     turn.Transcript = result.Transcript as List<LlmMessage> ?? result.Transcript?.ToList();
+                    turn.Timeline = turn.TimelineRun?.Render() ?? turn.Timeline;
 
                     session.Steps = result.Steps;
                     session.Outcome = result.Outcome;
@@ -507,8 +551,11 @@ namespace OpenLoop.Service.Worker
                     Assistant = t.Assistant,
                     Reasoning = t.Reasoning,
                     ToolLines = t.ToolLines,
+                    Timeline = t.TimelineRun?.Render() ?? t.Timeline,
                     Steps = t.Steps,
                     Ms = t.Ms,
+                    Model = session.Model,
+                    Effort = session.Effort,
                     Messages = t.Transcript?
                         .Select(m => new ChatMessageEntry { Role = m.Role, Content = m.Content })
                         .ToList()
@@ -602,6 +649,7 @@ namespace OpenLoop.Service.Worker
                 Assistant = t.Assistant,
                 Reasoning = t.Reasoning,
                 ToolLines = t.ToolLines,
+                Timeline = t.TimelineRun?.Render() ?? t.Timeline,
                 Steps = t.Steps,
                 Ms = t.Ms,
                 Streaming = t.Streaming,
@@ -644,6 +692,15 @@ namespace OpenLoop.Service.Worker
             public string Outcome { get; set; }
             public decimal? Cost { get; set; }
             public int? ContextTokens { get; set; }
+
+            /// <summary>这份会话最后一次落盘的时间（从文件 mtime 取）；null = 新会话。</summary>
+            public DateTime? LastSavedAt { get; set; }
+
+            /// <summary>历史是用别的模型写的（前缀缓存对不上）。</summary>
+            public bool ModelChanged { get; set; }
+
+            /// <summary>冷启动整理只做一次，之后本会话只追加、不再改写前缀。</summary>
+            public bool HistoryPruned { get; set; }
             public int ActivationVersion { get; set; }
             public int FeatureCount { get; set; }
             public int RuleCount { get; set; }

@@ -22,7 +22,8 @@ namespace OpenLoop.Service.Models
 
             if (OpenCodeHub.Resolve(model) is { } reference)
                 return new OpenCodeReasoner(OpenCodeHub.RequireClient(), reference,
-                    string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace, approve);
+                    string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace, approve,
+                    keepTools: OpenCodeHub.IsFree(model));
 
             string pluginWorkspace = string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace;
             if (PluginCatalog.TryProvider(pluginWorkspace, model, out var provider))

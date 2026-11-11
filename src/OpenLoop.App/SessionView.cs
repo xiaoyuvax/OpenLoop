@@ -15,6 +15,7 @@ using OpenLoop.Service.Config;
 using OpenLoop.Service.Loop;
 using OpenLoop.Service.Pending;
 using OpenLoop.Service.Plugins;
+using OpenLoop.Service.Storage;
 using OpenLoop.Service.Worker;
 using OpenLoop.Service.Web;
 
@@ -33,12 +34,16 @@ namespace OpenLoop.App
         private string _mode = "task";
         private string _model = "";
         private string _effort = "";
+        private int? _ctxTokens;
         private bool _onlyFree = true;
         private bool _fillingProviders;
+        private bool _initializing;
         private bool _layoutReady;
-        private readonly Dictionary<ChatTurn, TurnUndo> _turnUndo = [];
-        private sealed record TurnUndo(FileUndoLog Log, string Checkpoint);
+        private readonly Dictionary<ChatTurn, string> _turnCheckpoints = [];
         private string _tracePath = "";
+
+        /// <summary>「文件」页在侧栏标签里的下标；第一次点文件路径时才加出来（-1 = 还没有）。</summary>
+        private int _filePage = -1;
 
         /// <summary>访问 A 的 /api/sessions；界面不再自己跑 Agent。</summary>
         private WorkerApiClient _client;
@@ -57,19 +62,26 @@ namespace OpenLoop.App
         public SessionView()
         {
             InitializeComponent();
+            _txtInput.VerifyKeyboard += OnComposerKeyboard;
         }
 
         internal void Initialize(Session session, Func<AppSettings> settings)
         {
             Session = session;
             _settings = settings;
+            //初始化时按会话恢复的模型/力度不能被当成「用户改了设置」写回全局
+            _initializing = true;
 
             var current = settings();
-            _model = string.IsNullOrWhiteSpace(current.Model) ? "openrouter/free" : current.Model;
-            _effort = current.ReasoningEffort ?? "";
+            //重开会话按它上次用的模型/力度恢复；全局上次用的只给新会话当默认
+            var (savedModel, savedEffort) = ChatHistory.LastModel(session.Workspace, session.Id);
+            _model = !string.IsNullOrWhiteSpace(savedModel) ? savedModel
+                : string.IsNullOrWhiteSpace(current.Model) ? "openrouter/free" : current.Model;
+            _effort = savedEffort ?? current.ReasoningEffort ?? "";
             _onlyFree = current.OnlyFreeModels;
 
             _lblTitle.Text = session.Title;
+            _tips.SetToolTip(_btnSummary, "用当前模型重新总结会话标题");
             _lblPath.Text = UiStyle.ShortPath(session.Workspace);
             _tips.SetToolTip(_lblPath, session.Workspace);
             _chat.PlaceholderText = Localization.T("NoMessages");
@@ -78,6 +90,19 @@ namespace OpenLoop.App
             if (saved.Count > 0) session.Book.ReplaceAll(saved, null);
             _chat.UndoRequested += OnChatUndo;
             _chat.CopyRequested += OnChatCopy;
+            _chat.LinkClicked += OnChatLinkClicked;
+            // 与 Loop 页一致：ChatFlow 右键「操作」与右上角工具栏共用这三个动作
+            _chat.SelectionActions =
+            [
+                new ChatSelectionAction("copy", "复制"),
+                new ChatSelectionAction("loop", "转给 Loop"),
+                new ChatSelectionAction("delete", "删除")
+            ];
+            _chat.SelectionActionRequested += (_, e) => RunSelectionAction(e.Key);
+            _chat.SelectionModeChanged += (_, _) =>
+            {
+                if (_chkSelect.Checked != _chat.ShowSelection) _chkSelect.Checked = _chat.ShowSelection;
+            };
             _chat.Bind(session.Book);
             SelectEffort(_effort);
             _freeSwitch.Checked = _onlyFree;
@@ -109,6 +134,7 @@ namespace OpenLoop.App
             _sideBtw.Initialize(session.Workspace, settings);
             FitLoopLabels();
             UpdateEvolveButtonEnabled();
+            _initializing = false;
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -118,6 +144,7 @@ namespace OpenLoop.App
         internal event Action<string> OpenLoopRequested;
         internal event Action<Session, string> ComplaintRequested;
         internal event Action<Session, string> ForkRequested;
+        internal event Action<Session, string> NewSessionRequested;
         internal event Action<Session> TitleChanged;
         internal event Action<string, IReadOnlyList<ChatTurn>> SideWorkEvicted;
 
@@ -135,6 +162,9 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Model => _model;
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string Effort => _effort;
 
         /// <summary>A 面自检：运行中标志 / 最后一轮正文长度 / 步数。</summary>
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -239,7 +269,28 @@ namespace OpenLoop.App
             _loopFlow.Visible = index == 0;
             _detailFlow.Visible = index == 1;
             _sideBtw.Visible = index == 2;
+            _fileView.Visible = index >= 0 && index == _filePage;
             if (index == 1) ApplyDetail();
+        }
+
+        /// <summary>聊天区里点了本地文件路径：在右侧「文件」页打开（第一次点才把该页加出来）。</summary>
+        private void OnChatLinkClicked(object sender, ChatLinkClickedEventArgs e)
+        {
+            if (e?.Kind != ChatTextStyler.ChatLinkKind.File) return;
+            if (ChatPathActions.HandleClick(this, e.Target, Session?.Workspace ?? "")) return;
+
+            if (!_fileView.TryShowFile(e.Target, Session?.Workspace ?? "", out string error))
+            {
+                Notify("无法预览", error, error: true);
+                return;
+            }
+            if (_filePage < 0)
+            {
+                _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "文件" });
+                _filePage = _sideTabs.Items.Count - 1;
+            }
+            if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
+            ShowSidePage(_filePage);
         }
 
         public void SetModel(string model)
@@ -284,7 +335,7 @@ namespace OpenLoop.App
         {
             _cts?.Cancel();
             _sideBtw.Shutdown();
-            ChatStore.Save(Session.Workspace, Session.Book.Turns, Session.Id);
+            ChatStore.Save(Session.Workspace, Session.Book.Turns, Session.Id, _model, _effort);
         }
 
         /// <summary>停止：取消轮询并让 A 停掉当前轮（否则它会把这一轮跑完）。</summary>
@@ -312,9 +363,8 @@ namespace OpenLoop.App
         private void ApplyLayout()
         {
             if (IsDisposed || Width < Dip(800) || Height < Dip(300)) return;
+            if (_upperSplit.Panel2Collapsed) return;
 
-            ApplySplit(_mainSplit, vertical: false,
-                panel1Min: Dip(220), panel2Min: Dip(130), targetPanel2: Dip(196));
             ApplySplit(_upperSplit, vertical: true,
                 panel1Min: Dip(400), panel2Min: Dip(280), targetPanel2: Dip(320));
             _layoutReady = true;
@@ -387,19 +437,26 @@ namespace OpenLoop.App
 
         private void OnInputKeyDown(object sender, KeyEventArgs e)
         {
-            if (_cmdPopup.IsOpen)
-            {
-                if (e.KeyCode == Keys.Down) { _cmdPopup.MoveSelection(1); e.SuppressKeyPress = true; return; }
-                if (e.KeyCode == Keys.Up) { _cmdPopup.MoveSelection(-1); e.SuppressKeyPress = true; return; }
-                if (e.KeyCode == Keys.Escape) { _cmdPopup.Close(); e.SuppressKeyPress = true; return; }
-                if (e.KeyCode == Keys.Enter && !e.Control || e.KeyCode == Keys.Tab) { _cmdPopup.Accept(); e.SuppressKeyPress = true; return; }
-            }
+            if (!_cmdPopup.IsOpen) return;
+            if (e.KeyCode == Keys.Down) { _cmdPopup.MoveSelection(1); e.SuppressKeyPress = true; return; }
+            if (e.KeyCode == Keys.Up) { _cmdPopup.MoveSelection(-1); e.SuppressKeyPress = true; return; }
+            if (e.KeyCode == Keys.Escape) { _cmdPopup.Close(); e.SuppressKeyPress = true; return; }
+            if (e.KeyCode == Keys.Tab) { _cmdPopup.Accept(); e.SuppressKeyPress = true; }
+        }
 
-            if (e.Control && e.KeyCode == Keys.Enter)
-            {
-                e.SuppressKeyPress = true;
-                Submit();
-            }
+        /// <summary>
+        /// Enter 在 AntdUI 的 WM_KEYDOWN 里先被消化成换行（早于 KeyDown 事件），
+        /// 所以只能在这里拦：Enter 发送（运行中=步后插入），Ctrl+Enter 等本轮排队，Shift+Enter 换行。
+        /// </summary>
+        private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
+        {
+            bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
+            if (e.KeyData != Keys.Enter && !ctrl) return;
+
+            e.Result = false;
+            if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
+            if (!ctrl && _cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
+            Submit(immediate: !ctrl);
         }
 
         private void OnInputTextChanged(object sender, EventArgs e)
@@ -412,7 +469,8 @@ namespace OpenLoop.App
         {
             ("/btw", "在右侧栏用当前上下文跑一个只读旁路任务"),
             ("/complain", "把对 Worker 表现的不满发给 Loop 立即处理"),
-            ("/fork", "复制当前上下文开一个新会话（可继续对话）并跳转")
+            ("/fork", "复制当前上下文开一个新会话（可继续对话）并跳转"),
+            ("/new", "开一个新会话，沿用当前的模型与强度")
         };
 
         private readonly List<(string Command, string Description)> _cmdMatches = [];
@@ -477,7 +535,7 @@ namespace OpenLoop.App
             _sideBtw.Reset();
         }
 
-        /// <summary>用当前模型给会话起标题：首轮结束后自动生成一次，也可点「总结」重算覆盖。</summary>
+        /// <summary>用当前模型给会话起标题：首轮结束后自动生成一次，也可点标题左侧的重算图标覆盖。</summary>
         private async Task SummarizeTitleAsync(bool force)
         {
             if (!force && !string.IsNullOrWhiteSpace(Session.CustomTitle)) return;
@@ -499,9 +557,12 @@ namespace OpenLoop.App
                 var completion = await reasoner.CompleteAsync(messages, CancellationToken.None);
                 string title = CleanTitle(completion?.Content);
                 if (title.Length == 0) return;
+                bool same = string.Equals(Session.CustomTitle, title, StringComparison.Ordinal);
                 Session.CustomTitle = title;
                 _lblTitle.Text = title;
                 TitleChanged?.Invoke(Session);
+                // 标题变化很小（同长度、同位置），不提示的话用户会以为没生效
+                if (force) Notify(same ? "标题未变化" : "标题已更新", title);
             }
             catch (Exception ex)
             {
@@ -511,7 +572,7 @@ namespace OpenLoop.App
         }
 
         /// <summary>给标题模型的输入：最近几轮问答，助手正文截断，够判断主题即可。</summary>
-        private static string TitleInput(IReadOnlyList<ChatTurn> turns)
+        internal static string TitleInput(IReadOnlyList<ChatTurn> turns)
         {
             var sb = new StringBuilder();
             foreach (var turn in turns.Skip(Math.Max(0, turns.Count - 4)))
@@ -522,7 +583,7 @@ namespace OpenLoop.App
             return sb.ToString();
         }
 
-        private static string CleanTitle(string raw)
+        internal static string CleanTitle(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
             string line = raw.Replace("\r", "\n").Split('\n').Select(l => l.Trim())
@@ -546,7 +607,7 @@ namespace OpenLoop.App
             _btnSend.Ghost = stop;
         }
 
-        private void Submit()
+        private void Submit(bool immediate = false)
         {
             string text = _txtInput.Text.Trim();
 
@@ -579,9 +640,10 @@ namespace OpenLoop.App
                     StopRun();
                     return;
                 }
-                Enqueue(text, _mode);
+                Enqueue(text, _mode, immediate ? PendingMode.NextStep : PendingMode.AfterTurn);
                 _txtInput.Clear();
                 SetMode("task");
+                if (immediate) RequestInterrupt();
                 return;
             }
 
@@ -632,6 +694,12 @@ namespace OpenLoop.App
                 return true;
             }
 
+            if (IsCommand(text, "/new"))
+            {
+                NewSessionRequested?.Invoke(Session, text[4..].Trim());
+                return true;
+            }
+
             return false;
         }
 
@@ -657,9 +725,9 @@ namespace OpenLoop.App
         private static string Trim(string text, int max)
             => string.IsNullOrEmpty(text) || text.Length <= max ? text ?? "" : text[..max] + "…";
 
-        private void Enqueue(string text, string mode)
+        private void Enqueue(string text, string mode, PendingMode pending = PendingMode.AfterTurn)
         {
-            _queue.Add(text, mode);
+            _queue.Add(text, mode, pending);
             _queue.Paused = false;
             _pending.Sync();
         }
@@ -739,17 +807,17 @@ namespace OpenLoop.App
 
         private void OnModelChanged(object sender, AntdUI.ObjectNEventArgs e)
         {
-            if (_fillingModels) return;
+            if (_fillingModels || _initializing) return;
             if (_selModel.SelectedValue is not string id || string.IsNullOrWhiteSpace(id)) return;
             _model = id;
-            ApplyDetail();
+            UpdateContext(_ctxTokens);   // 换了模型上下文上限也变了，标签要跟着刷新
             Persist(s => s.Model = id);
             UpdateEvolveButtonEnabled();
         }
 
         private void OnEffortChanged(object sender, AntdUI.ObjectNEventArgs e)
         {
-            if (_fillingModels) return;
+            if (_fillingModels || _initializing) return;
             _effort = _selEffort.SelectedValue as string ?? "";
             ApplyDetail();
             Persist(s => s.ReasoningEffort = _effort);
@@ -902,7 +970,8 @@ namespace OpenLoop.App
 
         private void UpdateContext(int? tokens)
         {
-            int limit = ModelChoices.ContextLimit(_model);
+            _ctxTokens = tokens;
+            int limit = ModelChoices.ContextLimit(_model, _settings());
             float ratio = tokens.HasValue
                 ? Math.Clamp(tokens.Value / (float)limit, 0F, 1F)
                 : 0F;
@@ -910,6 +979,43 @@ namespace OpenLoop.App
             _ctx.Text = tokens.HasValue ? $"{ratio * 100F:0}%" : "—";
             _lblDCtx.Text = Localization.T("Context") + $": {(tokens.HasValue ? tokens.Value.ToString("N0") : "—")} / {limit:N0}";
             ApplyDetail();
+        }
+
+        /// <summary>点详情栏的上下文数值：下拉选常用窗口，写进设置里的逐模型覆盖（下次运行生效）。</summary>
+        private void OnEditContext(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_model)) return;
+            int current = _settings().PropsFor(_model)?.ContextLimit ?? 0;
+            var items = new List<AntdUI.IContextMenuStripItem>
+            {
+                new AntdUI.ContextMenuStripItem("自动（目录 / 内置表）") { ID = "0", Checked = current == 0 }
+            };
+            foreach (var (label, value) in ContextChoices)
+                items.Add(new AntdUI.ContextMenuStripItem(label) { ID = value.ToString(), Checked = current == value });
+            AntdUI.ContextMenuStrip.open(_lblDCtx, selected => ApplyContextLimit(selected?.ID), items.ToArray());
+        }
+
+        private static readonly (string Label, int Value)[] ContextChoices =
+        [
+            ("32K", 32768),
+            ("64K", 65536),
+            ("128K", 131072),
+            ("200K", 200000),
+            ("256K", 262144),
+            ("512K", 524288),
+            ("1M", 1000000)
+        ];
+
+        private void ApplyContextLimit(string id)
+        {
+            if (!int.TryParse(id, out int value) || string.IsNullOrWhiteSpace(_model)) return;
+            Persist(s =>
+            {
+                var props = s.PropsFor(_model);
+                if (props == null) s.ModelProps[_model] = props = new ModelProps();
+                props.ContextLimit = Math.Max(0, value);
+            });
+            UpdateContext(_ctxTokens);
         }
 
         /// <summary>执行失败的轮次用这个前缀记在正文里；这类正文不是模型回复，不能再当上下文回灌。</summary>
@@ -989,7 +1095,7 @@ namespace OpenLoop.App
                 if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
                 ApplySnapshot(snapshot);
                 //发出即落盘：进程被杀时最多丢流式中的半条回复，而不是整轮对话
-                ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
+                ChatStore.Save(workspace, Session.Book.Turns, Session.Id, _model, _effort);
 
                 while (snapshot.State == WorkerSessionHost.Running)
                 {
@@ -1073,7 +1179,7 @@ namespace OpenLoop.App
             RefreshChat();
             _chat.ScrollToEnd();
             RefreshLedgerInfo();
-            ChatStore.Save(workspace, Session.Book.Turns, Session.Id);
+            ChatStore.Save(workspace, Session.Book.Turns, Session.Id, _model, _effort);
             // 首轮成功结束后由所选模型生成短标题（已有人工/历史标题就不再覆盖）
             if (outcome == "ok" && Session.Book.Turns.Count == 1)
                 _ = SummarizeTitleAsync(force: false);
@@ -1097,7 +1203,7 @@ namespace OpenLoop.App
                     ThinkingExpanded = _settings().ThinkingExpandedByDefault
                 };
                 Session.Book.AddTurn(added);
-                _turnUndo[added] = new TurnUndo(null, remote.Checkpoint);
+                if (!string.IsNullOrEmpty(remote.Checkpoint)) _turnCheckpoints[added] = remote.Checkpoint;
                 structure = true;
             }
 
@@ -1108,11 +1214,12 @@ namespace OpenLoop.App
                 turn.ReasoningText = remote.Reasoning ?? "";
                 turn.ToolCallLines = remote.ToolLines ?? "";
                 turn.ToolTraceText = remote.ToolLines ?? "";
+                turn.TimelineText = remote.Timeline ?? "";
                 turn.ToolStepCount = remote.Steps;
                 turn.ToolTotalMs = remote.Ms;
                 turn.Streaming = remote.Streaming;
                 if (!string.IsNullOrEmpty(remote.Checkpoint))
-                    _turnUndo[turn] = new TurnUndo(null, remote.Checkpoint);
+                    _turnCheckpoints[turn] = remote.Checkpoint;
                 turn.AssistantText = LlmTextSanitizer.StripSafetyLines(remote.Assistant ?? "");
                 if (remote.Transcript is { Count: > 0 })
                     ChatStore.AttachTranscript(turn, remote.Transcript);
@@ -1445,7 +1552,7 @@ namespace OpenLoop.App
                 _ => Reasoners.Create(settings, model, _effort, workspace),
                 features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath,
                 globalSkillsPath: AppSettings.GlobalSkillsPath,
-                contextLimit: ModelChoices.ContextLimit(model));
+                contextLimit: ModelChoices.ContextLimit(model, settings));
             var outcome = await runner.RunAsync(task, activation, ct);
             return outcome.Passed
                 ? Localization.T("BaselinePassed")
@@ -1704,6 +1811,89 @@ namespace OpenLoop.App
             try { Clipboard.SetText(text); } catch { }
         }
 
+        /// <summary>壳注入：把选中的对话作为初始上下文开一个 Loop 会话（与 Loop 页「转给 worker」对称）。</summary>
+        public Func<IReadOnlyList<ChatTurn>, bool> TransferToLoop { get; set; }
+
+        private void OnSelectModeChanged(object sender, AntdUI.BoolEventArgs e)
+        {
+            _chat.ShowSelection = e.Value;
+            if (!e.Value) _chat.SelectTurns(_ => false);
+        }
+
+        private void OnSelectAction(object sender, AntdUI.ObjectNEventArgs e)
+        {
+            string key = _selMenu.SelectedValue as string;
+            _selMenu.SelectedValue = null;
+            RunSelectionAction(key);
+        }
+
+        /// <summary>工具栏下拉与右键「操作」子菜单的公共入口。</summary>
+        private void RunSelectionAction(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return;
+
+            var picked = Session.Book.Turns.Where(t => t.Selected).ToList();
+            if (picked.Count == 0)
+            {
+                Notify("未选择对话", "先打开「选择」并勾选要处理的对话。", error: true);
+                return;
+            }
+
+            switch (key)
+            {
+                case "copy": CopyTurns(picked); break;
+                case "loop": TransferTurnsToLoop(picked); break;
+                case "delete": DeleteTurns(picked); break;
+            }
+        }
+
+        private void CopyTurns(IReadOnlyList<ChatTurn> turns)
+        {
+            string text = string.Join("\n\n", turns.Select(t =>
+            {
+                string user = t.UserText?.Trim() ?? "";
+                string ai = t.AssistantText?.Trim() ?? "";
+                return (user.Length == 0 ? "" : "用户：\n" + user)
+                       + (ai.Length == 0 ? "" : (user.Length == 0 ? "" : "\n\n") + "AI：\n" + ai);
+            }).Where(block => block.Length > 0));
+            if (text.Length == 0) return;
+            try { Clipboard.SetText(text); } catch { }
+            Notify("已复制", $"复制了 {turns.Count} 组对话。");
+        }
+
+        private void TransferTurnsToLoop(IReadOnlyList<ChatTurn> turns)
+        {
+            if (TransferToLoop == null || !TransferToLoop(turns))
+            {
+                Notify("无法转交", "宿主没有提供 Loop 入口。", error: true);
+                return;
+            }
+            _chat.SelectTurns(_ => false);
+        }
+
+        /// <summary>真删历史条目（不是撤回）：删完这一轮之后的 KV cache 前缀会断开，后续要重算。</summary>
+        private void DeleteTurns(IReadOnlyList<ChatTurn> turns)
+        {
+            if (_running)
+            {
+                Notify("正在运行", "请先停止当前任务，再删除对话。", error: true);
+                return;
+            }
+            if (MessageBox.Show(this,
+                    $"删除选中的 {turns.Count} 组对话？\n"
+                    + "会从对话记录里删掉，不能恢复；之后的 KV cache 前缀也会从这里断开。",
+                    "删除对话", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+
+            var remove = new HashSet<ChatTurn>(turns);
+            Session.Book.RemoveTurns(remove);
+            foreach (var turn in remove) _turnCheckpoints.Remove(turn);
+            _chat.SelectTurns(_ => false);
+            ChatStore.Save(Session.Workspace, Session.Book.Turns, Session.Id);
+            RefreshChat();
+            _chat.EnsureLastTurnVisible(true);
+        }
+
         private void OnChatUndo(object sender, ChatFlowActionEventArgs e)
         {
             var selected = e.Turn;
@@ -1726,25 +1916,16 @@ namespace OpenLoop.App
                     "撤回对话", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
-            int restored = 0;
             var errors = new List<string>();
-            for (int i = turns.Count - 1; i >= index; i--)
-            {
-                if (!_turnUndo.TryGetValue(turns[i], out var undo) || undo.Log == null) continue;
-                var (n, errs) = undo.Log.UndoAll();
-                restored += n;
-                errors.AddRange(errs);
-            }
-
-            if (_turnUndo.TryGetValue(selected, out var selectedUndo)
-                && !string.IsNullOrEmpty(selectedUndo.Checkpoint)
-                && !Snapshots.Restore(Session.Workspace, selectedUndo.Checkpoint))
-                errors.Add("git 快照恢复失败");
+            bool hasSnapshot = _turnCheckpoints.TryGetValue(selected, out string checkpoint)
+                && !string.IsNullOrEmpty(checkpoint);
+            bool restoreFailed = hasSnapshot && !Snapshots.Restore(Session.Workspace, checkpoint);
+            if (restoreFailed) errors.Add("git 快照恢复失败");
 
             var remove = new HashSet<ChatTurn>(turns.Skip(index));
             Session.Book.RemoveTurns(remove);
-            foreach (var turn in remove) _turnUndo.Remove(turn);
-            ChatStore.Save(Session.Workspace, Session.Book.Turns, Session.Id);
+            foreach (var turn in remove) _turnCheckpoints.Remove(turn);
+            ChatStore.Save(Session.Workspace, Session.Book.Turns, Session.Id, _model, _effort);
             _chat.EnsureLastTurnVisible(true);
 
             string undone = selected.UserText?.Trim() ?? "";
@@ -1756,7 +1937,8 @@ namespace OpenLoop.App
                 _txtInput.Focus();
             }
 
-            string message = $"已撤回 {remove.Count} 组对话，恢复 {restored} 次文件写入。";
+            string message = $"已撤回 {remove.Count} 组对话"
+                + (restoreFailed ? "" : hasSnapshot ? "，工作区已还原（.gitignore 除外）" : "（该轮没有可用快照，未还原文件）");
             if (errors.Count > 0)
                 message += "\n未完全恢复：" + string.Join("；", errors.Take(3));
             Notify("撤回完成", message, errors.Count > 0);

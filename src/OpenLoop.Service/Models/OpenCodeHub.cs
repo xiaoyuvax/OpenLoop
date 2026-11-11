@@ -27,6 +27,11 @@ namespace OpenLoop.Service.Models
         public static bool IsModel(string model)
             => !string.IsNullOrWhiteSpace(model) && _byId.ContainsKey(model.Trim());
 
+        /// <summary>免费模型走 OpenCode Zen 的门禁更严，调用方据此保留原生工具表。</summary>
+        public static bool IsFree(string model)
+            => !string.IsNullOrWhiteSpace(model)
+               && _models.Any(m => m.IsFree && string.Equals(m.Id, model.Trim(), StringComparison.OrdinalIgnoreCase));
+
         public static OpenCodeModelRef? Resolve(string model)
             => !string.IsNullOrWhiteSpace(model) && _byId.TryGetValue(model.Trim(), out var reference)
                 ? reference

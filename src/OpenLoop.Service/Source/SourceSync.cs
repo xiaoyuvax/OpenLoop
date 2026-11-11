@@ -113,7 +113,8 @@ namespace OpenLoop.Service.Source
             => CheckRepoAsync(OpenLoopUrl, SourceRoot, OpenLoopVersionFile, ct);
 
         /// <summary>
-        /// PuppetCore 没有 csproj 版本号：只同步 + 报提交号（Loop 用它演进 Puppet 工具，不做版本比较）。
+        /// PuppetCore 已切源码引用：这里负责同步仓库并报提交号；版本号由节点模型统一维护
+        /// （`Puppet.Common.targets` 的 &lt;Version&gt;）。
         /// </summary>
         public static Task<SourceCheck> CheckPuppetCoreAsync(CancellationToken ct = default)
             => CheckComponentAsync(PuppetCoreUrl, "PuppetCore",
@@ -305,9 +306,17 @@ namespace OpenLoop.Service.Source
                 !Version.TryParse(Clean(runningVersion), out var running))
                 return SourceState.Unknown;
 
-            int compare = source.CompareTo(running);
+            int compare = Pad(source).CompareTo(Pad(running));
             return compare > 0 ? SourceState.Newer : compare < 0 ? SourceState.Older : SourceState.UpToDate;
         }
+
+        /// <summary>同一版本的不同写法（0.1.2 与 0.1.2.0）算相等。</summary>
+        public static bool SameVersion(string left, string right)
+            => Version.TryParse(Clean(left), out var a) && Version.TryParse(Clean(right), out var b) && Pad(a) == Pad(b);
+
+        /// <summary>System.Version 把缺的段当 -1，0.1.2 与 0.1.2.0 会比出不相等；补齐成 0 再比。</summary>
+        private static Version Pad(Version version)
+            => new(version.Major, version.Minor, Math.Max(version.Build, 0), Math.Max(version.Revision, 0));
 
         /// <summary>从 csproj/AssemblyInformationalVersion 文本里取版本号（去掉 +sha / -preview）。</summary>
         public static string ParseVersion(string text)

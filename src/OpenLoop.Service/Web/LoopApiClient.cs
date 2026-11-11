@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Loop;
 using OpenLoop.Service.Runtime;
+using OpenLoop.Service.Source;
 
 namespace OpenLoop.Service.Web
 {
@@ -12,11 +13,13 @@ namespace OpenLoop.Service.Web
     public sealed class LoopApiClient : IDisposable
     {
         private readonly string _key;
+        private readonly TimeSpan _timeout;
         private HttpClient _http;
 
-        public LoopApiClient(string endpoint = null, string key = null)
+        public LoopApiClient(string endpoint = null, string key = null, TimeSpan? timeout = null)
         {
             _key = key ?? KeyFile.ReadOrCreate(AppPaths.BusKeyPath);
+            _timeout = timeout ?? TimeSpan.FromSeconds(30);
             Endpoint = string.IsNullOrWhiteSpace(endpoint) ? Discover() : endpoint;
             _http = NewClient(Endpoint);
         }
@@ -60,6 +63,75 @@ namespace OpenLoop.Service.Web
         /// <summary>把 A 投在 spool 里的运行记录并进账本。</summary>
         public async Task<int> DrainSpoolAsync(string workspace, CancellationToken ct = default)
             => (await PostAsync<DrainResult>("/api/loop/spool/drain", new { workspace }, ct).ConfigureAwait(false))?.Drained ?? 0;
+
+        /// <summary>托管仓库的改动预览：每个仓库一份文件清单与 token，提交时原样带回。</summary>
+        public async Task<GitStatusResult> GitStatusAsync(CancellationToken ct = default)
+            => await SendAsync<GitStatusResult>(HttpMethod.Get, "/api/loop/git/status", null, ct).ConfigureAwait(false);
+
+        public async Task<GitCommitResult> GitCommitAsync(
+            IEnumerable<string> repos, string message, bool push,
+            IReadOnlyDictionary<string, string> tokens, bool force = false, CancellationToken ct = default)
+            => await PostAsync<GitCommitResult>("/api/loop/git/commit", new
+            {
+                repos = repos?.ToList() ?? [],
+                message,
+                push,
+                tokens,
+                force
+            }, ct).ConfigureAwait(false);
+
+        /// <summary>迭代由 I 主控：先要计划（会写版本号），确认后再启动。</summary>
+        public async Task<IterationPlanResult> IterationPlanAsync(string workspace, CancellationToken ct = default)
+            => await SendAsync<IterationPlanResult>(HttpMethod.Get,
+                "/api/loop/iteration/plan?workspace=" + Uri.EscapeDataString(workspace ?? ""), null, ct).ConfigureAwait(false);
+
+        public async Task<IterationState> StartIterationAsync(string workspace, bool shell = true, CancellationToken ct = default)
+            => await PostAsync<IterationState>("/api/loop/iteration", new { workspace, shell }, ct).ConfigureAwait(false);
+
+        public async Task<IterationState> IterationStateAsync(string workspace, CancellationToken ct = default)
+            => await SendAsync<IterationState>(HttpMethod.Get,
+                "/api/loop/iteration?workspace=" + Uri.EscapeDataString(workspace ?? ""), null, ct).ConfigureAwait(false);
+
+        public async Task<bool> StopIterationAsync(CancellationToken ct = default)
+            => (await PostAsync<StopResult>("/api/loop/iteration/stop", new { }, ct).ConfigureAwait(false))?.Stopped == true;
+
+        /// <summary>
+        /// 等到迭代结束，把新出现的步骤逐条回调。换 I 时请求会连不上，重连后接着轮询；
+        /// 壳只负责显示与最后的自重启。
+        /// </summary>
+        public async Task<IterationState> WaitIterationAsync(
+            string workspace, Action<string> onStep, TimeSpan? timeout = null, CancellationToken ct = default)
+        {
+            var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromMinutes(15));
+            var state = new IterationState { Workspace = workspace };
+            int shown = 0;
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    state = await IterationStateAsync(workspace, ct).ConfigureAwait(false) ?? state;
+                }
+                catch (HttpRequestException)
+                {
+                    await Task.Delay(1000, ct).ConfigureAwait(false);   // I 正在被换掉
+                    continue;
+                }
+                catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    await Task.Delay(1000, ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                foreach (string step in state.Steps.Skip(shown)) onStep?.Invoke(step);
+                shown = state.Steps.Count;
+                if (state.State is "done" or "error") return state;
+                await Task.Delay(700, ct).ConfigureAwait(false);
+            }
+
+            return state.State is "done" or "error"
+                ? state
+                : new IterationState { Workspace = workspace, State = "error", Error = "等迭代结果超时" };
+        }
 
         /// <summary>给界面里那些同步调用的地方用（设置页、loop 面板）。</summary>
         public ActivationPayload GetActivation(string workspace)
@@ -114,7 +186,7 @@ namespace OpenLoop.Service.Web
             var http = new HttpClient
             {
                 BaseAddress = new Uri("http://" + endpoint),
-                Timeout = TimeSpan.FromSeconds(30)
+                Timeout = _timeout
             };
             if (!string.IsNullOrEmpty(_key))
                 http.DefaultRequestHeaders.TryAddWithoutValidation(BusProtocol.KeyHeader, _key);

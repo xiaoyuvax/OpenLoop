@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <Import Project="..\..\ShellVersion.props" />
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -9,7 +11,6 @@
     <LangVersion>13</LangVersion>
     <RootNamespace>OpenLoop.App</RootNamespace>
     <AssemblyName>OpenLoop</AssemblyName>
-    <Version>0.1.0</Version>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <ApplicationIcon>..\..\OpenLoop.ico</ApplicationIcon>
     <NoWarn>WFO1000</NoWarn>
@@ -25,8 +26,8 @@
     <!-- 只为构建顺序：A/I 的可执行文件由下面的 CopyWorker 拷到 worker/，界面按同目录启动它们。 -->
     <ProjectReference Include="..\OpenLoop.A\OpenLoop.A.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\OpenLoop.I\OpenLoop.I.csproj" ReferenceOutputAssembly="false" />
-    <PackageReference Include="Puppet.Core" Version="1.7.0" />
-    <PackageReference Include="Puppet.Core.WinForms" Version="1.7.0" />
+    <ProjectReference Include="..\..\..\PuppetCore\Puppet.Core\Puppet.Core.csproj" />
+    <ProjectReference Include="..\..\..\PuppetCore\Puppet.Core.WinForms\Puppet.Core.WinForms.csproj" />
   </ItemGroup>
 
   <Target Name="CopyWorker" AfterTargets="Build">
@@ -46,16 +47,15 @@
     <Using Include="OpenLoop.Service.Logging" />
   </ItemGroup>
 
-  <!-- ChatFlow 源码与本仓库并列（../ChatFlow）时直接引用源码；单独克隆 OpenLoop 时回退到 NuGet 包。 -->
-  <ItemGroup Condition="Exists('..\..\..\ChatFlow\ChatFlow\ChatFlow.csproj')">
+  <!-- ChatFlow 是同级组件仓库（开发态 ../../ChatFlow，安装态 source/ChatFlow），只走源码引用。 -->
+  <ItemGroup>
     <ProjectReference Include="..\..\..\ChatFlow\ChatFlow\ChatFlow.csproj" />
-  </ItemGroup>
-  <ItemGroup Condition="!Exists('..\..\..\ChatFlow\ChatFlow\ChatFlow.csproj')">
-    <PackageReference Include="ChatFlow" Version="0.1.7" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AntdUI" Version="2.4.15" />
+    <PackageReference Include="AntdUI" />
+    <!-- md 文件预览与 ChatFlow 用同一个渲染控件 -->
+    <PackageReference Include="CDS.Markdown.Lite" />
   </ItemGroup>
 
 </Project>

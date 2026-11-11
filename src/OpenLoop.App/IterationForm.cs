@@ -1,5 +1,5 @@
-using OpenLoop.Service.Shell;
 using OpenLoop.Service.Source;
+using OpenLoop.Service.Web;
 using Puppet.Core;
 
 namespace OpenLoop.App
@@ -16,21 +16,21 @@ namespace OpenLoop.App
 
         private readonly string _workspace;
         private readonly List<RolePlan> _plan;
-        private readonly Dictionary<string, VersionEntry> _before;
         private CancellationTokenSource _cts;
         private bool _running;
+        private bool _gitBusy;
         private readonly bool _reportMode;
 
-        public IterationForm(string workspace, List<RolePlan> plan, string summary,
-            Dictionary<string, VersionEntry> before)
+        public IterationForm(string workspace, List<RolePlan> plan, string summary)
         {
             InitializeComponent();
             _workspace = workspace ?? "";
             _plan = plan ?? [];
-            _before = before ?? new Dictionary<string, VersionEntry>(StringComparer.OrdinalIgnoreCase);
 
             Text = "迭代确认";
             _txtSummary.Text = summary ?? "";
+            // 行高用 Dip() 缩放，容器高度也用同一把尺子：否则高分屏上最后几个部件会被裁掉
+            _root.RowStyles[0] = new RowStyle(SizeType.Absolute, Dip(222));
             RenderPlan();
             _lblStatus.Text = _plan.Any(p => p.Update)
                 ? "确认后开始：A 与 I 不会同时换，壳最后重启。"
@@ -43,11 +43,11 @@ namespace OpenLoop.App
             InitializeComponent();
             _workspace = report?.Workspace ?? "";
             _plan = [];
-            _before = [];
             _reportMode = true;
 
             Text = report is { Ok: true } ? "迭代完成" : "迭代失败";
-            _planHost.Visible = false;
+            _planScroll.Visible = false;
+            _root.RowStyles[0] = new RowStyle(SizeType.Absolute, 0F);
             _lblSummary.Visible = false;
             _txtSummary.Visible = false;
             _txtSummary.Text = "";
@@ -139,29 +139,35 @@ namespace OpenLoop.App
             _btnStart.Enabled = false;
             _btnClose.Enabled = false;
             _btnClose.Text = "执行中…";
+            GitButtons(false);
             _lblStatus.Text = "正在执行…";
             _cts = new CancellationTokenSource();
 
             try
             {
+                // 迭代由 I 执行：这里只提交、轮询、显示；换 I 期间请求会短暂断开
+                using var client = new LoopApiClient();
+                await client.StartIterationAsync(_workspace, ct: _cts.Token);
                 Log("开始：" + (_plan.Where(p => p.Update).Select(p => $"{p.Label} {p.Current}→{p.Target}")
                     .DefaultIfEmpty("仅重新编译").Aggregate((a, b) => a + "；" + b)));
 
-                var report = await IterationRunner.RunAsync(_plan, _workspace, Log, _cts.Token);
-                if (!report.Ok)
+                var state = await client.WaitIterationAsync(_workspace, Log, TimeSpan.FromMinutes(15), _cts.Token);
+                var report = state.Report ?? new IterationReport { Workspace = _workspace };
+                report.Ok = state.Ok;
+                report.Version = state.Version;
+                report.ShellDir = state.ShellDir;
+                report.RolledBack = state.RolledBack;
+
+                if (state.State != "done")
                 {
-                    Log("失败，回退到迭代前的版本…");
-                    var rollback = await IterationRunner.RollbackAsync(_before, Log);
-                    report.Steps.AddRange(rollback);
-                    report.RolledBack = rollback.Count > 0 && rollback.All(s => s.Ok);
-                    report.At = DateTimeOffset.Now.ToString("O");
                     Log(IterationRunner.ReportText(report));
+                    if (!string.IsNullOrWhiteSpace(state.Error)) Log(state.Error);
                     _lblStatus.Text = report.RolledBack ? "失败，已回退" : "失败";
                     Finish();
                     return;
                 }
 
-                Log(IterationRunner.ReportText(report));
+                if (report.Steps.Count > 0) Log(IterationRunner.ReportText(report));
                 if (!string.IsNullOrWhiteSpace(report.ShellDir))
                 {
                     _lblStatus.Text = "即将重启壳：界面会退出，重启后自动回到这里";
@@ -200,6 +206,78 @@ namespace OpenLoop.App
             _btnStart.Enabled = true;
             _btnClose.Enabled = true;
             _btnClose.Text = "关闭";
+            GitButtons(true);
+        }
+
+        private void GitButtons(bool enabled)
+        {
+            _btnCommit.Enabled = enabled;
+            _btnPush.Enabled = enabled;
+        }
+
+        private async void OnCommit(object sender, EventArgs e) => await CommitAsync(push: false);
+
+        private async void OnCommitPush(object sender, EventArgs e) => await CommitAsync(push: true);
+
+        /// <summary>
+        /// 迭代结束后提交本次改动：先取预览（每个仓库的文件清单 + token），原样带回再提交。
+        /// force 恒为 true：点按钮本身就是显式确认，服务端那道「上一轮失败先别提交」的闸只拦自动调用。
+        /// </summary>
+        private async Task CommitAsync(bool push)
+        {
+            if (_gitBusy || _running) return;
+            _gitBusy = true;
+            GitButtons(false);
+            _lblStatus.Text = push ? "正在提交并推送…" : "正在提交…";
+
+            try
+            {
+                using var client = new LoopApiClient(timeout: TimeSpan.FromMinutes(5));
+                var status = await client.GitStatusAsync();
+                foreach (var bad in (status?.Repos ?? []).Where(r => !string.IsNullOrWhiteSpace(r.Error)))
+                    Log($"跳过 {bad.Id}：{bad.Error}");
+
+                var repos = (status?.Repos ?? []).Where(r => r.Files.Count > 0).ToList();
+                if (repos.Count == 0)
+                {
+                    Log("工作树是干净的，没有可提交的改动。");
+                    _lblStatus.Text = "没有改动";
+                    return;
+                }
+
+                foreach (var repo in repos)
+                    Log($"预览 {repo.Id}（{repo.Branch}，{repo.Files.Count} 个文件）"
+                        + (string.IsNullOrWhiteSpace(repo.DiffStat) ? "" : " · " + repo.DiffStat));
+
+                var tokens = repos.ToDictionary(r => r.Id, r => r.Token, StringComparer.OrdinalIgnoreCase);
+                var result = await client.GitCommitAsync(
+                    repos.Select(r => r.Id), null, push, tokens, force: true);
+
+                foreach (var repo in result?.Repos ?? [])
+                {
+                    if (!repo.Ok)
+                    {
+                        Log($"FAIL {repo.Id}：{repo.Error}");
+                        continue;
+                    }
+                    string extra = push ? (repo.Pushed ? "（已推送）" : "（推送失败：" + repo.Error + "）") : "";
+                    Log($"OK {repo.Id} {repo.Commit}{extra}");
+                }
+
+                bool allOk = result?.Repos is { Count: > 0 } list && list.All(r => r.Ok);
+                _lblStatus.Text = allOk ? (push ? "已提交并推送" : "已提交") : "提交未全部成功（见进度）";
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("提交失败", ex);
+                Log("提交异常：" + ex.Message);
+                _lblStatus.Text = "提交失败";
+            }
+            finally
+            {
+                _gitBusy = false;
+                GitButtons(true);
+            }
         }
 
         private void OnClose(object sender, EventArgs e)

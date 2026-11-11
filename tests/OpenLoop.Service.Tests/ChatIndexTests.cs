@@ -29,6 +29,41 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Chat_entry_round_trips_model_and_effort()
+        {
+            ChatHistory.Write(@"C:\work", "sess", [new ChatEntry { User = "u", Model = "m1", Effort = "high" }]);
+
+            var entry = Assert.Single(ChatHistory.Read(@"C:\work", "sess"));
+
+            Assert.Equal("m1", entry.Model);
+            Assert.Equal("high", entry.Effort);
+        }
+
+        [Fact]
+        public void Last_model_reads_the_newest_entry_that_has_one()
+        {
+            ChatHistory.Write(@"C:\work", "sess",
+            [
+                new ChatEntry { User = "a", Model = "old-model", Effort = "low" },
+                new ChatEntry { User = "b", Model = "", Effort = "" },
+                new ChatEntry { User = "c", Model = "new-model", Effort = "high" }
+            ]);
+
+            var (model, effort) = ChatHistory.LastModel(@"C:\work", "sess");
+
+            Assert.Equal("new-model", model);
+            Assert.Equal("high", effort);
+        }
+
+        [Fact]
+        public void Last_model_is_null_for_a_session_without_records()
+        {
+            Assert.Equal((null, null), ChatHistory.LastModel(@"C:\work", "nothing"));
+            ChatHistory.Write(@"C:\work", "legacy", [new ChatEntry { User = "a" }]);
+            Assert.Equal((null, null), ChatHistory.LastModel(@"C:\work", "legacy"));
+        }
+
+        [Fact]
         public async Task Concurrent_touches_keep_every_entry()
         {
             var ids = Enumerable.Range(0, 40).Select(i => "s" + i).ToList();

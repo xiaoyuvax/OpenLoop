@@ -34,6 +34,16 @@ namespace OpenLoop.Service.Tests
             string local, string remote, bool localCheckout, string expected)
             => Assert.Equal(expected, SourceSync.PickSourceVersion(local, remote, localCheckout));
 
+        [Theory]
+        [InlineData("0.1.2", "0.1.2.0")]
+        [InlineData("0.1.2.0", "0.1.2")]
+        [InlineData("1.0", "1.0.0")]
+        public void SameVersion_ignores_missing_trailing_parts(string left, string right)
+        {
+            Assert.True(SourceSync.SameVersion(left, right));
+            Assert.Equal(SourceState.UpToDate, SourceSync.Classify(left, right));
+        }
+
         [Fact]
         public void Loop_reads_outside_its_roots_but_does_not_write_there()
         {

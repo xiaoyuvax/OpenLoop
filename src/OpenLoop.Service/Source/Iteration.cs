@@ -47,7 +47,10 @@ namespace OpenLoop.Service.Source
                 string exe = VersionStore.ExePath(temp, role);
                 if (!File.Exists(exe)) return new("publish " + role, false, "没有产物 " + exe);
 
-                string dir = Path.Combine(AppPaths.VersionsDir, role, VersionDirName(version, Sha256(exe)));
+                // 目录名用整份产物的哈希，不用 exe：apphost 在同一个角色/版本下是固定的，
+                // 只改库代码时 exe 哈希不变，会把新产物覆盖到正在运行的那个目录里（文件被锁）
+                string dir = Path.Combine(AppPaths.VersionsDir, role,
+                    VersionDirName(version, VersionManifest.ComputeFilesSha256(temp)));
                 Directory.CreateDirectory(dir);
                 foreach (string file in Directory.EnumerateFiles(temp, "*", SearchOption.AllDirectories))
                 {
@@ -55,6 +58,14 @@ namespace OpenLoop.Service.Source
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                     File.Copy(file, target, true);
                 }
+
+                // 清单由这份产物自己写：协议号与整目录哈希都来自新二进制，stage 侧才能核对
+                string deployed = VersionStore.ExePath(dir, role);
+                var (manifestOk, manifestOut) =
+                    await ExecAsync(deployed, ["--write-manifest", dir, "--manifest-version", version], null, ct);
+                if (!manifestOk)
+                    return new("publish " + role, false, "写清单失败：" + Tail(manifestOut, 6));
+
                 return new("publish " + role, true, dir);
             }
             catch (Exception ex)
@@ -64,6 +75,28 @@ namespace OpenLoop.Service.Source
             finally
             {
                 try { if (Directory.Exists(temp)) Directory.Delete(temp, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 把「这份产物由哪份源码编出来」记进版本目录：refs/openloop/version/&lt;角色&gt;/&lt;版本&gt; 指向构建时工作树的
+        /// **游离提交**（父 = 当时的 HEAD），目录里留一份 source-ref.txt。不动分支、索引和工作区。
+        /// </summary>
+        public static void PinSource(string dir, string role, string version, string tree)
+        {
+            if (string.IsNullOrWhiteSpace(dir) || string.IsNullOrWhiteSpace(version) || string.IsNullOrWhiteSpace(tree)) return;
+            try
+            {
+                string root = SourceSync.SourceRoot;
+                string refName = $"refs/openloop/version/{role}/{version}";
+                var (target, isCommit) = OpenLoop.Core.Safety.Snapshots.CommitTree(root, tree, $"iteration {role} {version}");
+                OpenLoop.Core.Safety.Snapshots.Pin(root, refName, target);
+                File.WriteAllText(Path.Combine(dir, "source-ref.txt"),
+                    $"ref {refName}\n{(isCommit ? "commit" : "tree")} {target}\ntree {tree}\n", new UTF8Encoding(false));
+            }
+            catch
+            {
+                // 追不到源不该让整轮迭代失败
             }
         }
 

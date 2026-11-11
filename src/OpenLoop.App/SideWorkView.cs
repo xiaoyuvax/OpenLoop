@@ -65,6 +65,7 @@ namespace OpenLoop.App
                 ReasoningText = t.ReasoningText,
                 ToolTraceText = t.ToolTraceText,
                 ToolCallLines = t.ToolCallLines,
+                TimelineText = t.TimelineText,
                 ToolStepCount = t.ToolStepCount,
                 ToolTotalMs = t.ToolTotalMs
             }).ToList();
@@ -165,6 +166,7 @@ namespace OpenLoop.App
             trace.Message("user", $"[btw] {text}");
 
             _streamBuffer.Clear();
+            var timeline = new RunTimeline();
             Action<string> onDelta = piece =>
             {
                 lock (_streamBuffer) _streamBuffer.Append(piece);
@@ -179,6 +181,7 @@ namespace OpenLoop.App
             Action<string> onReasoning = piece =>
             {
                 lock (reasoningBuffer) reasoningBuffer.Append(piece);
+                lock (timeline) timeline.Thinking(piece);
                 long now = Environment.TickCount64;
                 if (now - Interlocked.Read(ref lastReasoningUi) < 250) return;
                 Interlocked.Exchange(ref lastReasoningUi, now);
@@ -187,6 +190,7 @@ namespace OpenLoop.App
                 RunOnUi(() =>
                 {
                     turn.ReasoningText = snapshot;
+                    lock (timeline) turn.TimelineText = timeline.Render();
                     string text;
                     lock (_streamBuffer) text = _streamBuffer.ToString();
                     _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(text));
@@ -197,9 +201,11 @@ namespace OpenLoop.App
             {
                 lock (_streamBuffer) _streamBuffer.Clear();
                 lock (reasoningBuffer) reasoningBuffer.Clear();
+                lock (timeline) timeline.DropThinking();
                 RunOnUi(() =>
                 {
                     turn.ReasoningText = "";
+                    lock (timeline) turn.TimelineText = timeline.Render();
                     _chat.UpdateStreamingMessage(turn, "", true);
                     RefreshChat();
                 });
@@ -217,6 +223,8 @@ namespace OpenLoop.App
                             ? line
                             : turn.ToolCallLines + "\n" + line;
                         turn.ToolTraceText = turn.ToolCallLines;
+                        lock (timeline) timeline.Tool(line);
+                        lock (timeline) turn.TimelineText = timeline.Render();
                         turn.ToolStatusText = null;
                         RefreshChat();
                         _chat.ScrollToEnd();
@@ -253,13 +261,14 @@ namespace OpenLoop.App
             try
             {
                 var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, ModelChoices.ContextLimit(model),
+                    () => loop.RunAsync(history, text, ct, ModelChoices.ContextLimit(model, settings),
                         () => ct.IsCancellationRequested, onDelta, onReasoning, ResetStream),
                     ct);
 
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
                 lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
+                lock (timeline) turn.TimelineText = timeline.Render();
                 turn.AssistantText = CleanAnswer(result.FinalAnswer, result.FinishReason);
                 trace.Message("assistant", turn.AssistantText);
 

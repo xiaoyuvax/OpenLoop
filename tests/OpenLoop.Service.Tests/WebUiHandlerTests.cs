@@ -110,7 +110,7 @@ namespace OpenLoop.Service.Tests
             Assert.Contains("\"loop\":true", aBody);
 
             var i = Get("/api/capabilities", header: Key);
-            Assert.True(new LoopApiHandler(new LoopService(), Key).Handle(i));
+            Assert.True(new LoopApiHandler(new LoopService(), new IterationService(), Key).Handle(i));
             string iBody = Encoding.UTF8.GetString(i.Response.Buffer);
             Assert.Contains("\"worker\":false", iBody);
             Assert.Contains("\"loop\":true", iBody);

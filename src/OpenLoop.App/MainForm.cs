@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using ChatFlow;
 using ChatMessage = ChatFlow.ChatMessage;
+using OpenLoop.Service.Loop;
 using OpenLoop.Service.Shell;
 using OpenLoop.Service.Source;
 using OpenLoop.Service.Web;
@@ -242,6 +243,19 @@ namespace OpenLoop.App
 
         public void OpenLoop(string workspace = null) => EnsureLoop(workspace, select: true);
 
+        /// <summary>按会话 id 打开某个 Loop 会话（Puppet 用：[Loop] 页的一行）。</summary>
+        public void OpenLoopSession(string workspace, string sessionId) => EnsureLoop(workspace, select: true, sessionId);
+
+        private TestSurface _test;
+
+        /// <summary>
+        /// Puppet 用：AntdUI 等自绘控件的统一调试动作（临时测试面，见 TestSurface）。
+        /// 整体移除测试入口时：删 PuppetTestSurface.cs + 这几行（字段 / 方法）。
+        /// </summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public object Test(string verb, string arg1 = "", string arg2 = "")
+            => (_test ??= new TestSurface(this)).Run(verb, arg1, arg2);
+
         // ---- Puppet 检查面：项目 / [Loop] / provider 的状态与选中 ----
 
         public string[] OverviewMenu() => _overview.MenuItems();
@@ -252,13 +266,21 @@ namespace OpenLoop.App
 
         public string[] OverviewRows() => _overview.RowTitles();
 
+        /// <summary>Puppet 用：会话列表里勾选了的行。</summary>
+        public string[] OverviewChecked() => _overview.CheckedRows();
+
         public bool SelectLoopOverview()
         {
             ShowOverview();
             return _overview.SelectLoop();
         }
 
-        public string[] LoopWorkspaces() => LoopIndex.List().Select(l => l.Workspace).ToArray();
+        public string[] LoopWorkspaces() => LoopIndex.List().Select(l => l.Workspace)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+        /// <summary>Puppet 用：[Loop] 页的行（会话 id + 工作区）。</summary>
+        public string[] LoopSessions() => LoopIndex.List()
+            .Select(l => l.SessionId + "\t" + l.Workspace).ToArray();
 
         public int LoopTabs => _loops.Count;
 
@@ -294,10 +316,11 @@ namespace OpenLoop.App
             => EnsureLoop(session.Workspace, select: false)?.Post(text);
 
         /// <summary>
-        /// 取（必要时创建）某个项目的 Loop 会话。历史按项目分开存，
+        /// 取（必要时创建）某个项目的 Loop 会话。历史按「项目 + 会话 id」分开存，
         /// 改进产物（修订提案、源码修改）仍落在全局。
         /// </summary>
-        private LoopView EnsureLoop(string workspace, bool select)
+        /// <param name="sessionId">null = 该项目最近的 Loop 会话（没有就新建）；"" = 总是新建。</param>
+        private LoopView EnsureLoop(string workspace, bool select, string sessionId = null)
         {
             string target = workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _lastSession?.Workspace;
@@ -308,7 +331,16 @@ namespace OpenLoop.App
                 return null;
             }
 
-            if (_loops.TryGetValue(Paths.Normalize(target), out var existing))
+            string id = sessionId;
+            if (id == null)
+                id = LoopIndex.List()
+                    .FirstOrDefault(l => Paths.Same(l.Workspace, target))?.SessionId
+                    ?? LoopRef.LegacyId;
+            else if (id.Length == 0)
+                id = "loop-" + Guid.NewGuid().ToString("N")[..8];
+
+            string key = LoopKey(target, id);
+            if (_loops.TryGetValue(key, out var existing))
             {
                 if (select) _tabs.SelectTab(existing.Page);
                 _loopView = existing.View;
@@ -319,10 +351,13 @@ namespace OpenLoop.App
             var view = new LoopView { Dock = DockStyle.Fill };
             view.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
             view.Iterate = () => ShowIterationAsync(target);
-            view.Initialize(target, () => _settings);
+            view.TransferToWorker = turns => TransferToWorker(target, turns);
+            view.ForkRequested += ForkLoop;
+            view.NewSessionRequested += NewLoopSession;
+            view.Initialize(target, () => _settings, id);
             var page = new AntdUI.TabPage
             {
-                Text = LoopTabText(target),
+                Text = LoopTabText(target, id),
                 IconSvg = UiIcons.Dot(UiStyle.Loop),
                 ReadOnly = false,
                 Tag = view,
@@ -332,16 +367,25 @@ namespace OpenLoop.App
             _tabs.Pages.Add(page);
             // 新建页面不主动跳转：/complain 只让它出现在标签栏，用户自己去点
             if (select) _tabs.SelectTab(page);
-            _loops[Paths.Normalize(target)] = (view, page);
+            _loops[key] = (view, page);
             _loopView = view;
             _loopPage = page;
             return view;
         }
 
-        private static string LoopTabText(string workspace)
+        private static string LoopKey(string workspace, string sessionId)
+            => Paths.Normalize(workspace) + "|" + sessionId;
+
+        private static string LoopTabText(string workspace, string sessionId)
         {
             string name = Path.GetFileName(Paths.Normalize(workspace));
-            return string.IsNullOrEmpty(name) ? Localization.T("TabLoop") : Localization.T("TabLoop") + " · " + name;
+            string text = string.IsNullOrEmpty(name) ? Localization.T("TabLoop") : Localization.T("TabLoop") + " · " + name;
+            // 同一项目可以有多个 Loop 会话：非默认会话补 id 尾段，免得标签页文本一模一样
+            if (!string.Equals(sessionId, LoopRef.LegacyId, StringComparison.Ordinal))
+                text += " · " + (sessionId?.StartsWith("loop-", StringComparison.Ordinal) == true
+                    ? sessionId["loop-".Length..]
+                    : sessionId);
+            return text;
         }
 
         public void SelectProject(string workspace) => _overview.FocusProject(workspace ?? "");
@@ -372,7 +416,7 @@ namespace OpenLoop.App
             IterationRunner.MarkShellStarted();
             _overview.Initialize();
             _overview.OpenRequested += ShowSession;
-            _overview.LoopRequested += workspace => EnsureLoop(workspace, true);
+            _overview.LoopRequested += (workspace, sessionId) => EnsureLoop(workspace, true, sessionId);
             _overview.NewSessionRequested += OpenNewSessionTab;
             _overview.DeleteRequested += OnDeleteRequested;
             _overview.RemoveProjectRequested += OnRemoveProjectRequested;
@@ -380,7 +424,7 @@ namespace OpenLoop.App
 
             _settings = AppSettings.Load();
             if (string.IsNullOrWhiteSpace(_settings.Workspace))
-                _settings.Workspace = Directory.GetCurrentDirectory();
+                _settings.Workspace = TryGetDevRepoWorkspace() ?? Directory.GetCurrentDirectory();
             await OpenCodeHub.RefreshAsync();
             _tabs.SelectTab(_overviewPage);
             RestoreSessions();
@@ -424,6 +468,9 @@ namespace OpenLoop.App
 
                 var puppet = await global::OpenLoop.Service.Source.SourceSync.CheckPuppetCoreAsync();
                 AppLog.Info("PuppetCore 同步：" + puppet);
+
+                var chatflow = await global::OpenLoop.Service.Source.SourceSync.CheckChatFlowAsync();
+                AppLog.Info("ChatFlow 同步：" + chatflow);
             }
             catch (Exception ex)
             {
@@ -494,17 +541,26 @@ namespace OpenLoop.App
                 return "迭代窗口已经打开";
             }
 
-            var plan = await IterationRunner.PlanAsync();
-            string summary = await IterationRunner.ChangeSummaryAsync();
-            var before = new Dictionary<string, VersionEntry>(
-                new VersionStore().Read(), StringComparer.OrdinalIgnoreCase);
+            IterationPlanResult planned;
+            try
+            {
+                using var client = new LoopApiClient();
+                planned = await client.IterationPlanAsync(workspace ?? "");
+            }
+            catch (Exception ex)
+            {
+                return "无法连接 Loop（I）：" + ex.Message;
+            }
+
+            var plan = planned?.Plan ?? [];
+            string summary = planned?.Summary ?? "";
 
             string target = workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _loopView?.Workspace ?? "";
             if (string.IsNullOrWhiteSpace(target)) target = Workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _lastSession?.Workspace ?? "";
             if (string.IsNullOrWhiteSpace(target)) target = _settings.Workspace ?? "";
-            var form = new IterationForm(target, plan, summary, before);
+            var form = new IterationForm(target, plan, summary);
             form.ShellRestart = report =>
             {
                 IterationRunner.WriteReport(report);
@@ -521,7 +577,7 @@ namespace OpenLoop.App
                     .DefaultIfEmpty("无需升版"));
         }
 
-        /// <summary>无窗口的一轮（Puppet）：不碰壳，失败按迭代前的版本回退。</summary>
+        /// <summary>无窗口的一轮（Puppet）：不碰壳，由 I 执行，失败由 I 按迭代前的版本回退。</summary>
         private async Task<string> RunIterationAsync()
         {
             if (_iterationStatus is "running" or "restarting") return "已有迭代在跑";
@@ -529,24 +585,21 @@ namespace OpenLoop.App
             _iterationSteps.Clear();
             try
             {
-                var plan = (await IterationRunner.PlanAsync())
-                    .Select(p => p.Role == "shell" ? p with { Update = false } : p).ToList();
-                _iterationSteps.Add("plan " + string.Join(" | ",
-                    plan.Select(p => $"{p.Label} {p.Current}→{p.Target} {(p.Update ? "升版" : "不变")}")));
+                using var client = new LoopApiClient();
+                var planned = await client.IterationPlanAsync(Workspace);
+                _iterationSteps.Add("plan " + string.Join(" | ", (planned?.Plan ?? [])
+                    .Select(p => $"{p.Label} {p.Current}→{p.Target} {(p.Update ? "升版" : "不变")}")));
 
-                var before = new Dictionary<string, VersionEntry>(
-                    new VersionStore().Read(), StringComparer.OrdinalIgnoreCase);
-                var report = await IterationRunner.RunAsync(plan, Workspace, line => _iterationSteps.Add(line));
-                if (!report.Ok)
+                await client.StartIterationAsync(Workspace, shell: false);
+                var state = await client.WaitIterationAsync(Workspace, line => _iterationSteps.Add(line));
+                if (state.State != "done")
                 {
-                    foreach (var step in await IterationRunner.RollbackAsync(before, line => _iterationSteps.Add(line)))
-                        if (!_iterationSteps.Contains(step.ToString())) _iterationSteps.Add(step.ToString());
                     _iterationStatus = "failed";
-                    return "迭代失败：" + (_iterationSteps.LastOrDefault() ?? "");
+                    return "迭代失败：" + (state.Error ?? _iterationSteps.LastOrDefault() ?? "");
                 }
 
                 _iterationStatus = "ok";
-                return "迭代完成：" + report.Version;
+                return "迭代完成：" + state.Version;
             }
             catch (Exception ex)
             {
@@ -686,6 +739,8 @@ namespace OpenLoop.App
             session.View.OpenLoopRequested += OpenLoop;
             session.View.ComplaintRequested += OnComplaint;
             session.View.ForkRequested += ForkSession;
+            session.View.NewSessionRequested += NewSessionFrom;
+            session.View.TransferToLoop = turns => TransferToLoop(session.Workspace, turns);
             session.View.TitleChanged += OnSessionTitleChanged;
             session.View.SideWorkEvicted += OnSideWorkEvicted;
 
@@ -872,22 +927,98 @@ namespace OpenLoop.App
             if (source == null || string.IsNullOrWhiteSpace(request)) return;
             var session = CreateSession(source.Workspace);
             //克隆可见历史：新会话既是「带着上下文」起步，后续追问也仍带上下文
-            session.Book.ReplaceAll(source.Book.Turns.Select(t => new ChatTurn
-            {
-                User = new ChatMessage("user", t.UserText),
-                Assistant = new ChatMessage("assistant", t.AssistantText),
-                ReasoningText = t.ReasoningText,
-                ToolTraceText = t.ToolTraceText,
-                ToolCallLines = t.ToolCallLines,
-                ToolStepCount = t.ToolStepCount,
-                ToolTotalMs = t.ToolTotalMs
-            }), null);
+            session.Book.ReplaceAll(source.Book.Turns.Select(CloneTurn), null);
             ShowSession(session);
             session.View.ComposerText = request;
             session.View.SendMode("task");
         }
 
-        /// <summary>界面上删除会话：先确认再执行。</summary>
+        /// <summary>Loop 的 /fork：复制当前 Loop 对话开一个新 Loop 会话，并把新请求发出去。</summary>
+        private void ForkLoop(LoopView source, string request)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(request)) return;
+            string workspace = source.Workspace;
+            if (string.IsNullOrWhiteSpace(workspace) || source.Turns.Count == 0)
+            {
+                AntdUI.Notification.warn(this, "Loop", "没有可复制的对话。", AntdUI.TAlignFrom.TR, null, 3);
+                return;
+            }
+
+            string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
+            ChatStore.Save(workspace, source.Turns.Select(CloneTurn).ToList(), id);
+            ChatStore.Touch(workspace, id, "分叉 " + DateTime.Now.ToString("HH:mm"));
+            EnsureLoop(workspace, select: true, sessionId: id)?.Send(request);
+        }
+
+        /// <summary>/new：开一个空会话，沿用来源会话的模型与强度；带请求就顺手发出去。</summary>
+        private void NewSessionFrom(Session source, string request)
+        {
+            if (source == null) return;
+            var session = CreateSession(source.Workspace);
+            session.View.SetModel(source.View.Model);
+            session.View.SetEffort(source.View.Effort);
+            ShowSession(session);
+            if (string.IsNullOrWhiteSpace(request)) return;
+            session.View.ComposerText = request;
+            session.View.SendMode("task");
+        }
+
+        /// <summary>Loop 的 /new：开一个空 Loop 会话，沿用当前模型与强度；带请求就顺手发出去。</summary>
+        private void NewLoopSession(LoopView source, string request)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(source.Workspace)) return;
+            var view = EnsureLoop(source.Workspace, select: true, sessionId: "");
+            if (view == null) return;
+            view.SetModel(source.Model);
+            view.SetEffort(source.Effort);
+            if (!string.IsNullOrWhiteSpace(request)) view.Send(request);
+        }
+
+        /// <summary>
+        /// Loop 页「转给 worker」：先把选中的对话落成新会话的历史，
+        /// Worker 首次 Create 时会读这份历史当初始上下文；再开这个会话让用户接着追问。
+        /// </summary>
+        private bool TransferToWorker(string workspace, IReadOnlyList<ChatTurn> turns)
+        {
+            if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return false;
+            workspace = Paths.Normalize(workspace);
+            string id = Guid.NewGuid().ToString("N")[..8];
+            string title = "转交 " + DateTime.Now.ToString("HH:mm");
+            var cloned = turns.Select(CloneTurn).ToList();
+            ChatStore.Save(workspace, cloned, id);
+            ChatStore.Touch(workspace, id, title);
+            ShowSession(CreateSession(workspace, id, title));
+            return true;
+        }
+
+        /// <summary>
+        /// Worker 页「转给 Loop」：把选中的对话落成新 Loop 会话的历史，
+        /// Loop 页打开时会读这份历史当初始上下文。
+        /// </summary>
+        private bool TransferToLoop(string workspace, IReadOnlyList<ChatTurn> turns)
+        {
+            if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return false;
+            workspace = Paths.Normalize(workspace);
+            string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
+            string title = "转交 " + DateTime.Now.ToString("HH:mm");
+            ChatStore.Save(workspace, turns.Select(CloneTurn).ToList(), id);
+            ChatStore.Touch(workspace, id, title);
+            return EnsureLoop(workspace, true, id) != null;
+        }
+
+        private static ChatTurn CloneTurn(ChatTurn t) => new()
+        {
+            User = new ChatMessage("user", t.UserText),
+            Assistant = new ChatMessage("assistant", t.AssistantText),
+            ReasoningText = t.ReasoningText,
+            ToolTraceText = t.ToolTraceText,
+            ToolCallLines = t.ToolCallLines,
+            TimelineText = t.TimelineText,
+            ToolStepCount = t.ToolStepCount,
+            ToolTotalMs = t.ToolTotalMs
+        };
+
+        /// <summary>界面上删除会话：先确认再执行。Worker 会话与 [Loop] 会话都走这里。</summary>
         private void OnDeleteRequested(IReadOnlyList<Session> sessions)
         {
             if (sessions == null || sessions.Count == 0) return;
@@ -895,7 +1026,29 @@ namespace OpenLoop.App
                     $"删除 {sessions.Count} 个会话？对话记录会一并删除，不能恢复。",
                     "删除会话", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
-            DeleteSessions(sessions.Select(s => s.Id));
+            int loops = 0;
+            foreach (var row in sessions.Where(IsLoopRow).ToList())
+            {
+                DeleteLoopSession(row.Workspace, row.Id[LoopRowPrefix.Length..]);
+                loops++;
+            }
+            DeleteSessions(sessions.Where(s => !IsLoopRow(s)).Select(s => s.Id));
+            if (loops > 0) RefreshOverview();
+        }
+
+        private const string LoopRowPrefix = "loop:";
+
+        private static bool IsLoopRow(Session session)
+            => session.Id.StartsWith(LoopRowPrefix, StringComparison.Ordinal);
+
+        /// <summary>删掉一个 Loop 会话：先关标签（关标签会落盘），再删对话文件与索引。</summary>
+        private void DeleteLoopSession(string workspace, string sessionId)
+        {
+            if (_loops.TryGetValue(LoopKey(workspace, sessionId), out var entry)
+                && _tabs.Pages.Contains(entry.Page))
+                CloseTab(entry.Page);
+            ChatStore.Delete(workspace, sessionId);
+            LoopIndex.Remove(workspace, sessionId);
         }
 
         /// <summary>界面上移除项目：项目下的会话（含磁盘对话）一并删除，否则下次启动会把项目带回来。</summary>
@@ -916,10 +1069,13 @@ namespace OpenLoop.App
             RemoveProject(workspace);
         }
 
-        /// <summary>移除项目：连同该项目下的会话与对话记录一起删掉（否则重启时会被会话带回来）。</summary>
+        /// <summary>移除项目：连同该项目下的会话、Loop 会话与对话记录一起删掉（否则重启时会被带回来）。</summary>
         public int RemoveProject(string workspace)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return 0;
+
+            foreach (var loop in LoopIndex.List().Where(l => Paths.Same(l.Workspace, workspace)).ToList())
+                DeleteLoopSession(workspace, loop.SessionId);
 
             int removed = DeleteSessions(
                 _sessions.Where(s => Paths.Same(s.Workspace, workspace)).Select(s => s.Id));
@@ -1275,6 +1431,25 @@ namespace OpenLoop.App
                     AntdUI.Notification.error(this, "保存失败", ex.Message, AntdUI.TAlignFrom.TR, null, 4);
                 }
             }
+        }
+
+        /// <summary>开发模式下默认工作区取源码仓根（从程序位置向上找 .git/HEAD 或 OpenLoop.App.csproj）；
+        /// 找不到就是部署模式，退回当前目录。</summary>
+        private static string TryGetDevRepoWorkspace()
+        {
+            try
+            {
+                var dir = new System.IO.FileInfo(System.Reflection.Assembly.GetExecutingAssembly().Location).Directory;
+                for (int i = 0; i < 8 && dir != null; i++)
+                {
+                    if (System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, ".git", "HEAD")) ||
+                        System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "OpenLoop.App", "OpenLoop.App.csproj")))
+                        return dir.FullName;
+                    dir = dir.Parent;
+                }
+                return null;
+            }
+            catch { return null; }
         }
     }
 }

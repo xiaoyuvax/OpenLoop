@@ -11,13 +11,14 @@ namespace OpenLoop.I
         private static int Main(string[] args)
         {
             var loop = new LoopService();
+            var iteration = new IterationService();
             string key = KeyFile.ReadOrCreate(AppPaths.BusKeyPath);
             var ui = new WebUiHandler(key);
 
             return HeadlessHost.Run(BusRoles.I, "127.0.0.1:19181", args, bus =>
             {
                 bus.Busy = () => loop.IsBusy;
-                bus.Use(new LoopApiHandler(loop, key).Handle)
+                bus.Use(new LoopApiHandler(loop, iteration, key).Handle)
                    .Use(ui.Handle);
             });
         }

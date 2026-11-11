@@ -29,6 +29,9 @@ namespace OpenLoop.App
 
         public string StepsText => Steps == 0 ? "—" : Steps.ToString();
 
+        /// <summary>会话列表里的复选列（批量删除用）。</summary>
+        public bool Selected { get; set; }
+
         /// <summary>用户重命名后覆盖默认标题；空值回退到工作目录名。</summary>
         public string CustomTitle { get; set; }
 

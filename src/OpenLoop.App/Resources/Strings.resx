@@ -152,7 +152,7 @@
     <value>这是纠正</value>
   </data>
   <data name="ComposerHint" xml:space="preserve">
-    <value>描述任务，或声明判据 / 纠正（Ctrl+Enter 发送）</value>
+    <value>描述任务，或声明判据 / 纠正（Enter 发送，Shift+Enter 换行，Ctrl+Enter 排队）</value>
   </data>
   <data name="TabLoop" xml:space="preserve">
     <value>Loop</value>
@@ -173,7 +173,7 @@
     <value>观察 Worker 与用户判定，积累下一版</value>
   </data>
   <data name="LoopHint" xml:space="preserve">
-    <value>和 Loop 对话：说出你的体验、不满或改进建议（Ctrl+Enter 发送）</value>
+    <value>和 Loop 对话：说出你的体验、不满或改进建议（Enter 发送，Shift+Enter 换行，Ctrl+Enter 排队）</value>
   </data>
   <data name="NewSessionSubtitle" xml:space="preserve">
     <value>选择项目并描述任务，开始一个新的会话</value>

@@ -4,6 +4,7 @@ using Wima.Web;
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Loop;
+using OpenLoop.Service.Source;
 
 namespace OpenLoop.Service.Web
 {
@@ -13,11 +14,13 @@ namespace OpenLoop.Service.Web
     public sealed class LoopApiHandler
     {
         private readonly LoopService _loop;
+        private readonly IterationService _iteration;
         private readonly string _key;
 
-        public LoopApiHandler(LoopService loop, string key)
+        public LoopApiHandler(LoopService loop, IterationService iteration, string key)
         {
             _loop = loop;
+            _iteration = iteration;
             _key = key;
         }
 
@@ -57,6 +60,59 @@ namespace OpenLoop.Service.Web
                         return Json(req, new { stopped = _loop.StopEvolve(body.Workspace) });
                     }
                     return NotFound(req);
+
+                case "iteration":
+                {
+                    if (method == "GET" && parts.Length == 3)
+                        return Json(req, _iteration.GetState(Query(req, "workspace")));
+
+                    if (method == "GET" && parts.Length == 4 && parts[3] == "plan")
+                    {
+                        try
+                        {
+                            return Json(req, _iteration.PlanAsync(Query(req, "workspace")).GetAwaiter().GetResult());
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            return Json(req, new { ok = false, error = ex.Message }, 409);
+                        }
+                    }
+
+                    if (method == "POST" && parts.Length == 3)
+                    {
+                        var body = ReadBody<IterationRequest>(req);
+                        if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
+                        try
+                        {
+                            return Json(req, _iteration.Start(body.Workspace, body.Shell), 202);
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            return Json(req, new { ok = false, error = ex.Message }, 409);
+                        }
+                    }
+
+                    if (method == "POST" && parts.Length == 4 && parts[3] == "stop")
+                        return Json(req, new { stopped = _iteration.Stop() });
+
+                    return NotFound(req);
+                }
+
+                case "git":
+                {
+                    if (method == "GET" && parts.Length == 4 && parts[3] == "status")
+                        return Json(req, GitService.Status());
+
+                    if (method == "POST" && parts.Length == 4 && parts[3] == "commit")
+                    {
+                        var body = ReadBody<GitCommitRequest>(req);
+                        if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
+                        bool lastRunFailed = _iteration.GetState("").State == "error";
+                        return Json(req, GitService.Commit(body, lastRunFailed));
+                    }
+
+                    return NotFound(req);
+                }
 
                 case "auto":
                 {
@@ -160,6 +216,14 @@ namespace OpenLoop.Service.Web
             public string Workspace { get; set; }
             public string Model { get; set; }
             public string Effort { get; set; }
+        }
+
+        private sealed class IterationRequest
+        {
+            public string Workspace { get; set; }
+
+            /// <summary>是否连壳一起换；Puppet 的无窗口迭代传 false。</summary>
+            public bool Shell { get; set; } = true;
         }
 
         private sealed class WorkspaceRequest

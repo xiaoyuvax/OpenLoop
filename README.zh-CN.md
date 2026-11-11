@@ -67,6 +67,7 @@ Start-Process bin\Debug\net10.0-windows\OpenLoop.exe -WorkingDirectory .
 
 - [CHARTER.md](CHARTER.md) — 规范：不变量、账本契约、符合性
 - [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) — 架构与里程碑
+- [docs/PLAN-VERSION-MANAGEMENT.md](docs/PLAN-VERSION-MANAGEMENT.md) — 版本图、指纹级联、迭代流程
 
 ## 许可证
 

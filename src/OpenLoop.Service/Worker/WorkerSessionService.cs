@@ -176,7 +176,7 @@ namespace OpenLoop.Service.Worker
             string outcome = "error";
             try
             {
-                int contextLimit = ModelCatalog.ContextLimit(request.Model);
+                int contextLimit = ModelCatalog.ContextLimit(request.Model, request.Settings);
                 var run = await Task.Run(
                     () => loop.RunAsync(request.History, request.Text, ct, contextLimit,
                         () => ct.IsCancellationRequested || (request.ShouldStop?.Invoke() ?? false),
