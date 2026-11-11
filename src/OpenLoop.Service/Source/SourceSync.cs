@@ -23,7 +23,8 @@ namespace OpenLoop.Service.Source
     }
 
     /// <summary>
-    /// 启动时的源码同步：克隆/更新 OpenLoop 与 PuppetCore 仓库，比较源码版本与运行版本。
+    /// 启动时的源码同步：开发布局直接用同级组件仓库，安装布局才克隆/更新到 source\；
+    /// 比较 OpenLoop 源码版本与运行版本（组件只报提交号）。
     /// 只 fetch 不 reset——工作树里可能有 Loop 的改动。
     /// 判定与执行分开：这里只回答「是什么状态」，迭代由 Loop 的迭代轮次负责。
     /// </summary>
@@ -31,16 +32,17 @@ namespace OpenLoop.Service.Source
     {
         public const string OpenLoopUrl = "https://github.com/xiaoyuvax/OpenLoop.git";
         public const string PuppetCoreUrl = "https://github.com/xiaoyuvax/PuppetCore.git";
+        public const string ChatFlowUrl = "https://github.com/xiaoyuvax/ChatFlow.git";
 
-        private const string OpenLoopVersionFile = "src/OpenLoop.A/OpenLoop.A.csproj";
+        private static readonly string OpenLoopVersionFile = VersionBump.FileFor("a");
 
         public static string SourceRoot
         {
             get
             {
                 // 开发环境：当前目录就是 OpenLoop 仓库时直接用它，不再往安装目录里复制一份
-                string cwd = Directory.GetCurrentDirectory();
-                if (File.Exists(Path.Combine(cwd, "OpenLoop.slnx"))) return cwd;
+                string dev = DevRoot;
+                if (dev != null) return dev;
 
                 // 壳重启后 cwd 变成安装目录：重启脚本把原来的源码根带过来，避免换成本地那份旧克隆
                 string inherited = Environment.GetEnvironmentVariable("OPENLOOP_SOURCE");
@@ -52,7 +54,42 @@ namespace OpenLoop.Service.Source
             }
         }
 
-        public static string PuppetRoot => Path.Combine(InstallRoot, "source", "puppetcore");
+        /// <summary>开发检出根：当前目录就是 OpenLoop 仓库；安装布局下为 null。</summary>
+        public static string DevRoot
+        {
+            get
+            {
+                try
+                {
+                    string cwd = Directory.GetCurrentDirectory();
+                    return File.Exists(Path.Combine(cwd, "OpenLoop.slnx")) ? cwd : null;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>与给定源码根同级、且参与编译的组件仓库路径（只拼路径，不判断存在）。</summary>
+        public static string SiblingOf(string devRoot, string folder)
+        {
+            if (string.IsNullOrWhiteSpace(devRoot) || string.IsNullOrWhiteSpace(folder)) return null;
+            string parent = Path.GetDirectoryName(devRoot.TrimEnd(Path.DirectorySeparatorChar));
+            return string.IsNullOrEmpty(parent) ? null : Path.Combine(parent, folder);
+        }
+
+        /// <summary>组件仓库根：与源码根同级。开发布局是同级检出，安装布局正好是 <c>source\</c> 下的克隆。</summary>
+        public static string ComponentRoot(string folder)
+            => SiblingOf(SourceRoot, folder) ?? Path.Combine(InstallRoot, "source", folder);
+
+        public static string PuppetRoot => ComponentRoot("PuppetCore");
+
+        /// <summary>
+        /// ChatFlow 与本仓库并列参与编译（App 的 ProjectReference 是 ../../../ChatFlow/ChatFlow）。
+        /// 只有 Windows 版本编译它。
+        /// </summary>
+        public static string ChatFlowRoot => ComponentRoot("ChatFlow");
 
         /// <summary>
         /// 安装根：可执行文件所在目录（可用 <c>OPENLOOP_HOME</c> 覆盖）。
@@ -78,19 +115,46 @@ namespace OpenLoop.Service.Source
         /// <summary>
         /// PuppetCore 没有 csproj 版本号：只同步 + 报提交号（Loop 用它演进 Puppet 工具，不做版本比较）。
         /// </summary>
-        public static async Task<SourceCheck> CheckPuppetCoreAsync(CancellationToken ct = default)
+        public static Task<SourceCheck> CheckPuppetCoreAsync(CancellationToken ct = default)
+            => CheckComponentAsync(PuppetCoreUrl, "PuppetCore",
+                Path.Combine("Puppet.Core", "Puppet.Core.csproj"), ct);
+
+        /// <summary>
+        /// ChatFlow 同样没有版本号约束：同步 + 报提交号，Loop 可以像 PuppetCore 一样迭代它。
+        /// 只有 Windows 版本编译它，其它平台既不克隆也不报告。
+        /// </summary>
+        public static Task<SourceCheck> CheckChatFlowAsync(CancellationToken ct = default)
+            => !OperatingSystem.IsWindows()
+                ? Task.FromResult(new SourceCheck(SourceState.Unknown, ChatFlowRoot, "", "",
+                    "非 Windows 版本：ChatFlow 不参与编译"))
+                : CheckComponentAsync(ChatFlowUrl, "ChatFlow",
+                    Path.Combine("ChatFlow", "ChatFlow.csproj"), ct);
+
+        /// <summary>
+        /// 组件仓库：同级位置已有检出（开发布局的同级仓库，或安装布局的 source\ 克隆）就直接用，
+        /// 不 fetch，避免把 Loop 的改动冲掉；没有才克隆到同级位置。
+        /// </summary>
+        private static Task<SourceCheck> CheckComponentAsync(
+            string url, string folder, string marker, CancellationToken ct)
+        {
+            string root = ComponentRoot(folder);
+            if (File.Exists(Path.Combine(root, marker)))
+                return ReportHeadAsync(root, "提交 ", ct);
+            return CheckCommitAsync(url, root, ct);
+        }
+
+        /// <summary>可迭代组件仓库（无版本号）：只同步 + 报提交号。</summary>
+        private static async Task<SourceCheck> CheckCommitAsync(string url, string root, CancellationToken ct)
         {
             if (!await GitOkAsync(ct))
-                return new(SourceState.NoGit, PuppetRoot, "", "", "找不到 git");
+                return new(SourceState.NoGit, root, "", "", "找不到 git");
 
             try
             {
-                var sync = await SyncAsync(PuppetCoreUrl, PuppetRoot, ct);
+                var sync = await SyncAsync(url, root, ct);
                 if (sync != null) return sync;
 
-                string head = (await GitTextAsync(["-C", PuppetRoot, "rev-parse", "--short", "HEAD"], ct)).Trim();
-                return new(SourceState.UpToDate, PuppetRoot, head, "",
-                    head.Length == 0 ? "读不到提交号" : "已同步到 " + head);
+                return await ReportHeadAsync(root, "已同步到 ", ct);
             }
             catch (OperationCanceledException)
             {
@@ -98,7 +162,28 @@ namespace OpenLoop.Service.Source
             }
             catch (Exception ex)
             {
-                return new(SourceState.Failed, PuppetRoot, "", "", ex.Message);
+                return new(SourceState.Failed, root, "", "", ex.Message);
+            }
+        }
+
+        private static async Task<SourceCheck> ReportHeadAsync(string root, string label, CancellationToken ct)
+        {
+            if (!await GitOkAsync(ct))
+                return new(SourceState.NoGit, root, "", "", "找不到 git");
+
+            try
+            {
+                string head = (await GitTextAsync(["-C", root, "rev-parse", "--short", "HEAD"], ct)).Trim();
+                return new(SourceState.UpToDate, root, head, "",
+                    head.Length == 0 ? "读不到提交号" : label + head);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return new(SourceState.Failed, root, "", "", ex.Message);
             }
         }
 
@@ -132,15 +217,20 @@ namespace OpenLoop.Service.Source
                 var sync = await SyncAsync(url, root, ct);
                 if (sync != null) return sync with { RunningVersion = running };
 
-                string remote = await GitTextAsync(
-                    ["-C", root, "show", "FETCH_HEAD:" + versionFile.Replace('\\', '/')], ct);
-                string source = ParseVersion(remote);
+                string localPath = Path.Combine(root, versionFile);
+                string localVersion = File.Exists(localPath)
+                    ? ParseVersion(File.ReadAllText(localPath, Encoding.UTF8))
+                    : "";
 
-                if (source.Length == 0)
-                {
-                    string localPath = Path.Combine(root, versionFile);
-                    if (File.Exists(localPath)) source = ParseVersion(File.ReadAllText(localPath, Encoding.UTF8));
-                }
+                // 开发检出（含 OPENLOOP_SOURCE 指定的工作树）里本地工作树就是要编译的源码，
+                // 远端版本落后不该算「源码过旧」；安装布局的克隆才比远端，用来看有没有更新的源码可迭代。
+                bool local = !IsInstallClone(root);
+                string remote = local
+                    ? ""
+                    : ParseVersion(await GitTextAsync(
+                        ["-C", root, "show", "FETCH_HEAD:" + versionFile.Replace('\\', '/')], ct));
+
+                string source = PickSourceVersion(localVersion, remote, local);
                 if (source.Length == 0)
                     return new(SourceState.Unknown, root, "", running, "读不到源码版本");
 
@@ -165,16 +255,47 @@ namespace OpenLoop.Service.Source
 
         /// <summary>源码工作树里的版本号（迭代发布时用作新版本名）。</summary>
         public static string SourceVersion(string root)
+            => RoleSourceVersion("a", root);
+
+        /// <summary>某个角色自己的源码版本（各组件版本可以不一致）；读不到返回空串。</summary>
+        public static string RoleSourceVersion(string role, string root = null)
         {
             try
             {
-                string path = Path.Combine(string.IsNullOrWhiteSpace(root) ? SourceRoot : root, OpenLoopVersionFile);
+                string relative = VersionBump.FileFor(role);
+                if (relative == null) return "";
+                string path = Path.Combine(string.IsNullOrWhiteSpace(root) ? SourceRoot : root, relative);
                 return File.Exists(path) ? ParseVersion(File.ReadAllText(path, Encoding.UTF8)) : "";
             }
             catch
             {
                 return "";
             }
+        }
+
+        /// <summary>安装布局的克隆（<c>InstallRoot\source\...</c>）：只有这种副本才用远端版本判断有没有新源码。</summary>
+        private static bool IsInstallClone(string root)
+        {
+            try
+            {
+                string clone = Path.GetFullPath(Path.Combine(InstallRoot, "source")) + Path.DirectorySeparatorChar;
+                return Path.GetFullPath(root).StartsWith(clone, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 取哪个版本号当「源码版本」：本地工作树优先，安装布局用远端；
+        /// 首选为空时回退另一个（本地没写过版本号，或远端读不到）。
+        /// </summary>
+        internal static string PickSourceVersion(string local, string remote, bool localCheckout)
+        {
+            if (localCheckout && !string.IsNullOrEmpty(local)) return local;
+            if (!string.IsNullOrEmpty(remote)) return remote;
+            return local ?? "";
         }
 
         /// <summary>比较两个版本号；无法解析返回 <see cref="SourceState.Unknown"/>。</summary>
@@ -201,7 +322,9 @@ namespace OpenLoop.Service.Source
                 if (end > start) return Clean(text[start..end]);
             }
 
-            return Clean(text.Trim());
+            // 没有标签时只接受「裸版本号」：整份文件内容当版本号会一路传到迭代计划里显示出来
+            string bare = Clean(text.Trim());
+            return Version.TryParse(bare, out _) ? bare : "";
         }
 
         private static string Clean(string value)
