@@ -80,6 +80,10 @@ namespace OpenLoop.Service.Web
         public async Task<WorkerSessionSnapshot> InterruptAsync(string id, CancellationToken ct = default)
             => await PostAsync(Path(id) + "/interrupt", new { }, ct);
 
+        /// <summary>撤回对话：让 A 也删掉第 keep 轮之后的历史，否则下一次发送会把撤回的轮次带回来。</summary>
+        public async Task<WorkerSessionSnapshot> TruncateAsync(string id, int keep, CancellationToken ct = default)
+            => await PostAsync(Path(id) + "/truncate", new { keep }, ct);
+
         /// <summary>让 A 丢掉这个会话（正在跑的先停）；A 不认识它也算成功。</summary>
         public async Task DeleteAsync(string id, CancellationToken ct = default)
         {

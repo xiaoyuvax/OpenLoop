@@ -220,12 +220,20 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
 
   const running = snapshot?.state === 'running';
   const value = text.trim();
+  const lastTurn = (snapshot?.turns || [])[(snapshot?.turns || []).length - 1];
+  const retry = !running && !value && !!lastTurn && lastTurn.failed
+    && /provider\.free-limit|\b429\b|\b402\b|rate limit|too many requests|quota|usage limit|insufficient|credits|payment required|额度|余额/i.test(lastTurn.assistant || '');
   const pct = snapshot?.contextLimit > 0 && snapshot?.contextTokens != null
     ? Math.min(100, Math.round(snapshot.contextTokens / snapshot.contextLimit * 100)) : 0;
 
   const send = async () => {
     if (!activeId) return;
     if (!value) {
+      if (retry) {
+        try { await post(`/api/sessions/${activeId}/messages`, { text: '继续', tag: 'task' }); }
+        catch (e) { message.error('发送失败：' + e.message); }
+        return;
+      }
       if (!running) return message.warning('输入框为空');
       try { await post(`/api/sessions/${activeId}/stop`); } catch (e) { message.error('停止失败：' + e.message); }
       return;
@@ -350,7 +358,7 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
     h(Button, {
       type: 'primary', style: { width: 96 },
       danger: running && !value, onClick: send
-    }, running ? (value ? '排队发送' : '停止') : '发送'));
+    }, running ? (value ? '排队发送' : '停止') : retry ? '继续' : '发送'));
 
   const composer = h('div', { style: { flex: 'none', padding: '4px 16px 8px', borderTop: pending ? '0' : '1px solid #f0f0f0' } },
     h(Input.TextArea, {

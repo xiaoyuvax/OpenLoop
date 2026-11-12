@@ -144,6 +144,7 @@ namespace OpenLoop.App
             _sideBtw.Initialize(session.Workspace, settings);
             FitLoopLabels();
             UpdateEvolveButtonEnabled();
+            UpdateSendButton();
             _initializing = false;
         }
 
@@ -389,6 +390,7 @@ namespace OpenLoop.App
         {
             base.OnResize(e);
             if (!_layoutReady) ApplyLayout();
+            if (_cmdPopup.IsOpen) _cmdPopup.PlaceAbove(_inputArea);
         }
 
         private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
@@ -507,6 +509,32 @@ namespace OpenLoop.App
         };
 
         private readonly List<(string Command, string Description)> _cmdMatches = [];
+        private IReadOnlyList<(string Command, string Description)> _skillCommands = [];
+        private DateTime _skillsAt;
+
+        /// <summary>启用中的技能也进「/」列表；30 秒内复用上次结果，避免每敲一个字都去问 I。</summary>
+        private void EnsureSkillCommands()
+        {
+            if (DateTime.UtcNow - _skillsAt < TimeSpan.FromSeconds(30)) return;
+            _skillsAt = DateTime.UtcNow;
+            string workspace = Workspace;
+            var loop = Loop;
+            _ = Task.Run(async () =>
+            {
+                var commands = await SlashCommands.SkillsAsync(loop, workspace);
+                if (IsDisposed || workspace != Workspace) return;
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (IsDisposed) return;
+                        _skillCommands = commands;
+                        UpdateCommandPopup();
+                    }));
+                }
+                catch (ObjectDisposedException) { }
+            });
+        }
 
         /// <summary>输入以 / 开头且还没写参数时，弹出可用命令的联想列表。</summary>
         private void UpdateCommandPopup()
@@ -515,19 +543,25 @@ namespace OpenLoop.App
             bool want = text.StartsWith('/') && !text.Contains(' ') && !text.Contains('\n');
             _cmdMatches.Clear();
             if (want)
+            {
+                EnsureSkillCommands();
                 foreach (var command in Commands)
                     if (command.Command.StartsWith(text, StringComparison.OrdinalIgnoreCase))
                         _cmdMatches.Add(command);
+                foreach (var command in _skillCommands)
+                    if (!Commands.Any(c => string.Equals(c.Command, command.Command, StringComparison.OrdinalIgnoreCase))
+                        && command.Command.StartsWith(text, StringComparison.OrdinalIgnoreCase))
+                        _cmdMatches.Add(command);
+            }
 
             if (_cmdMatches.Count == 0)
             {
                 _cmdPopup.Close();
-                _inputArea.RowStyles[0].Height = 0F;
                 return;
             }
 
             _cmdPopup.Open(_cmdMatches);
-            _inputArea.RowStyles[0].Height = _cmdPopup.PreferredHeight;
+            _cmdPopup.PlaceAbove(_inputArea);
         }
 
         /// <summary>选中命令：补进输入框，光标停在参数位。</summary>
@@ -631,13 +665,23 @@ namespace OpenLoop.App
         {
             bool editing = _editing != null;
             bool stop = !editing && _running && _txtInput.Text.Trim().Length == 0;
+            bool retry = !editing && !stop && _txtInput.Text.Trim().Length == 0 && QuotaOnLastTurn;
             _btnSend.Text = editing
                 ? Localization.T("SettingsSave")
-                : Localization.T(stop ? "Stop" : "Send");
+                : Localization.T(retry ? "Continue" : stop ? "Stop" : "Send");
             _btnSend.IconSvg = UiIcons.Of(stop ? UiIcons.Stop : UiIcons.Send,
                 stop ? UiStyle.Error : Color.White);
             _btnSend.Type = stop ? AntdUI.TTypeMini.Error : AntdUI.TTypeMini.Primary;
             _btnSend.Ghost = stop;
+        }
+
+        private bool QuotaOnLastTurn
+        {
+            get
+            {
+                var last = Session?.Book?.Turns.LastOrDefault();
+                return last != null && ServerNotice.IsQuotaFailure(last.AssistantText);
+            }
         }
 
         private (bool Ok, string Message) Submit(bool immediate = false)
@@ -667,6 +711,9 @@ namespace OpenLoop.App
             if (IsCommand(text, "/btw") || IsCommand(text, "/complain") || IsCommand(text, "/fork"))
                 return (false, "命令缺少内容，没有发送");
 
+            //「/技能名 请求…」展开成让 Worker 先读技能再执行的任务，后面按普通输入发送/排队
+            text = SlashCommands.SkillTask(text, _skillCommands) ?? text;
+
             if (_running)
             {
                 if (text.Length == 0)
@@ -693,7 +740,17 @@ namespace OpenLoop.App
             return (true, "已发送");
         }
 
-        private void OnSendClick(object sender, EventArgs e) => Submit(immediate: true);
+        private void OnSendClick(object sender, EventArgs e)
+        {
+            // 免费额度撞墙后按钮是「继续」：输入框为空时点它就把继续发出去
+            if (_txtInput.Text.Trim().Length == 0 && !_running && QuotaOnLastTurn)
+            {
+                SendTask("task", Localization.T("ContinuePrompt"));
+                SetMode("task");
+                return;
+            }
+            Submit(immediate: true);
+        }
 
         /// <summary>识别 /btw、/fork；返回 true 表示这条输入已被命令消费。</summary>
         private bool TryRunCommand(string text)
@@ -1142,7 +1199,7 @@ namespace OpenLoop.App
                     await Task.Delay(250, ct);
                     snapshot = await client.GetAsync(Session.Id, ct);
                     if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
-                    snapshot = await AnswerPromptsAsync(client, snapshot, ct);
+                    snapshot = AnswerPromptsAsync(client, snapshot, ct);
                     ApplySnapshot(snapshot);
                 }
             }
@@ -1258,6 +1315,8 @@ namespace OpenLoop.App
                 turn.ToolStepCount = remote.Steps;
                 turn.ToolTotalMs = remote.Ms;
                 turn.Streaming = remote.Streaming;
+                // 等审批之类的即时状态：Worker 没有就清空，别让旧提示粘住
+                turn.ToolStatusText = string.IsNullOrEmpty(remote.Status) ? null : remote.Status;
                 if (!string.IsNullOrEmpty(remote.Checkpoint))
                     _turnCheckpoints[turn] = remote.Checkpoint;
                 turn.AssistantText = LlmTextSanitizer.StripSafetyLines(remote.Assistant ?? "");
@@ -1295,35 +1354,41 @@ namespace OpenLoop.App
         }
 
         /// <summary>回答 A 挂起的审批/确认；同一个 prompt 只答一次。</summary>
-        private async Task<WorkerSessionSnapshot> AnswerPromptsAsync(WorkerApiClient client,
+        /// <summary>把快照里的待答审批挂出去：绝不 await（模态/等待会卡住整条轮询链），
+        /// 拿不到答案时 Worker 侧 60 秒超时按拒绝收尾。</summary>
+        private WorkerSessionSnapshot AnswerPromptsAsync(WorkerApiClient client,
             WorkerSessionSnapshot snapshot, CancellationToken ct)
         {
             foreach (var prompt in snapshot.Prompts ?? [])
             {
                 if (prompt?.Id == null || !_answeredPrompts.Add(prompt.Id)) continue;
-                int decision = AnswerPrompt(prompt);
-                var updated = await client.ApproveAsync(Session.Id, prompt.Id, decision, ct);
-                if (updated != null) snapshot = updated;
+                _ = AnswerPromptAsync(client, prompt, ct);
             }
             return snapshot;
         }
 
-        /// <summary>0 = 拒绝，1 = 允许一次，2 = 同类后续都允许（记进设置，A 下次直接放行）。</summary>
-        private int AnswerPrompt(WorkerPromptView prompt)
+        private async Task AnswerPromptAsync(WorkerApiClient client, WorkerPromptView prompt, CancellationToken ct)
         {
-            if (prompt.Kind == "continue") return AskOnUi(prompt.Text) ? 1 : 0;
-
-            var kind = prompt.Category == "outside" ? ApprovalKind.OutsideWorkspace : ApprovalKind.SensitiveAction;
-            var decision = ApprovalGate.Ask(this, _settings,
-                new ApprovalRequest(kind, prompt.Tool, prompt.Detail, prompt.Reason));
-            if (decision == ApprovalDecision.AllowAlways)
+            try
             {
-                var settings = _settings();
-                if (kind == ApprovalKind.OutsideWorkspace) settings.AllowOutsideWorkspace = true;
-                else settings.AllowSensitiveActions = true;
-                settings.Save();
+                if (prompt.Kind == "continue")
+                {
+                    int answer = AskOnUi(prompt.Text) ? 1 : 0;
+                    await client.ApproveAsync(Session.Id, prompt.Id, answer, ct);
+                    return;
+                }
+
+                var kind = prompt.Category == "outside" ? ApprovalKind.OutsideWorkspace : ApprovalKind.SensitiveAction;
+                var decision = new TaskCompletionSource<ApprovalDecision>();
+                ApprovalGate.AskNonBlocking(this, _settings,
+                    new ApprovalRequest(kind, prompt.Tool, prompt.Detail, prompt.Reason),
+                    d => decision.TrySetResult(d));
+                await client.ApproveAsync(Session.Id, prompt.Id, (int)await decision.Task, ct);
             }
-            return (int)decision;
+            catch (Exception ex)
+            {
+                AppLog.Warn("审批回填失败：" + ex.Message);
+            }
         }
 
         private void Notify(string title, string text, bool error = false)
@@ -1937,7 +2002,7 @@ namespace OpenLoop.App
             _chat.EnsureLastTurnVisible(true);
         }
 
-        private void OnChatUndo(object sender, ChatFlowActionEventArgs e)
+        private async void OnChatUndo(object sender, ChatFlowActionEventArgs e)
         {
             var selected = e.Turn;
             if (selected == null) return;
@@ -1958,6 +2023,16 @@ namespace OpenLoop.App
                     $"将撤回从所选对话到最新一条的全部 {count} 组对话，并恢复这些对话写入过的文件。确定？",
                     "撤回对话", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
+
+            // 服务端也删：只删本地的话，下一次发送拿到快照会把撤回的轮次重新补回来（看起来像两对重复对话）
+            try
+            {
+                await Client.TruncateAsync(Session.Id, index);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("撤回对话时同步 Worker 失败：" + ex.Message);
+            }
 
             var errors = new List<string>();
             bool hasSnapshot = _turnCheckpoints.TryGetValue(selected, out string checkpoint)

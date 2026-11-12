@@ -142,5 +142,13 @@ namespace OpenLoop.Core.OpenCode
                && value.TryGetInt32(out int parsed)
                 ? parsed
                 : 0;
+
+        internal static long Num(JsonElement node, string name)
+            => node.ValueKind == JsonValueKind.Object
+               && node.TryGetProperty(name, out var value)
+               && value.ValueKind == JsonValueKind.Number
+               && value.TryGetInt64(out long parsed)
+                ? parsed
+                : 0;
     }
 }

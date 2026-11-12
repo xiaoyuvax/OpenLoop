@@ -282,9 +282,8 @@ namespace OpenLoop.App
             _inputArea.Dock = DockStyle.Bottom;
             _inputArea.Height = 170;
             _inputArea.ColumnCount = 1;
-            _inputArea.RowCount = 3;
+            _inputArea.RowCount = 2;
             _inputArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            _inputArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 0F));
             _inputArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _inputArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
             _inputArea.BackColor = UiStyle.Page;
@@ -433,19 +432,19 @@ namespace OpenLoop.App
             _toolbar.Controls.Add(_btnSend, 1, 0);
             _toolbar.SetColumnSpan(_btnSend, 1);
 
-            _inputArea.Controls.Add(_cmdPopup, 0, 0);
-            _inputArea.Controls.Add(_txtInput, 0, 1);
-            _inputArea.Controls.Add(_toolbar, 0, 2);
-            // 左栏：聊天流 + 待发送队列 + 输入区（后加的先贴底，输入区在最下面）
+            _inputArea.Controls.Add(_txtInput, 0, 0);
+            _inputArea.Controls.Add(_toolbar, 0, 1);
+            // 左栏：聊天流 + 待发送队列 + 输入区（后加的先贴底，输入区在最下面；联想列表是浮层，最后加）
             _upperSplit.Panel1.Controls.Add(_inputArea);
+            _upperSplit.Panel1.Controls.Add(_cmdPopup);
 
             _root.Controls.Add(_header, 0, 0);
             _root.Controls.Add(_line, 0, 1);
             _root.Controls.Add(_upperSplit, 0, 2);
 
-            // “/” 命令联想下拉：占用输入框上方的一行，关闭时行高收成 0
+            // “/” 命令联想：浮在输入区上方，不占布局（旧做法占一行，命令多了会把输入框压成一条线）
             _cmdPopup.Name = "cmdPopup";
-            _cmdPopup.Dock = DockStyle.Fill;
+            _cmdPopup.Dock = DockStyle.None;
             _cmdPopup.Font = new Font("Microsoft YaHei UI", 9.5F);
             _cmdPopup.Accepted += OnCommandAccepted;
 

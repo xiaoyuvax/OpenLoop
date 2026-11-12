@@ -3,9 +3,9 @@ using System.Drawing;
 namespace OpenLoop.App
 {
     /// <summary>
-    /// 输入框上方的命令联想列表。自绘（不依赖原生控件外观），跟随主题；
-    /// 上下键移动、回车或点击确认，Esc 关闭。位置由宿主 <see cref="SessionView"/> 摆。
-    /// 命令数量超过 <see cref="MaxVisibleRows"/> 时只显示这么多行，靠上下键/滚轮滚动。
+    /// 浮在输入框上方的命令联想列表。自绘（不依赖原生控件外观），跟随主题；
+    /// 上下键移动、回车或点击确认，Esc 关闭。宿主用 <see cref="PlaceAbove"/> 摆位置。
+    /// 命令数量超过可见行数时靠上下键/滚轮滚动。
     /// </summary>
     internal sealed class CommandPopup : Control
     {
@@ -14,7 +14,7 @@ namespace OpenLoop.App
         private int scrollOffset;
 
         /// <summary>最多同时显示多少行；超出的靠滚动查看。</summary>
-        private const int MaxVisibleRows = 6;
+        private const int MaxVisibleRows = 8;
 
         internal event Action<string> Accepted;
 
@@ -33,11 +33,31 @@ namespace OpenLoop.App
 
         internal int RowHeight => Dip(30);
 
-        /// <summary>最多显示的行数（命令更多时滚动）。</summary>
-        private int VisibleRows => Math.Max(1, Math.Min(items.Count, MaxVisibleRows));
+        /// <summary>命令条目数最多铺几行。</summary>
+        private int MaxRows => Math.Min(items.Count, MaxVisibleRows);
 
-        /// <summary>列表所需高度；宿主用返回值设置所在行高。</summary>
-        internal int PreferredHeight => VisibleRows * RowHeight + Dip(8);
+        /// <summary>按实际高度能画几行（窗口矮时宿主会把高度压下来）。</summary>
+        private int VisibleRows => Height <= Dip(8)
+            ? Math.Max(1, MaxRows)
+            : Math.Max(1, Math.Min(MaxRows, (Height - Dip(8)) / RowHeight));
+
+        /// <summary>列表需要的高度；宿主用它决定浮层多高。</summary>
+        internal int PreferredHeight => Math.Max(1, MaxRows) * RowHeight + Dip(8);
+
+        /// <summary>
+        /// 浮到输入区正上方（同一父容器里），宽度与输入区一致；上方空间不够就压缩，
+        /// 至少留一行，绝不挤压输入框本身（旧的“占一行”方案会把输入框压成一条线）。
+        /// </summary>
+        internal void PlaceAbove(Control anchor)
+        {
+            if (anchor == null || anchor.Parent != Parent) return;
+            int gap = Dip(4);
+            int left = anchor.Left + anchor.Padding.Left;
+            int width = Math.Max(Dip(160), anchor.Width - anchor.Padding.Horizontal);
+            int height = Math.Min(PreferredHeight, Math.Max(RowHeight + Dip(8), anchor.Top - gap));
+            Bounds = new Rectangle(left, anchor.Top - gap - height, width, height);
+            BringToFront();
+        }
 
         internal void Open(IReadOnlyList<(string Command, string Description)> matches)
         {

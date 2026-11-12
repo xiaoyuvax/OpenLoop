@@ -130,6 +130,12 @@
   <data name="Send" xml:space="preserve">
     <value>发送</value>
   </data>
+  <data name="Continue" xml:space="preserve">
+    <value>继续</value>
+  </data>
+  <data name="ContinuePrompt" xml:space="preserve">
+    <value>继续</value>
+  </data>
   <data name="Stop" xml:space="preserve">
     <value>停止</value>
   </data>

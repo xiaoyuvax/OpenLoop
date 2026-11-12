@@ -31,12 +31,18 @@ namespace OpenLoop.Core.Reasoning
     }
 
     /// <summary>模型在推理通道里绕过宿主直接执行的一次工具调用（名字、入参原文、状态与结果）。</summary>
-    public sealed record NativeToolCall(string Tool, string Input, bool Ok, string Output, string Status);
+    public sealed record NativeToolCall(string Tool, string Input, bool Ok, string Output, string Status, long DurationMs = 0);
 
     /// <summary>推理通道里观察到的原生工具调用（实时回调；被拒绝的调用也会上报）。</summary>
     public interface INativeToolObserver
     {
         Action<NativeToolCall> OnNativeTool { get; set; }
+    }
+
+    /// <summary>推理通道的即时状态通报（例如「等待审批：shell …」），null 表示清除。</summary>
+    public interface INoticeObserver
+    {
+        Action<string> OnNotice { get; set; }
     }
 
     /// <summary>可选的流式通道：每来一段就回调，返回最终完整结果。</summary>

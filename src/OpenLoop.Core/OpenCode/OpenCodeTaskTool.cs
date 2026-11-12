@@ -40,7 +40,8 @@ namespace OpenLoop.Core.OpenCode
 
         public string ParamsSchema =>
             "task: string（必填，交代完整目标与验收标准）；model: string 可选（opencode/<模型>@<提供商>，缺省用 OpenCode 默认模型）；" +
-            "agent: string 可选（OpenCode 的 agent 名，如 build/plan）；timeoutSec: number 可选（默认 600，30-3600）";
+            "agent: string 可选（OpenCode 的 agent 名，如 build/plan）；" +
+            "timeoutSec: number 可选（默认 600，30-3600；连续这么久没有任何输出才判挂住，不是总时长上限）";
 
         public bool IsReadOnly => false;
 
@@ -75,16 +76,21 @@ namespace OpenLoop.Core.OpenCode
 
                 await client.PromptAsync(sessionID, task, ct);
 
-                int timeout = Math.Clamp(args.Int("timeoutSec", 600), 30, 3600);
-                var deadline = DateTime.UtcNow.AddSeconds(timeout);
+                int idleSeconds = Math.Clamp(args.Int("timeoutSec", 600), 30, 3600);
+                var idleLimit = TimeSpan.FromSeconds(idleSeconds);
+                // 同 RunTurnAsync：不设总时限，只看「多久没有新输出」。
+                var lastOutput = DateTime.UtcNow;
+                string progress = "";
                 var answered = new HashSet<string>(StringComparer.Ordinal);
                 while (true)
                 {
                     await Task.Delay(1000, ct);
 
+                    bool interacted = false;
                     foreach (var permission in await client.GetPermissionsAsync(sessionID, ct))
                     {
                         if (!answered.Add(permission.ID)) continue;
+                        interacted = true;
                         if (_approve == null)
                             return AgentToolResult.Failure(
                                 $"OpenCode 请求权限但当前没有审批通道（会话 {sessionID}）：{OpenCodePermissions.Describe(permission)}");
@@ -102,19 +108,28 @@ namespace OpenLoop.Core.OpenCode
                         await client.ReplyPermissionAsync(sessionID, permission.ID,
                             decision == ApprovalDecision.AllowAlways ? "always" : "once", null, ct);
                     }
+                    // 等人审批（最长 60 秒）也是「在动」，别把它当成挂住。
+                    if (interacted) lastOutput = DateTime.UtcNow;
+
+                    var messages = await client.GetMessagesAsync(sessionID, ct);
+                    string now = OpenCodeClient.Progress(messages);
+                    if (!string.Equals(now, progress, StringComparison.Ordinal))
+                    {
+                        progress = now;
+                        lastOutput = DateTime.UtcNow;
+                    }
 
                     var snapshot = await client.GetSessionAsync(sessionID, ct);
                     if (snapshot.Idle)
-                        return Build(sessionID, snapshot,
-                            await client.GetMessagesAsync(sessionID, ct),
+                        return Build(sessionID, snapshot, messages,
                             await client.GetDiffAsync(sessionID, ct),
                             checkpoint);
 
-                    if (DateTime.UtcNow >= deadline)
+                    if (DateTime.UtcNow - lastOutput > idleLimit)
                     {
                         await SafeInterruptAsync(client, sessionID);
                         return AgentToolResult.Failure(
-                            $"OpenCode 超过 {timeout} 秒未完成（会话 {sessionID}{CheckpointText(checkpoint)}）");
+                            $"OpenCode 连续 {idleSeconds} 秒没有任何输出，已判定挂住（会话 {sessionID}{CheckpointText(checkpoint)}）");
                     }
                 }
             }

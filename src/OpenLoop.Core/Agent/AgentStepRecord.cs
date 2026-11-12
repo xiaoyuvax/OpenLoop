@@ -21,20 +21,31 @@ namespace OpenLoop.Core.Agent
             ? $"{DurationMs}ms"
             : (DurationMs / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "s";
 
-        /// <summary>步骤流里的一行：工具名 + 调用内容 + 耗时/失败。
+        /// <summary>步骤流里的一行：` &gt;&gt; 工具[调用内容] · 耗时`。
+        /// 方括号与 `&gt;&gt;` 前缀是有意的：否则正则会把正文里的普通函数调用也当成工具行。
         /// 原生工具（native: 前缀）的入参是 JSON 原文，这里压成可读摘要；trace 仍保存原文。</summary>
         public string DisplayLine
         {
             get
             {
                 string tool = Tool ?? "";
-                if (!tool.StartsWith("native:", StringComparison.Ordinal))
-                    return $"{tool}({ArgsSummary}) · {DurationText}{(Ok ? "" : " · 失败")}";
-
-                string name = tool["native:".Length..];
-                string args = NativeArgs(name, ArgsFull);
-                string line = args.Length == 0 ? name : $"{name}({args})";
-                // 原生调用没有计时（OpenCode 侧执行），0ms 只会误导
+                string name;
+                string args;
+                bool native = tool.StartsWith("native:", StringComparison.Ordinal);
+                if (native)
+                {
+                    name = tool["native:".Length..];
+                    args = NativeArgs(name, ArgsFull);
+                }
+                else
+                {
+                    name = tool;
+                    args = ArgsSummary ?? "";
+                }
+                if (name.Length > 1 && char.IsLower(name[0]))
+                    name = char.ToUpperInvariant(name[0]) + name[1..];
+                // 原生调用（OpenCode 侧执行）与 OpenLoop 自己的工具同形同名，前面加一个 > 区分
+                string line = " >> " + (native ? "> " : "") + name + "[" + args + "]";
                 if (DurationMs > 0) line += " · " + DurationText;
                 return Ok ? line : line + " · 失败";
             }

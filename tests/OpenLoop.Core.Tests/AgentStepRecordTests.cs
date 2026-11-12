@@ -3,7 +3,8 @@ using Xunit;
 
 namespace OpenLoop.Core.Tests
 {
-    /// <summary>界面步骤流的显示行：原生工具要压成「类型 + 调用内容」，且不能出现 0ms 假耗时。</summary>
+    /// <summary>界面步骤流的显示行：` &gt;&gt; 工具[调用内容]`，原生工具要压成「类型 + 调用内容」，
+    /// 不能出现 0ms 假耗时；前缀和方括号让正则不会把正文里的函数调用误认成工具行。</summary>
     public class AgentStepRecordTests
     {
         [Fact]
@@ -17,7 +18,7 @@ namespace OpenLoop.Core.Tests
                 DurationMs = 10
             };
 
-            Assert.Equal("ListDir(path=., recursive=False) · 10ms", step.DisplayLine);
+            Assert.Equal(" >> ListDir[path=., recursive=False] · 10ms", step.DisplayLine);
         }
 
         [Fact]
@@ -30,7 +31,7 @@ namespace OpenLoop.Core.Tests
                 Ok = true
             };
 
-            Assert.Equal("read(path=…\\repos\\DefocusMirror\\README.md)", step.DisplayLine);
+            Assert.Equal(" >> > Read[path=…\\repos\\DefocusMirror\\README.md]", step.DisplayLine);
         }
 
         [Fact]
@@ -43,11 +44,11 @@ namespace OpenLoop.Core.Tests
                 Ok = false
             };
 
-            Assert.Equal("grep(pattern=FastColoredTextBox, path=DefocusMirror) · 失败", step.DisplayLine);
+            Assert.Equal(" >> > Grep[pattern=FastColoredTextBox, path=DefocusMirror] · 失败", step.DisplayLine);
         }
 
         [Fact]
-        public void Native_shell_shows_the_command()
+        public void Native_shell_shows_the_command_and_duration()
         {
             var step = new AgentStepRecord
             {
@@ -57,7 +58,7 @@ namespace OpenLoop.Core.Tests
                 DurationMs = 1200
             };
 
-            Assert.Equal("shell(command=git status --short) · 1.2s", step.DisplayLine);
+            Assert.Equal(" >> > Shell[command=git status --short] · 1.2s", step.DisplayLine);
         }
 
         [Fact]
@@ -70,7 +71,7 @@ namespace OpenLoop.Core.Tests
                 Ok = false
             };
 
-            Assert.Equal("read({\"path\":) · 失败", step.DisplayLine);
+            Assert.Equal(" >> > Read[{\"path\":] · 失败", step.DisplayLine);
         }
     }
 }

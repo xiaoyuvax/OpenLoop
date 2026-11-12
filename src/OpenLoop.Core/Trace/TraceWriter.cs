@@ -149,7 +149,7 @@ namespace OpenLoop.Core.Trace
                     args = tool.Input,
                     ok = tool.Ok,
                     status = tool.Status,
-                    durationMs = 0,
+                    durationMs = tool.DurationMs,
                     result = AgentLoop.Truncate(tool.Output, 160)
                 }, LineJson));
                 _steps.Flush();

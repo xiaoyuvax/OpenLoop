@@ -209,7 +209,8 @@ namespace OpenLoop.Core.Agent
             bool hadBanned = calls.Any(c => state.BannedSignatures.Contains(AgentLoop.SignatureOf(c.Tool, c.Args)));
             state.LastBatchBanned = hadBanned;
             bool parallel = calls.Count > 1 && !hadBanned
-                && calls.All(c => context.Tools.Find(c.Tool)?.IsReadOnly == true);
+                && calls.All(c => context.Tools.Find(c.Tool)?.IsReadOnly == true)
+                && context.ShouldStop?.Invoke() != true;
 
             var watch = Stopwatch.StartNew();
             var executed = new List<(AgentToolCall Call, AgentToolResult Result, string RepairNote)>();
@@ -223,6 +224,12 @@ namespace OpenLoop.Core.Agent
             {
                 foreach (var call in calls)
                 {
+                    // 「立即」的边界是工具调用：已经要求收尾，就不再开始后面的调用（结果照补，保持 tool-call 配对）。
+                    if (context.ShouldStop?.Invoke() == true)
+                    {
+                        executed.Add((call, AgentToolResult.Failure("用户已要求立即发送新消息，本次调用未执行。"), null));
+                        continue;
+                    }
                     if (state.BannedSignatures.Contains(AgentLoop.SignatureOf(call.Tool, call.Args)))
                     {
                         executed.Add((call, AgentToolResult.Failure(

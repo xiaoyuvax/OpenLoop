@@ -10,7 +10,7 @@ namespace OpenLoop.Core.OpenCode
     /// OpenLoop 自己持有全部 trace（历史、工具调用、结果、思维链）；OpenCode 只当透传壳。
     /// 原生工具按宿主审批执行；调用与结果实时上报，作为 native 步骤写进 trace。
     /// </summary>
-    public sealed class OpenCodeReasoner : IReasoner, IStreamingReasoner, INativeToolObserver
+    public sealed class OpenCodeReasoner : IReasoner, IStreamingReasoner, INativeToolObserver, INoticeObserver
     {
         private readonly OpenCodeClient _client;
         private readonly OpenCodeModelRef _model;
@@ -32,6 +32,15 @@ namespace OpenLoop.Core.OpenCode
 
         /// <summary>原生工具调用实时上报（只用于 trace；调用结果由 OpenCode 侧决定）。</summary>
         public Action<NativeToolCall> OnNativeTool { get; set; }
+
+        /// <summary>等待审批等即时状态（null = 清除）。界面据此显示「等待审批…」，不是空白。</summary>
+        public Action<string> OnNotice { get; set; }
+
+        /// <summary>宿主请求软停止：一次调用内部的多个原生工具之间也据此收尾。</summary>
+        public Func<bool> ShouldStop { get; set; }
+
+        /// <summary>清掉遗留的临时会话（上次进程超时/被杀没删掉的）；不 await，不影响本轮。</summary>
+        public Task SweepStaleSessions() => _client.SweepStaleSessionsAsync(CancellationToken.None);
 
         // 协议块紧跟 system，保证每轮 prompt 前缀逐字一致（上游前缀缓存靠这个），也避免在尾部每次追加。
         private const string Protocol =
@@ -61,12 +70,15 @@ namespace OpenLoop.Core.OpenCode
             // 免费模型保留工具表只为过上游门禁；原生工具按宿主审批执行，调用与结果实时上报。
             var decide = _decide;
             Action<OpenCodeNativeTool> nativeSink = tool =>
-                OnNativeTool?.Invoke(new NativeToolCall(tool.Name, tool.Input, tool.Ok, tool.Output, tool.Status));
+                OnNativeTool?.Invoke(new NativeToolCall(tool.Name, tool.Input, tool.Ok, tool.Output, tool.Status, tool.DurationMs));
             var turn = await _client.RunTurnAsync(prompt, _model, _workspace, onDelta, onReasoning,
-                decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct);
-            if (string.IsNullOrWhiteSpace(turn.Text) && string.IsNullOrWhiteSpace(turn.Reasoning))
+                decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct, onNotice: OnNotice,
+                shouldStop: ShouldStop);
+            if (string.IsNullOrWhiteSpace(turn.Text) && string.IsNullOrWhiteSpace(turn.Reasoning)
+                && ShouldStop?.Invoke() != true)
                 turn = await _client.RunTurnAsync(prompt + RetryHint, _model, _workspace, onDelta, onReasoning,
-                    decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct);
+                    decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct, onNotice: OnNotice,
+                    shouldStop: ShouldStop);
 
             return new CompletionResult
             {

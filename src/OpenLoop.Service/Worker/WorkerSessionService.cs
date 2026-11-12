@@ -1,5 +1,6 @@
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
+using OpenLoop.Core.OpenCode;
 using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Skills;
@@ -46,6 +47,9 @@ namespace OpenLoop.Service.Worker
         public Action<string> Reasoning { get; set; }
         public Action ResetStream { get; set; }
         public Action<string> ToolStarted { get; set; }
+
+        /// <summary>即时状态通报（例如「等待审批：shell …」），null = 清除。界面拿它填状态行，避免一片空白。</summary>
+        public Action<string> Notice { get; set; }
 
         /// <summary>每次请求模型前的上下文 token 估算（本轮 prompt 大小），界面据此实时刷新占比。</summary>
         public Action<int> ContextTokens { get; set; }
@@ -143,6 +147,16 @@ namespace OpenLoop.Service.Worker
                     .Concat(OpenLoop.Service.Web.PuppetTools.For()));
 
             var trace = TraceWriter.Start(workspace, request.Tag, request.Text, request.Model);
+            // 上一轮疑似超时/被杀留下的临时会话：顺手清掉，别一直挂在 OpenCode 上占模型
+            if (reasoner is OpenCodeReasoner openCode)
+            {
+                _ = openCode.SweepStaleSessions();
+                // 「立即」是一次调用内部的工具边界：整轮只在 RunAsync 外查停止太迟
+                openCode.ShouldStop = request.ShouldStop;
+            }
+            // 等待审批之类的即时状态：写进界面状态行，期间不要是一片空白
+            if (reasoner is INoticeObserver noticeObserver)
+                noticeObserver.OnNotice = text => request.Notice?.Invoke(text);
             // 原生工具调用发生在推理通道内部：边发生边写 trace（停止/超时也留证据），同时进步骤流。
             if (reasoner is INativeToolObserver observer)
                 observer.OnNativeTool = tool =>
@@ -156,7 +170,8 @@ namespace OpenLoop.Service.Worker
                         Ok = tool.Ok,
                         Summary = Clip(string.IsNullOrEmpty(tool.Output) ? tool.Status : tool.Output, 160),
                         FullResult = "native-result: " + tool.Output,
-                        ResultFull = tool.Output
+                        ResultFull = tool.Output,
+                        DurationMs = tool.DurationMs
                     });
                 };
             var ctx = new WorkerRunContext
@@ -277,6 +292,8 @@ namespace OpenLoop.Service.Worker
                 }
 
                 trace.Dispose();
+                // 这一轮用完就清场：本进程残留的临时会话（收尾删除失败的）当场删掉
+                if (reasoner is OpenCodeReasoner done) _ = done.SweepStaleSessions();
             }
 
             return result;

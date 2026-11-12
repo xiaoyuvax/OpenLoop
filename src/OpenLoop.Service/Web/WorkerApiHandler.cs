@@ -108,6 +108,14 @@ namespace OpenLoop.Service.Web
                     return _host.Interrupt(id) ? Json(req, _host.Get(id)) : NotFound(req);
                 case "resume":
                     return _host.Resume(id) ? Json(req, _host.Get(id)) : NotFound(req);
+                case "truncate":
+                {
+                    var body = ReadBody<TruncateRequest>(req);
+                    if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
+                    return _host.Truncate(id, body.Keep)
+                        ? Json(req, _host.Get(id))
+                        : NotFound(req);
+                }
                 case "model":
                 {
                     var body = ReadBody<ModelRequest>(req);
@@ -179,6 +187,11 @@ namespace OpenLoop.Service.Web
         {
             public int Index { get; set; }
             public string Action { get; set; }
+        }
+
+        private sealed class TruncateRequest
+        {
+            public int Keep { get; set; }
         }
 
         private sealed class ApprovalAnswer

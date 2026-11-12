@@ -16,7 +16,7 @@ namespace OpenLoop.Core.OpenCode
 
     /// <summary>模型在 OpenCode 侧直接调用的原生工具（不属于 OpenLoop 的 step 流）。</summary>
     public sealed record OpenCodeNativeTool(
-        string Id, string Name, string Input, bool Ok, string Output, string Status);
+        string Id, string Name, string Input, bool Ok, string Output, string Status, long DurationMs = 0);
 
     public sealed record OpenCodePermission(
         string ID, string Action, IReadOnlyList<string> Resources, IReadOnlyList<string> Save, string Message);
@@ -133,24 +133,40 @@ namespace OpenLoop.Core.OpenCode
             Action<string> onDelta = null, Action<string> onReasoning = null,
             int timeoutSeconds = 600, Func<OpenCodePermission, bool> decide = null,
             bool keepTools = false, Action<OpenCodeNativeTool> onNativeTool = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default, Action<string> onNotice = null, Func<bool> shouldStop = null)
         {
             // shortcut: 免费模型用 ask 保留工具表；原生工具在工作区内放行、shell 与工作区外一律拒绝，
             // 等上游放宽门禁再回到 deny。
             string sessionID = await CreateSessionAsync(
-                "OpenLoop turn", workspace, model, null, keepTools ? "ask" : "deny", ct);
+                SessionTitle, workspace, model, null, keepTools ? "ask" : "deny", ct,
+                new Dictionary<string, object> { ["openloopPid"] = Environment.ProcessId });
             if (string.IsNullOrWhiteSpace(sessionID))
                 throw new InvalidOperationException("OpenCode 没有返回会话 ID");
+            ActiveSessions[sessionID] = 1;
 
             var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var failure = new StrongBox<string>();
             var answered = new HashSet<string>(StringComparer.Ordinal);
             var seenNative = new HashSet<string>(StringComparer.Ordinal);
             var native = new List<OpenCodeNativeTool>();
+            // 轮次不设总时限：几十次原生工具的长任务不该被墙钟砍掉。只有「连续 timeoutSeconds 秒
+            // 没有任何新输出」才判挂住；会话结束由事件流/状态轮询给出，服务断了则请求本身会抛。
+            var idleLimit = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 5, 3600));
+            long lastOutput = DateTime.UtcNow.Ticks;
+            void Touch() => Interlocked.Exchange(ref lastOutput, DateTime.UtcNow.Ticks);
+
             using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             Task stream = Task.Run(
-                () => ReadEventsAsync(sessionID, onDelta, onReasoning, completed, failure, streamCts.Token),
+                () => ReadEventsAsync(sessionID,
+                    text => { Touch(); onDelta?.Invoke(text); },
+                    piece => { Touch(); onReasoning?.Invoke(piece); },
+                    completed, failure, streamCts.Token),
                 streamCts.Token);
+            // 审批单独轮询：decide 可能等人点（最长 60 秒），绝不能把消息/状态轮询一起卡住
+            using var approvalsCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            Task approvals = Task.Run(
+                () => PollPermissionsAsync(sessionID, answered, decide, onNotice, approvalsCts.Token),
+                approvalsCts.Token);
 
             // 原生工具调用只在轮询里看得到：边等边报，超时/被停止时也留得下证据。
             void Collect(IReadOnlyList<OpenCodeMessage> messages)
@@ -170,20 +186,52 @@ namespace OpenLoop.Core.OpenCode
             {
                 await PromptAsync(sessionID, prompt, ct);
 
-                var deadline = DateTime.UtcNow.AddSeconds(Math.Clamp(timeoutSeconds, 30, 3600));
                 OpenCodeSessionSnapshot snapshot = null;
+                string progress = "";
+                bool stopped = false;
                 while (!completed.Task.IsCompleted)
                 {
-                    if (DateTime.UtcNow > deadline)
-                        throw new TimeoutException($"OpenCode 超过 {timeoutSeconds} 秒未完成（会话 {sessionID}）");
+                    // 软停止：一次调用内部会连着跑很多原生工具，只在调用之间查就太迟了。
+                    // 在这里打断 OpenCode 会话，当前工具跑完就收尾，不等整轮。
+                    if (shouldStop?.Invoke() == true)
+                    {
+                        stopped = true;
+                        try { await InterruptAsync(sessionID, ct); }
+                        catch { }
+                        await Task.WhenAny(completed.Task, Task.Delay(TimeSpan.FromSeconds(5), ct));
+                        break;
+                    }
+
+                    // 有输出就一直等：正文/思维链增量、消息变长、原生工具换状态或产出变多都算在动。
+                    if (DateTime.UtcNow.Ticks - Interlocked.Read(ref lastOutput) > idleLimit.Ticks)
+                        throw new TimeoutException(
+                            $"OpenCode 连续 {idleLimit.TotalSeconds:0} 秒没有任何输出，已判定挂住（会话 {sessionID}）");
 
                     await Task.Delay(700, ct);
-                    await HandlePermissionsAsync(sessionID, answered, decide, ct);
-                    Collect(await GetMessagesAsync(sessionID, ct));
+                    var polled = await GetMessagesAsync(sessionID, ct);
+                    string now = Progress(polled);
+                    if (!string.Equals(now, progress, StringComparison.Ordinal))
+                    {
+                        progress = now;
+                        Touch();
+                    }
+                    Collect(polled);
                     snapshot = await GetSessionAsync(sessionID, ct);
                     if (snapshot.Outcome.Length > 0) break;
                 }
                 snapshot ??= await GetSessionAsync(sessionID, ct);
+
+                // 被打断的一轮：会话可能报 failed、正文也可能只写了一半，都按「已停止」返回，
+                // 由 StopStep 把这一轮收尾；不能当成失败，也不重试。
+                if (stopped)
+                {
+                    var partial = await ReadMessagesAsync(sessionID, ct);
+                    Collect(partial);
+                    return new OpenCodeTurn(
+                        LastText(partial),
+                        string.Concat(partial.Select(m => m.Reasoning)),
+                        snapshot?.Cost, snapshot?.TokensIn, snapshot?.TokensOut);
+                }
 
                 //429/额度/网关错误都在这里：不能当成「模型没说话」，否则用户只看到一句「没有返回正文」
                 if (!string.IsNullOrWhiteSpace(failure.Value))
@@ -201,9 +249,12 @@ namespace OpenLoop.Core.OpenCode
             finally
             {
                 streamCts.Cancel();
+                approvalsCts.Cancel();
                 await Task.WhenAny(stream, Task.Delay(TimeSpan.FromSeconds(2)));
+                await Task.WhenAny(approvals, Task.Delay(TimeSpan.FromSeconds(2)));
                 try { await DeleteSessionAsync(sessionID, CancellationToken.None); }
                 catch { }
+                ActiveSessions.TryRemove(sessionID, out _);
             }
         }
 
@@ -275,6 +326,21 @@ namespace OpenLoop.Core.OpenCode
             }
         }
 
+        /// <summary>进度指纹：正文/思维链变长、原生工具换状态或产出变多，都算「还在动」。</summary>
+        internal static string Progress(IReadOnlyList<OpenCodeMessage> messages)
+        {
+            var sb = new StringBuilder();
+            foreach (var message in messages)
+            {
+                sb.Append(message.Text.Length).Append(':').Append(message.Reasoning.Length).Append(':');
+                foreach (var tool in message.NativeTools)
+                    sb.Append(tool.Status).Append('/').Append(tool.Input.Length)
+                        .Append('/').Append(tool.Output.Length).Append(',');
+                sb.Append('|');
+            }
+            return sb.ToString();
+        }
+
         private static string LastText(IReadOnlyList<OpenCodeMessage> messages)
         {
             string text = "";
@@ -288,16 +354,25 @@ namespace OpenLoop.Core.OpenCode
         /// 没有就一律拒绝——工具实际由 OpenLoop 执行，它自己不该动手。
         /// </summary>
         private async Task HandlePermissionsAsync(
-            string sessionID, HashSet<string> answered, Func<OpenCodePermission, bool> decide, CancellationToken ct)
+            string sessionID, HashSet<string> answered, Func<OpenCodePermission, bool> decide,
+            Action<string> onNotice, CancellationToken ct)
         {
             try
             {
                 foreach (var permission in await GetPermissionsAsync(sessionID, ct))
                 {
                     if (!answered.Add(permission.ID)) continue;
-                    bool allow = decide?.Invoke(permission) ?? false;
-                    await ReplyPermissionAsync(sessionID, permission.ID, allow ? "once" : "reject",
-                        allow ? null : NativeToolHint, ct);
+                    onNotice?.Invoke("等待审批：" + OpenCodePermissions.Describe(permission));
+                    try
+                    {
+                        bool allow = decide?.Invoke(permission) ?? false;
+                        await ReplyPermissionAsync(sessionID, permission.ID, allow ? "once" : "reject",
+                            allow ? null : NativeToolHint, ct);
+                    }
+                    finally
+                    {
+                        onNotice?.Invoke(null);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -306,6 +381,18 @@ namespace OpenLoop.Core.OpenCode
             catch
             {
                 //权限轮询失败不影响本轮结果：真的执行了也会在会话里留下痕迹
+            }
+        }
+
+        /// <summary>权限轮询常驻：审批可能要等人（最长 60 秒），不能和消息轮询抢同一条线程。</summary>
+        private async Task PollPermissionsAsync(string sessionID, HashSet<string> answered,
+            Func<OpenCodePermission, bool> decide, Action<string> onNotice, CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await HandlePermissionsAsync(sessionID, answered, decide, onNotice, ct);
+                try { await Task.Delay(700, ct); }
+                catch (OperationCanceledException) { return; }
             }
         }
 
@@ -336,12 +423,94 @@ namespace OpenLoop.Core.OpenCode
             using var _ = await SendAsync(HttpMethod.Delete, $"/api/session/{sessionID}", null, ct);
         }
 
+        /// <summary>本轮临时会话的标题（也是清场时的识别依据）。</summary>
+        internal const string SessionTitle = "OpenLoop turn";
+
+        /// <summary>本进程正在用的临时会话：清场时一律跳过，避免误删并发的轮次。</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> ActiveSessions = new();
+
+        /// <summary>清场：删掉创建它的进程已经不在了的临时会话（超时/强杀时来不及删），
+        /// 以及本进程已经不再使用的会话（轮次结束后删除失败留下的）。</summary>
+        public async Task<int> SweepStaleSessionsAsync(CancellationToken ct = default)
+        {
+            int removed = 0;
+            try
+            {
+                using var doc = await SendAsync(HttpMethod.Get, "/api/session?limit=100", null, ct);
+                if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                    return 0;
+                long legacyCutoff = DateTimeOffset.UtcNow.AddMinutes(-30).ToUnixTimeMilliseconds();
+                long freshCutoff = DateTimeOffset.UtcNow.AddSeconds(-10).ToUnixTimeMilliseconds();
+                foreach (var item in data.EnumerateArray())
+                {
+                    if (!string.Equals(OpenCodeEndpoint.Str(item, "title"), SessionTitle, StringComparison.Ordinal))
+                        continue;
+                    if (OpenCodeEndpoint.Str(item, "outcome").Length > 0) continue;
+                    if (!item.TryGetProperty("time", out var time) || time.ValueKind != JsonValueKind.Object) continue;
+
+                    string id = OpenCodeEndpoint.Str(item, "id");
+                    if (id.Length == 0) continue;
+                    long updated = OpenCodeEndpoint.Num(time, "updated");
+
+                    int owner = 0;
+                    if (item.TryGetProperty("metadata", out var meta) && meta.ValueKind == JsonValueKind.Object)
+                        owner = (int)OpenCodeEndpoint.Num(meta, "openloopPid");
+                    if (owner == Environment.ProcessId)
+                    {
+                        // 本进程的：正在用的（已登记）和刚建好还没登记的都不动；其余就是没删干净的
+                        if (ActiveSessions.ContainsKey(id) || updated > freshCutoff) continue;
+                    }
+                    else if (owner > 0)
+                    {
+                        if (ProcessAlive(owner)) continue;   // 别的实例还在用
+                    }
+                    else if (updated > legacyCutoff)
+                    {
+                        continue;   // 没有主人标记的老会话：只在长时间没动过时才清
+                    }
+
+                    try
+                    {
+                        // 还在跑的先打断：忙着的会话删不掉
+                        if (OpenCodeEndpoint.Num(time, "busy") > 0)
+                            await SendAsync(HttpMethod.Post, $"/api/session/{id}/interrupt", null, ct);
+                        await SendAsync(HttpMethod.Delete, $"/api/session/{id}", null, ct);
+                        removed++;
+                    }
+                    catch
+                    {
+                        //单个删不掉不影响其它
+                    }
+                }
+            }
+            catch
+            {
+                //清场失败不影响本轮
+            }
+            return removed;
+        }
+
+        private static bool ProcessAlive(int pid)
+        {
+            try
+            {
+                using var process = System.Diagnostics.Process.GetProcessById(pid);
+                return !process.HasExited;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public async Task<string> CreateSessionAsync(
             string title, string workspace, OpenCodeModelRef? model = null, string agent = null,
-            string permissionEffect = null, CancellationToken ct = default)
+            string permissionEffect = null, CancellationToken ct = default,
+            Dictionary<string, object> metadata = null)
         {
             var body = new Dictionary<string, object>();
             if (!string.IsNullOrWhiteSpace(title)) body["title"] = title;
+            if (metadata is { Count: > 0 }) body["metadata"] = metadata;
             if (!string.IsNullOrWhiteSpace(workspace))
                 body["location"] = new Dictionary<string, object> { ["directory"] = workspace };
             if (model is { } reference) body["model"] = RefBody(reference);
@@ -468,7 +637,21 @@ namespace OpenLoop.Core.OpenCode
                     output.Append(OpenCodeEndpoint.Str(state, "error"));
             }
             return new OpenCodeNativeTool(
-                OpenCodeEndpoint.Str(part, "id"), name, input, ok, output.ToString(), status);
+                OpenCodeEndpoint.Str(part, "id"), name, input, ok, output.ToString(), status,
+                Duration(part));
+        }
+
+        /// <summary>工具执行耗时：OpenCode 的时间戳是毫秒纪元；ran→completed 才是真正执行时间
+        /// （created 到 ran 之间是排队/审批）。缺失时返回 0，界面就不显示耗时。</summary>
+        private static long Duration(JsonElement part)
+        {
+            if (!part.TryGetProperty("time", out var time) || time.ValueKind != JsonValueKind.Object)
+                return 0;
+            long completed = OpenCodeEndpoint.Num(time, "completed");
+            if (completed <= 0) return 0;
+            long start = OpenCodeEndpoint.Num(time, "ran");
+            if (start <= 0) start = OpenCodeEndpoint.Num(time, "created");
+            return start > 0 && completed >= start ? completed - start : 0;
         }
 
         public async Task<IReadOnlyList<OpenCodePermission>> GetPermissionsAsync(

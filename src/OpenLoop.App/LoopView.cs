@@ -183,6 +183,7 @@ namespace OpenLoop.App
             _lblStatus.TextChanged += (_, _) => ApplyDetail();
             _sideBtw.Initialize(_workspace, settings);
             ApplyDetail();
+            UpdateSendButton();
 
             ModelCatalog.Changed += OnCatalogChanged;
             Disposed += (_, _) =>
@@ -299,6 +300,7 @@ namespace OpenLoop.App
         {
             base.OnResize(e);
             if (!_layoutReady) ApplyLayout();
+            if (_cmdPopup.IsOpen) _cmdPopup.PlaceAbove(_inputArea);
         }
 
         private async void SendAsync(string text = null)
@@ -873,6 +875,9 @@ namespace OpenLoop.App
             //命令写了但没写请求：只提示，不要把「/btw」本身当任务发出去
             if (SessionView.IsCommand(text, "/btw") || SessionView.IsCommand(text, "/fork")) return;
 
+            //「/技能名 请求…」展开成让 Worker 先读技能再执行的任务，后面按普通输入发送/排队
+            text = SlashCommands.SkillTask(text, _skillCommands) ?? text;
+
             if (_running)
             {
                 if (text.Length == 0)
@@ -941,6 +946,32 @@ namespace OpenLoop.App
         };
 
         private readonly List<(string Command, string Description)> _cmdMatches = [];
+        private IReadOnlyList<(string Command, string Description)> _skillCommands = [];
+        private DateTime _skillsAt;
+
+        /// <summary>启用中的技能也进「/」列表；30 秒内复用上次结果，避免每敲一个字都去问 I。</summary>
+        private void EnsureSkillCommands()
+        {
+            if (DateTime.UtcNow - _skillsAt < TimeSpan.FromSeconds(30)) return;
+            _skillsAt = DateTime.UtcNow;
+            string workspace = _workspace;
+            var loop = Loop;
+            _ = Task.Run(async () =>
+            {
+                var commands = await SlashCommands.SkillsAsync(loop, workspace);
+                if (IsDisposed || workspace != _workspace) return;
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (IsDisposed) return;
+                        _skillCommands = commands;
+                        UpdateCommandPopup();
+                    }));
+                }
+                catch (ObjectDisposedException) { }
+            });
+        }
 
         /// <summary>输入以 / 开头且还没写参数时，弹出可用命令的联想列表。</summary>
         private void UpdateCommandPopup()
@@ -949,19 +980,25 @@ namespace OpenLoop.App
             bool want = text.StartsWith('/') && !text.Contains(' ') && !text.Contains('\n');
             _cmdMatches.Clear();
             if (want)
+            {
+                EnsureSkillCommands();
                 foreach (var command in Commands)
                     if (command.Command.StartsWith(text, StringComparison.OrdinalIgnoreCase))
                         _cmdMatches.Add(command);
+                foreach (var command in _skillCommands)
+                    if (!Commands.Any(c => string.Equals(c.Command, command.Command, StringComparison.OrdinalIgnoreCase))
+                        && command.Command.StartsWith(text, StringComparison.OrdinalIgnoreCase))
+                        _cmdMatches.Add(command);
+            }
 
             if (_cmdMatches.Count == 0)
             {
                 _cmdPopup.Close();
-                _inputArea.RowStyles[0].Height = 0F;
                 return;
             }
 
             _cmdPopup.Open(_cmdMatches);
-            _inputArea.RowStyles[0].Height = _cmdPopup.PreferredHeight;
+            _cmdPopup.PlaceAbove(_inputArea);
         }
 
         /// <summary>选中命令：补进输入框，光标停在参数位。</summary>
@@ -981,7 +1018,16 @@ namespace OpenLoop.App
             if (e.KeyCode == Keys.Tab) { _cmdPopup.Accept(); e.SuppressKeyPress = true; }
         }
 
-        private void OnSendClick(object sender, EventArgs e) => Submit(immediate: true);
+        private void OnSendClick(object sender, EventArgs e)
+        {
+            // 免费额度撞墙后按钮是「继续」：输入框为空时点它就把继续发出去
+            if (_txtInput.Text.Trim().Length == 0 && !_running && QuotaOnLastTurn)
+            {
+                SendAsync(Localization.T("ContinuePrompt"));
+                return;
+            }
+            Submit(immediate: true);
+        }
 
         private void OnChatCopy(object sender, ChatFlowActionEventArgs e)
         {
@@ -1225,13 +1271,23 @@ namespace OpenLoop.App
         {
             bool editing = _editing != null;
             bool stop = !editing && _running && _txtInput.Text.Trim().Length == 0;
+            bool retry = !editing && !stop && _txtInput.Text.Trim().Length == 0 && QuotaOnLastTurn;
             _btnSend.Text = editing
                 ? Localization.T("SettingsSave")
-                : Localization.T(stop ? "Stop" : "Send");
+                : Localization.T(retry ? "Continue" : stop ? "Stop" : "Send");
             _btnSend.IconSvg = UiIcons.Of(stop ? UiIcons.Stop : UiIcons.Send,
                 stop ? UiStyle.Error : Color.White);
             _btnSend.Type = stop ? AntdUI.TTypeMini.Error : AntdUI.TTypeMini.Primary;
             _btnSend.Ghost = stop;
+        }
+
+        private bool QuotaOnLastTurn
+        {
+            get
+            {
+                var last = _book.Turns.LastOrDefault();
+                return last != null && ServerNotice.IsQuotaFailure(last.AssistantText);
+            }
         }
 
         /// <summary>「立即」：先让当前轮在下一个 step 前收尾，收尾后 DrainQueue 会先发这一条。</summary>

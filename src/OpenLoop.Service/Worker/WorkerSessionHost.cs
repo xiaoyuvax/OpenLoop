@@ -24,6 +24,9 @@ namespace OpenLoop.Service.Worker
         public bool Streaming { get; set; }
         public bool Failed { get; set; }
 
+        /// <summary>即时状态（例如「等待审批：shell …」）：运行中显示在对话尾部，结束时清空。</summary>
+        public string Status { get; set; } = "";
+
         /// <summary>这一轮开始前的 git 快照 id，界面「撤回对话」用它恢复文件。</summary>
         public string Checkpoint { get; set; }
 
@@ -320,6 +323,25 @@ namespace OpenLoop.Service.Worker
             return true;
         }
 
+        /// <summary>丢掉第 keepTurns 轮之后的历史（界面「撤回对话」）。服务端不删，下一次发送会把撤回的轮次带回来。</summary>
+        public bool Truncate(string id, int keepTurns)
+        {
+            Session session;
+            lock (_lock)
+            {
+                if (!_sessions.TryGetValue(id ?? "", out session)) return false;
+                if (session.State == Running) return false;
+                int keep = Math.Clamp(keepTurns, 0, session.Turns.Count);
+                if (keep == session.Turns.Count) return true;
+                session.Turns.RemoveRange(keep, session.Turns.Count - keep);
+                session.Revision++;
+            }
+
+            Changed?.Invoke(id);
+            Persist(session);
+            return true;
+        }
+
         public bool RemovePending(string id, int index)
         {
             lock (_lock)
@@ -545,6 +567,14 @@ namespace OpenLoop.Service.Worker
                         session.Revision++;
                     }
                 },
+                Notice = text =>
+                {
+                    lock (_lock)
+                    {
+                        turn.Status = text ?? "";
+                        session.Revision++;
+                    }
+                },
                 ContextTokens = tokens =>
                 {
                     lock (_lock)
@@ -616,10 +646,14 @@ namespace OpenLoop.Service.Worker
                 lock (_lock)
                 {
                     turn.Streaming = false;
+                    turn.Status = "";
                     turn.Steps = result.Steps > turn.Steps ? result.Steps : turn.Steps;
                     turn.Assistant = result.Outcome == "error"
                         ? ServerNotice.FailedPrefix + result.ErrorMessage
                         : result.FinalAnswer ?? turn.Assistant;
+                    // 被「立即」打断时正文常常还没开始写：给个明确文案，别显示成空回复
+                    if (result.Outcome == "stopped" && string.IsNullOrWhiteSpace(turn.Assistant))
+                        turn.Assistant = ServerNotice.Stopped;
                     turn.Failed = result.Outcome == "error";
                     turn.FinishReason = result.FinishReason;
                     turn.Transcript = result.Transcript as List<LlmMessage> ?? result.Transcript?.ToList();
@@ -767,6 +801,7 @@ namespace OpenLoop.Service.Worker
                 Ms = t.Ms,
                 Streaming = t.Streaming,
                 Failed = t.Failed,
+                Status = t.Status,
                 Checkpoint = t.Checkpoint,
                 FinishReason = t.FinishReason
             }).ToList(),

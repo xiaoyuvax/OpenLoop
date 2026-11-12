@@ -230,7 +230,7 @@ public sealed class OpenCodeTests
                 return Json("""
                 {"data":[{"type":"assistant","content":[
                   {"type":"text","text":"ok"},
-                  {"type":"tool","id":"call_1","name":"shell","state":{"status":"completed","input":{"command":"dir"},"content":[{"type":"text","text":"listing"}]}},
+                  {"type":"tool","id":"call_1","name":"shell","state":{"status":"completed","input":{"command":"dir"},"content":[{"type":"text","text":"listing"}]},"time":{"created":1000,"ran":1200,"completed":2200}},
                   {"type":"tool","id":"call_2","name":"read","state":{"status":"running","input":{}}}
                 ]}]}
                 """);
@@ -248,6 +248,8 @@ public sealed class OpenCodeTests
         Assert.True(native.Ok);
         Assert.Equal("listing", native.Output);
         Assert.Equal("completed", native.Status);
+        // 执行耗时取 ran→completed（created 到 ran 之间是排队/审批）
+        Assert.Equal(1000, native.DurationMs);
     }
 
     [Fact]
@@ -353,6 +355,59 @@ public sealed class OpenCodeTests
     }
 
     [Fact]
+    public async Task Turn_keeps_waiting_while_output_still_grows()
+    {
+        int polls = 0;
+        var handler = new StubHandler(request =>
+        {
+            string path = request.RequestUri.AbsolutePath;
+            if (path == "/api/event") return Sse("");
+            if (path == "/api/session") return Json("""{"data":{"id":"ses_slow"}}""");
+            if (path == "/api/session/ses_slow/prompt") return Json("{}");
+            if (path == "/api/session/ses_slow/permission") return Json("""{"data":[]}""");
+            if (path == "/api/session/ses_slow/message")
+            {
+                // 每轮多一个字：跑够 10 轮（约 7 秒）也不该被 5 秒的空闲窗口砍掉
+                int n = Interlocked.Increment(ref polls);
+                return Json("""{"data":[{"type":"assistant","content":[{"type":"text","text":" """
+                    + new string('a', n) + "\"}]}]}");
+            }
+            if (path == "/api/session/ses_slow")
+                return polls < 10
+                    ? Json("""{"data":{"time":{"created":1}}}""")
+                    : Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded"}}""");
+            return Json("{}");
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+
+        var turn = await client.RunTurnAsync(
+            "hi", new OpenCodeModelRef("opencode", "m"), Path.GetTempPath(), timeoutSeconds: 5);
+
+        Assert.True(polls >= 10);
+        Assert.True(turn.Text.Length > 0);
+    }
+
+    [Fact]
+    public async Task Turn_gives_up_when_nothing_moves_for_the_idle_window()
+    {
+        var handler = new StubHandler(request => request.RequestUri.AbsolutePath switch
+        {
+            "/api/event" => Sse(""),
+            "/api/session" => Json("""{"data":{"id":"ses_stuck"}}"""),
+            "/api/session/ses_stuck" => Json("""{"data":{"time":{"created":1}}}"""),
+            "/api/session/ses_stuck/message" => Json("""{"data":[]}"""),
+            "/api/session/ses_stuck/permission" => Json("""{"data":[]}"""),
+            _ => Json("{}")
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() => client.RunTurnAsync(
+            "hi", new OpenCodeModelRef("opencode", "m"), Path.GetTempPath(), timeoutSeconds: 5));
+
+        Assert.Contains("没有任何输出", ex.Message);
+    }
+
+    [Fact]
     public async Task List_models_maps_free_and_tools()
     {
         const string json = """
@@ -447,6 +502,43 @@ public sealed class OpenCodeTests
         Assert.Contains("0.5", result.Data);
         Assert.Contains("src/a.cs(+3/-1)", result.Data);
         Assert.Contains("\"effect\":\"ask\"", createBody);
+    }
+
+    [Fact]
+    public async Task Sweep_deletes_only_sessions_whose_owner_process_is_gone()
+    {
+        var deleted = new List<string>();
+        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        string list = """
+        {"data":[
+          {"id":"ses_dead","title":"OpenLoop turn","outcome":null,"metadata":{"openloopPid":999999},"time":{"updated":1,"busy":1}},
+          {"id":"ses_own_old","title":"OpenLoop turn","outcome":null,"metadata":{"openloopPid":__PID__},"time":{"updated":1}},
+          {"id":"ses_mine","title":"OpenLoop turn","outcome":null,"metadata":{"openloopPid":__PID__},"time":{"updated":__NOW__}},
+          {"id":"ses_legacy","title":"OpenLoop turn","outcome":null,"time":{"updated":__NOW__}},
+          {"id":"ses_user","title":"我的会话","outcome":null,"time":{"updated":1}}
+        ]}
+        """.Replace("__PID__", Environment.ProcessId.ToString())
+           .Replace("__NOW__", now.ToString());
+        var handler = new StubHandler(request =>
+        {
+            string path = request.RequestUri.AbsolutePath;
+            if (path == "/api/session") return Json(list);
+            if (path.StartsWith("/api/session/ses_")) deleted.Add(request.Method + " " + path);
+            return Json("{}");
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+
+        int removed = await client.SweepStaleSessionsAsync();
+
+        Assert.Equal(2, removed);
+        // 忙着的先打断再删；本进程不再使用、以及主人进程已退出的都要清
+        Assert.Contains("POST /api/session/ses_dead/interrupt", deleted);
+        Assert.Contains("DELETE /api/session/ses_dead", deleted);
+        Assert.Contains("DELETE /api/session/ses_own_old", deleted);
+        // 正在用的、刚建好的、别人的、非本标题的一律不碰
+        Assert.DoesNotContain(deleted, d => d.Contains("ses_mine"));
+        Assert.DoesNotContain(deleted, d => d.Contains("ses_legacy"));
+        Assert.DoesNotContain(deleted, d => d.Contains("ses_user"));
     }
 
     [Fact]
