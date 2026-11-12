@@ -12,6 +12,9 @@ namespace OpenLoop.App
         private AntdUI.Label _lblSub;
         private FlowLayoutPanel _rightFlow;
         private AntdUI.Button _btnSettings;
+        private AntdUI.Button _btnMin;
+        private AntdUI.Button _btnMax;
+        private AntdUI.Button _btnClose;
         private Panel _line;
         private AntdUI.Tabs _tabs;
         private AntdUI.TabPage _overviewPage;
@@ -35,6 +38,9 @@ namespace OpenLoop.App
             _lblSub = new AntdUI.Label();
             _rightFlow = new FlowLayoutPanel();
             _btnSettings = new AntdUI.Button();
+            _btnMin = new AntdUI.Button();
+            _btnMax = new AntdUI.Button();
+            _btnClose = new AntdUI.Button();
             _line = new Panel();
             _tabs = new AntdUI.Tabs();
             _overviewPage = new AntdUI.TabPage();
@@ -117,9 +123,40 @@ namespace OpenLoop.App
             _btnSettings.Ghost = true;
             _btnSettings.Radius = 8;
             _btnSettings.IconSvg = UiIcons.Of(UiIcons.Settings, UiStyle.Text);
-            _btnSettings.Margin = new Padding(0, 10, 0, 10);
+            _btnSettings.Margin = new Padding(0, 10, 4, 10);
             _btnSettings.Click += OnSettings;
 
+            _btnMin.Name = "btnMin";
+            _btnMin.Width = 38;
+            _btnMin.Height = 34;
+            _btnMin.Ghost = true;
+            _btnMin.Radius = 8;
+            _btnMin.IconSvg = UiIcons.Of(UiIcons.Minimize, UiStyle.Text);
+            _btnMin.Margin = new Padding(2, 10, 2, 10);
+            _btnMin.Click += OnMinimize;
+
+            _btnMax.Name = "btnMax";
+            _btnMax.Width = 38;
+            _btnMax.Height = 34;
+            _btnMax.Ghost = true;
+            _btnMax.Radius = 8;
+            _btnMax.IconSvg = UiIcons.Of(UiIcons.Maximize, UiStyle.Text);
+            _btnMax.Margin = new Padding(2, 10, 2, 10);
+            _btnMax.Click += OnToggleMaximize;
+
+            _btnClose.Name = "btnClose";
+            _btnClose.Width = 38;
+            _btnClose.Height = 34;
+            _btnClose.Ghost = true;
+            _btnClose.Radius = 8;
+            _btnClose.IconSvg = UiIcons.Of(UiIcons.Close, UiStyle.Text);
+            _btnClose.Margin = new Padding(2, 10, 0, 10);
+            _btnClose.Click += OnCloseWindow;
+
+            // 右到左：关闭在最右，其次最大化/最小化/设置
+            _rightFlow.Controls.Add(_btnClose);
+            _rightFlow.Controls.Add(_btnMax);
+            _rightFlow.Controls.Add(_btnMin);
             _rightFlow.Controls.Add(_btnSettings);
 
             _topBar.Controls.Add(_btnMenu, 0, 0);
@@ -127,6 +164,12 @@ namespace OpenLoop.App
             _topBar.Controls.Add(_rightFlow, 2, 0);
             _titleFlow.Controls.Add(_lblTitle);
             _titleFlow.Controls.Add(_lblSub);
+
+            // 无标题栏：Banner（及标题文字）拖动整窗
+            _topBar.MouseDown += OnBannerMouseDown;
+            _titleFlow.MouseDown += OnBannerMouseDown;
+            _lblTitle.MouseDown += OnBannerMouseDown;
+            _lblSub.MouseDown += OnBannerMouseDown;
 
             // divider
             _line.Dock = DockStyle.Fill;
@@ -167,11 +210,13 @@ namespace OpenLoop.App
             BackColor = UiStyle.Page;
             ClientSize = new Size(1280, 840);
             MinimumSize = new Size(980, 640);
+            FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
             Text = "OpenLoop";
             Controls.Add(_root);
             Load += OnFormLoad;
             Shown += OnFormShown;
+            Resize += OnWindowResize;
             FormClosing += OnFormClosing;
 
             ResumeLayout(false);

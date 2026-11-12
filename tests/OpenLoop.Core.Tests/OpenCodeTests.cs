@@ -4,6 +4,7 @@ using System.Text;
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.OpenCode;
+using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Tools;
 using Xunit;
@@ -128,6 +129,125 @@ public sealed class OpenCodeTests
 
         Assert.Equal("ok", result.Content);
         Assert.Contains("\"effect\":\"ask\"", createBody);
+    }
+
+    [Fact]
+    public async Task Free_model_native_calls_follow_host_approval()
+    {
+        string workspace = Path.GetTempPath();
+        string inside = Path.Combine(workspace, "a.cs");
+        var replies = new Dictionary<string, string>();
+        int permissionPolls = 0;
+        var handler = new StubHandler(async request =>
+        {
+            string path = request.RequestUri.AbsolutePath;
+            if (path == "/api/event") return Sse("");
+            if (path == "/api/session") return Json("""{"data":{"id":"ses_scope"}}""");
+            if (path == "/api/session/ses_scope/prompt") return Json("{}");
+            if (path == "/api/session/ses_scope/permission")
+                return ++permissionPolls == 1
+                    ? Json("{\"data\":["
+                           + "{\"id\":\"p_in\",\"action\":\"read\",\"resources\":[\"" + inside.Replace("\\", "\\\\") + "\"]},"
+                           + "{\"id\":\"p_out\",\"action\":\"read\",\"resources\":[\"C:\\\\outside\\\\b.cs\"]},"
+                           + "{\"id\":\"p_shell\",\"action\":\"shell\",\"resources\":[\"C:\\\\outside\"]}]}")
+                    : Json("""{"data":[]}""");
+            if (path.StartsWith("/api/session/ses_scope/permission/") && path.EndsWith("/reply"))
+            {
+                string id = path.Split('/')[5];
+                replies[id] = await request.Content.ReadAsStringAsync();
+                return Json("{}");
+            }
+            if (path == "/api/session/ses_scope")
+                return Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded"}}""");
+            if (path == "/api/session/ses_scope/message")
+                return Json("""{"data":[{"type":"assistant","content":[{"type":"text","text":"ok"}]}]}""");
+            return Json("{}");
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+        var reasoner = new OpenCodeReasoner(
+            client, new OpenCodeModelRef("opencode", "m"), workspace,
+            approve: _ => ApprovalDecision.AllowOnce, keepTools: true);
+
+        await reasoner.CompleteAsync([new LlmMessage("user", "hi")]);
+
+        Assert.Contains("\"decision\":\"once\"", replies["p_in"]);
+        Assert.Contains("\"decision\":\"once\"", replies["p_out"]);
+        Assert.Contains("\"decision\":\"once\"", replies["p_shell"]);
+    }
+
+    [Fact]
+    public async Task Free_model_without_approval_rejects_native_calls_with_protocol_hint()
+    {
+        string reply = null;
+        int permissionPolls = 0;
+        var handler = new StubHandler(async request =>
+        {
+            string path = request.RequestUri.AbsolutePath;
+            if (path == "/api/event") return Sse("");
+            if (path == "/api/session") return Json("""{"data":{"id":"ses_free"}}""");
+            if (path == "/api/session/ses_free/prompt") return Json("{}");
+            if (path == "/api/session/ses_free/permission")
+                return ++permissionPolls == 1
+                    ? Json("""{"data":[{"id":"perm_1","action":"shell","resources":["C:\\outside"]}]}""")
+                    : Json("""{"data":[]}""");
+            if (path == "/api/session/ses_free/permission/perm_1/reply")
+            {
+                reply = await request.Content.ReadAsStringAsync();
+                return Json("{}");
+            }
+            if (path == "/api/session/ses_free")
+                return Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded"}}""");
+            if (path == "/api/session/ses_free/message")
+                return Json("""{"data":[{"type":"assistant","content":[{"type":"text","text":"ok"}]}]}""");
+            return Json("{}");
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+        var reasoner = new OpenCodeReasoner(
+            client, new OpenCodeModelRef("opencode", "m"), Path.GetTempPath(), keepTools: true);
+
+        var result = await reasoner.CompleteAsync([new LlmMessage("user", "hi")]);
+
+        Assert.Equal("ok", result.Content);
+        Assert.NotNull(reply);
+        Assert.Contains("\"decision\":\"reject\"", reply);
+        Assert.Contains("tool-call", reply);
+    }
+
+    [Fact]
+    public async Task Turn_streams_native_tool_calls_to_observer()
+    {
+        var seen = new List<NativeToolCall>();
+        var handler = new StubHandler(async request =>
+        {
+            string path = request.RequestUri.AbsolutePath;
+            if (path == "/api/event") return Sse("");
+            if (path == "/api/session") return Json("""{"data":{"id":"ses_n"}}""");
+            if (path == "/api/session/ses_n/prompt") return Json("{}");
+            if (path == "/api/session/ses_n/permission") return Json("""{"data":[]}""");
+            if (path == "/api/session/ses_n")
+                return Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded"}}""");
+            if (path == "/api/session/ses_n/message")
+                return Json("""
+                {"data":[{"type":"assistant","content":[
+                  {"type":"text","text":"ok"},
+                  {"type":"tool","id":"call_1","name":"shell","state":{"status":"completed","input":{"command":"dir"},"content":[{"type":"text","text":"listing"}]}},
+                  {"type":"tool","id":"call_2","name":"read","state":{"status":"running","input":{}}}
+                ]}]}
+                """);
+            return Json("{}");
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+        var reasoner = new OpenCodeReasoner(client, new OpenCodeModelRef("opencode", "m"), Path.GetTempPath());
+        reasoner.OnNativeTool = seen.Add;
+
+        await reasoner.CompleteAsync([new LlmMessage("user", "hi")]);
+
+        var native = Assert.Single(seen);
+        Assert.Equal("shell", native.Tool);
+        Assert.Contains("dir", native.Input);
+        Assert.True(native.Ok);
+        Assert.Equal("listing", native.Output);
+        Assert.Equal("completed", native.Status);
     }
 
     [Fact]

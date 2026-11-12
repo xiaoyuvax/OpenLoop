@@ -4,6 +4,7 @@ using Wima.Web;
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Runtime;
+using OpenLoop.Service.Storage;
 using OpenLoop.Service.Worker;
 
 namespace OpenLoop.Service.Web
@@ -33,7 +34,19 @@ namespace OpenLoop.Service.Web
             // parts: api / sessions / {id} / {action}
 
             if (method == "GET" && parts.Length == 2 && parts[1] == "capabilities")
-                return Json(req, new { worker = true, loop = true });
+                return Json(req, new { worker = true, loop = true, workspace = AppSettings.Load()?.Workspace ?? "" });
+
+            if (method == "GET" && parts.Length == 2 && parts[1] == "models")
+            {
+                if (Models.OpenCodeHub.Models.Count == 0) Models.OpenCodeHub.EnsureFresh();
+                return Json(req, new
+                {
+                    models = Models.OpenCodeHub.Models
+                        .Where(m => !string.IsNullOrWhiteSpace(m?.Id))
+                        .Select(m => new { id = m.Id, name = m.Name ?? m.Id, free = m.IsFree, context = m.ContextLength })
+                        .ToArray()
+                });
+            }
 
             // 鍒殑涓€寰嬩笉璁わ紙/api/loop/* 鐢卞弽浠ｅ鐞嗗櫒鎺ヨ蛋锛夛紝浜ょ粰鍚庨潰鐨勫鐞嗗櫒
             if (parts.Length < 2 || parts[1] != "sessions") return false;
@@ -60,7 +73,13 @@ namespace OpenLoop.Service.Web
             }
 
             if (method == "DELETE" && parts.Length == 3)
-                return _host.Remove(id) ? Json(req, new { ok = true }, 200) : NotFound(req);
+            {
+                var current = _host.Get(id);
+                if (current == null || !_host.Remove(id)) return NotFound(req);
+                // 界面删会话 = 连历史一起删，否则重启后又会从 chats/index.json 冒出来
+                ChatHistory.Delete(current.Workspace, id);
+                return Json(req, new { ok = true }, 200);
+            }
 
             if (method != "POST" || parts.Length != 4) return NotFound(req);
 
@@ -73,6 +92,15 @@ namespace OpenLoop.Service.Web
                     return _host.Send(id, body.Tag, body.Text)
                         ? Json(req, _host.Get(id))
                         : NotFound(req);
+                }
+                case "pending":
+                {
+                    var body = ReadBody<PendingRequest>(req);
+                    if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
+                    bool ok = string.Equals(body.Action, "now", StringComparison.OrdinalIgnoreCase)
+                        ? _host.SendNow(id, body.Index)
+                        : _host.RemovePending(id, body.Index);
+                    return ok ? Json(req, _host.Get(id)) : NotFound(req);
                 }
                 case "stop":
                     return _host.Stop(id) ? Json(req, _host.Get(id)) : NotFound(req);
@@ -145,6 +173,12 @@ namespace OpenLoop.Service.Web
         {
             public string Text { get; set; }
             public string Tag { get; set; }
+        }
+
+        private sealed class PendingRequest
+        {
+            public int Index { get; set; }
+            public string Action { get; set; }
         }
 
         private sealed class ApprovalAnswer

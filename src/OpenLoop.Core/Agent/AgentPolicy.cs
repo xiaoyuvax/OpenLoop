@@ -6,6 +6,9 @@ namespace OpenLoop.Core.Agent
     /// </summary>
     public sealed class AgentPolicy
     {
+        /// <summary>一轮最多的工具调用数（超了整批拒绝）。提示词与拒收报错共用，避免各写一份字面量。</summary>
+        public const int MaxParallelCalls = 4;
+
         /// <summary>单次任务步数上限；0 或负数表示不设上限。</summary>
         public int MaxSteps { get; set; } = 0;
         public double CompressAt { get; set; } = 0.8;

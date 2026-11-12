@@ -49,10 +49,20 @@ namespace OpenLoop.Service.Worker
         public int FeatureCount { get; set; }
         public int RuleCount { get; set; }
 
+        /// <summary>会话标题（chats/index.json 里的自定义标题；空则界面回退到模型名）</summary>
+        public string Title { get; set; }
+
+        /// <summary>true=本进程内存里已有（可直接 GET）；false=只在 chats/ 索引里（要带 id POST 建会话）</summary>
+        public bool Live { get; set; }
+
         /// <summary>最近一轮的结果：ok / budget / stopped / error。</summary>
         public string Outcome { get; set; }
         public decimal? Cost { get; set; }
         public int? ContextTokens { get; set; }
+
+        /// <summary>当前模型的上下文窗口；和 ContextTokens 一起供界面算占比。</summary>
+        public int ContextLimit { get; set; }
+
         public List<WorkerTurn> Turns { get; set; } = [];
         public List<string> Pending { get; set; } = [];
         public List<WorkerPromptView> Prompts { get; set; } = [];
@@ -143,6 +153,16 @@ namespace OpenLoop.Service.Worker
             // 冷启动判定用：文件最后写入时间（缓存已冷）+ 是否换了模型（前缀对不上，缓存本来也没有）。
             string path = ChatHistory.PathFor(session.Workspace, session.Id);
             if (File.Exists(path)) session.LastSavedAt = File.GetLastWriteTimeUtc(path);
+
+            // 网页/API 冷启动时没带模型：沿用这段历史最后用过的（WinForms 由界面传进来）
+            if (string.IsNullOrWhiteSpace(session.Model) || string.IsNullOrWhiteSpace(session.Effort))
+            {
+                var last = entries.LastOrDefault(e =>
+                    !string.IsNullOrWhiteSpace(e?.Model) || !string.IsNullOrWhiteSpace(e?.Effort));
+                if (string.IsNullOrWhiteSpace(session.Model)) session.Model = last?.Model ?? "";
+                if (string.IsNullOrWhiteSpace(session.Effort)) session.Effort = last?.Effort ?? "";
+            }
+
             session.ModelChanged = entries.Any(e => !string.IsNullOrWhiteSpace(e?.Model)
                 && !string.Equals(e.Model, session.Model, StringComparison.OrdinalIgnoreCase));
 
@@ -152,9 +172,39 @@ namespace OpenLoop.Service.Worker
 
         public IReadOnlyList<WorkerSessionSnapshot> List(bool summary = false)
         {
+            List<WorkerSessionSnapshot> rows;
             lock (_lock)
-                return _sessions.Values.OrderByDescending(s => s.CreatedAt)
+                rows = _sessions.Values.OrderByDescending(s => s.CreatedAt)
                     .Select(s => summary ? brief(s) : snapshot(s)).ToList();
+
+            // 冷启动后 A 的内存里没有会话：按 chats/index.json 补上，网页/别的 agent 才看得见历史
+            try
+            {
+                foreach (var entry in ChatHistory.Index())
+                {
+                    if (string.IsNullOrEmpty(entry?.Id)) continue;
+                    var row = rows.FirstOrDefault(r => r.Id == entry.Id);
+                    if (row != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(entry.Title)) row.Title = entry.Title;
+                        continue;
+                    }
+                    if (!Directory.Exists(entry.Workspace)) continue;
+                    if (!File.Exists(ChatHistory.PathFor(entry.Workspace, entry.Id))) continue;
+                    rows.Add(new WorkerSessionSnapshot
+                    {
+                        Id = entry.Id,
+                        Workspace = entry.Workspace,
+                        State = Idle,
+                        Title = entry.Title
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("读取会话索引失败：" + ex.Message);
+            }
+            return rows;
         }
 
         /// <summary>列表轮询用的轻量投影：只带状态，不带轮次正文。</summary>
@@ -169,7 +219,8 @@ namespace OpenLoop.Service.Worker
             Paused = session.Paused,
             Outcome = session.Outcome,
             Cost = session.Cost,
-            ContextTokens = session.ContextTokens
+            ContextTokens = session.ContextTokens,
+            Live = true
         };
 
         public WorkerSessionSnapshot Get(string id)
@@ -283,6 +334,38 @@ namespace OpenLoop.Service.Worker
             return true;
         }
 
+        /// <summary>
+        /// 把第 index 条排队改成「立即」：挪到队首；正在跑就软打断（本轮收尾后先发它），
+        /// 空闲就直接发。对应 WinForms 排队项的「立即」。
+        /// </summary>
+        public bool SendNow(string id, int index)
+        {
+            lock (_lock)
+            {
+                if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
+                if (index < 0 || index >= session.Pending.Count) return false;
+
+                string text = session.Pending[index];
+                session.Pending.RemoveAt(index);
+                session.Pending.Insert(0, text);
+                session.Paused = false;
+                session.Revision++;
+
+                if (session.State == Running)
+                {
+                    session.Interrupt = true;
+                    Changed?.Invoke(id);
+                    return true;
+                }
+
+                session.Pending.RemoveAt(0);
+                Start(session, "task", text);
+            }
+
+            Changed?.Invoke(id);
+            return true;
+        }
+
         /// <summary>丢掉内存里的会话（正在跑的先停）；对话文件由调用方删。</summary>
         public bool Remove(string id)
         {
@@ -350,23 +433,24 @@ namespace OpenLoop.Service.Worker
                     list.Add(new LlmMessage(message.Role, message.Content));
                 }
 
-                for (int j = i + 1; j < turns.Count; j++)
-                {
-                    if (turns[j].Failed) continue;
-                    if (!string.IsNullOrEmpty(turns[j].User)) list.Add(new LlmMessage("user", turns[j].User));
-                    if (!string.IsNullOrEmpty(turns[j].Assistant)) list.Add(new LlmMessage("assistant", turns[j].Assistant));
-                }
+                for (int j = i + 1; j < turns.Count; j++) AppendText(list, turns[j]);
                 return list;
             }
 
             var fallback = new List<LlmMessage>();
-            foreach (var turn in turns)
-            {
-                if (turn.Failed) continue;
-                if (!string.IsNullOrEmpty(turn.User)) fallback.Add(new LlmMessage("user", turn.User));
-                if (!string.IsNullOrEmpty(turn.Assistant)) fallback.Add(new LlmMessage("assistant", turn.Assistant));
-            }
+            foreach (var turn in turns) AppendText(fallback, turn);
             return fallback;
+        }
+
+        /// <summary>
+        /// 没有 transcript 的轮次退回正文。失败轮的正文是接口报错（free-limit、超时等），
+        /// 但它的 user 还得留下：连续几次失败后历史整段消失，下一个模型会以为在开新对话。
+        /// </summary>
+        private static void AppendText(List<LlmMessage> list, WorkerTurn turn)
+        {
+            if (!string.IsNullOrEmpty(turn?.User)) list.Add(new LlmMessage("user", turn.User));
+            if (!string.IsNullOrEmpty(turn?.Assistant) && !ServerNotice.IsNotice(turn.Assistant))
+                list.Add(new LlmMessage("assistant", turn.Assistant));
         }
 
         private void Start(Session session, string tag, string text)
@@ -389,6 +473,11 @@ namespace OpenLoop.Service.Worker
             session.Interrupt = false;
 
             string id = session.Id;
+            // 流式正文只在确认不是工具调用协议时才写进 Assistant，与 LoopView/SideWorkView 的
+            // streamBuffer + LooksLikeToolCallText 过滤保持一致；协议原文不能出现在正文里。
+            string stream = "";
+            // 上下文占比：本轮 prompt 估算 + 已生成内容（按增量累加，避免每次 delta 重扫整段）
+            int promptTokens = 0, liveTokens = 0;
             var request = new WorkerRunRequest
             {
                 Settings = session.Settings(),
@@ -417,7 +506,10 @@ namespace OpenLoop.Service.Worker
                 {
                     lock (_lock)
                     {
-                        turn.Assistant += piece;
+                        stream += piece;
+                        liveTokens += AgentContext.EstimateTokens(piece);
+                        if (!AgentToolCallParser.LooksLikeToolCallText(stream)) turn.Assistant = stream;
+                        session.ContextTokens = promptTokens + liveTokens;
                         session.Revision++;
                     }
                 },
@@ -426,6 +518,8 @@ namespace OpenLoop.Service.Worker
                     lock (_lock)
                     {
                         turn.Reasoning += piece;
+                        liveTokens += AgentContext.EstimateTokens(piece);
+                        session.ContextTokens = promptTokens + liveTokens;
                         (turn.TimelineRun ??= new RunTimeline()).Thinking(piece);
                         session.Revision++;
                     }
@@ -434,6 +528,8 @@ namespace OpenLoop.Service.Worker
                 {
                     lock (_lock)
                     {
+                        stream = "";
+                        liveTokens = 0;
                         turn.Assistant = "";
                         turn.Reasoning = "";
                         turn.TimelineRun?.DropThinking();
@@ -444,7 +540,18 @@ namespace OpenLoop.Service.Worker
                 {
                     lock (_lock)
                     {
+                        stream = "";
                         turn.Assistant = "";
+                        session.Revision++;
+                    }
+                },
+                ContextTokens = tokens =>
+                {
+                    lock (_lock)
+                    {
+                        promptTokens = tokens;
+                        liveTokens = 0;
+                        session.ContextTokens = tokens;
                         session.Revision++;
                     }
                 },
@@ -454,7 +561,7 @@ namespace OpenLoop.Service.Worker
                     {
                         turn.Steps++;
                         turn.Ms += step.DurationMs;
-                        string line = $"{step.Tool}({step.ArgsSummary}) · {step.DurationText}{(step.Ok ? "" : " · 失败")}";
+                        string line = step.DisplayLine;
                         turn.ToolLines = string.IsNullOrEmpty(turn.ToolLines) ? line : turn.ToolLines + "\n" + line;
                         (turn.TimelineRun ??= new RunTimeline()).Tool(line);
                         session.Revision++;
@@ -483,7 +590,11 @@ namespace OpenLoop.Service.Worker
                 }
                 catch (OperationCanceledException)
                 {
-                    result = new WorkerRunResult { Outcome = "stopped", FinalAnswer = "（已停止）" };
+                    result = new WorkerRunResult
+                    {
+                        Outcome = "stopped",
+                        FinalAnswer = ServerNotice.Stopped
+                    };
                 }
                 catch (Exception ex)
                 {
@@ -507,7 +618,7 @@ namespace OpenLoop.Service.Worker
                     turn.Streaming = false;
                     turn.Steps = result.Steps > turn.Steps ? result.Steps : turn.Steps;
                     turn.Assistant = result.Outcome == "error"
-                        ? "执行失败：" + result.ErrorMessage
+                        ? ServerNotice.FailedPrefix + result.ErrorMessage
                         : result.FinalAnswer ?? turn.Assistant;
                     turn.Failed = result.Outcome == "error";
                     turn.FinishReason = result.FinishReason;
@@ -517,7 +628,7 @@ namespace OpenLoop.Service.Worker
                     session.Steps = result.Steps;
                     session.Outcome = result.Outcome;
                     session.Cost = result.Cost;
-                    session.ContextTokens = result.ContextTokens;
+                    session.ContextTokens = result.ContextTokens ?? session.ContextTokens;
                     session.State = result.Outcome is "ok" or "budget" ? Done : Interrupted;
                     session.Revision++;
 
@@ -640,9 +751,11 @@ namespace OpenLoop.Service.Worker
             Outcome = session.Outcome,
             Cost = session.Cost,
             ContextTokens = session.ContextTokens,
+            ContextLimit = OpenLoop.Service.Models.ModelCatalog.ContextLimit(session.Model, session.Settings()),
             ActivationVersion = session.ActivationVersion,
             FeatureCount = session.FeatureCount,
             RuleCount = session.RuleCount,
+            Live = true,
             Turns = session.Turns.Select(t => new WorkerTurn
             {
                 User = t.User,

@@ -1,3 +1,4 @@
+using System.Linq;
 using ChatFlow;
 
 namespace OpenLoop.App
@@ -20,6 +21,9 @@ namespace OpenLoop.App
         public ChatTurnBook Book { get; } = new();
         public SessionState State { get; set; } = SessionState.Idle;
         public DateTime StartedAt { get; init; } = DateTime.Now;
+
+        /// <summary>最后一次活动时间：会话列表按它倒序；开始时间只用于显示。</summary>
+        public DateTime LastActiveAt { get; set; } = DateTime.Now;
         public int Steps { get; set; }
         public string Workspace { get; set; } = "";
         public AntdUI.TabPage Page { get; set; }
@@ -32,26 +36,38 @@ namespace OpenLoop.App
         /// <summary>会话列表里的复选列（批量删除用）。</summary>
         public bool Selected { get; set; }
 
-        /// <summary>用户重命名后覆盖默认标题；空值回退到工作目录名。</summary>
+        /// <summary>用户重命名或模型总结出来的内容简述；空值只显示工作目录名。</summary>
         public string CustomTitle { get; set; }
+
+        /// <summary>[Loop] 页的行：标题按 Loop 规格带前缀。</summary>
+        public bool IsLoop { get; init; }
 
         public string Title
         {
             get
             {
-                if (!string.IsNullOrWhiteSpace(CustomTitle)) return CustomTitle.Trim();
-                string name = "";
-                try
-                {
-                    string trimmed = Workspace.TrimEnd('\\', '/');
-                    if (trimmed.Length > 0) name = Path.GetFileName(trimmed);
-                }
-                catch
-                {
-                    // 非法路径按无标题处理
-                }
-                return string.IsNullOrEmpty(name) ? "新会话" : name;
+                string title = ComposeTitle(Workspace, CustomTitle, IsLoop);
+                return title.Length == 0 ? "新会话" : title;
             }
+        }
+
+        /// <summary>标题规格：Worker = 工作区文件夹名 · 内容简述；Loop = Loop工作区 · 工作区文件夹名 · 内容简述。</summary>
+        internal static string ComposeTitle(string workspace, string summary, bool loop = false)
+        {
+            string folder = "";
+            try
+            {
+                string trimmed = (workspace ?? "").TrimEnd('\\', '/');
+                if (trimmed.Length > 0) folder = Path.GetFileName(trimmed);
+            }
+            catch
+            {
+                // 非法路径按无标题处理
+            }
+
+            string body = string.Join(" · ", new[] { folder, summary?.Trim() }
+                .Where(part => !string.IsNullOrEmpty(part)));
+            return loop ? "Loop工作区" + (body.Length == 0 ? "" : " · " + body) : body;
         }
     }
 }

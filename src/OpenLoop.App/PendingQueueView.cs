@@ -78,15 +78,21 @@ namespace OpenLoop.App
             // 立即的条目用主题强调色，排队的用暗色 —— 三种配色下都靠 UiStyle 走
             Color tone = item.Immediate ? UiStyle.Accent : UiStyle.Muted;
 
-            var mode = new AntdUI.Label
+            // 两个字换成图标：⚡ 插到下一步、🕐 等这一轮返回
+            var mode = new AntdUI.Button
             {
-                AutoSize = true,
-                Text = item.Immediate ? "立即" : "等本轮",
-                ForeColor = tone,
-                Font = new Font("Segoe UI", 8.5F),
-                TextAlign = ContentAlignment.MiddleLeft,
-                Margin = new Padding(0, 0, Dip(8), 0)
+                IconSvg = UiIcons.Of(item.Immediate ? UiIcons.Bolt : UiIcons.Clock, tone),
+                Ghost = true,
+                Type = AntdUI.TTypeMini.Default,
+                TabStop = false,
+                Radius = 6,
+                Width = Dip(26),
+                Height = Dip(22),
+                Margin = new Padding(0, 0, Dip(6), 0)
             };
+            _tips.SetToolTip(mode, item.Immediate
+                ? "立即：插到下一步（Enter 发送）"
+                : "等本轮：等这一轮返回（Ctrl+Enter 发送）");
 
             var text = new AntdUI.Label
             {

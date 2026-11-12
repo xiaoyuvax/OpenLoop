@@ -57,7 +57,7 @@ namespace OpenLoop.App
             if (!_ready) Initialize();
 
             _all.Clear();
-            _all.AddRange(sessions.OrderByDescending(s => s.StartedAt));
+            _all.AddRange(sessions.OrderByDescending(s => s.LastActiveAt));
 
             _projects.Clear();
             _projects.AddRange(Paths.Dedup(projects));
@@ -117,16 +117,18 @@ namespace OpenLoop.App
             {
                 foreach (var loop in LoopIndex.List()
                              .Where(l => q.Length == 0 ||
-                                         ProjectName(l.Workspace).Contains(q, StringComparison.OrdinalIgnoreCase))
+                                         ProjectName(l.Workspace).Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                                         (l.Title ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
                              .OrderByDescending(l => l.UpdatedAt))
                 {
-                    string name = ProjectName(loop.Workspace);
                     _rows.Add(new Session
                     {
                         Id = "loop:" + loop.SessionId,
                         Workspace = loop.Workspace,
-                        CustomTitle = "[Loop] " + name,
-                        StartedAt = loop.UpdatedAt.LocalDateTime
+                        IsLoop = true,
+                        CustomTitle = loop.Title,
+                        StartedAt = loop.UpdatedAt.LocalDateTime,
+                        LastActiveAt = loop.UpdatedAt.LocalDateTime
                     });
                 }
             }
@@ -135,7 +137,7 @@ namespace OpenLoop.App
                 _rows.AddRange(_all
                     .Where(s => Paths.Same(s.Workspace, _project))
                     .Where(s => q.Length == 0 || s.Title.Contains(q, StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(s => s.StartedAt));
+                    .OrderByDescending(s => s.LastActiveAt));
             }
 
             bool loops = _project == LoopTag;
@@ -185,10 +187,10 @@ namespace OpenLoop.App
 
         private static AntdUI.CellBadge Badge(Session session) => session?.State switch
         {
-            SessionState.Running => new AntdUI.CellBadge(AntdUI.TState.Success, Localization.T("StateRunning")),
-            SessionState.Interrupted => new AntdUI.CellBadge(AntdUI.TState.Error, Localization.T("StateInterrupted")),
-            SessionState.Done => new AntdUI.CellBadge(AntdUI.TState.Default, Localization.T("StateDone")),
-            _ => new AntdUI.CellBadge(AntdUI.TState.Default, Localization.T("StateIdle"))
+            SessionState.Running => new AntdUI.CellBadge(AntdUI.TState.Processing),
+            SessionState.Interrupted => new AntdUI.CellBadge(AntdUI.TState.Error),
+            SessionState.Done => new AntdUI.CellBadge(AntdUI.TState.Success),
+            _ => new AntdUI.CellBadge(AntdUI.TState.Default)
         };
 
         private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
@@ -196,9 +198,9 @@ namespace OpenLoop.App
         private void SizeColumns()
         {
             float scale = DeviceDpi / 96f;
-            int fixedDip = 48 + 96 + 150 + 70;
+            int fixedDip = 48 + 56 + 150 + 70;
             int titleDip = (int)(_table.ClientSize.Width / scale) - fixedDip - 12;
-            _colState.Width = "96";
+            _colState.Width = "56";
             _colStarted.Width = "150";
             _colSteps.Width = "70";
             _colTitle.Width = Math.Max(240, titleDip).ToString();

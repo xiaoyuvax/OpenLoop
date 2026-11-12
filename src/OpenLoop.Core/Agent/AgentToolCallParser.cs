@@ -320,6 +320,14 @@ namespace OpenLoop.Core.Agent
                 && modelOutput.Contains("\"arguments\"", StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// 正文是否就是工具调用协议（以 marker 开头）：这种内容只能当调用显示，不能当回答显示。
+        /// Worker、Loop、旁路三处界面的流式过滤共用同一判据。
+        /// </summary>
+        public static bool LooksLikeToolCallText(string modelOutput)
+            => !string.IsNullOrWhiteSpace(modelOutput)
+               && modelOutput.TrimStart().StartsWith("tool-call", StringComparison.OrdinalIgnoreCase);
+
         /// <summary>全角引号/竖线归一化成 ASCII，供协议判定使用（不改动原文本）。</summary>
         private static string NormalizeDelimiters(string text) => text
             .Replace('｜', '"').Replace('＂', '"')

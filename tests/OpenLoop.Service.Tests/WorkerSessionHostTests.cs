@@ -45,6 +45,36 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void List_includes_saved_sessions_after_restart()
+        {
+            ChatHistory.Write(_chats, "webonly",
+                [new ChatEntry { User = "hi", Assistant = "yo", Model = "m1", Effort = "low" }]);
+            ChatHistory.Touch(_chats, "webonly", "标题");
+
+            var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult()));
+            var row = Assert.Single(host.List());
+
+            Assert.Equal("webonly", row.Id);
+            Assert.Equal(WorkerSessionHost.Idle, row.State);
+            Assert.Equal(_chats, row.Workspace);
+        }
+
+        [Fact]
+        public void Create_restores_last_model_when_caller_does_not_pass_one()
+        {
+            ChatHistory.Write(_chats, "s1",
+                [new ChatEntry { User = "a", Model = "openrouter/free", Effort = "low" }]);
+            ChatHistory.Touch(_chats, "s1");
+            Assert.Equal("openrouter/free", Assert.Single(ChatHistory.Read(_chats, "s1")).Model);
+
+            var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult()));
+            var session = host.Create(_chats, "", "", () => new AppSettings(), "s1");
+
+            Assert.Equal("openrouter/free", session.Model);
+            Assert.Equal("low", session.Effort);
+        }
+
+        [Fact]
         public async Task Send_runs_and_stores_the_turn()
         {
             var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult
@@ -280,6 +310,42 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void History_keeps_the_user_text_of_a_failed_turn_but_not_the_error()
+        {
+            var turns = new List<WorkerTurn>
+            {
+                new() { User = "改成 Markdown", Assistant = "执行失败：模型接口返回 429 Too Many Requests" },
+                new() { User = "继续", Assistant = ServerNotice.FailedPrefix + "provider.free-limit", Failed = true }
+            };
+
+            var history = WorkerSessionHost.BuildHistory(turns);
+
+            Assert.Equal(["改成 Markdown", "继续"], history.Select(m => m.Content));
+            Assert.All(history, m => Assert.Equal("user", m.Role));
+        }
+
+        [Fact]
+        public void Write_keeps_the_transcript_a_writer_did_not_have()
+        {
+            var entry = new ChatEntry
+            {
+                User = "hi",
+                Assistant = "回答",
+                Messages = [new ChatMessageEntry { Role = "user", Content = "hi" }]
+            };
+            ChatHistory.Write("C:/work", "merge1", [entry]);
+
+            // 壳手里的轮次没有 transcript，整表覆盖不能把它抹掉
+            ChatHistory.Write("C:/work", "merge1", [new ChatEntry { User = "hi", Assistant = "回答" }]);
+            var stored = Assert.Single(ChatHistory.Read("C:/work", "merge1"));
+            Assert.Equal("hi", Assert.Single(stored.Messages).Content);
+
+            // 换了轮次（user 对不上）就不该继承别人的 transcript
+            ChatHistory.Write("C:/work", "merge1", [new ChatEntry { User = "别的", Assistant = "回答" }]);
+            Assert.Null(Assert.Single(ChatHistory.Read("C:/work", "merge1")).Messages);
+        }
+
+        [Fact]
         public async Task History_carries_previous_turns()        {
             var histories = new List<List<LlmMessage>>();
             var host = NewHost((request, ct) =>
@@ -305,6 +371,28 @@ namespace OpenLoop.Service.Tests
                 Assert.Contains(histories[1], m => m.Role == "user" && m.Content == "one");
                 Assert.Contains(histories[1], m => m.Role == "assistant" && m.Content == "answer-1");
             }
+        }
+
+        [Fact]
+        public async Task Context_tokens_follow_the_stream_and_should_not_wait_for_the_run_to_finish()
+        {
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var host = NewHost(async (request, ct) =>
+            {
+                request.ContextTokens?.Invoke(1000);
+                request.Delta?.Invoke("abcd");
+                await gate.Task.WaitAsync(ct);
+                return new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" };
+            });
+            var session = NewSession(host);
+
+            host.Send(session.Id, "task", "hi");
+            await WaitAsync(() => host.Get(session.Id).ContextTokens == 1001);
+            Assert.Equal(WorkerSessionHost.Running, host.Get(session.Id).State);
+
+            gate.SetResult();
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+            Assert.Equal(1001, host.Get(session.Id).ContextTokens);
         }
     }
 }

@@ -1,7 +1,9 @@
 using System.Reflection;
+using Puppet.Core.Hub;
 using Puppet.Core.Web;
 using Wima.Web;
 using OpenLoop.Service.Runtime;
+using OpenLoop.Service.Web;
 
 namespace OpenLoop.Service.Bus
 {
@@ -37,6 +39,9 @@ namespace OpenLoop.Service.Bus
 
         /// <summary>收到 /bus/shutdown 时触发（由宿主决定怎么退出）。</summary>
         public event Action ShutdownRequested;
+
+        /// <summary>进程内 Puppet 能力入口：内部 Agent 直调 ProcessWebRequest，不经过端口。</summary>
+        public PuppetHub Hub => _server?.Hub;
 
         /// <summary>挂接业务端点（/api/*）。必须在 <see cref="Start"/> 之前调用。</summary>
         public BusHost Use(Func<WebRequest, bool> handler)
@@ -77,6 +82,10 @@ namespace OpenLoop.Service.Bus
                 StartedAt = DateTimeOffset.Now.ToString("O")
             };
             Self.Save(AppPaths.RuntimeFile(_role));
+
+            // 内部 Agent 直调 Puppet 用同一个 Hub；对端/壳才走 HTTP
+            PuppetBridge.LocalHub = _server.Hub;
+            PuppetBridge.SelfRole = _role;
             return true;
         }
 
@@ -91,6 +100,7 @@ namespace OpenLoop.Service.Bus
             if (_disposed) return;
             _disposed = true;
             try { Self?.RemoveOwn(AppPaths.RuntimeFile(_role)); } catch { }
+            if (ReferenceEquals(PuppetBridge.LocalHub, _server?.Hub)) PuppetBridge.LocalHub = null;
             try { _server?.Stop(); } catch { }
             _server = null;
         }

@@ -34,6 +34,16 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("- 拿不准时先用只读工具了解现场，不要猜参数。");
             sb.AppendLine();
 
+            if (tools.Any(t => string.Equals(t.Name, "Puppet", StringComparison.OrdinalIgnoreCase)))
+            {
+                sb.AppendLine("# 进程与 Puppet");
+                sb.AppendLine("- A（Worker）、I（Loop）与壳内 Loop 各自带一个 Puppet 服务。用 Puppet 工具 target=self 时走本进程内 ProcessWebRequest（Hub），不经端口、无网络开销。");
+                sb.AppendLine("- 另一个 agent 进程（target=a / i）和 WinForms 壳（target=shell）只能走 Puppet 接口探测；壳只被动提供窗口/会话状态。");
+                sb.AppendLine("- Web 页面是不完整的 Puppet（实例 WebUi）：只有页面状态与截图钩子，截图需页面勾选「允许 Puppet 截图」。");
+                sb.AppendLine("- 需要了解对端状态或调试跨进程行为时用它；不要用它替代正常业务接口，也不要在任务里无目的地探测。");
+                sb.AppendLine();
+            }
+
             var activeRules = rules?.Where(r => !string.IsNullOrWhiteSpace(r)).ToList();
             if (activeRules is { Count: > 0 })
             {
@@ -49,7 +59,7 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("- 不要假设某个库/框架可用：先确认仓库里已经在用，再引入。");
             sb.AppendLine("- 改完要验证：有构建/测试命令就运行；没有就如实说明如何验证。绝不假设测试框架存在。");
             sb.AppendLine("- 一次专注一个任务；发现任务之外的额外问题，提出来让用户决定，不要顺手改。");
-            sb.AppendLine("- 多个相互独立的只读调用（如同时读几个文件）可在一轮内并行发出，每行一个 tool-call；含写操作时一轮只发一个。");
+            sb.AppendLine($"- 多个相互独立的只读调用（如同时读几个文件）可在一轮内并行发出，每行一个 tool-call，一轮最多 {AgentPolicy.MaxParallelCalls} 个；含写操作时一轮只发一个。");
             sb.AppendLine();
 
             sb.AppendLine("# 每轮如何收尾");
@@ -96,13 +106,14 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("tool-call: {\"tool\":\"工具名\",\"args\":{\"参数名\":\"值\"}}");
             sb.AppendLine("正例：tool-call: {\"tool\":\"ListDir\",\"args\":{\"path\":\".\",\"recursive\":false}}");
             sb.AppendLine("反例（都会被判为格式错误并回退纠正）：写在代码围栏里、前后带解释、JSON 用单引号、tool-call 不在行首。");
-            sb.AppendLine("多个相互独立的只读调用可各占一行连续输出；一轮只调用一个工具的情形（含任何写操作）照旧单行。");
+            sb.AppendLine($"多个相互独立的只读调用可各占一行连续输出，一轮最多 {AgentPolicy.MaxParallelCalls} 个；一轮只调用一个工具的情形（含任何写操作）照旧单行。");
             sb.AppendLine("需要等待或轮询时（例如反复查看构建进度），在首次调用里加同级的 poll 声明：" +
                           "tool-call: {\"tool\":\"RunCommand\",\"args\":{...},\"poll\":{\"id\":\"build-1\",\"max\":8}}。" +
                           "宿主最多放行这么多次完全相同的重复调用（有上限），超过后按重复调用处理；换参数不算重复。不要用它包装失败重试。");
             sb.AppendLine("下一轮你会收到 tool-result: 开头的 JSON（多个调用时按顺序回填多行）：");
             sb.AppendLine("成功为 {\"ok\":true,\"data\":...}，失败为 {\"ok\":false,\"error\":...}。");
             sb.AppendLine("任务完成或无需工具时，直接输出面向用户的最终回答（语言与用户最近一条消息一致，不要输出 tool-call 行）。");
+            sb.AppendLine("给出最终回答时，在最后一行单独输出 [final]；系统据此确认你已经收尾，并会把这行从回答里去掉。输出 tool-call 的轮次不要写。");
             sb.AppendLine();
             sb.AppendLine("# 安全与纪律");
             sb.AppendLine("- 只做用户请求范围内的事。");

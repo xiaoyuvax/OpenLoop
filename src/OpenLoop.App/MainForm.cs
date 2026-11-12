@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using ChatFlow;
 using ChatMessage = ChatFlow.ChatMessage;
 using OpenLoop.Service.Loop;
@@ -7,6 +8,7 @@ using OpenLoop.Service.Source;
 using OpenLoop.Service.Web;
 using OpenLoop.Service.Worker;
 using Puppet.Core;
+using Puppet.Core.AppAgent;
 using SurveyStore = OpenLoop.Core.Store.SurveyStore;
 
 namespace OpenLoop.App
@@ -96,7 +98,46 @@ namespace OpenLoop.App
             return r.Ok ? r.Data : r.Error;
         }
 
-        public void AnswerLastSurvey(string summary) => Current?.View.AnswerLastSurvey(summary);
+        // ---- 操作面（面向 B 的 Action，A 面 /agent/invoke 同名方法同样可用） ----
+        // 范式：public 实例方法 + 返回 OperationResult/bool = 成败可观察，A/B 两面对同一次调用得到同一结果。
+
+        private OperationResult OnActive(Action<SessionView> action, string done)
+        {
+            var view = Active?.View;
+            if (view == null) return OperationResult.Failure("没有打开的会话");
+            action(view);
+            return OperationResult.Success(done);
+        }
+
+        private OperationResult OnCurrent(Action<SessionView> action, string done)
+        {
+            var view = Current?.View;
+            if (view == null) return OperationResult.Failure("还没有会话");
+            action(view);
+            return OperationResult.Success(done);
+        }
+
+        private OperationResult PendingAt(int index, Action<SessionView, int> action, string done)
+        {
+            var view = Active?.View;
+            if (view == null) return OperationResult.Failure("没有打开的会话");
+            if (index < 0 || index >= view.PendingCount)
+                return OperationResult.Failure($"排队项序号越界：现有 {view.PendingCount} 项（从 0 开始）");
+            action(view, index);
+            return OperationResult.Success(done);
+        }
+
+        private (Session Session, string Error) ResolveSession(string title)
+        {
+            var session = string.IsNullOrWhiteSpace(title) ? Active : FindByTitle(title);
+            return session?.View != null
+                ? (session, null)
+                : (null, string.IsNullOrWhiteSpace(title) ? "没有打开的会话" : $"找不到会话「{title}」");
+        }
+
+        [PuppetAction(Desc = "回答最近一条 AskUser 询问")]
+        public OperationResult AnswerLastSurvey(string summary)
+            => OnCurrent(v => v.AnswerLastSurvey(summary), "已回答最近一条询问");
 
         public string AddDemoSurvey(string title, string body)
             => Current?.View.AddSurvey(title, body, "choice") ?? "";
@@ -119,6 +160,10 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ProviderOptionNames => Active?.View.ProviderOptionNames ?? "";
 
+        /// <summary>B 面状态：当前会话可选的模型名（SetModel 的合法取值）。</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ModelOptionNames => Active?.View.ModelOptionNames ?? "";
+
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ReasoningText => Active?.View.ReasoningText ?? "";
 
@@ -131,15 +176,28 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string PendingSummary => Active?.View.PendingSummary ?? "";
 
-        public void RemovePending(int index) => Active?.View.RemovePending(index);
-        public void RetractPending(int index) => Active?.View.RetractPending(index);
+        [PuppetAction(Desc = "移除第 index 个排队请求（从 0 开始）")]
+        public OperationResult RemovePending(int index)
+            => PendingAt(index, (v, i) => v.RemovePending(i), "已移除排队项");
 
-        public void SendPendingNow(int index) => Active?.View.SendPendingNow(index);
+        [PuppetAction(Desc = "把第 index 个排队请求放回输入框编辑")]
+        public OperationResult RetractPending(int index)
+            => PendingAt(index, (v, i) => v.RetractPending(i), "已把排队项放回输入框，改完再 Send");
 
-        public void SendAllPending() => Active?.View.SendAllPending();
+        [PuppetAction(Desc = "把第 index 个排队请求改成「立即」，当前轮会在下一个 step 前收尾")]
+        public OperationResult SendPendingNow(int index)
+            => PendingAt(index, (v, i) => v.SendPendingNow(i), "排队项已改为立即发送");
+
+        [PuppetAction(Desc = "恢复被停止暂停的队列并按序发送全部排队请求")]
+        public OperationResult SendAllPending()
+            => OnActive(v => v.SendAllPending(), "已恢复排队并开始发送");
 
         /// <summary>Puppet 用：只入队不发送，验证队列控件与两种插入模式。</summary>
-        public void EnqueuePending(string text) => Active?.View.EnqueueText(text);
+        [PuppetAction(Desc = "加入排队但不发送（等本轮结束后发）")]
+        public OperationResult EnqueuePending(string text)
+            => string.IsNullOrWhiteSpace(text)
+                ? OperationResult.Failure("排队内容不能为空")
+                : OnActive(v => v.EnqueueText(text), "已加入排队");
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ComposerSendText => Active?.View.SendText ?? "";
@@ -147,9 +205,17 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool EvolveEnabled => Active?.View.EvolveEnabled ?? false;
 
-        public void StartEvolve() => Active?.View.StartEvolve();
+        [PuppetAction(Desc = "对该会话发起一轮演进（走 I 的 /api/loop/evolve）")]
+        public OperationResult StartEvolve()
+        {
+            var view = Active?.View;
+            if (view == null) return OperationResult.Failure("没有打开的会话");
+            if (!view.EvolveEnabled) return OperationResult.Failure("演进不可用：需要存在的工作区与已配置的模型端点");
+            view.StartEvolve();
+            return OperationResult.Success("已请求演进");
+        }
 
-        public void ShowDefinitions() => Active?.View.ShowDefinitions();
+        public OperationResult ShowDefinitions() => OnActive(v => v.ShowDefinitions(), "已打开定义");
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int NewSessionModelOptionCount => NewPageView?.ModelOptionCount ?? 0;
@@ -187,7 +253,9 @@ namespace OpenLoop.App
             }
         }
 
-        public void ShowSidePage(int index) => Active?.View.ShowSidePage(index);
+        [PuppetAction(Desc = "切换右侧边栏页：0=Loop，1=明细，2=旁路，更靠后的=文件页")]
+        public OperationResult ShowSidePage(int index)
+            => OnActive(v => v.ShowSidePage(index), $"侧栏切到第 {index} 页");
 
         public string ProbeTrace(string path)
         {
@@ -197,41 +265,100 @@ namespace OpenLoop.App
             return view.TraceDebug;
         }
 
-        public void SetModel(string model) => Active?.View.SetModel(model);
+        public OperationResult SetModel(string model)
+            => string.IsNullOrWhiteSpace(model)
+                ? OperationResult.Failure("模型名不能为空")
+                : OnActive(v => v.SetModel(model), $"模型 → {model}");
 
-        public void SetEffort(string effort) => Active?.View.SetEffort(effort);
+        public OperationResult SetEffort(string effort)
+            => OnActive(v => v.SetEffort(effort), string.IsNullOrWhiteSpace(effort) ? "思考强度 → 默认" : $"思考强度 → {effort}");
 
-        public void SelectMode(string mode) => Active?.View.SelectMode(mode);
+        public OperationResult SelectMode(string mode)
+            => mode is "task" or "criterion" or "correction"
+                ? OnActive(v => v.SelectMode(mode), $"模式 → {mode}")
+                : OperationResult.Failure("模式只能是 task / criterion / correction");
 
-        public void Send(string mode = "task") => Active?.View.SendMode(mode);
-
-        /// <summary>把文字放进当前会话的输入框（不发送），A 面驱动用。</summary>
-        public void SetComposerText(string text)
+        [PuppetAction(Desc = "发送当前输入框内容：空闲=发送；运行中=排队；运行中且输入框为空=停止当前轮；非空且运行中=排队+打断")]
+        public OperationResult Send(string mode = "task")
         {
-            var view = Current?.View;
-            if (view != null) view.ComposerText = text ?? "";
+            var view = Active?.View;
+            if (view == null) return OperationResult.Failure("没有打开的会话");
+            var (ok, message) = view.SendMode(mode);
+            return ok ? OperationResult.Success(message) : OperationResult.Failure(message);
         }
 
-        public void NewSession(string workspace)
+        /// <summary>把文字放进当前会话的输入框（不发送），A 面驱动用。</summary>
+        [PuppetAction(Desc = "只写入输入框，不发送；发送请调用 Send")]
+        public OperationResult SetComposerText(string text)
+            => OnCurrent(v => v.ComposerText = text ?? "",
+                $"已写入输入框（{(text ?? "").Length} 字），发送请调用 Send");
+
+        public OperationResult NewSession(string workspace)
         {
             if (string.IsNullOrWhiteSpace(workspace)) workspace = _settings.Workspace;
             if (string.IsNullOrWhiteSpace(workspace)) workspace = Directory.GetCurrentDirectory();
-            ShowSession(CreateSession(workspace));
+            var session = CreateSession(workspace);
+            ShowSession(session);
+            return OperationResult.Success($"已新建会话「{session.Title}」", session.Id);
         }
 
-        public void OpenSession(string title)
+        public OperationResult OpenSession(string title)
         {
             var session = FindByTitle(title);
-            if (session != null) ShowSession(session);
+            if (session == null) return OperationResult.Failure($"找不到会话「{title}」");
+            ShowSession(session);
+            return OperationResult.Success($"已切到会话「{session.Title}」", session.Id);
         }
 
-        public void CloseSession(string title)
+        [PuppetAction(Desc = "关闭会话页（只是移除标签页，会话与正在跑的任务继续）")]
+        public OperationResult CloseSession(string title)
         {
             var session = FindByTitle(title);
-            if (session?.Page != null) CloseTab(session.Page);
+            if (session?.Page == null) return OperationResult.Failure($"找不到打开的会话页「{title}」");
+            CloseTab(session.Page);
+            return OperationResult.Success($"已关闭页面（会话「{session.Title}」仍在运行）", session.Id);
         }
 
-        public void ShowOverview() => _tabs.SelectTab(_overviewPage);
+        [PuppetAction(Desc = "停止会话的当前轮（硬停，本轮的产出作废）；title 省略 = 当前标签页")]
+        public OperationResult StopSession(string title = null)
+        {
+            var (session, error) = ResolveSession(title);
+            if (session == null) return OperationResult.Failure(error);
+            return session.View.Stop()
+                ? OperationResult.Success($"已停止会话「{session.Title}」的当前轮", session.Id)
+                : OperationResult.Failure($"会话「{session.Title}」没有正在运行的任务");
+        }
+
+        [PuppetAction(Desc = "软打断会话的当前轮：在下一个 step 前收尾，忙着的工具不打断；title 省略 = 当前标签页")]
+        public OperationResult InterruptSession(string title = null)
+        {
+            var (session, error) = ResolveSession(title);
+            if (session == null) return OperationResult.Failure(error);
+            return session.View.Interrupt()
+                ? OperationResult.Success($"已请求软打断会话「{session.Title}」", session.Id)
+                : OperationResult.Failure($"会话「{session.Title}」没有正在运行的任务");
+        }
+
+        public OperationResult ShowOverview()
+        {
+            _tabs.SelectTab(_overviewPage);
+            return OperationResult.Success("已切到会话总览");
+        }
+
+        // ---- 窗口几何 ----
+        // DIP 动作由 Puppet 框架统一提供（MoveDipAction/ResizeDipAction/SetBoundsDipAction，跨屏各用各的
+        // 缩放比，见 Screens state 的 scale）；这里只留一个状态给 A/B 两面核对实际落点。
+
+        /// <summary>B 面状态：窗口的物理矩形 + 所在屏（DIP 动作换算的核对依据）。</summary>
+        public string WindowBounds
+        {
+            get
+            {
+                Rectangle rect = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+                return $"{rect.X},{rect.Y} {rect.Width}x{rect.Height} "
+                    + $"screen={Array.IndexOf(Screen.AllScreens, Screen.FromControl(this))} dpi={DeviceDpi}";
+            }
+        }
 
         public bool LoopBusy => _loopView?.Busy ?? false;
 
@@ -239,12 +366,40 @@ namespace OpenLoop.App
 
         public string LoopModel => _loopView?.Model ?? "";
 
-        public void SendLoop(string text) => _loopView?.Send(text);
+        public OperationResult SendLoop(string text)
+        {
+            if (_loopView == null) return OperationResult.Failure("没有打开的 Loop 页，先调用 OpenLoop");
+            _loopView.Send(text);
+            return OperationResult.Success("已发送到 Loop");
+        }
 
-        public void OpenLoop(string workspace = null) => EnsureLoop(workspace, select: true);
+        [PuppetAction(Desc = "停止 Loop 当前轮")]
+        public OperationResult StopLoop()
+        {
+            if (_loopView == null) return OperationResult.Failure("没有打开的 Loop 页");
+            if (!_loopView.Busy) return OperationResult.Failure("Loop 没有在运行");
+            _loopView.Stop();
+            return OperationResult.Success("已停止 Loop 当前轮");
+        }
+
+        [PuppetAction(Desc = "打开某个工作区的 Loop 页；workspace 省略 = 最近一个会话的工作区")]
+        public OperationResult OpenLoop(string workspace = null)
+        {
+            var view = EnsureLoop(workspace, select: true);
+            return view == null
+                ? OperationResult.Failure("打不开 Loop：先打开一个会话，或给出存在的工作区")
+                : OperationResult.Success($"已打开 Loop（{view.Workspace} / {view.SessionId}）");
+        }
 
         /// <summary>按会话 id 打开某个 Loop 会话（Puppet 用：[Loop] 页的一行）。</summary>
-        public void OpenLoopSession(string workspace, string sessionId) => EnsureLoop(workspace, select: true, sessionId);
+        [PuppetAction(Desc = "按会话 id 打开某个 Loop 会话（LoopSessions 状态里的一行）；sessionId 为空 = 新建")]
+        public OperationResult OpenLoopSession(string workspace, string sessionId)
+        {
+            var view = EnsureLoop(workspace, select: true, sessionId);
+            return view == null
+                ? OperationResult.Failure("打不开 Loop：先打开一个会话，或给出存在的工作区")
+                : OperationResult.Success($"已打开 Loop（{view.Workspace} / {view.SessionId}）");
+        }
 
         private TestSurface _test;
 
@@ -281,6 +436,12 @@ namespace OpenLoop.App
         /// <summary>Puppet 用：[Loop] 页的行（会话 id + 工作区）。</summary>
         public string[] LoopSessions() => LoopIndex.List()
             .Select(l => l.SessionId + "\t" + l.Workspace).ToArray();
+
+        /// <summary>B 面状态：与 LoopSessions 同数据，每行「会话 id + 工作区」。</summary>
+        public string LoopSessionsText => string.Join("\n", LoopSessions());
+
+        /// <summary>B 面状态：会话总览里的项目行，每行一项。</summary>
+        public string ProjectList => string.Join("\n", _overview.RowTitles());
 
         public int LoopTabs => _loops.Count;
 
@@ -364,6 +525,11 @@ namespace OpenLoop.App
                 Dock = DockStyle.Fill
             };
             page.Controls.Add(view);
+            view.TitleChanged += text =>
+            {
+                page.Text = text;
+                RefreshOverview();
+            };
             _tabs.Pages.Add(page);
             // 新建页面不主动跳转：/complain 只让它出现在标签栏，用户自己去点
             if (select) _tabs.SelectTab(page);
@@ -378,19 +544,29 @@ namespace OpenLoop.App
 
         private static string LoopTabText(string workspace, string sessionId)
         {
-            string name = Path.GetFileName(Paths.Normalize(workspace));
-            string text = string.IsNullOrEmpty(name) ? Localization.T("TabLoop") : Localization.T("TabLoop") + " · " + name;
-            // 同一项目可以有多个 Loop 会话：非默认会话补 id 尾段，免得标签页文本一模一样
-            if (!string.Equals(sessionId, LoopRef.LegacyId, StringComparison.Ordinal))
+            string summary = LoopIndex.Title(workspace, sessionId);
+            string text = Session.ComposeTitle(workspace, summary, loop: true);
+            // 同一项目可以有多个 Loop 会话：还没总结出标题时补 id 尾段，免得标签页文本一模一样
+            if (string.IsNullOrWhiteSpace(summary)
+                && !string.Equals(sessionId, LoopRef.LegacyId, StringComparison.Ordinal))
                 text += " · " + (sessionId?.StartsWith("loop-", StringComparison.Ordinal) == true
                     ? sessionId["loop-".Length..]
                     : sessionId);
             return text;
         }
 
-        public void SelectProject(string workspace) => _overview.FocusProject(workspace ?? "");
+        public OperationResult SelectProject(string workspace)
+        {
+            if (string.IsNullOrWhiteSpace(workspace)) return OperationResult.Failure("工作区不能为空");
+            _overview.FocusProject(workspace);
+            return OperationResult.Success($"已选中项目 {workspace}");
+        }
 
-        public void OpenNewSession(string workspace = "") => OpenNewSessionTab(workspace ?? "");
+        public OperationResult OpenNewSession(string workspace = "")
+        {
+            OpenNewSessionTab(workspace ?? "");
+            return OperationResult.Success("已打开新建会话页");
+        }
 
         public string NewSessionDraft
         {
@@ -400,12 +576,21 @@ namespace OpenLoop.App
             }
         }
 
-        public void SetNewSessionDraft(string text)
+        [PuppetAction(Desc = "把草稿写进新建会话页的输入框（不提交）")]
+        public OperationResult SetNewSessionDraft(string text)
         {
-            if (_newPage?.Tag is NewSessionView view) view.Draft = text ?? "";
+            if (_newPage?.Tag is not NewSessionView view) return OperationResult.Failure("没有新建会话页，先调用 OpenNewSession");
+            view.Draft = text ?? "";
+            return OperationResult.Success("已写入新建会话草稿");
         }
 
-        public void SubmitNewSession() => (_newPage?.Tag as NewSessionView)?.SubmitDraft();
+        [PuppetAction(Desc = "提交新建会话页的草稿并创建会话")]
+        public OperationResult SubmitNewSession()
+        {
+            if (_newPage?.Tag is not NewSessionView view) return OperationResult.Failure("没有新建会话页，先调用 OpenNewSession");
+            view.SubmitDraft();
+            return OperationResult.Success("已提交新建会话（校验不通过会弹出提示）");
+        }
 
         private Session FindByTitle(string title)
             => _sessions.FirstOrDefault(s => string.Equals(s.Title, title, StringComparison.OrdinalIgnoreCase));
@@ -488,7 +673,11 @@ namespace OpenLoop.App
         public string IterationSteps => string.Join("\n", _iterationSteps);
 
         /// <summary>Puppet 用：打开迭代确认窗口（只出计划，不自动开始）。</summary>
-        public void OpenIterationDialog() => _ = ShowIterationAsync(null);
+        public OperationResult OpenIterationDialog()
+        {
+            _ = ShowIterationAsync(null);
+            return OperationResult.Success("已打开迭代确认窗口");
+        }
 
         /// <summary>Puppet 用：在确认窗口里点「开始迭代」。</summary>
         public bool StartIterationDialog()
@@ -508,10 +697,20 @@ namespace OpenLoop.App
         public string IterationDialogStatus => _iterationForm?.StatusText ?? "";
 
         /// <summary>Puppet 用：不开窗口跑一轮（编译/发布/登记 + 换 A/I，不动壳），轮询 IterationStatus。</summary>
-        public void StartIteration() => _ = RunIterationAsync();
+        [PuppetAction(Desc = "后台跑一轮迭代（编译/发布/登记并换掉 A/I），进度看 IterationStatus/IterationSteps")]
+        public OperationResult StartIteration()
+        {
+            _ = RunIterationAsync();
+            return OperationResult.Success("已开始迭代，轮询 IterationStatus");
+        }
 
         /// <summary>Puppet 用：重启 A/I 到已登记版本。</summary>
-        public void ApplyStaged() => _ = ApplyStagedAsync();
+        [PuppetAction(Desc = "把 A/I 重启到已登记的版本（不动壳）")]
+        public OperationResult ApplyStaged()
+        {
+            _ = ApplyStagedAsync();
+            return OperationResult.Success("已请求把 A/I 换到已登记版本，结果看 IterationStatus");
+        }
 
         private async Task<string> ApplyStagedAsync()
         {
@@ -654,7 +853,7 @@ namespace OpenLoop.App
                     area.Y + (area.Height - Height) / 2);
             }
 
-            if (_settings.WindowMaximized) WindowState = FormWindowState.Maximized;
+            if (_settings.WindowMaximized) ToggleMaximize();
         }
 
         private void SaveWindowBounds()
@@ -670,6 +869,87 @@ namespace OpenLoop.App
         }
 
         private const int DipMin = 200;
+
+        // ---- 无标题栏窗口：Banner 拖动 + 系统缩放/阴影 ----
+
+        private const int WmNcLButtonDown = 0x00A1;
+        private const int HtCaption = 2;
+
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        /// <summary>
+        /// FormBorderStyle.None 会连缩放边框和阴影一起丢掉；补 WS_THICKFRAME 找回系统缩放/贴边，
+        /// 不加 WS_CAPTION，所以不会重新长出标题栏。
+        /// </summary>
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.Style |= 0x00040000 | 0x00010000;   // WS_THICKFRAME | WS_MAXIMIZEBOX
+                return cp;
+            }
+        }
+
+        private DateTime _bannerClickAt;
+
+        private void OnBannerMouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+
+            // 第一次按下就进系统拖动循环，拿不到 WM_LBUTTONDBLCLK，按双击间隔自己判定
+            var now = DateTime.UtcNow;
+            bool doubleClick = e.Clicks == 2
+                || (now - _bannerClickAt).TotalMilliseconds < SystemInformation.DoubleClickTime;
+            _bannerClickAt = doubleClick ? DateTime.MinValue : now;
+            if (doubleClick) { ToggleMaximize(); return; }
+
+            ReleaseCapture();
+            SendMessage(Handle, WmNcLButtonDown, (IntPtr)HtCaption, IntPtr.Zero);
+        }
+
+        private void OnMinimize(object sender, EventArgs e) => WindowState = FormWindowState.Minimized;
+
+        private void OnToggleMaximize(object sender, EventArgs e) => ToggleMaximize();
+
+        private void OnCloseWindow(object sender, EventArgs e) => Close();
+
+        private void ToggleMaximize()
+        {
+            if (WindowState == FormWindowState.Maximized)
+            {
+                WindowState = FormWindowState.Normal;
+                return;
+            }
+
+            ApplyMaximizedBounds();
+            WindowState = FormWindowState.Maximized;
+        }
+
+        /// <summary>
+        /// 无边框窗口默认会连任务栏一起盖住；这里把工作区当客户区，再把缩放边框算到屏幕外，
+        /// 最大化后不留边框色带。
+        /// 注意：MaximizedBounds 的位置是相对主屏的，Windows 会自行加上目标屏偏移；
+        /// 传屏幕绝对坐标会在副屏上再加一次原点（窗口跑到整个桌面之外）。
+        /// </summary>
+        private void ApplyMaximizedBounds()
+        {
+            var work = Screen.FromControl(this).WorkingArea;
+            int dx = Width - ClientSize.Width;
+            int dy = Height - ClientSize.Height;
+            MaximizedBounds = new Rectangle(-dx / 2, -dy / 2, work.Width + dx, work.Height + dy);
+        }
+
+        private void OnWindowResize(object sender, EventArgs e)
+        {
+            _btnMax.IconSvg = UiIcons.Of(
+                WindowState == FormWindowState.Maximized ? UiIcons.Restore : UiIcons.Maximize, UiStyle.Text);
+            if (WindowState == FormWindowState.Normal) ApplyMaximizedBounds();
+        }
 
         private void RefreshOverview() => _overview.RefreshSessions(_sessions, _settings.Projects);
 
@@ -710,7 +990,8 @@ namespace OpenLoop.App
             }
         }
 
-        private Session CreateSession(string workspace, string sessionId = null, string title = null)
+        private Session CreateSession(string workspace, string sessionId = null, string title = null,
+            DateTime? startedAt = null, DateTime? lastActiveAt = null)
         {
             workspace = Paths.Normalize(workspace);
             //同一目录的不同写法（盘符大小写、斜杠、尾分隔符）算同一个项目：复用既有写法，不再新增一条
@@ -731,12 +1012,18 @@ namespace OpenLoop.App
                 workspace = "";
             }
 
-            var session = new Session { Workspace = workspace, Id = string.IsNullOrWhiteSpace(sessionId) ? Guid.NewGuid().ToString("N")[..8] : sessionId };
+            var session = new Session
+            {
+                Workspace = workspace,
+                Id = string.IsNullOrWhiteSpace(sessionId) ? Guid.NewGuid().ToString("N")[..8] : sessionId,
+                StartedAt = startedAt ?? DateTime.Now,
+                LastActiveAt = lastActiveAt ?? startedAt ?? DateTime.Now
+            };
             session.CustomTitle = title;
             session.View = new SessionView { Dock = DockStyle.Fill };
             session.View.Initialize(session, () => _settings);
             session.View.StateChanged += OnSessionStateChanged;
-            session.View.OpenLoopRequested += OpenLoop;
+            session.View.OpenLoopRequested += workspace => OpenLoop(workspace);
             session.View.ComplaintRequested += OnComplaint;
             session.View.ForkRequested += ForkSession;
             session.View.NewSessionRequested += NewSessionFrom;
@@ -781,11 +1068,11 @@ namespace OpenLoop.App
         {
             try
             {
-                foreach (var (id, workspace, title) in ChatStore.SavedSessions())
+                foreach (var saved in ChatStore.SavedSessions())
                 {
-                    if (_sessions.Any(s => s.Id == id)) continue;
-                    if (!Directory.Exists(workspace)) continue;
-                    CreateSession(workspace, id, title);
+                    if (_sessions.Any(s => s.Id == saved.Id)) continue;
+                    if (!Directory.Exists(saved.Workspace)) continue;
+                    CreateSession(saved.Workspace, saved.Id, saved.Title, saved.StartedAt, saved.LastActiveAt);
                 }
             }
             catch (Exception ex)
@@ -806,10 +1093,10 @@ namespace OpenLoop.App
             {
                 bool created = false;
                 string newestWorkspace = null;
-                foreach (var (id, workspace, title) in ChatStore.SavedSessions())
+                foreach (var saved in ChatStore.SavedSessions())
                 {
-                    if (_sessions.Any(s => s.Id == id) || !Directory.Exists(workspace)) continue;
-                    CreateSession(workspace, id, title);
+                    if (_sessions.Any(s => s.Id == saved.Id) || !Directory.Exists(saved.Workspace)) continue;
+                    CreateSession(saved.Workspace, saved.Id, saved.Title, saved.StartedAt, saved.LastActiveAt);
                     created = true;
                 }
 
@@ -1070,6 +1357,7 @@ namespace OpenLoop.App
         }
 
         /// <summary>移除项目：连同该项目下的会话、Loop 会话与对话记录一起删掉（否则重启时会被带回来）。</summary>
+        [PuppetAction(Risk = "High", Desc = "移除项目：该项目下的会话、Loop 会话与对话记录一并删除，不可恢复")]
         public int RemoveProject(string workspace)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return 0;
@@ -1093,6 +1381,7 @@ namespace OpenLoop.App
                 .Where(w => !string.IsNullOrWhiteSpace(w));
 
         /// <summary>删除会话（含磁盘上的对话与索引），A 面与界面共用同一个入口。</summary>
+        [PuppetAction(Risk = "High", Desc = "删除会话：会话页、磁盘对话记录与索引一并删除，不可恢复")]
         public int DeleteSessions(IEnumerable<string> sessionIds)
         {
             var ids = new HashSet<string>(sessionIds ?? [], StringComparer.Ordinal);
@@ -1167,9 +1456,10 @@ namespace OpenLoop.App
 
         private void RenameTab(AntdUI.TabPage page)
         {
+            var session = page.Tag as Session;
             var input = new AntdUI.Input
             {
-                Text = page.Text,
+                Text = session != null ? session.CustomTitle ?? page.Text : page.Text,
                 Width = 320,
                 Height = 34,
                 Radius = 8,
@@ -1180,12 +1470,16 @@ namespace OpenLoop.App
             string name = input.Text?.Trim() ?? "";
             if (name.Length == 0) return;
 
-            if (page.Tag is Session session)
+            if (session != null)
             {
                 session.CustomTitle = name;
                 ChatStore.Touch(session.Workspace, session.Id, name);
+                page.Text = session.Title;
             }
-            page.Text = name;
+            else
+            {
+                page.Text = name;
+            }
             RefreshOverview();
         }
 
@@ -1219,6 +1513,9 @@ namespace OpenLoop.App
 
         private void OnSessionStateChanged(Session session)
         {
+            if (session == null) return;
+            // 有新活动就浮到列表顶部（启动时的状态校正也会走到这里，代价只是多刷新一次）
+            session.LastActiveAt = DateTime.Now;
             if (session.Page != null)
                 session.Page.IconSvg = UiIcons.Dot(StateColor(session.State));
             RefreshOverview();

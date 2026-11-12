@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Encodings.Web;
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
+using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Skills;
 
 namespace OpenLoop.Core.Trace
@@ -129,6 +130,27 @@ namespace OpenLoop.Core.Trace
                     ok = record.Ok,
                     durationMs = record.DurationMs,
                     result = record.Summary
+                }, LineJson));
+                _steps.Flush();
+                StepCount++;
+            }
+        }
+
+        /// <summary>推理通道内的原生工具调用：边发生边落盘，轮次被停止/超时也留得下证据。</summary>
+        public void NativeTool(NativeToolCall tool)
+        {
+            lock (_gate)
+            {
+                if (_finished) return;
+                _steps.WriteLine(JsonSerializer.Serialize(new
+                {
+                    index = StepCount + 1,
+                    tool = "native:" + tool.Tool,
+                    args = tool.Input,
+                    ok = tool.Ok,
+                    status = tool.Status,
+                    durationMs = 0,
+                    result = AgentLoop.Truncate(tool.Output, 160)
                 }, LineJson));
                 _steps.Flush();
                 StepCount++;

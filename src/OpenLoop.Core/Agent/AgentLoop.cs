@@ -103,9 +103,12 @@ namespace OpenLoop.Core.Agent
                + string.Join("\n", state.Result.Steps.Select(s =>
                    $"{s.Index}. {s.Tool}({s.ArgsSummary}) → {(s.Ok ? "成功" : "失败")}"));
 
+        /// <summary>承诺话术只扫结尾这一段：正文里的「当前正在运行的…」这类描述性用词不算承诺。</summary>
+        private const int ActionPromiseWindow = 300;
+
         private static readonly string[] ActionPromiseSignals =
         [
-            "请稍候", "稍等", "马上", "正在", "即将", "稍后",
+            "请稍候", "稍等", "马上", "即将", "稍后",
             "收到", "我将", "我会", "我来", "接下来", "下面我", "现在我",
             "开始处理", "继续编辑", "重改", "重出",
             "先查", "查一下", "查查",
@@ -127,14 +130,27 @@ namespace OpenLoop.Core.Agent
         internal static bool LooksLikeActionPromise(string content)
         {
             if (string.IsNullOrWhiteSpace(content)) return false;
-            if (ActionPromiseRegex.IsMatch(content)) return true;
-            foreach (string signal in ActionPromiseSignals)
-                if (content.Contains(signal, StringComparison.OrdinalIgnoreCase)) return true;
             string tail = content.TrimEnd();
+            if (tail.Length > ActionPromiseWindow) tail = tail[^ActionPromiseWindow..];
+            if (ActionPromiseRegex.IsMatch(tail)) return true;
+            foreach (string signal in ActionPromiseSignals)
+                if (tail.Contains(signal, StringComparison.OrdinalIgnoreCase)) return true;
             foreach (char c in new[] { '，', ':', '：', ',', '、', '；' })
                 if (tail.EndsWith(c)) return true;
             return false;
         }
+
+        /// <summary>最终回答的结束标记：模型显式声明已收尾，判定不再依赖正文措辞。</summary>
+        internal const string FinalMarker = "[final]";
+
+        internal static bool HasFinalMarker(string content)
+            => !string.IsNullOrEmpty(content)
+               && content.TrimEnd().EndsWith(FinalMarker, StringComparison.OrdinalIgnoreCase);
+
+        internal static string StripFinalMarker(string content)
+            => HasFinalMarker(content)
+                ? content.TrimEnd()[..^FinalMarker.Length].TrimEnd()
+                : content;
 
         private static readonly string[] CompletionClaimSignals =
         [

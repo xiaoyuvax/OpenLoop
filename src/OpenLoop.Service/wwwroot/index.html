@@ -4,73 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenLoop</title>
+  <link rel="stylesheet" href="/vendor/reset.css">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header>
-    <strong>OpenLoop</strong>
-    <span id="role" class="badge"></span>
-    <span id="state" class="muted"></span>
-    <span class="spacer"></span>
-    <span id="workspace" class="muted"></span>
-  </header>
-
-  <main>
-    <aside id="sessions-pane">
-      <div class="pane-head">会话</div>
-      <ul id="sessions"></ul>
-      <form id="new-session" class="stack">
-        <input id="new-workspace" placeholder="工作目录（绝对路径）" autocomplete="off">
-        <input id="new-model" placeholder="模型，如 openrouter/free" autocomplete="off">
-        <button type="submit">新建会话</button>
-      </form>
-    </aside>
-
-    <section id="chat-pane">
-      <div id="messages" class="messages"></div>
-      <div id="prompts" class="prompts"></div>
-      <form id="composer" class="composer">
-        <textarea id="text" rows="3" placeholder="说点什么…（Ctrl+Enter 发送）"></textarea>
-        <div class="row">
-          <button type="submit" id="send">发送</button>
-          <button type="button" id="stop" class="ghost">停止</button>
-          <span id="run" class="muted"></span>
-        </div>
-      </form>
-    </section>
-
-    <aside id="loop-pane">
-      <div class="pane-head">Loop（阴）</div>
-      <div class="stack">
-        <label class="muted">工作目录</label>
-        <input id="loop-workspace" placeholder="绝对路径" autocomplete="off">
-        <div id="ledger" class="muted"></div>
-        <div class="row">
-          <input id="loop-model" placeholder="模型" autocomplete="off">
-          <button type="button" id="evolve">演进</button>
-          <button type="button" id="evolve-stop" class="ghost">停止</button>
-        </div>
-        <div id="evolve-state" class="muted"></div>
-        <div class="row">
-          <label class="muted"><input type="checkbox" id="auto-evolve"> 自动演进</label>
-        </div>
-        <div id="auto-state" class="muted"></div>
-        <div class="row">
-          <button type="button" id="rollback" class="ghost">回滚上一版</button>
-        </div>
-        <form id="rule-form" class="stack">
-          <input id="rule-name" placeholder="规则 id，如 rule.style" autocomplete="off">
-          <input id="rule-text" placeholder="规则内容" autocomplete="off">
-          <button type="submit">登记规则</button>
-        </form>
-        <details>
-          <summary class="muted">当前启用的技能</summary>
-          <div id="skills" class="muted"></div>
-        </details>
-      </div>
-    </aside>
-  </main>
-
+  <div id="root"></div>
+  <script src="/vendor/react.production.min.js"></script>
+  <script src="/vendor/react-dom.production.min.js"></script>
+  <script src="/vendor/dayjs.min.js"></script>
+  <script src="/vendor/antd.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

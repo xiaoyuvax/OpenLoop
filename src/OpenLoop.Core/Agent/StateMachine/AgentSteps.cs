@@ -170,12 +170,12 @@ namespace OpenLoop.Core.Agent
             state.PendingReasoning = null;
             state.PendingFinishReason = null;
 
-            if (calls.Count > 4)
+            if (calls.Count > AgentPolicy.MaxParallelCalls)
             {
                 state.LastActionWasTools = false;
                 state.ProgressChecked = false;
                 return AgentStepResult.Continue(new AppendMessageEffect("user",
-                    $"tool-result: {{\"ok\":false,\"error\":\"一次最多并行 {4} 个工具调用（本轮 {calls.Count} 个）。请拆成 ≤4 个/轮，或改为多轮。\"}}"));
+                    $"tool-result: {{\"ok\":false,\"error\":\"一次最多并行 {AgentPolicy.MaxParallelCalls} 个工具调用（本轮 {calls.Count} 个）。请拆成 ≤{AgentPolicy.MaxParallelCalls} 个/轮，或改为多轮。\"}}"));
             }
 
             string batchSignature = string.Join("\u0003",
@@ -530,6 +530,10 @@ namespace OpenLoop.Core.Agent
             state.PendingReasoning = null;
             state.PendingFinishReason = null;
 
+            // 模型显式收尾：标记优先于措辞启发式，并从最终正文里去掉
+            bool markedFinal = AgentLoop.HasFinalMarker(content);
+            content = AgentLoop.StripFinalMarker(content);
+
             bool contentEmpty = LlmTextSanitizer.StripSafetyLines(content ?? "").Trim().Length == 0;
 
             if (AgentToolCallParser.LooksLikeToolCallAttempt(content))
@@ -562,6 +566,7 @@ namespace OpenLoop.Core.Agent
             }
 
             if (context.Policy.PromiseGuard
+                && !markedFinal
                 && state.PromiseNudges < context.Policy.MaxPromiseNudges
                 && !state.StepLimitReached
                 && AgentLoop.LooksLikeActionPromise(content))

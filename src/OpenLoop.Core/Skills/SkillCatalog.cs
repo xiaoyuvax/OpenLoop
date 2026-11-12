@@ -113,11 +113,25 @@ namespace OpenLoop.Core.Skills
                 if (colon <= 0) continue;
                 string key = lines[i][..colon].Trim();
                 string value = lines[i][(colon + 1)..].Trim().Trim('"', '\'');
+                //折叠/字面块（`description: >` 这类写法）：把缩进续行收进来，否则描述只剩一个 ">"
+                if (IsBlockScalar(value))
+                {
+                    bool literal = value[0] == '|';
+                    var block = new List<string>();
+                    while (i + 1 < end && (lines[i + 1].Length == 0 || char.IsWhiteSpace(lines[i + 1][0])))
+                        block.Add(lines[++i].Trim());
+                    value = literal
+                        ? string.Join("\n", block).Trim()
+                        : string.Join(" ", block.Where(line => line.Length > 0)).Trim();
+                }
                 if (key.Length > 0) meta[key] = value;
             }
 
             return (meta, string.Join("\n", lines.Skip(end + 1)));
         }
+
+        private static bool IsBlockScalar(string value)
+            => value is ">" or ">-" or ">+" or "|" or "|-" or "|+";
 
         private static string FirstLine(string body)
         {
@@ -168,10 +182,12 @@ namespace OpenLoop.Core.Skills
 
         /// <summary>
         /// 发现即启用：登记新技能，并把「从没启用过」的技能并进当前激活集。
-        /// 用户停用过的（历史激活里出现过）不会自动重开。
+        /// 用户停用过的（历史激活里出现过）不会自动重开；全局关掉的只挡「项目里没配置过」的技能。
+        /// 技能目录被删掉的引用顺手清掉，否则每轮都报「技能文件已删除」。
         /// </summary>
         public static IReadOnlyList<SkillInfo> Sync(
-            Ledger ledger, IReadOnlyList<SkillInfo> catalog, out IReadOnlyList<string> problems)
+            Ledger ledger, IReadOnlyList<SkillInfo> catalog, out IReadOnlyList<string> problems,
+            IEnumerable<string> globallyDisabled = null)
         {
             problems = [];
             if (ledger == null || catalog == null) return catalog ?? [];
@@ -182,22 +198,29 @@ namespace OpenLoop.Core.Skills
             var refs = (current?.Features ?? []).ToList();
             var everActive = EverActiveSkillNames(ledger, features);
 
-            bool changed = false;
+            var installed = new HashSet<string>(catalog.Select(s => s.Name), StringComparer.OrdinalIgnoreCase);
+            var disabled = new HashSet<string>(globallyDisabled ?? [], StringComparer.OrdinalIgnoreCase);
+
+            bool changed = refs.RemoveAll(r => r?.Id != null
+                && features.TryGetValue(r.Id, out var feature)
+                && feature.Kind == "skill"
+                && !installed.Contains(PayloadText(feature, "name"))) > 0;
+
             foreach (var skill in catalog)
             {
                 string id = FeatureId(skill);
                 if (refs.Any(r => string.Equals(r.Id, id, StringComparison.Ordinal))) continue;
                 //同一技能的旧版本引用还在激活集里 = 内容改过：直接换成新版本
                 bool hasOldVersion = refs.Any(r => IsSkillNamed(features, r.Id, skill.Name));
-                //用户停用过的技能不自动重开（含它改了内容后的新版本）
-                if (!hasOldVersion && everActive.Contains(skill.Name)) continue;
+                //用户停用过的技能不自动重开（含它改了内容后的新版本）；全局关掉的只影响没配置过的项目
+                if (!hasOldVersion && (everActive.Contains(skill.Name) || disabled.Contains(skill.Name))) continue;
 
                 refs.RemoveAll(r => IsSkillNamed(features, r.Id, skill.Name));
                 refs.Add(new FeatureRef { Id = id });
                 changed = true;
             }
 
-            if (changed) current = ledger.Activate(refs, "user", "自动启用新技能");
+            if (changed && refs.Count > 0) current = ledger.Activate(refs, "user", "自动启用新技能");
             return Active(current, features, catalog, out problems);
         }
 

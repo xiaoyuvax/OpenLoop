@@ -8,9 +8,9 @@ namespace OpenLoop.Core.OpenCode
     /// <summary>
     /// 借用 OpenCode 的模型通道：把 OpenLoop 的消息压成单个 prompt，走临时会话的单次调用。
     /// OpenLoop 自己持有全部 trace（历史、工具调用、结果、思维链）；OpenCode 只当透传壳。
-    /// 会话工具权限设为 ask 并一律拒绝 —— 原生调用在那边不可能执行，工具只落到 OpenLoop。
+    /// 原生工具按宿主审批执行；调用与结果实时上报，作为 native 步骤写进 trace。
     /// </summary>
-    public sealed class OpenCodeReasoner : IReasoner, IStreamingReasoner
+    public sealed class OpenCodeReasoner : IReasoner, IStreamingReasoner, INativeToolObserver
     {
         private readonly OpenCodeClient _client;
         private readonly OpenCodeModelRef _model;
@@ -29,6 +29,9 @@ namespace OpenLoop.Core.OpenCode
         }
 
         public Action<OpenAiCompatibleReasoner.ReasonerProgress> OnProgress { get; set; }
+
+        /// <summary>原生工具调用实时上报（只用于 trace；调用结果由 OpenCode 侧决定）。</summary>
+        public Action<NativeToolCall> OnNativeTool { get; set; }
 
         // 协议块紧跟 system，保证每轮 prompt 前缀逐字一致（上游前缀缓存靠这个），也避免在尾部每次追加。
         private const string Protocol =
@@ -55,11 +58,15 @@ namespace OpenLoop.Core.OpenCode
         {
             OnProgress?.Invoke(new OpenAiCompatibleReasoner.ReasonerProgress("等待 OpenCode 响应", 0, TimeSpan.Zero));
             string prompt = Flatten(messages);
+            // 免费模型保留工具表只为过上游门禁；原生工具按宿主审批执行，调用与结果实时上报。
+            var decide = _decide;
+            Action<OpenCodeNativeTool> nativeSink = tool =>
+                OnNativeTool?.Invoke(new NativeToolCall(tool.Name, tool.Input, tool.Ok, tool.Output, tool.Status));
             var turn = await _client.RunTurnAsync(prompt, _model, _workspace, onDelta, onReasoning,
-                decide: _decide, keepTools: _keepTools, ct: ct);
+                decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct);
             if (string.IsNullOrWhiteSpace(turn.Text) && string.IsNullOrWhiteSpace(turn.Reasoning))
                 turn = await _client.RunTurnAsync(prompt + RetryHint, _model, _workspace, onDelta, onReasoning,
-                    decide: _decide, keepTools: _keepTools, ct: ct);
+                    decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct);
 
             return new CompletionResult
             {

@@ -10,6 +10,8 @@ namespace OpenLoop.App
         private AntdUI.TabPage _pageModels;
         private AntdUI.TabPage _pageOpenCode;
         private TableLayoutPanel _skills;
+        private TableLayoutPanel _skillHeader;
+        private AntdUI.Select _selSkillScope;
         private AntdUI.Label _lblSkillsPath;
         private AntdUI.Table _tblSkills;
         private AntdUI.Column _colSkillOn;
@@ -18,8 +20,9 @@ namespace OpenLoop.App
         private AntdUI.Column _colSkillDesc;
         private AntdUI.Label _lblSkillsHint;
         private FlowLayoutPanel _skillActions;
-        private AntdUI.Button _btnSkillEnable;
-        private AntdUI.Button _btnSkillDisable;
+        private AntdUI.Button _btnSkillToggle;
+        private AntdUI.Button _btnSkillInstall;
+        private AntdUI.Button _btnSkillUninstall;
         private AntdUI.TabPage _pageSkills;
 
         private TableLayoutPanel _general;
@@ -107,6 +110,8 @@ namespace OpenLoop.App
             _pageSkills = new AntdUI.TabPage();
 
             _skills = new TableLayoutPanel();
+            _skillHeader = new TableLayoutPanel();
+            _selSkillScope = new AntdUI.Select();
             _lblSkillsPath = new AntdUI.Label();
             _tblSkills = new AntdUI.Table();
             _colSkillOn = new AntdUI.Column("On", "状态");
@@ -115,8 +120,9 @@ namespace OpenLoop.App
             _colSkillDesc = new AntdUI.Column("Description", "说明");
             _lblSkillsHint = new AntdUI.Label();
             _skillActions = new FlowLayoutPanel();
-            _btnSkillEnable = new AntdUI.Button();
-            _btnSkillDisable = new AntdUI.Button();
+            _btnSkillToggle = new AntdUI.Button();
+            _btnSkillInstall = new AntdUI.Button();
+            _btnSkillUninstall = new AntdUI.Button();
 
             _general = new TableLayoutPanel();
             _lblLanguage = new AntdUI.Label();
@@ -589,16 +595,30 @@ namespace OpenLoop.App
             _models.SetColumnSpan(_lstModels, 3);
             _pageModels.Controls.Add(_models);
 
-            // 技能：按工作区列，点一行切换启用/停用
+            // 技能：全局 / 项目两套目录、同一套界面管理
             _skills.Dock = DockStyle.Fill;
             _skills.ColumnCount = 1;
             _skills.RowCount = 4;
             _skills.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            _skills.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+            _skills.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _skills.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _skills.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
             _skills.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
             _skills.Padding = new Padding(8, 12, 8, 8);
+
+            _skillHeader.Dock = DockStyle.Fill;
+            _skillHeader.ColumnCount = 2;
+            _skillHeader.RowCount = 1;
+            _skillHeader.Margin = new Padding(0);
+            _skillHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132F));
+            _skillHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            _selSkillScope.Dock = DockStyle.Fill;
+            _selSkillScope.Radius = 8;
+            _selSkillScope.Margin = new Padding(0, 6, 8, 6);
+            _selSkillScope.Items.Add(new AntdUI.SelectItem("全局") { Tag = "global" });
+            _selSkillScope.Items.Add(new AntdUI.SelectItem("项目") { Tag = "project" });
+            _selSkillScope.SelectedValueChanged += OnSkillScopeChanged;
 
             _lblSkillsPath.Dock = DockStyle.Fill;
             _lblSkillsPath.Font = new Font("Segoe UI", 9F);
@@ -613,6 +633,8 @@ namespace OpenLoop.App
             _tblSkills.Bordered = false;
             _tblSkills.VisibleHeader = true;
             _tblSkills.RowHeight = 40;
+            _tblSkills.MultipleRows = true;
+            _tblSkills.SelectIndexChanged += OnSkillSelectionChanged;
             _tblSkills.EmptyText = "这个工作区还没有技能";
             _tblSkills.Margin = new Padding(0, 4, 0, 4);
             _colSkillOn.Width = "90";
@@ -630,30 +652,39 @@ namespace OpenLoop.App
             _lblSkillsHint.ForeColor = UiStyle.Muted;
             _lblSkillsHint.AutoEllipsis = true;
             _lblSkillsHint.Margin = new Padding(0, 4, 0, 0);
-            _lblSkillsHint.Text = "技能放 <工作区>/.openloop/skills/<名字>/SKILL.md，或全局 %APPDATA%\\OpenLoop\\skills（同名时项目优先）；新装技能默认启用，选中一行用下面的按钮切换。";
+            _lblSkillsHint.Text = "「全局」改 %APPDATA%\\OpenLoop\\skills，「项目」改 <工作区>/.openloop/skills；同名时项目那份优先，全局开关只影响项目里没配置过的技能。Ctrl/Shift 点行可多选，一起启用或停用。";
 
             _skillActions.Dock = DockStyle.Fill;
             _skillActions.FlowDirection = FlowDirection.LeftToRight;
             _skillActions.WrapContents = false;
             _skillActions.Margin = new Padding(0);
 
-            _btnSkillEnable.Text = "启用选中";
-            _btnSkillEnable.Type = AntdUI.TTypeMini.Primary;
-            _btnSkillEnable.Radius = 8;
-            _btnSkillEnable.Size = new Size(96, 30);
-            _btnSkillEnable.Margin = new Padding(0, 2, 8, 0);
-            _btnSkillEnable.Click += OnSkillEnable;
+            _btnSkillToggle.Text = "启用/停用";
+            _btnSkillToggle.Type = AntdUI.TTypeMini.Primary;
+            _btnSkillToggle.Radius = 8;
+            _btnSkillToggle.Size = new Size(112, 30);
+            _btnSkillToggle.Margin = new Padding(0, 2, 8, 0);
+            _btnSkillToggle.Click += OnSkillToggle;
 
-            _btnSkillDisable.Text = "停用选中";
-            _btnSkillDisable.Radius = 8;
-            _btnSkillDisable.Size = new Size(96, 30);
-            _btnSkillDisable.Margin = new Padding(0, 2, 0, 0);
-            _btnSkillDisable.Click += OnSkillDisable;
+            _btnSkillInstall.Text = "安装…";
+            _btnSkillInstall.Radius = 8;
+            _btnSkillInstall.Size = new Size(88, 30);
+            _btnSkillInstall.Margin = new Padding(0, 2, 8, 0);
+            _btnSkillInstall.Click += OnSkillInstall;
 
-            _skillActions.Controls.Add(_btnSkillEnable);
-            _skillActions.Controls.Add(_btnSkillDisable);
+            _btnSkillUninstall.Text = "卸载";
+            _btnSkillUninstall.Radius = 8;
+            _btnSkillUninstall.Size = new Size(88, 30);
+            _btnSkillUninstall.Margin = new Padding(0, 2, 0, 0);
+            _btnSkillUninstall.Click += OnSkillUninstall;
 
-            _skills.Controls.Add(_lblSkillsPath, 0, 0);
+            _skillActions.Controls.Add(_btnSkillToggle);
+            _skillActions.Controls.Add(_btnSkillInstall);
+            _skillActions.Controls.Add(_btnSkillUninstall);
+
+            _skillHeader.Controls.Add(_selSkillScope, 0, 0);
+            _skillHeader.Controls.Add(_lblSkillsPath, 1, 0);
+            _skills.Controls.Add(_skillHeader, 0, 0);
             _skills.Controls.Add(_tblSkills, 0, 1);
             _skills.Controls.Add(_skillActions, 0, 2);
             _skills.Controls.Add(_lblSkillsHint, 0, 3);

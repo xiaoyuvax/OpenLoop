@@ -131,6 +131,9 @@ namespace OpenLoop.Service.Config
         /// <summary>用户级全局技能库：%APPDATA%\OpenLoop\skills（同名时工作区技能优先）。</summary>
         public static string GlobalSkillsPath => Path.Combine(Dir, "skills");
 
+        /// <summary>全局技能的启用开关：%APPDATA%\OpenLoop\skills.json（disabled 名单，未列出=启用）。</summary>
+        public static string GlobalSkillsStatePath => Path.Combine(Dir, "skills.json");
+
         public static AppSettings Load()
         {
             try

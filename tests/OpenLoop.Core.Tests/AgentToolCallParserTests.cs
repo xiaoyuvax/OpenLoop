@@ -139,5 +139,16 @@ namespace OpenLoop.Core.Tests
                 "{\"tool\":\"ReadFile\"}"));
             Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt("工具调用会返回 tool-result。"));
         }
+
+        [Fact]
+        public void LooksLikeToolCallTextOnlyMatchesProtocolBody()
+        {
+            Assert.True(AgentToolCallParser.LooksLikeToolCallText(
+                "tool-call: {\"tool\":\"ListDir\",\"args\":{\"path\":\".\"}}\n" +
+                "tool-call: {\"tool\":\"Grep\",\"args\":{\"pattern\":\"x\"}}"));
+            Assert.True(AgentToolCallParser.LooksLikeToolCallText("  \r\n tool-call: {\"tool\":\"x\"}"));
+            Assert.False(AgentToolCallParser.LooksLikeToolCallText("先看一下现状。\ntool-call: {\"tool\":\"x\"}"));
+            Assert.False(AgentToolCallParser.LooksLikeToolCallText(""));
+        }
     }
 }

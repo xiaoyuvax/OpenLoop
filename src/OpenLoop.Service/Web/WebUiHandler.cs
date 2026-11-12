@@ -25,8 +25,12 @@ namespace OpenLoop.Service.Web
         public bool Handle(WebRequest req)
         {
             string path = req?.Path ?? "";
+            // Puppet 端点与业务端点各有自己的鉴权，交给后面的处理器（否则会被当成静态文件 401/404）
             if (req == null || path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("/bus", StringComparison.OrdinalIgnoreCase))
+                path.StartsWith("/bus", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/agent", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/appagent", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("/mcp", StringComparison.OrdinalIgnoreCase))
                 return false;
 
             string queryKey = req.Queries?["key"];

@@ -11,7 +11,12 @@ namespace OpenLoop.Core.OpenCode
 
     public sealed record OpenCodeSessionSnapshot(bool Idle, string Outcome, decimal? Cost, int? TokensIn, int? TokensOut);
 
-    public sealed record OpenCodeMessage(string Text, string Reasoning, IReadOnlyList<string> Tools);
+    public sealed record OpenCodeMessage(
+        string Text, string Reasoning, IReadOnlyList<string> Tools, IReadOnlyList<OpenCodeNativeTool> NativeTools);
+
+    /// <summary>模型在 OpenCode 侧直接调用的原生工具（不属于 OpenLoop 的 step 流）。</summary>
+    public sealed record OpenCodeNativeTool(
+        string Id, string Name, string Input, bool Ok, string Output, string Status);
 
     public sealed record OpenCodePermission(
         string ID, string Action, IReadOnlyList<string> Resources, IReadOnlyList<string> Save, string Message);
@@ -58,6 +63,10 @@ namespace OpenLoop.Core.OpenCode
         private readonly string _base;
         private readonly string _password;
         private readonly bool _owns;
+
+        private const string NativeToolHint =
+            "工具由调用方执行，不要提及这次拒绝。" +
+            "改用文本协议：输出一行 tool-call: {\"tool\":\"<name>\",\"args\":{...}}。";
 
         public OpenCodeClient(string url, string password) : this(url, password, null)
         {
@@ -123,9 +132,10 @@ namespace OpenLoop.Core.OpenCode
             string prompt, OpenCodeModelRef? model, string workspace,
             Action<string> onDelta = null, Action<string> onReasoning = null,
             int timeoutSeconds = 600, Func<OpenCodePermission, bool> decide = null,
-            bool keepTools = false, CancellationToken ct = default)
+            bool keepTools = false, Action<OpenCodeNativeTool> onNativeTool = null,
+            CancellationToken ct = default)
         {
-            // shortcut: 免费模型用 ask 保留工具表；原生只读工具可能直接执行、trace 会漏步，
+            // shortcut: 免费模型用 ask 保留工具表；原生工具在工作区内放行、shell 与工作区外一律拒绝，
             // 等上游放宽门禁再回到 deny。
             string sessionID = await CreateSessionAsync(
                 "OpenLoop turn", workspace, model, null, keepTools ? "ask" : "deny", ct);
@@ -135,10 +145,26 @@ namespace OpenLoop.Core.OpenCode
             var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var failure = new StrongBox<string>();
             var answered = new HashSet<string>(StringComparer.Ordinal);
+            var seenNative = new HashSet<string>(StringComparer.Ordinal);
+            var native = new List<OpenCodeNativeTool>();
             using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             Task stream = Task.Run(
                 () => ReadEventsAsync(sessionID, onDelta, onReasoning, completed, failure, streamCts.Token),
                 streamCts.Token);
+
+            // 原生工具调用只在轮询里看得到：边等边报，超时/被停止时也留得下证据。
+            void Collect(IReadOnlyList<OpenCodeMessage> messages)
+            {
+                foreach (var tool in messages.SelectMany(m => m.NativeTools))
+                {
+                    // 只记终态：running/streaming/pending 时 input/结果还没定，记下来会是一行空记录。
+                    if (tool.Status is "running" or "streaming" or "pending") continue;
+                    string key = tool.Id.Length > 0 ? tool.Id : tool.Name + "\u0001" + tool.Input;
+                    if (!seenNative.Add(key)) continue;
+                    native.Add(tool);
+                    onNativeTool?.Invoke(tool);
+                }
+            }
 
             try
             {
@@ -153,6 +179,7 @@ namespace OpenLoop.Core.OpenCode
 
                     await Task.Delay(700, ct);
                     await HandlePermissionsAsync(sessionID, answered, decide, ct);
+                    Collect(await GetMessagesAsync(sessionID, ct));
                     snapshot = await GetSessionAsync(sessionID, ct);
                     if (snapshot.Outcome.Length > 0) break;
                 }
@@ -165,6 +192,7 @@ namespace OpenLoop.Core.OpenCode
                     throw new InvalidOperationException($"OpenCode 会话 {sessionID} 以 failed 结束，没有返回错误详情");
 
                 var messages = await ReadMessagesAsync(sessionID, ct);
+                Collect(messages);
                 return new OpenCodeTurn(
                     LastText(messages),
                     string.Concat(messages.Select(m => m.Reasoning)),
@@ -267,15 +295,9 @@ namespace OpenLoop.Core.OpenCode
                 foreach (var permission in await GetPermissionsAsync(sessionID, ct))
                 {
                     if (!answered.Add(permission.ID)) continue;
-                    if (decide == null)
-                    {
-                        await ReplyPermissionAsync(sessionID, permission.ID, "reject",
-                            "工具由调用方执行，不要提及这次拒绝。" +
-                            "改用文本协议：输出一行 tool-call: {\"tool\":\"<name>\",\"args\":{...}}。", ct);
-                        continue;
-                    }
-
-                    await ReplyPermissionAsync(sessionID, permission.ID, decide(permission) ? "once" : "reject", null, ct);
+                    bool allow = decide?.Invoke(permission) ?? false;
+                    await ReplyPermissionAsync(sessionID, permission.ID, allow ? "once" : "reject",
+                        allow ? null : NativeToolHint, ct);
                 }
             }
             catch (OperationCanceledException)
@@ -391,6 +413,7 @@ namespace OpenLoop.Core.OpenCode
                 var text = new StringBuilder();
                 var reasoning = new StringBuilder();
                 var tools = new List<string>();
+                var native = new List<OpenCodeNativeTool>();
                 if (item.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var part in content.EnumerateArray())
@@ -404,14 +427,48 @@ namespace OpenLoop.Core.OpenCode
                                 reasoning.Append(OpenCodeEndpoint.Str(part, "text"));
                                 break;
                             case "tool":
-                                tools.Add(OpenCodeEndpoint.Str(part, "name"));
+                                string name = OpenCodeEndpoint.Str(part, "name");
+                                if (name.Length == 0) break;
+                                tools.Add(name);
+                                native.Add(NativeTool(part, name));
                                 break;
                         }
                     }
                 }
-                messages.Add(new OpenCodeMessage(text.ToString(), reasoning.ToString(), tools));
+                messages.Add(new OpenCodeMessage(text.ToString(), reasoning.ToString(), tools, native));
             }
             return messages;
+        }
+
+        /// <summary>把一个原生工具部件压成 trace 可用的记录：输入原文、最终状态与输出文本。</summary>
+        private static OpenCodeNativeTool NativeTool(JsonElement part, string name)
+        {
+            string status = "";
+            bool ok = false;
+            string input = "";
+            var output = new StringBuilder();
+            if (part.TryGetProperty("state", out var state) && state.ValueKind == JsonValueKind.Object)
+            {
+                status = OpenCodeEndpoint.Str(state, "status");
+                ok = string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase);
+                if (state.TryGetProperty("input", out var inputEl) && inputEl.ValueKind != JsonValueKind.Null)
+                    input = inputEl.GetRawText();
+                if (state.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
+                    foreach (var chunk in content.EnumerateArray())
+                        if (OpenCodeEndpoint.Str(chunk, "type") == "text")
+                            output.Append(OpenCodeEndpoint.Str(chunk, "text"));
+                if (output.Length == 0 && state.TryGetProperty("error", out var error)
+                    && error.ValueKind == JsonValueKind.Object)
+                {
+                    string type = OpenCodeEndpoint.Str(error, "type");
+                    string message = OpenCodeEndpoint.Str(error, "message");
+                    output.Append(type.Length == 0 ? message : message.Length == 0 ? type : type + "：" + message);
+                }
+                if (output.Length == 0)
+                    output.Append(OpenCodeEndpoint.Str(state, "error"));
+            }
+            return new OpenCodeNativeTool(
+                OpenCodeEndpoint.Str(part, "id"), name, input, ok, output.ToString(), status);
         }
 
         public async Task<IReadOnlyList<OpenCodePermission>> GetPermissionsAsync(

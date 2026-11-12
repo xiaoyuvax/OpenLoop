@@ -379,8 +379,8 @@ public sealed class AgentPolicy
 
 ### 6.3.2 运行中的请求队列
 
-- 运行期间输入框保持可用；`Ctrl+Enter`/发送按钮提交的请求进入 `SessionView` 的待发送队列，不再打断当前轮。
-- 队列以抽屉形式出现在聊天区下方、输入框上方（高度封顶 150 DIP），每行提供「撤回」（移回输入框）、「移除」、「立即发送」（取消当前轮并优先发送该条）。
+- 运行期间输入框保持可用；`Enter`/发送按钮提交的请求插到下一步（当前轮在下一个 step 前收尾），`Ctrl+Enter` 提交的请求等当前轮返回后再发。
+- 队列以抽屉形式出现在聊天区下方、输入框上方（高度封顶约 150 DIP），每行「模式图标 + 文本 + 编辑 / 删除 / 立即」：⚡=立即、🕐=等本轮，悬停可看 Enter / Ctrl+Enter 的对应关系。
 - 发送按钮只有一个：输入框有文字 = 发送（排队），清空 = 停止。停止会暂停自动续跑，抽屉里的「全部发送」恢复。
 - 当前轮结束后按队列顺序自动发送下一条；打断项优先于队列顺序。队列只在内存，关闭进程即丢弃。
 - A 面驱动：`MainForm.RemovePending/RetractPending/SendPendingNow(index)`、`SendAllPending()`，`PendingCount/PendingSummary` 只读。

@@ -247,6 +247,35 @@ public sealed class SkillTests : IDisposable
     }
 
     [Fact]
+    public void Load_Parses_Folded_Description_Block()
+    {
+        //GitHub 上的技能包常用 `description: >` 折行写描述（ponytail 就是）
+        string dir = Path.Combine(_root, ".openloop", "skills", "lazy");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "SKILL.md"), """
+            ---
+            name: lazy
+            description: >
+              Lazy senior dev mode: the smallest change that works.
+              Use when the user says "be lazy".
+            license: MIT
+            ---
+
+            # 正文
+            步骤一
+            """, new UTF8Encoding(false));
+
+        var skill = Assert.Single(SkillCatalog.Load(_root));
+
+        Assert.Equal("lazy", skill.Name);
+        Assert.StartsWith("Lazy senior dev mode", skill.Description);
+        Assert.Contains("be lazy", skill.Description);
+        Assert.DoesNotContain(">", skill.Description);
+        Assert.Contains("步骤一", skill.Body);
+        Assert.DoesNotContain("license:", skill.Body);
+    }
+
+    [Fact]
     public void Load_Merges_Global_Skills_With_Workspace_Precedence()
     {
         string global = Path.Combine(_root, "global-skills");
@@ -265,6 +294,73 @@ public sealed class SkillTests : IDisposable
         var only = catalog.Single(s => s.Name == "only-global");
         Assert.True(only.Global);
         Assert.Equal("skills/only-global/SKILL.md", only.Source);
+    }
+
+    [Fact]
+    public void Sync_Global_Disable_Only_Blocks_Skills_Not_Configured_In_Project()
+    {
+        WriteSkill("demo", "demo-skill", "做演示", "正文");
+        var ledger = Ledger.Open(_root);
+        ledger.EnsureInitialized();
+
+        //全局关掉：项目里没配置过就不自动启用
+        Assert.Empty(SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out _, ["demo-skill"]));
+
+        //项目里手动启用就盖过全局关闭
+        SkillCatalog.SetEnabled(ledger, SkillCatalog.Load(_root), "demo-skill", true);
+        Assert.Single(SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out _, ["demo-skill"]));
+    }
+
+    [Fact]
+    public void Sync_Prunes_Skills_Whose_Files_Are_Gone()
+    {
+        WriteSkill("demo", "demo-skill", "做演示", "正文");
+        var ledger = Ledger.Open(_root);
+        ledger.EnsureInitialized();
+        Assert.Single(SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out _));
+
+        Directory.Delete(Path.Combine(_root, ".openloop", "skills", "demo"), true);
+
+        Assert.Empty(SkillCatalog.Sync(ledger, SkillCatalog.Load(_root), out var problems));
+        Assert.Empty(problems);
+    }
+
+    [Fact]
+    public void Store_Installs_Rejects_Duplicate_And_Uninstalls_Inside_Root_Only()
+    {
+        string skills = Path.Combine(_root, ".openloop", "skills");
+        string source = Path.Combine(_root, "incoming", "demo");
+        WriteSkillAt(source, "demo-skill", "做演示", "正文");
+
+        string installed = SkillStore.Install(source, skills);
+        Assert.True(File.Exists(Path.Combine(installed, "SKILL.md")));
+        Assert.Throws<InvalidOperationException>(() => SkillStore.Install(source, skills));
+
+        var skill = Assert.Single(SkillCatalog.Load(_root));
+        SkillStore.Uninstall(skill, skills);
+        Assert.False(Directory.Exists(installed));
+
+        var outside = new SkillInfo { Name = "x", Directory = Path.Combine(_root, "incoming") };
+        Assert.Throws<InvalidOperationException>(() => SkillStore.Uninstall(outside, skills));
+    }
+
+    [Fact]
+    public void Store_Toggles_Global_Disabled_List()
+    {
+        string file = Path.Combine(_root, "skills.json");
+        Assert.Empty(SkillStore.LoadDisabled(file));
+
+        SkillStore.SetEnabled(file, "demo", false);
+        Assert.Contains("demo", SkillStore.LoadDisabled(file));
+
+        SkillStore.SetEnabled(file, "DEMO", true);
+        Assert.Empty(SkillStore.LoadDisabled(file));
+
+        //批量：一次写入多条，再一起启用
+        SkillStore.SetEnabled(file, ["a", "b", "c"], false);
+        Assert.Equal(3, SkillStore.LoadDisabled(file).Count);
+        SkillStore.SetEnabled(file, ["A", "b", "c"], true);
+        Assert.Empty(SkillStore.LoadDisabled(file));
     }
 
     private string SkillPath(string folder)

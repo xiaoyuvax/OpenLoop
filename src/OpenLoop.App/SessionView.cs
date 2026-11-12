@@ -87,7 +87,12 @@ namespace OpenLoop.App
             _chat.PlaceholderText = Localization.T("NoMessages");
             //每轮都落过盘，但要在这里读回来，否则重启后会话是空的
             var saved = ChatStore.Load(session.Workspace, session.Id);
-            if (saved.Count > 0) session.Book.ReplaceAll(saved, null);
+            if (saved.Count > 0)
+            {
+                session.Book.ReplaceAll(saved, null);
+                // 列表的「步数」取最后一轮（与运行中的同步口径一致）
+                session.Steps = saved[^1].ToolStepCount;
+            }
             _chat.UndoRequested += OnChatUndo;
             _chat.CopyRequested += OnChatCopy;
             _chat.LinkClicked += OnChatLinkClicked;
@@ -112,6 +117,11 @@ namespace OpenLoop.App
             _pending.EditRequested += BeginEdit;
             _pending.ImmediateRequested += OnImmediateRequested;
             _pending.Removed += DropEdit;
+            // 队列跟着会话落盘：进程被强杀也不丢已经排好的消息
+            var savedQueue = PendingStore.Load(session.Workspace, session.Id);
+            _queue.Restore(savedQueue.Items, savedQueue.Paused);
+            _queue.Changed += () => PendingStore.Save(Session.Workspace, Session.Id, _queue);
+            _pending.Sync();
             SetMode("task");
             RefreshLedgerInfo();
             UpdateContext(null);
@@ -176,6 +186,10 @@ namespace OpenLoop.App
         /// <summary>提供商下拉里的条目（插件贡献的提供商会排在内置之后），给 Puppet/诊断读。</summary>
         public string ProviderOptionNames => string.Join("\n",
             _selProvider.Items.OfType<AntdUI.SelectItem>().Select(i => i.Text));
+
+        /// <summary>模型下拉里的条目（SetModel 的可选值），给 Puppet/诊断读。</summary>
+        public string ModelOptionNames => string.Join("\n",
+            _selModel.Items.OfType<AntdUI.SelectItem>().Select(i => i.Text));
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ReasoningText =>
@@ -321,11 +335,30 @@ namespace OpenLoop.App
             if (mode is "task" or "criterion" or "correction") SetMode(mode);
         }
 
-        public void SendMode(string mode = "task")
+        /// <summary>发送（mode 决定语义）；返回是否成功 + 一句给用户看的结果说明。</summary>
+        public (bool Ok, string Message) SendMode(string mode = "task")
         {
             SelectMode(mode);
-            Submit();
+            var result = Submit();
             SetMode("task");
+            return result;
+        }
+
+        /// <summary>停止当前轮（硬停：A 侧丢弃这一轮）。返回是否本来在跑。</summary>
+        public bool Stop()
+        {
+            if (!_running) return false;
+            _queue.Paused = true;
+            StopRun();
+            return true;
+        }
+
+        /// <summary>软打断：当前轮在下一个 step 前收尾，忙着的工具不打断。</summary>
+        public bool Interrupt()
+        {
+            if (!_running) return false;
+            RequestInterrupt();
+            return true;
         }
 
         /// <summary>A 面驱动：点「演进」（走 I 的 /api/loop/evolve）。</summary>
@@ -559,10 +592,10 @@ namespace OpenLoop.App
                 if (title.Length == 0) return;
                 bool same = string.Equals(Session.CustomTitle, title, StringComparison.Ordinal);
                 Session.CustomTitle = title;
-                _lblTitle.Text = title;
+                _lblTitle.Text = Session.Title;
                 TitleChanged?.Invoke(Session);
                 // 标题变化很小（同长度、同位置），不提示的话用户会以为没生效
-                if (force) Notify(same ? "标题未变化" : "标题已更新", title);
+                if (force) Notify(same ? "标题未变化" : "标题已更新", Session.Title);
             }
             catch (Exception ex)
             {
@@ -607,30 +640,32 @@ namespace OpenLoop.App
             _btnSend.Ghost = stop;
         }
 
-        private void Submit(bool immediate = false)
+        private (bool Ok, string Message) Submit(bool immediate = false)
         {
             string text = _txtInput.Text.Trim();
 
             // 正在编辑排队项：这一下只保存，不发送
             if (_editing != null)
             {
-                if (text.Length == 0) _queue.Remove(_editing);
+                bool removed = text.Length == 0;
+                if (removed) _queue.Remove(_editing);
                 else _editing.Text = text;
                 _editing = null;
                 _txtInput.Clear();
                 _pending.Sync();
                 UpdateSendButton();
-                return;
+                return (true, removed ? "已移除排队项" : "已更新排队项");
             }
 
             //「/命令」先在这里分流：命令不走普通对话
             if (TryRunCommand(text))
             {
                 _txtInput.Clear();
-                return;
+                return (true, "已执行命令");
             }
             //命令写了但没写请求：只提示，不要把「/btw」本身当任务发出去
-            if (IsCommand(text, "/btw") || IsCommand(text, "/complain") || IsCommand(text, "/fork")) return;
+            if (IsCommand(text, "/btw") || IsCommand(text, "/complain") || IsCommand(text, "/fork"))
+                return (false, "命令缺少内容，没有发送");
 
             if (_running)
             {
@@ -638,22 +673,27 @@ namespace OpenLoop.App
                 {
                     _queue.Paused = true;
                     StopRun();
-                    return;
+                    return (true, "已停止当前轮");
                 }
                 Enqueue(text, _mode, immediate ? PendingMode.NextStep : PendingMode.AfterTurn);
                 _txtInput.Clear();
                 SetMode("task");
-                if (immediate) RequestInterrupt();
-                return;
+                if (immediate)
+                {
+                    RequestInterrupt();
+                    return (true, "已入队（立即），当前轮会在下一个 step 前收尾");
+                }
+                return (true, "已入队，本轮结束后发送");
             }
 
-            if (text.Length == 0) return;
+            if (text.Length == 0) return (false, "输入框为空");
             _txtInput.Clear();
             SendTask(_mode, text);
             SetMode("task");
+            return (true, "已发送");
         }
 
-        private void OnSendClick(object sender, EventArgs e) => Submit();
+        private void OnSendClick(object sender, EventArgs e) => Submit(immediate: true);
 
         /// <summary>识别 /btw、/fork；返回 true 表示这条输入已被命令消费。</summary>
         private bool TryRunCommand(string text)
@@ -1228,6 +1268,8 @@ namespace OpenLoop.App
             if (structure) RefreshChat();
             var last = Session.Book.Turns.LastOrDefault();
             if (last != null) _chat.UpdateStreamingMessage(last, last.AssistantText, force: structure);
+            // 上下文占比跟着 Worker 的实时估算走（此前只在跑完时更新一次）
+            if (snapshot.ContextTokens != _ctxTokens) UpdateContext(snapshot.ContextTokens);
             if (!string.IsNullOrEmpty(snapshot.TraceDirectory)) SetTrace(snapshot.Workspace, snapshot.TraceDirectory);
             if (snapshot.ActivationVersion > 0)
                 _lblDef.Text = $"def: v{snapshot.ActivationVersion} · {snapshot.FeatureCount} {Localization.T("Features")} · {snapshot.RuleCount} {Localization.T("Rules")}";
@@ -1757,9 +1799,10 @@ namespace OpenLoop.App
                 var list = new List<LlmMessage>(stored);
                 for (int j = i + 1; j < turns.Count; j++)
                 {
-                    if (turns[j].AssistantText.StartsWith(FailurePrefix, StringComparison.Ordinal)) continue;
                     if (!string.IsNullOrEmpty(turns[j].UserText)) list.Add(new LlmMessage("user", turns[j].UserText));
-                    if (!string.IsNullOrEmpty(turns[j].AssistantText)) list.Add(new LlmMessage("assistant", turns[j].AssistantText));
+                    if (!string.IsNullOrEmpty(turns[j].AssistantText)
+                        && !turns[j].AssistantText.StartsWith(FailurePrefix, StringComparison.Ordinal))
+                        list.Add(new LlmMessage("assistant", turns[j].AssistantText));
                 }
                 return list;
             }
@@ -1767,11 +1810,11 @@ namespace OpenLoop.App
             var fallback = new List<LlmMessage>();
             foreach (var turn in turns)
             {
-                //失败轮次的正文是接口报错，不是模型说过的话：别当上下文再喂回去
-                if (turn.AssistantText.StartsWith(FailurePrefix, StringComparison.Ordinal)) continue;
+                //失败轮的正文是接口报错，不是模型说过的话：别当上下文再喂回去，但 user 要留下
                 if (!string.IsNullOrEmpty(turn.UserText))
                     fallback.Add(new LlmMessage("user", turn.UserText));
-                if (!string.IsNullOrEmpty(turn.AssistantText))
+                if (!string.IsNullOrEmpty(turn.AssistantText)
+                    && !turn.AssistantText.StartsWith(FailurePrefix, StringComparison.Ordinal))
                     fallback.Add(new LlmMessage("assistant", turn.AssistantText));
             }
             return fallback;

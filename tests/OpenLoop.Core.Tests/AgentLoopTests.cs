@@ -442,8 +442,34 @@ namespace OpenLoop.Core.Tests
         [InlineData("我看了目录和源文件。项目是 .NET 控制台应用，主要处理程序集展平。")]
         [InlineData("优化方案：1) 拆分大文件 2) 加缓存 3) 补测试")]
         [InlineData("No further action needed.")]
+        [InlineData("当前正在运行的构建已经包含这段逻辑。")]
+        [InlineData("接下来我检查了文件预览的调用链，确认 README 走的是 MarkdownTextBox，代码文件才走 FastColoredTextBox。控件在 OpenLoop 的 FilePreviewView 里创建，路径判断用扩展名，大小写不敏感。预览面板的布局由 SessionView 和 LoopView 各自持有，两个入口调用的是同一个 TryShowFile。相关的包引用在 Directory.Packages.props，版本 1.5.7，与 ChatFlow 一致。测试工程里没有覆盖这条 UI 分支，但核心分流函数是纯逻辑，可以直接断言扩展名到控件的映射。日志和缓存目录都在用户目录下，不受仓库改动影响。如果后续要支持 .markdown 之外的后缀，只需要在判断表里加一行，其他路径不用动。结论：现有实现已经满足要求，不需要再改代码。")]
         public void Does_Not_Flag_Final_Answers(string text)
             => Assert.False(AgentLoop.LooksLikeActionPromise(text));
+
+        [Theory]
+        [InlineData("结论：不需要改动。\n[final]", true)]
+        [InlineData("结论：不需要改动。 [FINAL]", true)]
+        [InlineData("正文里提到 [final] 这个词，但不是收尾标记。", false)]
+        public void Final_Marker_Is_Only_Recognized_At_The_End(string text, bool expected)
+            => Assert.Equal(expected, AgentLoop.HasFinalMarker(text));
+
+        [Fact]
+        public void Final_Marker_Is_Stripped_From_The_Answer()
+            => Assert.Equal("结论：不需要改动。", AgentLoop.StripFinalMarker("结论：不需要改动。\n\n[final]"));
+
+        [Fact]
+        public async Task Final_Marker_Suppresses_Promise_Nudge_And_Is_Stripped()
+        {
+            var reasoner = new ScriptedReasoner("接下来我会继续检查其他文件。\n[final]");
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync([], "审查代码并给方案");
+
+            Assert.Equal(0, result.Guards.PromiseNudges);
+            Assert.Equal("接下来我会继续检查其他文件。", result.FinalAnswer);
+            Assert.Single(reasoner.Calls);
+        }
 
         [Fact]
         public async Task Promise_Without_Tool_Call_Is_Nudged_And_Continues()

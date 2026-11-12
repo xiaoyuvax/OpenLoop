@@ -35,7 +35,7 @@ namespace OpenLoop.Service.Web
             // parts: api / loop / {action} [/ {sub}] 或 api / capabilities
 
             if (method == "GET" && parts.Length == 2 && parts[1] == "capabilities")
-                return Json(req, new { worker = false, loop = true });
+                return Json(req, new { worker = false, loop = true, workspace = AppSettings.Load()?.Workspace ?? "" });
 
             if (parts.Length < 3 || parts[1] != "loop") return NotFound(req);
 

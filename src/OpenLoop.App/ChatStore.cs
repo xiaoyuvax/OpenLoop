@@ -112,7 +112,9 @@ namespace OpenLoop.App
         private static void AppendText(List<LlmMessage> list, ChatTurn turn)
         {
             if (!string.IsNullOrWhiteSpace(turn?.UserText)) list.Add(new LlmMessage("user", turn.UserText));
-            if (!string.IsNullOrWhiteSpace(turn?.AssistantText)) list.Add(new LlmMessage("assistant", turn.AssistantText));
+            // 失败轮的正文是接口报错/停止提示，不是模型说过的话
+            if (!string.IsNullOrWhiteSpace(turn?.AssistantText) && !ServerNotice.IsNotice(turn.AssistantText))
+                list.Add(new LlmMessage("assistant", turn.AssistantText));
         }
 
         /// <summary>
@@ -165,17 +167,20 @@ namespace OpenLoop.App
         public static void Touch(string workspace, string sessionId, string title = null)
             => ChatHistory.Touch(workspace, sessionId, title);
 
-        /// <summary>有对话文件的已存会话（会话 id + 工作目录 + 标题），最近的在前。</summary>
-        public static List<(string Id, string Workspace, string Title)> SavedSessions()
+        /// <summary>有对话文件的已存会话；最近活动的在前。开始时间与最后活动时间都取自索引。</summary>
+        public static List<SavedSession> SavedSessions()
         {
-            var result = new List<(string, string, string)>();
+            var result = new List<SavedSession>();
             try
             {
                 foreach (var item in ChatHistory.Index().OrderByDescending(e => e.UpdatedAt))
                 {
                     if (item == null || string.IsNullOrEmpty(item.Id) || string.IsNullOrEmpty(item.Workspace)) continue;
                     if (!File.Exists(ChatHistory.PathFor(item.Workspace, item.Id))) continue;
-                    result.Add((item.Id, item.Workspace, item.Title ?? ""));
+                    // 旧索引没有 CreatedAt：退回 UpdatedAt（至少不是重启时刻）
+                    var created = item.CreatedAt == default ? item.UpdatedAt : item.CreatedAt;
+                    result.Add(new SavedSession(item.Id, item.Workspace, item.Title ?? "",
+                        created.ToLocalTime(), item.UpdatedAt.ToLocalTime()));
                 }
             }
             catch
@@ -183,5 +188,8 @@ namespace OpenLoop.App
             }
             return result;
         }
+
+        internal sealed record SavedSession(
+            string Id, string Workspace, string Title, DateTime StartedAt, DateTime LastActiveAt);
     }
 }

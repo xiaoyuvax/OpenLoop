@@ -20,6 +20,15 @@ namespace OpenLoop.App
         public const string Close =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M6.4 5L12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z'/></svg>";
 
+        public const string Minimize =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M4 11h16v2H4z'/></svg>";
+
+        public const string Maximize =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M5 5h14v14H5zm2 2v10h10V7z'/></svg>";
+
+        public const string Restore =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M8 3h11v11h-2V5H8zM5 8h11v11H5zm2 2v7h7v-7z'/></svg>";
+
         public const string Send =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M3 20.5l18-8.5L3 3.5v6.2L15 12 3 14.3z'/></svg>";
 
@@ -61,6 +70,14 @@ namespace OpenLoop.App
 
         public const string Trash =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M9 3h6l1 2h4v2H4V5h4zM6 8h12l-1 12a1 1 0 01-1 1H8a1 1 0 01-1-1zm3 2v9h2v-9zm4 0v9h2v-9z'/></svg>";
+
+        /// <summary>立即插入下一步。</summary>
+        public const string Bolt =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M13 2L4 14h6l-1 8 9-12h-6z'/></svg>";
+
+        /// <summary>等这一轮返回。</summary>
+        public const string Clock =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 3a9 9 0 110 18 9 9 0 010-18zm0 2a7 7 0 100 14 7 7 0 000-14zm-1 2h2v5.6l4 2.4-1 1.7-5-3z'/></svg>";
 
         public static string Dot(Color color)
             => $"<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='7' fill='{Hex(color)}'/></svg>";

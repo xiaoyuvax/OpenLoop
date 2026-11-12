@@ -121,7 +121,8 @@ namespace OpenLoop.App
             {
                 ledger = Ledger.Open(_workspace);
                 ledger.EnsureInitialized();
-                skills = SkillCatalog.Sync(ledger, skillCatalog, out skillProblems);
+                skills = SkillCatalog.Sync(ledger, skillCatalog, out skillProblems,
+                    SkillStore.LoadDisabled(AppSettings.GlobalSkillsStatePath));
                 activation = ledger.Current;
                 var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
                 policy = FeatureCatalog.PolicyFrom(activation, features);
@@ -172,7 +173,7 @@ namespace OpenLoop.App
                 lock (_streamBuffer) _streamBuffer.Append(piece);
                 string snapshot;
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
-                if (LooksLikeToolCallText(snapshot)) return;
+                if (AgentToolCallParser.LooksLikeToolCallText(snapshot)) return;
                 RunOnUi(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot)));
             };
 
@@ -218,7 +219,7 @@ namespace OpenLoop.App
                     {
                         turn.ToolStepCount++;
                         turn.ToolTotalMs += step.DurationMs;
-                        string line = $"{step.Tool}({step.ArgsSummary}) · {step.DurationText}{(step.Ok ? "" : " · 失败")}";
+                        string line = step.DisplayLine;
                         turn.ToolCallLines = string.IsNullOrEmpty(turn.ToolCallLines)
                             ? line
                             : turn.ToolCallLines + "\n" + line;
@@ -369,8 +370,5 @@ namespace OpenLoop.App
             else
                 AntdUI.Notification.info(form, title, text, AntdUI.TAlignFrom.TR, null, 3);
         }
-
-        private static bool LooksLikeToolCallText(string text)
-            => text.TrimStart().StartsWith("tool-call", StringComparison.OrdinalIgnoreCase);
     }
 }

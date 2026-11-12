@@ -13,6 +13,9 @@ namespace OpenLoop.Service.Runtime
         public static string VersionsDir => Path.Combine(DataRoot, "versions");
         public static string BusKeyPath => Path.Combine(DataRoot, "bus.key");
 
+        /// <summary>Puppet 共享 key（与 WinForms 壳同一份，其他 agent 读它接入）。</summary>
+        public static string PuppetKeyPath => Path.Combine(DataRoot, "puppet.key");
+
         /// <summary>静态界面：与可执行文件同目录的 wwwroot（A/I 各自带一份）。可用环境变量覆盖。</summary>
         public static string WwwRoot { get; } = ResolveWwwRoot();
 

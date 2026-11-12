@@ -46,6 +46,9 @@ namespace OpenLoop.Service.Worker
         public Action<string> Reasoning { get; set; }
         public Action ResetStream { get; set; }
         public Action<string> ToolStarted { get; set; }
+
+        /// <summary>每次请求模型前的上下文 token 估算（本轮 prompt 大小），界面据此实时刷新占比。</summary>
+        public Action<int> ContextTokens { get; set; }
         public Action<AgentStepRecord> Step { get; set; }
         public Action<OpenAiCompatibleReasoner.ReasonerProgress> ModelProgress { get; set; }
 
@@ -136,9 +139,26 @@ namespace OpenLoop.Service.Worker
                 scope, approve, skills, fullAccess,
                 OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions)
                     .Concat(DshTools.For(settings, workspace, approve))
-                    .Concat(plugins.Tools()));
+                    .Concat(plugins.Tools())
+                    .Concat(OpenLoop.Service.Web.PuppetTools.For()));
 
             var trace = TraceWriter.Start(workspace, request.Tag, request.Text, request.Model);
+            // 原生工具调用发生在推理通道内部：边发生边写 trace（停止/超时也留证据），同时进步骤流。
+            if (reasoner is INativeToolObserver observer)
+                observer.OnNativeTool = tool =>
+                {
+                    trace.NativeTool(tool);
+                    request.Step?.Invoke(new AgentStepRecord
+                    {
+                        Tool = "native:" + tool.Tool,
+                        ArgsSummary = Clip(tool.Input, 120),
+                        ArgsFull = tool.Input,
+                        Ok = tool.Ok,
+                        Summary = Clip(string.IsNullOrEmpty(tool.Output) ? tool.Status : tool.Output, 160),
+                        FullResult = "native-result: " + tool.Output,
+                        ResultFull = tool.Output
+                    });
+                };
             var ctx = new WorkerRunContext
             {
                 Undo = undo,
@@ -174,6 +194,7 @@ namespace OpenLoop.Service.Worker
 
             var result = new WorkerRunResult { TraceDirectory = trace.DirectoryPath };
             string outcome = "error";
+            IReadOnlyList<LlmMessage> lastRequest = null;
             try
             {
                 int contextLimit = ModelCatalog.ContextLimit(request.Model, request.Settings);
@@ -181,7 +202,12 @@ namespace OpenLoop.Service.Worker
                     () => loop.RunAsync(request.History, request.Text, ct, contextLimit,
                         () => ct.IsCancellationRequested || (request.ShouldStop?.Invoke() ?? false),
                         request.Delta, request.Reasoning, request.ResetStream,
-                        trace.Request),
+                        (messages, tokens) =>
+                        {
+                            lastRequest = messages;
+                            request.ContextTokens?.Invoke(tokens);
+                            trace.Request(messages, tokens);
+                        }),
                     ct);
 
                 string answer = request.FormatAnswer?.Invoke(run.FinalAnswer, run.FinishReason)
@@ -209,7 +235,7 @@ namespace OpenLoop.Service.Worker
             catch (OperationCanceledException)
             {
                 result.Outcome = "stopped";
-                result.FinalAnswer = "（已停止）";
+                result.FinalAnswer = ServerNotice.Stopped;
                 result.StoppedByUser = true;
                 trace.Message("assistant", result.FinalAnswer);
                 trace.Finish("stopped", result.FinalAnswer);
@@ -225,6 +251,11 @@ namespace OpenLoop.Service.Worker
             }
             finally
             {
+                // 失败/中断时 run.Transcript 拿不到：退回最后一次真正发出去的消息，
+                // 否则这一轮的上下文（含前面所有历史）全都丢了，下一轮只能当新对话。
+                if (result.Transcript == null && lastRequest != null)
+                    result.Transcript = lastRequest.Select(m => new LlmMessage(m.Role, m.Content)).ToList();
+
                 try
                 {
                     RunSpool.Write(workspace, new RunRecord
@@ -250,5 +281,9 @@ namespace OpenLoop.Service.Worker
 
             return result;
         }
+
+        /// <summary>步骤流一行文本，超长截断。</summary>
+        private static string Clip(string text, int max)
+            => string.IsNullOrEmpty(text) || text.Length <= max ? text ?? "" : text[..max] + "…";
     }
 }

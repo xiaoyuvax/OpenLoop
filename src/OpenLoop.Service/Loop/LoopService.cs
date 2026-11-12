@@ -145,7 +145,8 @@ namespace OpenLoop.Service.Loop
             var ledger = Ledger.Open(workspace);
             ledger.EnsureInitialized();
             var skills = SkillCatalog.Sync(ledger,
-                SkillCatalog.Load(ledger.Workspace, AppSettings.GlobalSkillsPath), out var problems);
+                SkillCatalog.Load(ledger.Workspace, AppSettings.GlobalSkillsPath), out var problems,
+                SkillStore.LoadDisabled(AppSettings.GlobalSkillsStatePath));
 
             return new ActivationPayload
             {
@@ -354,7 +355,8 @@ namespace OpenLoop.Service.Loop
             return new AgentTaskRunner(
                 _ => Reasoners.Create(settings, model, effort, workspace),
                 features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath, settings.UseAgentsMd,
-                AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(model, settings));
+                AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(model, settings),
+                OpenLoop.Service.Web.PuppetTools.For());
         }
 
         private static string DivergedWorkerExe()

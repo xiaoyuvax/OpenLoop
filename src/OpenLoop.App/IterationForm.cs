@@ -19,6 +19,7 @@ namespace OpenLoop.App
         private CancellationTokenSource _cts;
         private bool _running;
         private bool _gitBusy;
+        private bool _hasGitChanges;
         private readonly bool _reportMode;
 
         public IterationForm(string workspace, List<RolePlan> plan, string summary)
@@ -34,7 +35,8 @@ namespace OpenLoop.App
             RenderPlan();
             _lblStatus.Text = _plan.Any(p => p.Update)
                 ? "确认后开始：A 与 I 不会同时换，壳最后重启。"
-                : "源码没有比运行版本新，仍可重编一次做检查。";
+                : "没有部件需要更新：源码或依赖有变化才需要迭代。";
+            SyncButtons();
         }
 
         /// <summary>壳重启过：打开时直接展示上一轮的报告。</summary>
@@ -60,6 +62,7 @@ namespace OpenLoop.App
             _lblStatus.Text = report is { Ok: true }
                 ? "成功" + (report.ShellRestarted ? "（壳已重启）" : "")
                 : "失败" + (report.RolledBack ? "，已回退到迭代前的版本" : "");
+            SyncButtons();
         }
 
         /// <summary>壳重启交给 MainForm：写报告 → 起重启脚本 → 退出本进程。</summary>
@@ -69,6 +72,7 @@ namespace OpenLoop.App
         {
             base.OnShown(e);
             PuppetRegistry.Register(this);   // 让 agent 能读计划/日志并截图确认
+            _ = RefreshGitStateAsync();
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
@@ -134,12 +138,12 @@ namespace OpenLoop.App
 
         private async void OnStart(object sender, EventArgs e)
         {
-            if (_running || _reportMode) return;
+            if (_running || _reportMode || !_btnStart.Enabled) return;
             _running = true;
             _btnStart.Enabled = false;
             _btnClose.Enabled = false;
             _btnClose.Text = "执行中…";
-            GitButtons(false);
+            SyncButtons();
             _lblStatus.Text = "正在执行…";
             _cts = new CancellationTokenSource();
 
@@ -203,18 +207,35 @@ namespace OpenLoop.App
         private void Finish()
         {
             _running = false;
-            _btnStart.Enabled = true;
             _btnClose.Enabled = true;
             _btnClose.Text = "关闭";
-            GitButtons(true);
+            SyncButtons();
+            // 这一轮刚改过版本号/源码，工作树状态会变，重新问一次
+            _ = RefreshGitStateAsync();
         }
 
-        private void GitButtons(bool enabled)
+        /// <summary>按钮可用性只有一处口径：没有要升/重编的部件不给开始，工作树干净不给提交。</summary>
+        private void SyncButtons()
         {
-            _btnCommit.Enabled = enabled;
-            _btnPush.Enabled = enabled;
+            _btnStart.Enabled = !_reportMode && !_running && _plan.Any(p => p.Update);
+            _btnCommit.Enabled = _btnPush.Enabled = _hasGitChanges && !_running && !_gitBusy;
         }
 
+        /// <summary>问 I 一次工作树是否干净；I 不可达时保持禁用（提交本来也得走 I）。</summary>
+        private async Task RefreshGitStateAsync()
+        {
+            try
+            {
+                using var client = new LoopApiClient();
+                var status = await client.GitStatusAsync();
+                _hasGitChanges = (status?.Repos ?? []).Any(r => r.Files.Count > 0);
+            }
+            catch
+            {
+                _hasGitChanges = false;
+            }
+            if (!IsDisposed) SyncButtons();
+        }
         private async void OnCommit(object sender, EventArgs e) => await CommitAsync(push: false);
 
         private async void OnCommitPush(object sender, EventArgs e) => await CommitAsync(push: true);
@@ -227,7 +248,7 @@ namespace OpenLoop.App
         {
             if (_gitBusy || _running) return;
             _gitBusy = true;
-            GitButtons(false);
+            SyncButtons();
             _lblStatus.Text = push ? "正在提交并推送…" : "正在提交…";
 
             try
@@ -276,7 +297,9 @@ namespace OpenLoop.App
             finally
             {
                 _gitBusy = false;
-                GitButtons(true);
+                SyncButtons();
+                // 提交后工作树多半干净了：按钮跟着关掉
+                _ = RefreshGitStateAsync();
             }
         }
 

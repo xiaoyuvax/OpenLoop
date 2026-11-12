@@ -55,7 +55,7 @@ namespace OpenLoop.App
             _lblCount.Margin = new Padding(0);
 
             _lblHint.AutoSize = true;
-            _lblHint.Text = "排队默认等本轮返回，点「立即」插到下一步";
+            _lblHint.Text = "Enter 插到下一步 · Ctrl+Enter 等本轮返回 · Shift+Enter 换行";
             _lblHint.Font = new Font("Segoe UI", 8.5F);
             _lblHint.ForeColor = UiStyle.Muted;
             _lblHint.TextAlign = ContentAlignment.MiddleRight;

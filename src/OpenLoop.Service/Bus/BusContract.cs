@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace OpenLoop.Service.Bus
 {
-    /// <summary>角色常量。A = 阳（Worker），I = 阴（Loop）。</summary>
+    /// <summary>角色常量。A = Worker，I = Loop。</summary>
     public static class BusRoles
     {
         public const string A = "a";

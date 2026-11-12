@@ -14,11 +14,14 @@ namespace OpenLoop.I
             var iteration = new IterationService();
             string key = KeyFile.ReadOrCreate(AppPaths.BusKeyPath);
             var ui = new WebUiHandler(key);
+            using var puppet = new WebPuppet(key);
+            puppet.Start();
 
             return HeadlessHost.Run(BusRoles.I, "127.0.0.1:19181", args, bus =>
             {
                 bus.Busy = () => loop.IsBusy;
-                bus.Use(new LoopApiHandler(loop, iteration, key).Handle)
+                bus.Use(puppet.HandleApi)
+                   .Use(new LoopApiHandler(loop, iteration, key).Handle)
                    .Use(ui.Handle);
             });
         }

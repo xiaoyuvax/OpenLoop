@@ -10,6 +10,7 @@ using OpenLoop.Core.Store;
 using OpenLoop.Core.Tools;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Trace;
+using OpenLoop.Service.Pending;
 
 namespace OpenLoop.App
 {
@@ -33,6 +34,8 @@ namespace OpenLoop.App
         private bool _onlyFree = true;
         private string _lastCost = "—";
         private int? _contextTokens;
+        // 上下文占比的实时估算：本轮请求的 prompt + 已生成内容（按增量累加）
+        private int _promptTokens, _liveTokens;
         private bool _running;
         private bool _filling;
         private bool _fillingProviders;
@@ -118,6 +121,9 @@ namespace OpenLoop.App
         /// <summary>/new：开一个新的空 Loop 会话（沿用当前模型与强度）。</summary>
         internal event Action<LoopView, string> NewSessionRequested;
 
+        /// <summary>标题（重新总结后）变了：宿主用它刷新标签页文本。</summary>
+        internal event Action<string> TitleChanged;
+
         internal IReadOnlyList<ChatTurn> Turns => _book.Turns;
 
         internal void Initialize(string workspace, Func<AppSettings> settings,
@@ -145,6 +151,11 @@ namespace OpenLoop.App
             _pending.EditRequested += BeginEdit;
             _pending.ImmediateRequested += OnImmediateRequested;
             _pending.Removed += DropEdit;
+            // 队列跟着会话落盘：进程被强杀也不丢已经排好的消息
+            var savedQueue = PendingStore.Load(_workspace, _sessionId);
+            _queue.Restore(savedQueue.Items, savedQueue.Paused);
+            _queue.Changed += () => PendingStore.Save(_workspace, _sessionId, _queue);
+            _pending.Sync();
             _txtInput.TextChanged += (_, _) => { UpdateSendButton(); UpdateCommandPopup(); };
 
             _book.ReplaceAll(ChatStore.Load(_workspace, _sessionId), null);
@@ -166,7 +177,7 @@ namespace OpenLoop.App
             _tips.SetToolTip(_lblSub, _workspace);
             _tips.SetToolTip(_btnSummary, "用当前模型重新总结会话标题");
             string savedTitle = LoopIndex.Title(_workspace, _sessionId);
-            if (!string.IsNullOrWhiteSpace(savedTitle)) _lblTitle.Text = savedTitle;
+            _lblTitle.Text = Session.ComposeTitle(_workspace, savedTitle, loop: true);
             _chat.ScrollToEnd();
 
             _lblStatus.TextChanged += (_, _) => ApplyDetail();
@@ -184,7 +195,7 @@ namespace OpenLoop.App
         private void OnSummarize(object sender, EventArgs e) => _ = SummarizeTitleAsync();
 
         /// <summary>用当前模型把这段 Loop 对话总结成标题，覆盖页头并记进 loops.json。</summary>
-        private async Task SummarizeTitleAsync()
+        private async Task SummarizeTitleAsync(bool notify = true)
         {
             var turns = _book.Turns;
             if (turns.Count == 0) return;
@@ -204,15 +215,16 @@ namespace OpenLoop.App
                 var completion = await reasoner.CompleteAsync(messages, CancellationToken.None);
                 string title = SessionView.CleanTitle(completion?.Content);
                 if (title.Length == 0) return;
-                bool same = string.Equals(_lblTitle.Text, title, StringComparison.Ordinal);
-                _lblTitle.Text = title;
+                bool same = string.Equals(LoopIndex.Title(_workspace, _sessionId), title, StringComparison.Ordinal);
                 LoopIndex.Rename(_workspace, _sessionId, title);
-                Notify(same ? "标题未变化" : "标题已更新", title);
+                _lblTitle.Text = Session.ComposeTitle(_workspace, title, loop: true);
+                TitleChanged?.Invoke(_lblTitle.Text);
+                if (notify) Notify(same ? "标题未变化" : "标题已更新", _lblTitle.Text);
             }
             catch (Exception ex)
             {
                 AppLog.Warn("生成 Loop 标题失败：" + ex.Message);
-                Notify("总结失败", ex.Message, error: true);
+                if (notify) Notify("总结失败", ex.Message, error: true);
             }
         }
 
@@ -348,13 +360,25 @@ namespace OpenLoop.App
                 (skills, skillProblems, tools, root, checkpoint, reasoner, trace) = await Task.Run(() =>
                 {
                     var skillCatalog = SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath);
+                    // 与 Worker/旁路一致：策略来自当前工作区的激活集（拿不到就保持默认策略）
+                    try
+                    {
+                        var activation = Loop.GetActivation(_workspace);
+                        if (activation?.Activation != null)
+                            policy = FeatureCatalog.PolicyFrom(activation.Activation, activation.Features);
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLog.Warn("读取策略激活集失败：" + ex.Message);
+                    }
                     var activeSkills = ActiveSkills(skillCatalog, out var problems);
                     OpenLoop.Core.Safety.ApprovalHandler approve = AskApproval;
                     // 章程 §2：Loop 读与 Worker 同宽，写只限配置/源码/安装路径
                     var (readScope, writeScope) = OpenLoop.Service.Source.LoopScope.Create(approve);
                     var loopTools = ToolRegistry.Loop(readScope, writeScope, _workspace, approve, activeSkills,
                         OpenCodeTools.For(writeScope.Root, approve, settings.OpenCodeAskPermissions)
-                            .Concat(DshTools.For(settings, writeScope.Root, approve)));
+                            .Concat(DshTools.For(settings, writeScope.Root, approve))
+                            .Concat(OpenLoop.Service.Web.PuppetTools.For()));
                     var registry = new ToolRegistry(loopTools.Tools.Concat(
                         [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
                     string snapshot = Snapshots.Create(writeScope.Root, "loop");
@@ -384,14 +408,22 @@ namespace OpenLoop.App
             trace.Message("user", text);
 
             _streamBuffer.Clear();
+            _promptTokens = 0;
+            _liveTokens = 0;
             var timeline = new RunTimeline();
             Action<string> onDelta = piece =>
             {
                 lock (_streamBuffer) _streamBuffer.Append(piece);
+                _liveTokens += AgentContext.EstimateTokens(piece);
                 string snapshot;
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
-                if (LooksLikeToolCallText(snapshot)) return;
-                RunOnUi(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot)));
+                if (AgentToolCallParser.LooksLikeToolCallText(snapshot)) return;
+                RunOnUi(() =>
+                {
+                    _contextTokens = _promptTokens + _liveTokens;
+                    ApplyDetail();
+                    _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot));
+                });
             };
 
             //推理通道：推理模型只吐 reasoning 时也要有内容可看
@@ -400,6 +432,7 @@ namespace OpenLoop.App
             Action<string> onReasoning = piece =>
             {
                 lock (reasoningBuffer) reasoningBuffer.Append(piece);
+                _liveTokens += AgentContext.EstimateTokens(piece);
                 lock (timeline) timeline.Thinking(piece);
                 long now = Environment.TickCount64;
                 if (now - Interlocked.Read(ref lastReasoningUi) < 250) return;
@@ -413,6 +446,8 @@ namespace OpenLoop.App
                     // 就地重绑最后一行：避免全量重建把高度打回估算值导致滚动条跳动
                     string text;
                     lock (_streamBuffer) text = _streamBuffer.ToString();
+                    _contextTokens = _promptTokens + _liveTokens;
+                    ApplyDetail();
                     _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(text));
                 });
             };
@@ -422,6 +457,7 @@ namespace OpenLoop.App
             {
                 lock (_streamBuffer) _streamBuffer.Clear();
                 lock (reasoningBuffer) reasoningBuffer.Clear();
+                _liveTokens = 0;
                 lock (timeline) timeline.DropThinking();
                 RunOnUi(() =>
                 {
@@ -439,7 +475,7 @@ namespace OpenLoop.App
                     {
                         turn.ToolStepCount++;
                         turn.ToolTotalMs += step.DurationMs;
-                        string line = $"{step.Tool}({step.ArgsSummary}) · {step.DurationText}{(step.Ok ? "" : " · 失败")}";
+                        string line = step.DisplayLine;
                         turn.ToolCallLines = string.IsNullOrEmpty(turn.ToolCallLines)
                             ? line
                             : turn.ToolCallLines + "\n" + line;
@@ -482,7 +518,17 @@ namespace OpenLoop.App
             {
                 var result = await Task.Run(
                     () => loop.RunAsync(history, text, ct, ModelChoices.ContextLimit(model, settings),
-                        () => ct.IsCancellationRequested || _interrupt, onDelta, onReasoning, ResetStream),
+                        () => ct.IsCancellationRequested || _interrupt, onDelta, onReasoning, ResetStream,
+                        (messages, tokens) =>
+                        {
+                            _promptTokens = tokens;
+                            _liveTokens = 0;
+                            RunOnUi(() =>
+                            {
+                                _contextTokens = tokens;
+                                ApplyDetail();
+                            });
+                        }),
                     ct);
 
                 turn.Streaming = false;
@@ -500,7 +546,7 @@ namespace OpenLoop.App
                     : "ok";
                 trace.Finish(outcome, turn.AssistantText, result.ChatCost, result.Guards);
                 _lastCost = result.ChatCost?.ToString("0.0000") ?? "—";
-                _contextTokens = result.ContextTokens;
+                _contextTokens = result.ContextTokens ?? _contextTokens;
                 _lblStatus.Text = $"状态: {outcome} · {result.Steps.Count} 步 · 成本 {_lastCost}";
                 ApplyDetail();
             }
@@ -533,6 +579,10 @@ namespace OpenLoop.App
                 RefreshChat();
                 _chat.ScrollToEnd();
                 SaveLoopChat();
+                // 首轮结束后自动总结一次标题（已有标题就不再覆盖），和 Worker 一致
+                if (!IsDisposed && IsHandleCreated && _book.Turns.Count == 1
+                    && string.IsNullOrWhiteSpace(LoopIndex.Title(_workspace, _sessionId)))
+                    _ = SummarizeTitleAsync(notify: false);
                 // 排队文本：当前轮收尾后再发，避免重入
                 if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
             }
@@ -931,7 +981,7 @@ namespace OpenLoop.App
             if (e.KeyCode == Keys.Tab) { _cmdPopup.Accept(); e.SuppressKeyPress = true; }
         }
 
-        private void OnSendClick(object sender, EventArgs e) => Submit();
+        private void OnSendClick(object sender, EventArgs e) => Submit(immediate: true);
 
         private void OnChatCopy(object sender, ChatFlowActionEventArgs e)
         {
@@ -1212,7 +1262,23 @@ namespace OpenLoop.App
             UpdateSendButton();
         }
 
-        private void RefreshChat() => _book.RaiseTextChanged();
+        /// <summary>
+        /// 整表重建是一次全量重排（可见行重绑 + 高度校正）。流式期间事件比重建快，
+        /// 每来一次就排一次会让 UI 线程永远追不上，所以合并成「最多一个待办」：
+        /// 排队期间再来直接丢弃，执行时读的是最新状态，最终画面不会缺。
+        /// </summary>
+        private void RefreshChat()
+        {
+            if (_chatRefreshQueued || !IsHandleCreated) return;
+            _chatRefreshQueued = true;
+            BeginInvoke(new Action(() =>
+            {
+                _chatRefreshQueued = false;
+                if (!IsDisposed) _book.RaiseTextChanged();
+            }));
+        }
+
+        private bool _chatRefreshQueued;
 
         private void RunOnUi(Action action)
         {
@@ -1244,8 +1310,5 @@ namespace OpenLoop.App
             else
                 AntdUI.Notification.info(form, title, text, AntdUI.TAlignFrom.TR, null, 3);
         }
-
-        private static bool LooksLikeToolCallText(string text)
-            => text.TrimStart().StartsWith("tool-call", StringComparison.OrdinalIgnoreCase);
     }
 }

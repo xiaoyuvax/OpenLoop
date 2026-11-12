@@ -18,6 +18,8 @@ namespace OpenLoop.A
             var sessions = new WorkerSessionHost(loop: loop);
             string key = KeyFile.ReadOrCreate(AppPaths.BusKeyPath);
             var ui = new WebUiHandler(key);
+            using var puppet = new WebPuppet(key);
+            puppet.Start();
 
             // 壳换完 A 会留下「更新 I」的交接单；I 不能换自己，由 A 接手
             _ = LoopUpdater.StartAsync();
@@ -25,7 +27,8 @@ namespace OpenLoop.A
             return HeadlessHost.Run(BusRoles.A, "127.0.0.1:19180", args, bus =>
             {
                 bus.Busy = () => sessions.IsBusy;
-                bus.Use(proxy.Handle)
+                bus.Use(puppet.HandleApi)
+                   .Use(proxy.Handle)
                    .Use(new WorkerApiHandler(sessions, key).Handle)
                    .Use(ui.Handle);
             });

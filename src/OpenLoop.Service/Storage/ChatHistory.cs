@@ -93,14 +93,35 @@ namespace OpenLoop.Service.Storage
             if (string.IsNullOrWhiteSpace(workspace)) return;
             try
             {
+                var list = entries?.ToList() ?? [];
+                CarryTranscripts(workspace, kind, list);
                 Directory.CreateDirectory(Dir);
                 string path = PathFor(workspace, kind);
                 string temp = path + ".tmp";
-                File.WriteAllText(temp, JsonSerializer.Serialize(entries?.ToList() ?? [], Json), new UTF8Encoding(false));
+                File.WriteAllText(temp, JsonSerializer.Serialize(list, Json), new UTF8Encoding(false));
                 File.Move(temp, path, true);
             }
             catch
             {
+            }
+        }
+
+        /// <summary>
+        /// 两个写入方（A 的 Persist、壳的 ChatStore.Save）都是整表覆盖，而壳手里的轮次往往没有
+        /// transcript：写之前把磁盘上同一轮的那份续上，否则一次界面保存就把上下文抹掉。
+        /// </summary>
+        private static void CarryTranscripts(string workspace, string kind, List<ChatEntry> entries)
+        {
+            if (entries.Count == 0) return;
+            var onDisk = Read(workspace, kind);
+            for (int i = 0; i < entries.Count && i < onDisk.Count; i++)
+            {
+                var entry = entries[i];
+                var disk = onDisk[i];
+                if (entry == null || disk?.Messages is not { Count: > 0 }) continue;
+                if (entry.Messages is { Count: > 0 }) continue;
+                if (!string.Equals(entry.User, disk.User, StringComparison.Ordinal)) continue;
+                entry.Messages = disk.Messages;
             }
         }
 
@@ -156,11 +177,19 @@ namespace OpenLoop.Service.Storage
                 var item = all.FirstOrDefault(e => e.Id == kind);
                 if (item == null)
                 {
-                    all.Add(new ChatIndexEntry { Id = kind, Workspace = full, Title = title ?? "" });
+                    all.Add(new ChatIndexEntry
+                    {
+                        Id = kind,
+                        Workspace = full,
+                        Title = title ?? "",
+                        CreatedAt = DateTime.UtcNow
+                    });
                 }
                 else
                 {
                     item.Workspace = full;
+                    // 旧索引：把「上次活动」当作开始时间的兜底，必须在更新 UpdatedAt 之前取
+                    if (item.CreatedAt == default) item.CreatedAt = item.UpdatedAt;
                     item.UpdatedAt = DateTime.UtcNow;
                     if (title != null) item.Title = title;
                 }
@@ -256,5 +285,8 @@ namespace OpenLoop.Service.Storage
         public string Workspace { get; set; }
         public string Title { get; set; }
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>首次登记时间（UTC）。旧索引没有这一项，读出来是 default，调用方退回 UpdatedAt。</summary>
+        public DateTime CreatedAt { get; set; }
     }
 }

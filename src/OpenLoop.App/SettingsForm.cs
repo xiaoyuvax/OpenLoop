@@ -6,13 +6,14 @@ using OpenLoop.Core.Store;
 namespace OpenLoop.App
 {
     /// <summary>设置页里技能列表的一行（Table 按属性名取值，On 由 Render 画成徽标）。</summary>
-    internal sealed record SkillRow(string Name, string Description, bool On, string From);
+    internal sealed record SkillRow(string Name, string Description, bool On, string From, SkillInfo Skill = null);
 
     internal sealed partial class SettingsForm : Form
     {
         private readonly AppSettings _source;
         private readonly List<ProviderConfig> _providers = [];
         private readonly List<SkillRow> _skillRows = [];
+        private int _skillLoad;
         private readonly Dictionary<string, ModelProps> _modelProps = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _workspace;
         private ProviderConfig _loaded;
@@ -32,6 +33,10 @@ namespace OpenLoop.App
             Icon = UiIcons.App;
             _colSkillOn.Render = (value, row, index) => SkillBadge(row as SkillRow);
             _tblSkills.DataSource = _skillRows;
+            //没有工作区时先让「全局」可用，否则这个页什么都管不了
+            _filling = true;
+            try { _selSkillScope.SelectedValue = string.IsNullOrWhiteSpace(_workspace) ? SkillScopeGlobal : SkillScopeProject; }
+            finally { _filling = false; }
             _ = LoadSkillsAsync();
 
             foreach (var provider in _source.Providers ?? [])
@@ -395,40 +400,71 @@ namespace OpenLoop.App
             }
         }
 
+        private const string SkillScopeGlobal = "global";
+        private const string SkillScopeProject = "project";
+
+        private bool GlobalSkillScope
+            => string.Equals(_selSkillScope.SelectedValue as string, SkillScopeGlobal, StringComparison.Ordinal);
+
+        private string SkillRoot => GlobalSkillScope
+            ? AppSettings.GlobalSkillsPath
+            : Path.Combine(_workspace, ".openloop", "skills");
+
         /// <summary>
         /// 技能列表：文件扫描和 I 的激活集都不该在 UI 线程上等——同步等待 HTTP 会把消息循环堵死
         /// （`GetResult()` 等续体、续体又排在同一个循环里，就是死锁）。
+        /// 全局页不用工作区，开关读 skills.json；项目页读工作区账本，同名技能以项目那份为准。
         /// </summary>
         private async Task LoadSkillsAsync()
         {
+            int load = ++_skillLoad;
             _skillRows.Clear();
-            if (string.IsNullOrWhiteSpace(_workspace) || !Directory.Exists(_workspace))
+            bool global = GlobalSkillScope;
+
+            if (!global && string.IsNullOrWhiteSpace(_workspace))
             {
-                _lblSkillsPath.Text = "先在项目里打开一个会话：技能按工作区存放";
+                _lblSkillsPath.Text = "先在项目里打开一个会话，或切到「全局」管理全局技能";
+                _tblSkills.EmptyText = "没有可管理的技能";
                 RebindSkills();
                 return;
             }
 
-            _lblSkillsPath.Text = _workspace;
+            _lblSkillsPath.Text = SkillRoot;
             IReadOnlyList<SkillInfo> catalog = [];
             var enabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                catalog = await Task.Run(() => SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath));
-                //账本归 I：这里只读它的激活集（I 会顺带启用首次出现的技能）
-                var payload = await Loop.GetActivationAsync(_workspace);
-                foreach (string name in payload?.Skills ?? []) enabled.Add(name);
-                if (payload is { Problems.Count: > 0 })
-                    AppLog.Warn("技能不可用：" + string.Join("；", payload.Problems));
+                catalog = await Task.Run(() => global
+                    ? SkillCatalog.Load(null, AppSettings.GlobalSkillsPath)
+                    : SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath));
+
+                if (global)
+                {
+                    var disabled = await Task.Run(() => SkillStore.LoadDisabled(AppSettings.GlobalSkillsStatePath));
+                    foreach (var skill in catalog)
+                        if (!disabled.Contains(skill.Name)) enabled.Add(skill.Name);
+                }
+                else
+                {
+                    //账本归 I：这里只读它的激活集（I 会顺带启用首次出现的技能）
+                    var payload = await Loop.GetActivationAsync(_workspace);
+                    foreach (string name in payload?.Skills ?? []) enabled.Add(name);
+                    if (payload is { Problems.Count: > 0 })
+                        AppLog.Warn("技能不可用：" + string.Join("；", payload.Problems));
+                }
             }
             catch (Exception ex)
             {
                 AppLog.Warn("读取技能失败：" + ex.Message);
             }
 
+            if (load != _skillLoad) return;   //切页/连点时只认最后一次
+            _tblSkills.EmptyText = global ? "全局还没有技能" : "这个工作区还没有技能";
             foreach (var skill in catalog.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
+            {
                 _skillRows.Add(new SkillRow(skill.Name, skill.Description,
-                    enabled.Contains(skill.Name), skill.Global ? "全局" : "项目"));
+                    enabled.Contains(skill.Name), skill.Global ? "全局" : "项目", skill));
+            }
             RebindSkills();
         }
 
@@ -436,22 +472,38 @@ namespace OpenLoop.App
         {
             _tblSkills.DataSource = null;
             _tblSkills.DataSource = _skillRows;
+            UpdateSkillToggle();
         }
 
-        /// <summary>启用/停用选中的技能；立即写账本，不用等「保存」。</summary>
-        private void OnSkillEnable(object sender, EventArgs e) => ToggleSelectedSkill(true);
+        private void OnSkillSelectionChanged(object sender, EventArgs e) => UpdateSkillToggle();
 
-        private void OnSkillDisable(object sender, EventArgs e) => ToggleSelectedSkill(false);
-
-        private void ToggleSelectedSkill(bool enabled) => _ = ToggleSelectedSkillAsync(enabled);
-
-        private async Task ToggleSelectedSkillAsync(bool enabled)
+        /// <summary>一个按钮管两边：选中里只要有一个已启用就停用，否则启用；没选中时只是提示文案。</summary>
+        private void UpdateSkillToggle()
         {
-            var row = SelectedSkill();
-            if (row == null) return;
+            var rows = SelectedSkills();
+            _btnSkillToggle.Text = rows.Count == 0 ? "启用/停用" : rows.Any(row => row.On) ? "停用" : "启用";
+        }
+
+        private void OnSkillScopeChanged(object sender, AntdUI.ObjectNEventArgs e)
+        {
+            if (_filling) return;
+            _ = LoadSkillsAsync();
+        }
+
+        private void OnSkillToggle(object sender, EventArgs e) => _ = ToggleSelectedSkillsAsync();
+
+        private async Task ToggleSelectedSkillsAsync()
+        {
+            var rows = SelectedSkills();
+            if (rows.Count == 0) return;
+            bool enabled = !rows.Any(row => row.On);
             try
             {
-                await Loop.SetSkillAsync(_workspace, row.Name, enabled);
+                if (GlobalSkillScope)
+                    await Task.Run(() => SkillStore.SetEnabled(
+                        AppSettings.GlobalSkillsStatePath, rows.Select(row => row.Name), enabled));
+                else
+                    foreach (var row in rows) await Loop.SetSkillAsync(_workspace, row.Name, enabled);
             }
             catch (Exception ex)
             {
@@ -462,11 +514,76 @@ namespace OpenLoop.App
             await LoadSkillsAsync();
         }
 
-        private SkillRow SelectedSkill()
+        private void OnSkillInstall(object sender, EventArgs e) => _ = InstallSkillAsync();
+
+        private async Task InstallSkillAsync()
         {
-            int index = (_tblSkills.SelectedIndexs ?? []).FirstOrDefault();
-            return index >= 1 && index <= _skillRows.Count ? _skillRows[index - 1] : null;
+            if (!GlobalSkillScope && string.IsNullOrWhiteSpace(_workspace)) return;
+            string root = SkillRoot;
+            using var dialog = new FolderBrowserDialog { Description = "选择技能目录（里面要有 SKILL.md）" };
+            if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+
+            try
+            {
+                await Task.Run(() => SkillStore.Install(dialog.SelectedPath, root));
+            }
+            catch (Exception ex)
+            {
+                AntdUI.Notification.error(this, "安装技能", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                return;
+            }
+            await LoadSkillsAsync();
         }
+
+        private void OnSkillUninstall(object sender, EventArgs e) => _ = UninstallSkillAsync();
+
+        private async Task UninstallSkillAsync()
+        {
+            var rows = SelectedSkills();
+            if (rows.Count == 0) return;
+            if (rows.Count > 1)
+            {
+                AntdUI.Notification.warn(this, "卸载技能", "一次只卸载一个技能", AntdUI.TAlignFrom.TR, null, 4);
+                return;
+            }
+            var row = rows[0];
+            if (row.Skill == null) return;
+            //项目页同名的全局技能只是被项目那份盖住，卸载得回全局页做
+            if (!GlobalSkillScope && row.Skill.Global)
+            {
+                AntdUI.Notification.warn(this, "卸载技能", "全局技能请切到「全局」里卸载", AntdUI.TAlignFrom.TR, null, 4);
+                return;
+            }
+            if (MessageBox.Show(this,
+                    $"确定卸载技能「{row.Name}」？\n\n会删除整个目录，不可恢复：\n{row.Skill.Directory}",
+                    "卸载技能", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+
+            string root = SkillRoot;
+            bool global = GlobalSkillScope;
+            try
+            {
+                await Task.Run(() => SkillStore.Uninstall(row.Skill, root));
+                //全局那份卸载后把开关条目清掉，重装同名技能时默认启用
+                if (global) await Task.Run(() => SkillStore.SetEnabled(
+                    AppSettings.GlobalSkillsStatePath, row.Name, true));
+            }
+            catch (Exception ex)
+            {
+                AntdUI.Notification.error(this, "卸载技能", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                return;
+            }
+            await LoadSkillsAsync();
+        }
+
+        /// <summary>选中的行（Table 的 SelectedIndexs 是 1 起）；Ctrl 逐点、Shift 连选由表格自己处理。</summary>
+        private List<SkillRow> SelectedSkills()
+            => (_tblSkills.SelectedIndexs ?? [])
+                .Where(index => index >= 1 && index <= _skillRows.Count)
+                .Select(index => _skillRows[index - 1])
+                .Distinct()
+                .ToList();
 
         private static AntdUI.CellBadge SkillBadge(SkillRow row)
             => row?.On == true

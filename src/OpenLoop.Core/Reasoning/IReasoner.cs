@@ -30,6 +30,15 @@ namespace OpenLoop.Core.Reasoning
         public int? TokensOut { get; init; }
     }
 
+    /// <summary>模型在推理通道里绕过宿主直接执行的一次工具调用（名字、入参原文、状态与结果）。</summary>
+    public sealed record NativeToolCall(string Tool, string Input, bool Ok, string Output, string Status);
+
+    /// <summary>推理通道里观察到的原生工具调用（实时回调；被拒绝的调用也会上报）。</summary>
+    public interface INativeToolObserver
+    {
+        Action<NativeToolCall> OnNativeTool { get; set; }
+    }
+
     /// <summary>可选的流式通道：每来一段就回调，返回最终完整结果。</summary>
     public interface IStreamingReasoner
     {

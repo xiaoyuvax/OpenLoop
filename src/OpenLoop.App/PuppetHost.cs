@@ -8,16 +8,17 @@ using Puppet.Core.WinForms;
 namespace OpenLoop.App
 {
     /// <summary>
-    /// Puppet 接入：只开 A 面（/agent/*，开发期 Agent 自调试）。
+    /// Puppet 接入：A 面（/agent/*，开发期 Agent 自调试）+ B 面（/appagent/*，用户 Agent 按具名 Action 操作）。
     /// key 取 OPENLOOP_PUPPET_KEY，其次取 %APPDATA%\OpenLoop\puppet.key；都没有就生成并落盘，
     /// 因此 Puppet 默认在 loopback 上启用，其他 agent 读同一个 key 文件即可协作。
-    /// B 面（/appagent/*、/mcp）通过不调用 UseAppAgent* 保持关闭。
+    /// B 面的凭证是框架写入用户档案的发现文件（%LOCALAPPDATA%\Puppet.AppAgents\OpenLoop.json）。
     /// </summary>
     internal static class PuppetHost
     {
         public const string KeyVariable = "OPENLOOP_PUPPET_KEY";
         public const string EndpointVariable = "OPENLOOP_PUPPET_ENDPOINT";
         public const string InstanceName = "MainForm";
+        public const string ProductName = "OpenLoop";
         private static readonly int[] Ports = [9090, 9091, 9092, 9093, 9094, 9095, 9096, 9097, 9098, 9099];
 
         private static PuppetWebServer _server;
@@ -52,7 +53,9 @@ namespace OpenLoop.App
             {
                 PuppetKeyVault.SetKey(key);
                 PuppetRegistry.Register(form);
-                _server = new PuppetWebServer().UseFormControls();
+                _server = new PuppetWebServer()
+                    .UseFormControls()
+                    .UseAppAgentWithUiText(o => o.ProductName = ProductName);
                 if (!_server.Start(endpoint))
                 {
                     AppLog.Warn($"Puppet 启动失败：{endpoint} 不可用");
@@ -61,9 +64,13 @@ namespace OpenLoop.App
                 }
 
                 Endpoint = endpoint;
+                // 内部 Agent（Loop/旁路）直调本进程 Puppet 用同一 Hub；A/I 靠发现文件走 HTTP 探测壳
+                OpenLoop.Service.Web.PuppetBridge.LocalHub = _server.Hub;
+                OpenLoop.Service.Web.PuppetBridge.SelfRole = "shell";
+                OpenLoop.Service.Web.PuppetBridge.SaveShellEndpoint(endpoint);
                 // 同伴可能调用 /agent/key/refresh 换 key：把运行中的 key 持续同步到文件，保证别人读到的永远可用
                 _keySync = new System.Threading.Timer(_ => SyncKeyFile(), null, 2000, 2000);
-                AppLog.Info($"Puppet A 面已启动：{endpoint}（实例 {InstanceName}，key 见 {KeyPath}）");
+                AppLog.Info($"Puppet A/B 面已启动：{endpoint}（实例 {InstanceName}，key 见 {KeyPath}）");
             }
             catch (Exception ex)
             {
@@ -160,6 +167,8 @@ namespace OpenLoop.App
             {
                 _keySync?.Dispose();
                 _keySync = null;
+                OpenLoop.Service.Web.PuppetBridge.LocalHub = null;
+                OpenLoop.Service.Web.PuppetBridge.SaveShellEndpoint(null);
                 PuppetRegistry.Unregister(InstanceName);
                 _server?.Stop();
                 _server = null;
