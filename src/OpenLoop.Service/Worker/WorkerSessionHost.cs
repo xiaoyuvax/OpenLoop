@@ -239,6 +239,7 @@ namespace OpenLoop.Service.Worker
                 if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
                 session.Model = model ?? session.Model;
                 if (effort != null) session.Effort = effort;
+                session.UserEpoch++;
                 session.Revision++;
             }
 
@@ -255,6 +256,7 @@ namespace OpenLoop.Service.Worker
             lock (_lock)
             {
                 if (!_sessions.TryGetValue(id ?? "", out session)) return false;
+                session.UserEpoch++;
                 if (session.State == Running)
                 {
                     session.Pending.Add(text);
@@ -278,6 +280,7 @@ namespace OpenLoop.Service.Worker
                 if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
                 session.Paused = true;
                 session.Cancel?.Cancel();
+                session.UserEpoch++;
                 session.Revision++;
             }
 
@@ -295,6 +298,7 @@ namespace OpenLoop.Service.Worker
             {
                 if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
                 session.Interrupt = true;
+                session.UserEpoch++;
                 session.Revision++;
             }
 
@@ -309,6 +313,7 @@ namespace OpenLoop.Service.Worker
             {
                 if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
                 session.Paused = false;
+                session.UserEpoch++;
                 session.Revision++;
 
                 if (session.State != Running && session.Pending.Count > 0)
@@ -334,6 +339,7 @@ namespace OpenLoop.Service.Worker
                 int keep = Math.Clamp(keepTurns, 0, session.Turns.Count);
                 if (keep == session.Turns.Count) return true;
                 session.Turns.RemoveRange(keep, session.Turns.Count - keep);
+                session.UserEpoch++;
                 session.Revision++;
             }
 
@@ -349,6 +355,7 @@ namespace OpenLoop.Service.Worker
                 if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
                 if (index < 0 || index >= session.Pending.Count) return false;
                 session.Pending.RemoveAt(index);
+                session.UserEpoch++;
                 session.Revision++;
             }
 
@@ -371,6 +378,7 @@ namespace OpenLoop.Service.Worker
                 session.Pending.RemoveAt(index);
                 session.Pending.Insert(0, text);
                 session.Paused = false;
+                session.UserEpoch++;
                 session.Revision++;
 
                 if (session.State == Running)
@@ -643,6 +651,7 @@ namespace OpenLoop.Service.Worker
                     }
                 }
 
+                string failedModel = null;
                 lock (_lock)
                 {
                     turn.Streaming = false;
@@ -665,6 +674,7 @@ namespace OpenLoop.Service.Worker
                     session.ContextTokens = result.ContextTokens ?? session.ContextTokens;
                     session.State = result.Outcome is "ok" or "budget" ? Done : Interrupted;
                     session.Revision++;
+                    failedModel = session.Model;
 
                     if (!session.Paused && session.Pending.Count > 0)
                     {
@@ -676,7 +686,20 @@ namespace OpenLoop.Service.Worker
 
                 Changed?.Invoke(id);
                 Persist(session);
+
+                // 免费额度耗尽：让 ConnMan 换节点，就绪后由它回调这里给原会话发「继续」
+                if (result.Outcome == "error"
+                    && ServerNotice.IsQuotaFailure(ServerNotice.FailedPrefix + result.ErrorMessage))
+                {
+                    FreeLimitRecovery.TryStart(id, failedModel, () => UserEpochOf(id), text => Send(id, "task", text));
+                }
             });
+        }
+
+        /// <summary>会话的用户动作计数；会话已不存在返回 null（免费额度自愈据此收工）。</summary>
+        private int? UserEpochOf(string id)
+        {
+            lock (_lock) return _sessions.TryGetValue(id ?? "", out var session) ? session.UserEpoch : null;
         }
 
         /// <summary>把会话的轮次写到 chats/（与旧版 App 同一个文件格式）。</summary>
@@ -831,6 +854,9 @@ namespace OpenLoop.Service.Worker
             public List<Prompt> Prompts { get; } = [];
             public string State { get; set; } = Idle;
             public int Revision { get; set; }
+
+            /// <summary>用户动过这个会话的次数；免费额度自愈靠它判断该不该继续重试。</summary>
+            public int UserEpoch { get; set; }
             public bool Paused { get; set; }
 
             /// <summary>软停止：让当前轮在下一个 step 前收尾（进行中的工具不打断）。</summary>

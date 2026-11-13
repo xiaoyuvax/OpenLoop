@@ -147,9 +147,17 @@ namespace OpenLoop.Core.Agent
             state.PendingCalls = calls.ToList();
             state.PendingFinal = calls.Count == 0;
 
-            return AgentStepResult.Continue(
-                new AppendMessageEffect("assistant", content),
-                new RecordUsageEffect(completion?.Cost, completion?.TokensIn));
+            // 原生工具成功执行过，就不算「没调用工具就宣称完成」。
+            if (completion?.NativeToolSucceeded == true) state.AnyToolSucceeded = true;
+
+            var effects = new List<IAgentEffect>();
+            // 推理通道内部发生的原生工具/中间正文：按时间顺序补在最终正文之前，下一轮才看得到。
+            if (completion?.ExtraMessages is { Count: > 0 } extras)
+                foreach (var extra in extras)
+                    effects.Add(new AppendMessageEffect(extra.Role, extra.Content));
+            effects.Add(new AppendMessageEffect("assistant", content));
+            effects.Add(new RecordUsageEffect(completion?.Cost, completion?.TokensIn));
+            return AgentStepResult.Continue(effects.ToArray());
         }
     }
 

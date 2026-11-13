@@ -253,6 +253,63 @@ public sealed class OpenCodeTests
     }
 
     [Fact]
+    public async Task Turn_returns_native_history_in_chronological_order()
+    {
+        int prompts = 0;
+        var handler = new StubHandler(async request =>
+        {
+            string path = request.RequestUri.AbsolutePath;
+            if (path == "/api/event") return Sse("");
+            if (path == "/api/session") return Json("""{"data":{"id":"ses_h"}}""");
+            if (path == "/api/session/ses_h/prompt") { prompts++; return Json("{}"); }
+            if (path == "/api/session/ses_h/permission") return Json("""{"data":[]}""");
+            if (path == "/api/session/ses_h")
+                return Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded"}}""");
+            if (path == "/api/session/ses_h/message")
+                // 接口按最新在前返回；第二条（较旧）才是原生调用
+                return Json("""
+                {"data":[
+                  {"type":"idle"},
+                  {"type":"assistant","content":[{"type":"text","text":"最终答复"}]},
+                  {"type":"user"},
+                  {"type":"assistant","content":[
+                    {"type":"tool","id":"t1","name":"read","state":{"status":"completed","input":{"path":"a.cs"},"content":[{"type":"text","text":"FILE CONTENT"}]}},
+                    {"type":"text","text":"先读一下"}
+                  ]}
+                ]}
+                """);
+            return Json("{}");
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+        var reasoner = new OpenCodeReasoner(
+            client, new OpenCodeModelRef("opencode", "m"), Path.GetTempPath(), keepTools: true);
+
+        var result = await reasoner.CompleteAsync([new LlmMessage("user", "hi")]);
+
+        Assert.Equal("最终答复", result.Content);
+        Assert.True(result.NativeToolSucceeded);
+        // 有原生结果就不该再整轮重发
+        Assert.Equal(1, prompts);
+        Assert.Collection(result.ExtraMessages,
+            m =>
+            {
+                Assert.Equal("assistant", m.Role);
+                Assert.Contains("\"tool\":\"native:read\"", m.Content);
+                Assert.Contains("\"args\":{\"path\":\"a.cs\"}", m.Content);
+            },
+            m =>
+            {
+                Assert.Equal("user", m.Role);
+                Assert.Contains("FILE CONTENT", m.Content);
+            },
+            m =>
+            {
+                Assert.Equal("assistant", m.Role);
+                Assert.Equal("先读一下", m.Content);
+            });
+    }
+
+    [Fact]
     public void Protocol_sits_right_after_system_prompt()
     {
         string text = OpenCodeReasoner.Flatten(

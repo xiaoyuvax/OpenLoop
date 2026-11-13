@@ -20,6 +20,7 @@
 - 不要用 `dotnet build -t:Compile` 做语法检查（跳过资源生成，之后的增量构建会复用坏产物）；若用过必须 `dotnet build --no-incremental` 重建。
 - 运行前先结束旧进程（`OpenLoop.exe` 文件锁）：`Stop-Process -Name OpenLoop -Force`
 - 启动：`Start-Process <bin>\OpenLoop.exe -WorkingDirectory <repo根>`（默认工作区 = CWD）。Puppet 默认在 loopback 上启用，key 自动落盘，见下节。
+- 启动 OpenLoop 后确认 `D:\PUB\ConnMan\connman.exe` 已在跑（VPN 节点自动切换靠它，免费额度自愈也依赖它）：没有就 `Start-Process 'D:\PUB\ConnMan\connman.exe'`。
 
 ## 运行时验证（Puppet A/B 面）
 
@@ -53,6 +54,19 @@
 - 截图前若窗口被最小化，先 `ShowWindow(hwnd, 9)`。
 - **远程 API 测试须先经用户同意**：会调用真实模型/网关（产生费用）的操作，未经同意不得通过 UI、Puppet 或单测触发；纯本地测试（纯函数、控件状态、文件解析）不受限。
 - **测试会话要保留**：用 Puppet 造的会话、项目和临时工作区一律不删，留给用户自己查看；需要清理时先问。
+
+## 免费额度自愈（ConnMan）
+
+- 免费模型额度耗尽（`provider.free-limit` / 429 / 402，判据 `ServerNotice.IsQuotaFailure`）后，A 的失败轮收尾会调 `FreeLimitRecovery.TryStart`（`src\OpenLoop.Service\Worker\FreeLimitRecovery.cs`）：换时速网络节点 + 验证可用性这件事交给独立仓库 `..\ConnMan`，OpenLoop 只负责触发和收尾。
+- 契约（A 面，参数名是 `name` 不是 `instance`）：`POST /agent/invoke?name=ConnMan&method=StartRecoveryAction` body `[sessionId, model]` → 轮询 `GET /agent/get?name=ConnMan&path=RecoveryState`（`idle|running|ready|failed|exhausted`）→ `ready` 时给原会话 `Send(id, "task", "继续")`；`exhausted` = 本轮节点已挪满一圈，收工不重试。
+- 端点与 key 取 `%APPDATA%\ConnMan\puppet.endpoint` / `puppet.key`（ConnMan 启动写、退出清空）；文件不在或连不上都退避重试（ConnMan 可能在更新/重启），这是可选自愈。
+- 只对 `opencode/*` 模型生效；每个会话独立重试：前 3 次间隔 5 秒，之后指数退避封顶 5 分钟，直到用户动了该会话（`Send`/`Stop`/`SetModel` 等会加 `Session.UserEpoch`）。并发由 ConnMan 自己拒绝（`StartRecoveryAction` 回「已有恢复在跑」）。
+- 环回 HTTP 必须 `new HttpClientHandler { UseProxy = false }`：VPN 开着时系统代理就是 mihomo 自己。
+- 壳在运行时整解构建会被文件锁卡住（MSB3021/3027），验证改动只需 `dotnet build src\OpenLoop.Service` + `src\OpenLoop.A`；要换 A 的二进制得先关壳（会中断用户会话，先问）。
+
+## 连接失败重试
+
+- 轮内连不上本地 opencode/代理（拒绝连接、DNS 失败，判据 `OpenCodeReasoner.IsConnectFailure`）不判这一轮失败：按 `RetryBackoff.Next`（前三次 5 秒，之后指数退避封顶 5 分钟）重试到连上为止，界面状态显示「连接失败，N 秒后重试」；`Stop`/软打断才收尾，HTTP 状态错误与上游报错照旧直接抛。
 
 ## UI 规则
 

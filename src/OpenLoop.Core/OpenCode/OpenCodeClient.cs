@@ -23,8 +23,11 @@ namespace OpenLoop.Core.OpenCode
 
     public sealed record OpenCodeFileDiff(string File, int Additions, int Deletions, string Status);
 
-    /// <summary>一次「模型调用」的结果：正文、思维链与用量。</summary>
-    public sealed record OpenCodeTurn(string Text, string Reasoning, decimal? Cost, int? TokensIn, int? TokensOut);
+    /// <summary>一次「模型调用」的结果：正文、思维链、用量，以及按时间升序的 assistant 消息
+    /// （含原生工具调用；调用方据此把原生结果回填进历史）。</summary>
+    public sealed record OpenCodeTurn(
+        string Text, string Reasoning, decimal? Cost, int? TokensIn, int? TokensOut,
+        IReadOnlyList<OpenCodeMessage> Messages);
 
     /// <summary>模型在下拉/设置里的稳定标识：opencode/&lt;modelID&gt;@&lt;providerID&gt;。</summary>
     public static class OpenCodeModelId
@@ -230,7 +233,7 @@ namespace OpenLoop.Core.OpenCode
                     return new OpenCodeTurn(
                         LastText(partial),
                         string.Concat(partial.Select(m => m.Reasoning)),
-                        snapshot?.Cost, snapshot?.TokensIn, snapshot?.TokensOut);
+                        snapshot?.Cost, snapshot?.TokensIn, snapshot?.TokensOut, partial);
                 }
 
                 //429/额度/网关错误都在这里：不能当成「模型没说话」，否则用户只看到一句「没有返回正文」
@@ -244,7 +247,7 @@ namespace OpenLoop.Core.OpenCode
                 return new OpenCodeTurn(
                     LastText(messages),
                     string.Concat(messages.Select(m => m.Reasoning)),
-                    snapshot.Cost, snapshot.TokensIn, snapshot.TokensOut);
+                    snapshot.Cost, snapshot.TokensIn, snapshot.TokensOut, messages);
             }
             finally
             {
@@ -606,6 +609,9 @@ namespace OpenLoop.Core.OpenCode
                 }
                 messages.Add(new OpenCodeMessage(text.ToString(), reasoning.ToString(), tools, native));
             }
+            // OpenCode 2.2.x 的 /message 按最新在前返回（已实测）；历史、LastText 与原生工具
+            // 都按时间升序使用，这里统一反转，别在下游各自再倒一次。
+            messages.Reverse();
             return messages;
         }
 

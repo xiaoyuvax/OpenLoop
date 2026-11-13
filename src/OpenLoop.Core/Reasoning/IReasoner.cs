@@ -28,6 +28,13 @@ namespace OpenLoop.Core.Reasoning
 
         /// <summary>本次请求的输出 token 数（usage.completion_tokens），未报价时为 null。</summary>
         public int? TokensOut { get; init; }
+
+        /// <summary>本次调用在推理通道内产生的历史消息（原生工具调用/结果、中间正文），
+        /// 按时间升序，由调用方追加在 Content 之前；下一轮模型才看得到。</summary>
+        public IReadOnlyList<LlmMessage> ExtraMessages { get; init; }
+
+        /// <summary>本次调用里是否有原生工具成功执行（供「谎报完成」护栏与空正文判断使用）。</summary>
+        public bool NativeToolSucceeded { get; init; }
     }
 
     /// <summary>模型在推理通道里绕过宿主直接执行的一次工具调用（名字、入参原文、状态与结果）。</summary>

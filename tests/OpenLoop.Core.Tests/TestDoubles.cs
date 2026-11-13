@@ -21,6 +21,27 @@ namespace OpenLoop.Core.Tests
         }
     }
 
+    /// <summary>返回一段原生工具历史（ExtraMessages），用于验证追加顺序。</summary>
+    internal sealed class ExtraMessagesReasoner : IReasoner
+    {
+        public int Calls { get; private set; }
+
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(new CompletionResult
+            {
+                Content = "完成",
+                NativeToolSucceeded = true,
+                ExtraMessages =
+                [
+                    new LlmMessage("assistant", "tool-call: {\"tool\":\"native:read\",\"args\":{\"path\":\"a.cs\"}}"),
+                    new LlmMessage("user", "tool-result: {\"ok\":true,\"data\":\"FILE\"}")
+                ]
+            });
+        }
+    }
+
     /// <summary>只回推理文本、正文为空的推理模型（OpenRouter 推理模型的常见形态）。</summary>
     internal sealed class ReasoningOnlyReasoner : IReasoner
     {

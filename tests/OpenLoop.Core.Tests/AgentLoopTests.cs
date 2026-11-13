@@ -75,6 +75,26 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task ExtraMessages_Are_Appended_Before_Final_Answer()
+        {
+            var reasoner = new ExtraMessagesReasoner();
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync([], "hi");
+
+            Assert.Equal(4, result.Transcript.Count);
+            Assert.Equal("user", result.Transcript[0].Role);
+            Assert.Equal("assistant", result.Transcript[1].Role);
+            Assert.Contains("native:read", result.Transcript[1].Content);
+            Assert.Equal("user", result.Transcript[2].Role);
+            Assert.Contains("FILE", result.Transcript[2].Content);
+            Assert.Equal("assistant", result.Transcript[3].Role);
+            Assert.Equal("完成", result.Transcript[3].Content);
+            Assert.Equal("完成", result.FinalAnswer);
+            Assert.Equal(1, reasoner.Calls);
+        }
+
+        [Fact]
         public async Task RepeatCallGuardNudgesThenBansInsteadOfStopping()
         {
             // 4 次完全相同：第 2 次提醒、第 3 次提醒+禁用、第 4 次被拒收后仍给模型一次改做法的机会
