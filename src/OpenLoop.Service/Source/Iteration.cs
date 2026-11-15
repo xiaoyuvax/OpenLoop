@@ -42,6 +42,8 @@ namespace OpenLoop.Service.Source
         /// 发布参数集：两套都是单文件，差别只在「要不要自带框架」。
         /// 单文件必须显式给 RID（否则 SDK 报 NETSDK1191）；自带框架才带压缩
         /// ——框架依赖 + 压缩会被 SDK 拒绝（NETSDK1176）。
+        /// 壳把 A/I 当建序引用（ReferenceOutputAssembly=false），单文件 + RID 会让它们
+        /// 被算成自包含，框架依赖发布就撞 NETSDK1151；这个校验对建序引用没有意义，关掉。
         /// </summary>
         internal static string[] PublishArgs(string publishMode, string output)
         {
@@ -53,7 +55,8 @@ namespace OpenLoop.Service.Source
                 "-p:PublishReadyToRun=false",
                 "-p:PublishTrimmed=false",
                 "-p:DebugType=embedded",
-                "-p:DebugSymbols=false"
+                "-p:DebugSymbols=false",
+                "-p:ValidateExecutableReferencesMatchSelfContained=false"
             };
 
             if (string.Equals(publishMode, SelfContainedMode, StringComparison.OrdinalIgnoreCase))

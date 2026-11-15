@@ -290,6 +290,7 @@ namespace OpenLoop.Service.Tests
             foreach (string[] args in new[] { framework, bundled })
             {
                 Assert.Contains("-p:PublishSingleFile=true", args);
+                Assert.Contains("-p:ValidateExecutableReferencesMatchSelfContained=false", args);
                 Assert.Equal(Iteration.RuntimeIdentifier, ArgAfter(args, "-r"));
             }
 
