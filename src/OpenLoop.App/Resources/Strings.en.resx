@@ -185,7 +185,7 @@
     <value>Pick a project, describe a task, start a new session</value>
   </data>
   <data name="NewSessionHint" xml:space="preserve">
-    <value>Describe a task, e.g. add a README for this project (Ctrl+Enter to start)</value>
+    <value>Describe a task, e.g. add a README for this project (Enter to send, Shift+Enter for a new line)</value>
   </data>
   <data name="Start" xml:space="preserve">
     <value>Start</value>

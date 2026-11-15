@@ -104,9 +104,22 @@ namespace OpenLoop.Service.Source
                 if (!string.IsNullOrWhiteSpace(custom)) return Path.GetFullPath(custom.Trim());
 
                 string exe = Environment.ProcessPath;
-                return Path.GetDirectoryName(string.IsNullOrWhiteSpace(exe) ? AppContext.BaseDirectory : exe)
-                       ?? AppContext.BaseDirectory;
+                return InstallRootOf(Path.GetDirectoryName(string.IsNullOrWhiteSpace(exe) ? AppContext.BaseDirectory : exe)
+                                     ?? AppContext.BaseDirectory);
             }
+        }
+
+        /// <summary>
+        /// A/I 的二进制装在 <c>&lt;安装根&gt;\worker\</c> 下：从 exe 目录推安装根时要退一层，
+        /// 否则源码根会算成 <c>worker\source\openloop</c>（不存在，git 直接报目录无效）。
+        /// </summary>
+        internal static string InstallRootOf(string exeDir)
+        {
+            if (string.IsNullOrWhiteSpace(exeDir)) return exeDir;
+            string dir = Path.GetFullPath(exeDir);
+            string trimmed = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!string.Equals(Path.GetFileName(trimmed), "worker", StringComparison.OrdinalIgnoreCase)) return dir;
+            return Path.GetDirectoryName(trimmed) ?? dir;
         }
 
         public static Task<SourceCheck> CheckAsync(CancellationToken ct = default)

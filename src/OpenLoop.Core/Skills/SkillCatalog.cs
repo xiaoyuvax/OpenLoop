@@ -20,8 +20,9 @@ namespace OpenLoop.Core.Skills
     }
 
     /// <summary>
-    /// 扫描全局技能库（&lt;globalRoot&gt;/&lt;name&gt;/SKILL.md）与
-    /// &lt;workspace&gt;/.openloop/skills/&lt;name&gt;/SKILL.md；同名时工作区优先。
+    /// 扫描全局技能库（&lt;globalRoot&gt;/&lt;name&gt;/SKILL.md）与工作区技能
+    /// （.openloop/skills、.opencode/skills）；同名时按这个顺序取第一份。
+    /// .opencode/skills 是 OpenCode agent 装技能的默认位置，一并读入免得同一技能装两份。
     /// 只读取，不写账本；内容哈希随运行记录，保证同一版本可回指。
     /// </summary>
     public static class SkillCatalog
@@ -29,18 +30,21 @@ namespace OpenLoop.Core.Skills
         private const long MaxBytes = 1024 * 1024;
         public const string FeaturePrefix = "skill.";
 
+        private static readonly string[] WorkspaceFolders = [".openloop", ".opencode"];
+
         public static IReadOnlyList<SkillInfo> Load(string workspaceRoot, string globalRoot = null)
         {
             var list = new List<SkillInfo>();
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            Scan(string.IsNullOrWhiteSpace(workspaceRoot) ? null : Path.Combine(workspaceRoot, ".openloop", "skills"),
-                global: false, list, names);
-            Scan(globalRoot, global: true, list, names);
+            foreach (string folder in WorkspaceFolders)
+                Scan(string.IsNullOrWhiteSpace(workspaceRoot) ? null : Path.Combine(workspaceRoot, folder, "skills"),
+                    folder + "/skills/", global: false, list, names);
+            Scan(globalRoot, "skills/", global: true, list, names);
             return list;
         }
 
-        private static void Scan(string dir, bool global, List<SkillInfo> list, HashSet<string> names)
+        private static void Scan(string dir, string sourceRoot, bool global, List<SkillInfo> list, HashSet<string> names)
         {
             if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return;
 
@@ -51,13 +55,13 @@ namespace OpenLoop.Core.Skills
                     .FirstOrDefault(File.Exists);
                 if (file == null) continue;
 
-                var info = TryLoad(file, folder, global);
+                var info = TryLoad(file, folder, sourceRoot, global);
                 if (info == null || !names.Add(info.Name)) continue;
                 list.Add(info);
             }
         }
 
-        private static SkillInfo TryLoad(string file, string folder, bool global)
+        private static SkillInfo TryLoad(string file, string folder, string sourceRoot, bool global)
         {
             try
             {
@@ -82,7 +86,7 @@ namespace OpenLoop.Core.Skills
                     Name = name,
                     Description = description,
                     Body = body.Trim(),
-                    Source = (global ? "" : ".openloop/") + "skills/" + Path.GetFileName(folder) + "/" + Path.GetFileName(file),
+                    Source = sourceRoot + Path.GetFileName(folder) + "/" + Path.GetFileName(file),
                     Sha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
                     Directory = folder,
                     Global = global

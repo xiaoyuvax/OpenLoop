@@ -208,6 +208,14 @@ namespace OpenLoop.Service.Source
             string root = SourceSync.SourceRoot;
             var sb = new StringBuilder();
 
+            // 源码根算错时不要往下跑 git：报「目录名称无效」这种原始错误没法让人判断
+            if (!File.Exists(Path.Combine(root, Iteration.Solution)))
+            {
+                sb.AppendLine($"源码根不可用：{root}");
+                sb.AppendLine("检查 <安装根>\\source\\openloop 是否存在，或用环境变量 OPENLOOP_SOURCE 指到源码工作树");
+                return sb.ToString().TrimEnd();
+            }
+
             var status = await Iteration.ExecAsync("git", ["-C", root, "status", "--porcelain"], root, ct);
             var files = status.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Select(l => l.Trim()).Where(l => l.Length > 0).ToList();

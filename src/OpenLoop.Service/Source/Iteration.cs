@@ -19,7 +19,7 @@ namespace OpenLoop.Service.Source
             public override string ToString() => $"{(Ok ? "OK" : "FAIL")} {Name} {Detail}";
         }
 
-        private const string Solution = "OpenLoop.slnx";
+        internal const string Solution = "OpenLoop.slnx";
 
         public static async Task<Step> BuildAsync(CancellationToken ct = default)
         {

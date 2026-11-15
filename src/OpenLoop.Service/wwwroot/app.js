@@ -363,9 +363,12 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
   const composer = h('div', { style: { flex: 'none', padding: '4px 16px 8px', borderTop: pending ? '0' : '1px solid #f0f0f0' } },
     h(Input.TextArea, {
       value: text, onChange: e => setText(e.target.value), autoSize: { minRows: 3, maxRows: 10 },
-      placeholder: '描述任务，或声明判据 / 纠正（Ctrl+Enter 发送）',
+      placeholder: '描述任务，或声明判据 / 纠正（Enter 发送，Shift+Enter 换行）',
       onKeyDown: e => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+        // Enter 发送、Ctrl+Enter 也发送（浏览器壳没有「步后插入」与「等本轮」之分，服务端按运行态排队）
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        e.preventDefault();
+        send();
       }
     }),
     toolbar);

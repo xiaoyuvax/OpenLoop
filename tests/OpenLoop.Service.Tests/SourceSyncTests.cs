@@ -65,6 +65,19 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void InstallRootOf_steps_out_of_the_worker_subfolder()
+        {
+            string install = Path.Combine(Path.GetTempPath(), "ol-install");
+            Assert.Equal(Path.GetFullPath(install),
+                SourceSync.InstallRootOf(Path.Combine(install, "worker")));
+            // 不在 worker/ 下就别动：安装根就是 exe 目录
+            Assert.Equal(Path.GetFullPath(install),
+                SourceSync.InstallRootOf(install));
+            Assert.Equal(Path.GetFullPath(Path.Combine(install, "worker", "nested")),
+                SourceSync.InstallRootOf(Path.Combine(install, "worker", "nested")));
+        }
+
+        [Fact]
         public void Loop_writes_dev_component_repos_but_nothing_else_outside()
         {
             string temp = Path.Combine(Path.GetTempPath(), "loop-components-" + Guid.NewGuid().ToString("N"));

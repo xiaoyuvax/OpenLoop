@@ -1289,7 +1289,8 @@ namespace OpenLoop.App
             string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
             string title = "转交 " + DateTime.Now.ToString("HH:mm");
             ChatStore.Save(workspace, turns.Select(CloneTurn).ToList(), id);
-            ChatStore.Touch(workspace, id, title);
+            // Loop 会话只登记在 loops.json：写 chats/index.json 会让它被当成 Worker 会话恢复出来
+            LoopIndex.Rename(workspace, id, title);
             return EnsureLoop(workspace, true, id) != null;
         }
 

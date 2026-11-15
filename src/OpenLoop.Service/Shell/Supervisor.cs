@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Runtime;
+using OpenLoop.Service.Source;
 
 namespace OpenLoop.Service.Shell
 {
@@ -114,6 +115,10 @@ namespace OpenLoop.Service.Shell
             startInfo.ArgumentList.Add(Environment.ProcessId.ToString());
             startInfo.ArgumentList.Add("--version-dir");
             startInfo.ArgumentList.Add(Path.GetDirectoryName(Path.GetFullPath(exePath)) ?? "");
+
+            // A/I 的 exe 在 <安装根>\worker 或 versions\<角色>\ 下，自己推不出源码根；
+            // 由壳把这一份源码根传下去，避免它们算成 <exe 目录>\source\openloop
+            startInfo.Environment["OPENLOOP_SOURCE"] = SourceSync.SourceRoot;
 
             RuntimeInfo.RemoveStale(AppPaths.RuntimeFile(role));
 

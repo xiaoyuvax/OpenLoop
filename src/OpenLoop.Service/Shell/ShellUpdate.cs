@@ -30,7 +30,12 @@ namespace OpenLoop.Service.Shell
             install = Path.GetFullPath(install).TrimEnd('\\', '/');
             string backup = Path.Combine(AppPaths.VersionsDir, "shell", "rollback-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
 
-            WaitExit(pid, TimeSpan.FromSeconds(60));
+            if (!WaitExit(pid, TimeSpan.FromSeconds(60)))
+            {
+                // 旧壳还活着就覆盖安装目录只会撞文件锁，留下半新半旧的产物
+                Log("old shell still running, skip update " + DateTimeOffset.Now.ToString("O") + " pid=" + pid);
+                return 4;
+            }
             try
             {
                 Copy(source, install, backup);
@@ -52,6 +57,13 @@ namespace OpenLoop.Service.Shell
             catch (Exception ex)
             {
                 Log("restart failed " + DateTimeOffset.Now.ToString("O") + " " + ex.Message);
+                if (!IsAlive(pid))
+                {
+                    // 复制只做了一半：先把备份还原回去，再拉起旧壳
+                    try { Restore(backup, install); } catch { }
+                    try { File.WriteAllText(IterationRunner.ShellFailedPath, "shell update failed: " + ex.Message); } catch { }
+                    try { Start(install, workspace); } catch { }
+                }
                 return 3;
             }
         }
@@ -144,22 +156,24 @@ namespace OpenLoop.Service.Shell
             return File.Exists(IterationRunner.ShellStartedPath);
         }
 
-        private static void WaitExit(int pid, TimeSpan timeout)
+        /// <summary>等旧壳退出；超时还活着返回 false（调用方不能在这种情况下覆盖安装目录）。</summary>
+        private static bool WaitExit(int pid, TimeSpan timeout)
         {
-            if (pid <= 0) return;
+            if (pid <= 0) return true;
             var deadline = DateTime.UtcNow + timeout;
-            while (DateTime.UtcNow < deadline)
+            while (IsAlive(pid))
             {
-                try
-                {
-                    if (Process.GetProcessById(pid) == null) return;
-                }
-                catch
-                {
-                    return;
-                }
+                if (DateTime.UtcNow >= deadline) return false;
                 Thread.Sleep(300);
             }
+            return true;
+        }
+
+        private static bool IsAlive(int pid)
+        {
+            if (pid <= 0) return false;
+            try { return Process.GetProcessById(pid) != null; }
+            catch { return false; }
         }
 
         private static int ExitCode(Process process)

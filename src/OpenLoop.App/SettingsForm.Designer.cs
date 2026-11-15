@@ -652,7 +652,7 @@ namespace OpenLoop.App
             _lblSkillsHint.ForeColor = UiStyle.Muted;
             _lblSkillsHint.AutoEllipsis = true;
             _lblSkillsHint.Margin = new Padding(0, 4, 0, 0);
-            _lblSkillsHint.Text = "「全局」改 %APPDATA%\\OpenLoop\\skills，「项目」改 <工作区>/.openloop/skills；同名时项目那份优先，全局开关只影响项目里没配置过的技能。Ctrl/Shift 点行可多选，一起启用或停用。";
+            _lblSkillsHint.Text = "「全局」改 %APPDATA%\\OpenLoop\\skills，「项目」改 <工作区>/.openloop/skills（也读 OpenCode 的 <工作区>/.opencode/skills）；同名时 .openloop > .opencode > 全局，全局开关只影响项目里没配置过的技能。Ctrl/Shift 点行可多选，一起启用或停用。";
 
             _skillActions.Dock = DockStyle.Fill;
             _skillActions.FlowDirection = FlowDirection.LeftToRight;

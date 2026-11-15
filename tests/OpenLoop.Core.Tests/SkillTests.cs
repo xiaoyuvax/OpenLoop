@@ -297,6 +297,35 @@ public sealed class SkillTests : IDisposable
     }
 
     [Fact]
+    public void Load_Reads_OpenCode_Skills_And_Prefers_Openloop()
+    {
+        WriteSkill("demo", "demo-skill", "项目版本", "项目正文");
+        WriteSkillAt(Path.Combine(_root, ".opencode", "skills", "demo"),
+            "demo-skill", "opencode 版本", "opencode 正文");
+        WriteSkillAt(Path.Combine(_root, ".opencode", "skills", "oc-only"),
+            "oc-only", "只在 opencode", "正文");
+
+        var catalog = SkillCatalog.Load(_root);
+
+        var demo = catalog.Single(s => s.Name == "demo-skill");
+        Assert.Equal(".openloop/skills/demo/SKILL.md", demo.Source);
+        Assert.Contains("项目正文", demo.Body);
+        Assert.Equal(".opencode/skills/oc-only/SKILL.md", catalog.Single(s => s.Name == "oc-only").Source);
+    }
+
+    [Fact]
+    public void Store_Install_Rejects_Same_Name_In_Other_Library()
+    {
+        string skills = Path.Combine(_root, ".openloop", "skills");
+        string opencode = Path.Combine(_root, ".opencode", "skills");
+        string source = Path.Combine(_root, "incoming", "demo");
+        WriteSkillAt(source, "demo-skill", "做演示", "正文");
+        Directory.CreateDirectory(Path.Combine(opencode, "demo"));
+
+        Assert.Throws<InvalidOperationException>(() => SkillStore.Install(source, skills, [opencode]));
+    }
+
+    [Fact]
     public void Sync_Global_Disable_Only_Blocks_Skills_Not_Configured_In_Project()
     {
         WriteSkill("demo", "demo-skill", "做演示", "正文");

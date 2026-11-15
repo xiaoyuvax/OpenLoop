@@ -410,6 +410,16 @@ namespace OpenLoop.App
             ? AppSettings.GlobalSkillsPath
             : Path.Combine(_workspace, ".openloop", "skills");
 
+        /// <summary>项目技能库有两个：.openloop/skills 与 OpenCode 的 .opencode/skills（只读兼容）。</summary>
+        private IEnumerable<string> ProjectSkillRoots()
+        {
+            if (GlobalSkillScope || string.IsNullOrWhiteSpace(_workspace)) return [];
+            return [
+                Path.Combine(_workspace, ".openloop", "skills"),
+                Path.Combine(_workspace, ".opencode", "skills")
+            ];
+        }
+
         /// <summary>
         /// 技能列表：文件扫描和 I 的激活集都不该在 UI 线程上等——同步等待 HTTP 会把消息循环堵死
         /// （`GetResult()` 等续体、续体又排在同一个循环里，就是死锁）。
@@ -525,7 +535,8 @@ namespace OpenLoop.App
 
             try
             {
-                await Task.Run(() => SkillStore.Install(dialog.SelectedPath, root));
+                string[] others = ProjectSkillRoots().Where(r => !Paths.Same(r, root)).ToArray();
+                await Task.Run(() => SkillStore.Install(dialog.SelectedPath, root, others));
             }
             catch (Exception ex)
             {
@@ -560,7 +571,9 @@ namespace OpenLoop.App
                     MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                 return;
 
-            string root = SkillRoot;
+            // 技能可能来自 .openloop 或 .opencode 两个项目技能库：用技能自己的目录做根，
+            // Uninstall 仍只允许删「库里那一层目录」，不会连库一起删
+            string root = GlobalSkillScope ? SkillRoot : Path.GetDirectoryName(row.Skill.Directory);
             bool global = GlobalSkillScope;
             try
             {

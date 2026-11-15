@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using OpenLoop.Service.Source;
 
@@ -222,6 +223,39 @@ namespace OpenLoop.App
         private void OnAddProject(object sender, EventArgs e) => NewSessionRequested?.Invoke("");
 
         private void OnLoopOverview(object sender, EventArgs e) => SelectLoop();
+
+        /// <summary>项目行右键：打开工作区路径 / 复制路径 / 新建会话 / 删除项目。</summary>
+        private void OnProjectItemClick(object sender, AntdUI.MenuItemEventArgs e)
+        {
+            if (e?.Button != MouseButtons.Right || e.Item?.Tag is not string path) return;
+
+            var items = new AntdUI.IContextMenuStripItem[]
+            {
+                new AntdUI.ContextMenuStripItem("打开工作区路径") { ID = "open" },
+                new AntdUI.ContextMenuStripItem("复制路径") { ID = "copy" },
+                new AntdUI.ContextMenuStripItem("新建会话") { ID = "new" },
+                new AntdUI.ContextMenuStripItemDivider(),
+                new AntdUI.ContextMenuStripItem("删除项目") { ID = "delete" }
+            };
+            AntdUI.ContextMenuStrip.open(_menu, selected => OnProjectMenu(path, selected?.ID), items);
+        }
+
+        private void OnProjectMenu(string path, string id)
+        {
+            switch (id)
+            {
+                case "open":
+                    if (!Directory.Exists(path)) { AppLog.Warn("打开项目目录失败：" + path); return; }
+                    try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); }
+                    catch (Exception ex) { AppLog.Warn("打开项目目录失败：" + ex.Message); }
+                    break;
+                case "copy":
+                    try { Clipboard.SetText(path); } catch (Exception ex) { AppLog.Warn("复制路径失败：" + ex.Message); }
+                    break;
+                case "new": NewSessionRequested?.Invoke(path); break;
+                case "delete": RemoveProjectRequested?.Invoke(path); break;
+            }
+        }
 
         private void OnRemoveProject(object sender, EventArgs e)
         {

@@ -167,6 +167,11 @@ namespace OpenLoop.App
         public static void Touch(string workspace, string sessionId, string title = null)
             => ChatHistory.Touch(workspace, sessionId, title);
 
+        /// <summary>Loop 会话的 id：<c>loop-xxxxxxxx</c>，旧版是字面量 <c>loop</c>。</summary>
+        internal static bool IsLoopSessionId(string id)
+            => string.Equals(id, "loop", StringComparison.OrdinalIgnoreCase)
+               || id?.StartsWith("loop-", StringComparison.OrdinalIgnoreCase) == true;
+
         /// <summary>有对话文件的已存会话；最近活动的在前。开始时间与最后活动时间都取自索引。</summary>
         public static List<SavedSession> SavedSessions()
         {
@@ -176,6 +181,8 @@ namespace OpenLoop.App
                 foreach (var item in ChatHistory.Index().OrderByDescending(e => e.UpdatedAt))
                 {
                     if (item == null || string.IsNullOrEmpty(item.Id) || string.IsNullOrEmpty(item.Workspace)) continue;
+                    // Loop 会话归 loops.json 管；旧版「转交」误写进这份索引的 loop id 不再当 Worker 会话恢复
+                    if (IsLoopSessionId(item.Id)) continue;
                     if (!File.Exists(ChatHistory.PathFor(item.Workspace, item.Id))) continue;
                     // 旧索引没有 CreatedAt：退回 UpdatedAt（至少不是重启时刻）
                     var created = item.CreatedAt == default ? item.UpdatedAt : item.CreatedAt;

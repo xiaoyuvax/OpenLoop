@@ -52,8 +52,11 @@ namespace OpenLoop.Core.Skills
             }), new UTF8Encoding(false));
         }
 
-        /// <summary>把含 SKILL.md 的目录复制进技能库；同名目录已存在就拒绝（不覆盖用户已有的技能）。</summary>
-        public static string Install(string sourceDir, string skillsRoot)
+        /// <summary>
+        /// 把含 SKILL.md 的目录复制进技能库；同名目录已存在就拒绝（不覆盖用户已有的技能），
+        /// 别的技能库（如 .opencode/skills 与本项目技能库并存）里已有同名目录也拒绝，避免装两份。
+        /// </summary>
+        public static string Install(string sourceDir, string skillsRoot, IEnumerable<string> otherRoots = null)
         {
             string source = Path.GetFullPath(sourceDir ?? "");
             if (!Directory.Exists(source)) throw new InvalidOperationException("技能目录不存在");
@@ -66,6 +69,9 @@ namespace OpenLoop.Core.Skills
             string root = Path.GetFullPath(skillsRoot);
             string target = Path.Combine(root, name);
             if (Directory.Exists(target)) throw new InvalidOperationException($"已存在同名技能：{name}");
+            string other = (otherRoots ?? [])
+                .FirstOrDefault(r => !string.IsNullOrWhiteSpace(r) && Directory.Exists(Path.Combine(r, name)));
+            if (other != null) throw new InvalidOperationException($"同名技能已在这个技能库里：{Path.Combine(other, name)}");
 
             Directory.CreateDirectory(root);
             Copy(source, target);
