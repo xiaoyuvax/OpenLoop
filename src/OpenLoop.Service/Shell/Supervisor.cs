@@ -25,12 +25,32 @@ namespace OpenLoop.Service.Shell
         private readonly object _lock = new();
         private readonly Action<string> _log;
         private readonly VersionStore _store;
+        private readonly string _runDir;
         private bool _stopping;
 
-        public Supervisor(Action<string> log = null, VersionStore store = null)
+        public Supervisor(Action<string> log = null, VersionStore store = null, string runDir = null)
         {
             _log = log ?? Console.WriteLine;
             _store = store ?? new VersionStore();
+            _runDir = string.IsNullOrWhiteSpace(runDir)
+                ? Path.Combine(AppContext.BaseDirectory, "backends")
+                : Path.GetFullPath(runDir);
+        }
+
+        /// <summary>
+        /// 运行目录：A/I 的二进制一律从这里启动（与壳同处安装目录）；<c>versions\</c> 只是版本存档与回退源。
+        /// </summary>
+        public string RunDir => _runDir;
+
+        /// <summary>换版前把会被覆盖的文件存进 versions\&lt;role&gt;\rollback-&lt;时间&gt;，安装失败时用它还原。</summary>
+        private static string BackupDir(string role)
+            => Path.Combine(AppPaths.VersionsDir, role, "rollback-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+
+        /// <summary>把存档目录覆盖进运行目录（旧文件先进备份）；返回备份目录，安装失败时交给 <see cref="ShellUpdate.Restore"/>。</summary>
+        internal static string InstallToRunDir(string archive, string runDir, string backup)
+        {
+            ShellUpdate.Copy(archive, runDir, backup);
+            return backup;
         }
 
         /// <summary>监督日志同时进 logs/shell.log：GUI 壳没有控制台，出事只能靠文件。</summary>
@@ -258,22 +278,35 @@ namespace OpenLoop.Service.Shell
             return count >= FlapLimit;
         }
 
-        /// <summary>回退到上一个好版本：把它重新登记成 current，再拉起来；没有可回退的就返回 false 交给防抖。</summary>
+        /// <summary>
+        /// 回退到上一个好版本：把它的存档覆盖回 backends，再重新登记成 current 并拉起；
+        /// 没有可回退的就返回 false 交给防抖。
+        /// </summary>
         private bool RollbackToPrevious(string role)
         {
             var current = _store.Current(role);
             var previous = _store.Previous(role);
             if (previous == null || string.IsNullOrWhiteSpace(previous.Dir)) return false;
 
-            string exe = VersionStore.ExePath(previous.Dir, role);
-            if (!File.Exists(exe)) return false;
+            if (!File.Exists(VersionStore.ExePath(previous.Dir, role))) return false;
             if (current?.Dir != null && string.Equals(
                     Path.GetFullPath(current.Dir).TrimEnd(Path.DirectorySeparatorChar),
                     Path.GetFullPath(previous.Dir).TrimEnd(Path.DirectorySeparatorChar),
                     StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            Log($"[shell] {role} 连续 {FlapLimit} 次起来就退，回退到上一版本 {previous.Version}（{previous.Dir}）");
+            try
+            {
+                InstallToRunDir(previous.Dir, _runDir, BackupDir(role));
+            }
+            catch (Exception ex)
+            {
+                Log($"[shell] {role} 回退时安装到 backends 失败：{ex.Message}");
+                return false;
+            }
+
+            string exe = VersionStore.ExePath(_runDir, role);
+            Log($"[shell] {role} 连续 {FlapLimit} 次起来就退，回退到上一版本 {previous.Version}（装回 backends，存档 {previous.Dir}）");
             _store.Log(role, "rollback", previous.Version, previous.Dir, "crash loop fallback");
             _store.Activate(role, previous, rememberPrevious: false);
             lock (_lock)
@@ -286,13 +319,11 @@ namespace OpenLoop.Service.Shell
         }
 
         /// <summary>
-        /// 换版本：拉起交接单里的目录，10 秒内报到就记账、清交接单、剪旧目录；
-        /// 起不来就退回原来的可执行文件，current.json 不动。
+        /// 换版本：把交接单里的存档覆盖进 backends，再从 backends 拉起；10 秒内报到就记账、清交接单、剪旧存档；
+        /// 起不来就还原备份并拉起原版本，current.json 不动。
         /// </summary>
         private void ApplyUpdate(string role, string previousExe, UpdateRequest update)
         {
-            string target = string.IsNullOrWhiteSpace(update.Dir) ? null : VersionStore.ExePath(update.Dir, role);
-
             if (!_updates.Allow(role))
             {
                 Log($"[shell] {role} 10 分钟内更新过多次，跳过本次（{update.Version}）");
@@ -302,7 +333,9 @@ namespace OpenLoop.Service.Shell
                 return;
             }
 
-            if (target == null || !File.Exists(target))
+            bool archiveOk = !string.IsNullOrWhiteSpace(update.Dir) &&
+                             File.Exists(VersionStore.ExePath(update.Dir, role));
+            if (!archiveOk)
             {
                 Log($"[shell] {role} 交接单里的目录不可用：{update.Dir}，退回原版本");
                 _store.Log(role, "rollback", update.Version, update.Dir, "missing executable");
@@ -311,7 +344,24 @@ namespace OpenLoop.Service.Shell
                 return;
             }
 
-            Log($"[shell] {role} 换到 {update.Version}（{update.Dir}）");
+            string backup = BackupDir(role);
+            try
+            {
+                // 旧进程已经退出（交接单是它临死前写的），这里覆盖 backends 不会撞文件锁
+                InstallToRunDir(update.Dir, _runDir, backup);
+            }
+            catch (Exception ex)
+            {
+                Log($"[shell] {role} 安装到 backends 失败：{ex.Message}，退回原版本");
+                _store.Log(role, "rollback", update.Version, update.Dir, "install failed: " + ex.Message);
+                UpdateRequest.Clear(role);
+                try { ShellUpdate.Restore(backup, _runDir); } catch { }
+                Restart(role, previousExe);
+                return;
+            }
+
+            string target = VersionStore.ExePath(_runDir, role);
+            Log($"[shell] {role} 换到 {update.Version}（装进 backends，存档 {update.Dir}）");
             RuntimeInfo info;
             lock (_lock) _updating.Add(role);
             try
@@ -341,6 +391,7 @@ namespace OpenLoop.Service.Shell
             Log($"[shell] {role} 新版本没起来，退回原版本");
             _store.Log(role, "rollback", update.Version, update.Dir, "did not report within 10s");
             UpdateRequest.Clear(role);
+            try { ShellUpdate.Restore(backup, _runDir); } catch { }
             _exePaths[role] = previousExe;
             Restart(role, previousExe);
         }

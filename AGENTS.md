@@ -88,6 +88,7 @@
 - **读写分离**：只读方法不得写盘/建目录（判据：让它返回空，程序还能不能跑——能跑就不该“确保存在”）；需要“确保存在”的由显式写入口（界面/落盘）承担。
 - 请求体构建抽成 `internal` 纯函数并单测，不在 async 方法里内联拼字典；可空字段条件写入（`JsonIgnoreCondition.WhenWritingNull` 不作用于 `Dictionary` 的值）。
 - WinForms 菜单不要在 `Closed` 里同步 `Dispose`：`ModalMenuFilter` 关闭流程还会访问句柄，会抛 `ObjectDisposedException` 崩进程；用 `BeginInvoke` 延后销毁。
+- A/I 的二进制一律从安装目录 `backends\` 启动（与壳同处安装目录）；`%APPDATA%\OpenLoop\versions\<role>\<ver>-<sha>\` 只是版本存档与回退源。换版 = 存档 → 覆盖 `backends\`（旧文件先备份）→ 从 `backends\` 重启；起不来就用备份还原。
 
 ## 设计器兼容（强制）
 
