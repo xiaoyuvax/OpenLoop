@@ -319,7 +319,8 @@ namespace OpenLoop.Service.Source
                 if (!restart.Ok) return Finish(report, false);
 
                 // 必须等到「新 pid」报到：旧 A 在退出前还活着，只看到活进程会误判成已经换好
-                var back = await WaitRestartedAsync(BusRoles.A, previousPid, TimeSpan.FromSeconds(45), ct);
+                var back = await WaitRestartedAsync(BusRoles.A, previousPid, TimeSpan.FromSeconds(45), ct,
+                    VersionOf(BusRoles.A));
                 Add(back);
                 if (!back.Ok) return Finish(report, false);
 
@@ -631,14 +632,21 @@ namespace OpenLoop.Service.Source
 
         /// <summary>等到一个新 pid 报到；只看到活进程不够（旧进程退出前也活着）。</summary>
         public static async Task<Iteration.Step> WaitRestartedAsync(
-            string role, int previousPid, TimeSpan timeout, CancellationToken ct = default)
+            string role, int previousPid, TimeSpan timeout, CancellationToken ct = default, string version = null)
         {
             var deadline = DateTime.UtcNow + timeout;
             while (DateTime.UtcNow < deadline)
             {
                 var info = RuntimeInfo.TryLoad(AppPaths.RuntimeFile(role));
                 if (info is { IsAlive: true } && info.Pid != previousPid)
-                    return new("restart " + role, true, $"pid={info.Pid} version={info.Version}");
+                {
+                    if (string.IsNullOrWhiteSpace(version) || SourceSync.SameVersion(info.Version, version))
+                        return new("restart " + role, true, $"pid={info.Pid} version={info.Version}");
+
+                    // 进程换了但报的还是旧号：安装没生效（壳已按 rollback 备份还原），这一轮不能算成功
+                    return new("restart " + role, false,
+                        $"pid={info.Pid} 报的是 {info.Version}，不是 {version}（安装没生效）");
+                }
                 await Task.Delay(500, ct);
             }
             return new("restart " + role, false, $"{(int)timeout.TotalSeconds}s 内没等到新进程（壳会按更新单回退）");

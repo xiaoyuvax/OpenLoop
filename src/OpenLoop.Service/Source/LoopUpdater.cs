@@ -41,7 +41,7 @@ namespace OpenLoop.Service.Source
                 }
 
                 var back = await IterationRunner.WaitRestartedAsync(
-                    BusRoles.I, previousPid, TimeSpan.FromSeconds(45));
+                    BusRoles.I, previousPid, TimeSpan.FromSeconds(45), version: version);
                 IterationRunner.WriteLoopResult(
                     back.Ok
                         ? new Iteration.Step("update i", true, $"已登记并重启 I（{back.Detail}）：{publish.Detail}")
