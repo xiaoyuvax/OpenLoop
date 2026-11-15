@@ -11,13 +11,13 @@ namespace OpenLoop.Service.Source
     {
         public static Task StartAsync() => Task.Run(async () =>
         {
-            var (version, sourceTree, present) = IterationRunner.TakeLoopUpdate();
+            var (version, sourceTree, publishMode, present) = IterationRunner.TakeLoopUpdate();
             if (!present) return;
 
             await Task.Delay(3000);   // 等 A 自己的 bus / runtime 文件就位
             try
             {
-                var publish = await Iteration.PublishAsync(BusRoles.I, version);
+                var publish = await Iteration.PublishAsync(BusRoles.I, version, publishMode);
                 if (!publish.Ok)
                 {
                     IterationRunner.WriteLoopResult(publish, version);

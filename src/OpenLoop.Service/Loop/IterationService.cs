@@ -73,7 +73,7 @@ namespace OpenLoop.Service.Loop
             return new IterationPlanResult { Workspace = workspace, Plan = plan, Summary = summary };
         }
 
-        public IterationState Start(string workspace, bool includeShell)
+        public IterationState Start(string workspace, bool includeShell, string publishMode = null)
         {
             PersistedJob job;
             lock (_sync)
@@ -85,6 +85,7 @@ namespace OpenLoop.Service.Loop
                     throw new InvalidOperationException("还没有计划：先算一次计划");
 
                 job.IncludeShell = includeShell;
+                job.PublishMode = publishMode;
                 job.StartedAt = DateTimeOffset.Now.ToString("O");
                 job.State = new IterationState
                 {
@@ -143,7 +144,8 @@ namespace OpenLoop.Service.Loop
                     ? job.Plan
                     : job.Plan.Select(p => p.Role == "shell" ? p with { Update = false } : p).ToList();
 
-                var report = await IterationRunner.RunAsync(plan, job.State.Workspace, Progress, ct);
+                var report = await IterationRunner.RunAsync(
+                    plan, job.State.Workspace, Progress, ct, job.PublishMode);
                 if (!report.Ok)
                 {
                     Progress("失败，回退到迭代前的版本…");
@@ -333,6 +335,8 @@ namespace OpenLoop.Service.Loop
             public List<RolePlan> Plan { get; set; } = [];
             public Dictionary<string, VersionEntry> Before { get; set; }
             public bool IncludeShell { get; set; } = true;
+            /// <summary>发布形态（framework / selfcontained）；换 I 时由 A 按这个形态发布。</summary>
+            public string PublishMode { get; set; }
             public string StartedAt { get; set; }
         }
 

@@ -1201,18 +1201,7 @@ namespace OpenLoop.App
         /// Enter 在 AntdUI 的 WM_KEYDOWN 里先被消化成换行（早于 KeyDown 事件），
         /// 所以只能在这里拦：Enter 发送（运行中=步后插入），Ctrl+Enter 等本轮排队，Shift+Enter 换行。
         /// </summary>
-        private void InsertSoftNewline()
-        {
-            if (_txtInput == null || !_txtInput.IsHandleCreated) return;
-            var selStart = _txtInput.SelectionStart;
-            var selLen = _txtInput.SelectionLength;
-            var text = _txtInput.Text;
-            _txtInput.Text = text.Substring(0, selStart) + Environment.NewLine + text.Substring(selStart + selLen);
-            _txtInput.SelectionStart = selStart + Environment.NewLine.Length;
-            _txtInput.SelectionLength = 0;
-            _txtInput.Focus();
-            UpdateSendButton();
-        }
+        private void InsertSoftNewline() => ComposerKeys.InsertSoftNewline(_txtInput);
 
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
@@ -1222,9 +1211,6 @@ namespace OpenLoop.App
             e.Result = false;
             if (shift) { InsertSoftNewline(); return; }
             if (!ctrl && _cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
-            if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
-
-            e.Result = false;
             if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
             Submit(immediate: !ctrl);
         }

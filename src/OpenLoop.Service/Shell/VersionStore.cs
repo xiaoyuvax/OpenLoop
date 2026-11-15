@@ -125,7 +125,7 @@ namespace OpenLoop.Service.Shell
         public VersionEntry Current(string role)
             => Read().TryGetValue(role, out var entry) ? entry : null;
 
-        /// <summary>当前版本的可执行文件；没登记过就是 null（壳回退到 bin/worker）。</summary>
+        /// <summary>当前版本的可执行文件；没登记过就是 null（壳回退到 bin/backends）。</summary>
         public string Exe(string role)
         {
             var entry = Current(role);

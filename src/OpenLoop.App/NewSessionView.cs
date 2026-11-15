@@ -286,10 +286,7 @@ namespace OpenLoop.App
             Submit?.Invoke(new NewSessionRequest(_project, text, model, effort));
         }
 
-        /// <summary>
-        /// 和会话页的输入框一致：Enter 立即发送，Ctrl+Enter 也发送（新建时还没有本轮可排队），
-        /// Shift+Enter 软换行。Enter 在 AntdUI 的 WM_KEYDOWN 里先变成换行，只能在 VerifyKeyboard 里拦。
-        /// </summary>
+        /// <summary>与对话页一致：Enter 发送，Shift+Enter 换行，Ctrl+Enter 发送。</summary>
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
             bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
@@ -297,21 +294,9 @@ namespace OpenLoop.App
             if (!shift && e.KeyData != Keys.Enter && !ctrl) return;
 
             e.Result = false;
-            if (shift) { InsertSoftNewline(); return; }
+            if (shift) { ComposerKeys.InsertSoftNewline(_txtInput); return; }
             if (_txtInput.Text.Trim().Length == 0) return;
             OnSend(sender, EventArgs.Empty);
-        }
-
-        private void InsertSoftNewline()
-        {
-            if (_txtInput == null || !_txtInput.IsHandleCreated) return;
-            var selStart = _txtInput.SelectionStart;
-            var selLen = _txtInput.SelectionLength;
-            var text = _txtInput.Text;
-            _txtInput.Text = text.Substring(0, selStart) + Environment.NewLine + text.Substring(selStart + selLen);
-            _txtInput.SelectionStart = selStart + Environment.NewLine.Length;
-            _txtInput.SelectionLength = 0;
-            _txtInput.Focus();
         }
 
         private void Notify(string text, AntdUI.TState state)

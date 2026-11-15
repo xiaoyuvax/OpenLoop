@@ -12,6 +12,9 @@
         private AntdUI.Label _lblLog;
         private AntdUI.Input _txtLog;
         private AntdUI.Label _lblStatus;
+        private FlowLayoutPanel _modeRow;
+        private AntdUI.Label _lblMode;
+        private AntdUI.Select _selMode;
         private FlowLayoutPanel _buttons;
         private AntdUI.Button _btnStart;
         private AntdUI.Button _btnCommit;
@@ -36,6 +39,9 @@
             _lblLog = new AntdUI.Label();
             _txtLog = new AntdUI.Input();
             _lblStatus = new AntdUI.Label();
+            _modeRow = new FlowLayoutPanel();
+            _lblMode = new AntdUI.Label();
+            _selMode = new AntdUI.Select();
             _buttons = new FlowLayoutPanel();
             _btnStart = new AntdUI.Button();
             _btnCommit = new AntdUI.Button();
@@ -46,13 +52,14 @@
 
             _root.Dock = DockStyle.Fill;
             _root.ColumnCount = 1;
-            _root.RowCount = 7;
+            _root.RowCount = 8;
             _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 220F));
             _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 160F));
             _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
             _root.Padding = new Padding(16, 12, 16, 8);
@@ -111,6 +118,29 @@
             _lblStatus.ForeColor = UiStyle.Muted;
             _lblStatus.Margin = new Padding(0, 2, 0, 6);
 
+            // 发布形态：框架依赖（默认，三个 exe 共享系统那一份框架）或自带框架（各自带运行时）
+            _modeRow.Dock = DockStyle.Top;
+            _modeRow.AutoSize = true;
+            _modeRow.WrapContents = false;
+            _modeRow.Margin = new Padding(0, 0, 0, 4);
+
+            _lblMode.AutoSize = true;
+            _lblMode.Text = "发布形态";
+            _lblMode.Font = new Font("Segoe UI", 9F);
+            _lblMode.ForeColor = UiStyle.Text;
+            _lblMode.Margin = new Padding(0, 8, 8, 0);
+
+            _selMode.Width = 420;
+            _selMode.Margin = new Padding(0, 4, 0, 0);
+            _selMode.Items.Add(new AntdUI.SelectItem("框架依赖：目标机需装 .NET 10，三个 exe 共享一份框架")
+                { Tag = global::OpenLoop.Service.Source.Iteration.FrameworkMode });
+            _selMode.Items.Add(new AntdUI.SelectItem("自带框架：每个 exe 各带运行时，目标机不用装 .NET")
+                { Tag = global::OpenLoop.Service.Source.Iteration.SelfContainedMode });
+            _selMode.SelectedIndex = 0;
+
+            _modeRow.Controls.Add(_lblMode);
+            _modeRow.Controls.Add(_selMode);
+
             _buttons.Dock = DockStyle.Fill;
             _buttons.FlowDirection = FlowDirection.RightToLeft;
             _buttons.WrapContents = false;
@@ -159,8 +189,9 @@
             _root.Controls.Add(_txtSummary, 0, 2);
             _root.Controls.Add(_lblLog, 0, 3);
             _root.Controls.Add(_txtLog, 0, 4);
-            _root.Controls.Add(_lblStatus, 0, 5);
-            _root.Controls.Add(_buttons, 0, 6);
+            _root.Controls.Add(_modeRow, 0, 5);
+            _root.Controls.Add(_lblStatus, 0, 6);
+            _root.Controls.Add(_buttons, 0, 7);
 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
