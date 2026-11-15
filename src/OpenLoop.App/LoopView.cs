@@ -380,7 +380,8 @@ namespace OpenLoop.App
                     var loopTools = ToolRegistry.Loop(readScope, writeScope, _workspace, approve, activeSkills,
                         OpenCodeTools.For(writeScope.Root, approve, settings.OpenCodeAskPermissions)
                             .Concat(DshTools.For(settings, writeScope.Root, approve))
-                            .Concat(OpenLoop.Service.Web.PuppetTools.For()));
+                            .Concat(OpenLoop.Service.Web.PuppetTools.For()),
+                        settings.WebFetchMode);
                     var registry = new ToolRegistry(loopTools.Tools.Concat(
                         [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
                     string snapshot = Snapshots.Create(writeScope.Root, "loop");

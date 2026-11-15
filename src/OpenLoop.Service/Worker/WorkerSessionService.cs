@@ -144,7 +144,8 @@ namespace OpenLoop.Service.Worker
                 OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions)
                     .Concat(DshTools.For(settings, workspace, approve))
                     .Concat(plugins.Tools())
-                    .Concat(OpenLoop.Service.Web.PuppetTools.For()));
+                    .Concat(OpenLoop.Service.Web.PuppetTools.For()),
+                settings.WebFetchMode);
 
             var trace = TraceWriter.Start(workspace, request.Tag, request.Text, request.Model);
             // 上一轮疑似超时/被杀留下的临时会话：顺手清掉，别一直挂在 OpenCode 上占模型

@@ -22,11 +22,22 @@ namespace OpenLoop.App
             Localization.Apply(startup.Language);
             UiStyle.Apply(UiStyle.Parse(startup.Theme));
 
-            Application.ThreadException += (_, e) => AppLog.Error("未处理的界面异常", e.Exception);
-            AppDomain.CurrentDomain.UnhandledException +=
-                (_, e) => AppLog.Error("未处理的异常", e.ExceptionObject as Exception);
+            Application.ThreadException += (_, e) =>
+            {
+                AppLog.Error("未处理的界面异常", e.Exception);
+                ExitTrace.Write("未处理的界面异常：" + e.Exception);
+            };
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            {
+                AppLog.Error("未处理的异常", e.ExceptionObject as Exception);
+                ExitTrace.Write("未处理的异常（进程即将退出）：" + e.ExceptionObject);
+            };
+            // 正常退出（关窗 / Application.Exit）与「被外部杀掉」在这里分开记：后者不会留下任何一行
+            Application.ApplicationExit += (_, _) => ExitTrace.Write("退出：ApplicationExit（正常退出流程）");
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => ExitTrace.Write("退出：ProcessExit");
 
             AppLog.Info("OpenLoop 启动");
+            ExitTrace.Write("启动：" + Environment.ProcessPath + " " + string.Join(" ", args));
 
             // 壳只负责拉起 A（Worker）。界面是它的客户端，不再在自己的进程里跑 Agent。
             var store = new VersionStore();
@@ -51,6 +62,7 @@ namespace OpenLoop.App
 
             using var form = new MainForm();
             Application.Run(form);
+            ExitTrace.Write("退出：Application.Run 返回");
             AppLog.Info("OpenLoop 退出");
         }
 

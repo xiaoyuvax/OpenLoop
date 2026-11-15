@@ -484,40 +484,72 @@ namespace OpenLoop.Service.Source
         }
 
         /// <summary>
-        /// 退出壳，由独立脚本把发布目录覆盖到运行目录并重新拉起。
+        /// 起一个 helper：它等本进程退出后把发布目录覆盖到运行目录并重新拉起。
         /// 只覆盖新壳带的文件（不 purge），覆盖前把会被覆盖的旧文件备份；新壳 8 秒内退出就从备份还原并起旧壳。
         /// 报告先落盘，新壳起来后读它把结果弹出来。
+        /// 返回 false 表示 helper 没起来（发布目录不可用等）：调用方**不能**再退出，否则没人接手。
         /// </summary>
-        public static void LaunchRestarter(ShellStage shell, string workspace)
+        public static bool LaunchRestarter(ShellStage shell, string workspace)
         {
-            if (string.IsNullOrWhiteSpace(shell?.Dir) || !Directory.Exists(shell.Dir)) return;
+            if (string.IsNullOrWhiteSpace(shell?.Dir) || !Directory.Exists(shell.Dir))
+            {
+                LogRestart("壳重启跳过：发布目录不存在 " + (shell?.Dir ?? ""));
+                return false;
+            }
 
             string install = AppContext.BaseDirectory.TrimEnd('\\', '/');
             string from = Path.GetFullPath(shell.Dir).TrimEnd('\\', '/');
 
             if (string.Equals(from, Path.GetFullPath(install), StringComparison.OrdinalIgnoreCase))
-                return;
+            {
+                LogRestart("壳重启跳过：发布目录就是安装目录 " + from);
+                return false;
+            }
 
             PruneShell(shell.Dir);
 
-            string exe = Path.Combine(from, OperatingSystem.IsWindows() ? "OpenLoop.exe" : "OpenLoop");
-            var start = new ProcessStartInfo(exe)
+            try
             {
-                UseShellExecute = false,
-                WorkingDirectory = from
-            };
-            start.ArgumentList.Add(ShellUpdate.Flag);
-            start.ArgumentList.Add(install);
-            start.ArgumentList.Add("--apply-shell-pid");
-            start.ArgumentList.Add(Environment.ProcessId.ToString());
-            if (!string.IsNullOrWhiteSpace(workspace))
-            {
-                start.ArgumentList.Add("--apply-shell-workspace");
-                start.ArgumentList.Add(workspace.Trim());
+                string exe = Path.Combine(from, OperatingSystem.IsWindows() ? "OpenLoop.exe" : "OpenLoop");
+                var start = new ProcessStartInfo(exe)
+                {
+                    UseShellExecute = false,
+                    WorkingDirectory = from
+                };
+                start.ArgumentList.Add(ShellUpdate.Flag);
+                start.ArgumentList.Add(install);
+                start.ArgumentList.Add("--apply-shell-pid");
+                start.ArgumentList.Add(Environment.ProcessId.ToString());
+                if (!string.IsNullOrWhiteSpace(workspace))
+                {
+                    start.ArgumentList.Add("--apply-shell-workspace");
+                    start.ArgumentList.Add(workspace.Trim());
+                }
+                // 新壳的 cwd 会变成安装目录：把源码根带给它，后续迭代仍对着同一份源码
+                start.Environment["OPENLOOP_SOURCE"] = SourceSync.SourceRoot;
+                var helper = Process.Start(start);
+                LogRestart("壳重启 helper 已启动 pid=" + helper?.Id + " 从 " + from);
+                return helper != null;
             }
-            // 新壳的 cwd 会变成安装目录：把源码根带给它，后续迭代仍对着同一份源码
-            start.Environment["OPENLOOP_SOURCE"] = SourceSync.SourceRoot;
-            Process.Start(start);
+            catch (Exception ex)
+            {
+                LogRestart("壳重启 helper 启动失败：" + ex.Message);
+                return false;
+            }
+        }
+
+        /// <summary>重启链路的同步痕迹（WimaLogger 是异步的，退出时会把缓冲丢掉）。</summary>
+        private static void LogRestart(string line)
+        {
+            try
+            {
+                Directory.CreateDirectory(AppPaths.RuntimeDir);
+                File.AppendAllText(RestartLogPath,
+                    $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} {line}{Environment.NewLine}", Encoding.UTF8);
+            }
+            catch
+            {
+            }
         }
 
         /// <summary>壳的发布目录与回退备份都占空间：只留最近几份。</summary>

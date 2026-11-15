@@ -48,7 +48,8 @@ namespace OpenLoop.Service.Worker
                     features,
                     workspace, Path.Combine(workspace, ".openloop", "eval"),
                     AppSettings.GlobalAgentsPath, settings.UseAgentsMd,
-                    AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(spec.Model, settings));
+                    AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(spec.Model, settings),
+                    webFetch: settings.WebFetchMode);
 
                 var outcome = runner.RunAsync(spec.Task, activation, CancellationToken.None)
                     .GetAwaiter().GetResult();

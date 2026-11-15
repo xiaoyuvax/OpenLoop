@@ -140,7 +140,8 @@ namespace OpenLoop.App
             scope.Approve = approve;
             var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess,
                 OpenCodeTools.For(_workspace, approve, settings.OpenCodeAskPermissions)
-                    .Concat(DshTools.For(settings, _workspace, approve)));
+                    .Concat(DshTools.For(settings, _workspace, approve)),
+                settings.WebFetchMode);
             TraceWriter trace;
             try
             {

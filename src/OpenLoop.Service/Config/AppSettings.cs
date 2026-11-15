@@ -98,6 +98,9 @@ namespace OpenLoop.Service.Config
         /// <summary>OpenCodeTask 的每个动作都经本应用审批；关闭则沿用 OpenCode 自己的权限配置。</summary>
         public bool OpenCodeAskPermissions { get; set; } = true;
 
+        /// <summary>WebFetch 的联网策略：off（不提供）/ ask（每次审批）/ allow（直接抓取，默认）。</summary>
+        public string WebFetchMode { get; set; } = "allow";
+
         /// <summary>记住的审批：工作目录之外的访问后续都许可。</summary>
         public bool AllowOutsideWorkspace { get; set; }
 

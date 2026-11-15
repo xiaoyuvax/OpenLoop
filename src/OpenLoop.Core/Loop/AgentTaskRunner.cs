@@ -24,6 +24,7 @@ namespace OpenLoop.Core.Loop
         private readonly IReadOnlyList<SkillInfo> _catalog;
         private readonly int _contextLimit;
         private readonly IReadOnlyList<ITool> _extraTools;
+        private readonly string _webFetch;
 
         public AgentTaskRunner(
             Func<string, IReasoner> reasonerFor,
@@ -31,7 +32,7 @@ namespace OpenLoop.Core.Loop
             string workspaceRoot, string evidenceRoot, string globalAgentsPath = null,
             bool useAgentsMd = true, string globalSkillsPath = null,
             int contextLimit = AgentContext.DefaultContextLimit,
-            IEnumerable<ITool> extraTools = null)
+            IEnumerable<ITool> extraTools = null, string webFetch = null)
         {
             _reasonerFor = reasonerFor ?? throw new ArgumentNullException(nameof(reasonerFor));
             _features = features ?? throw new ArgumentNullException(nameof(features));
@@ -41,6 +42,7 @@ namespace OpenLoop.Core.Loop
             _useAgentsMd = useAgentsMd;
             _contextLimit = contextLimit > 0 ? contextLimit : AgentContext.DefaultContextLimit;
             _extraTools = (extraTools ?? []).ToList();
+            _webFetch = webFetch;
             _catalog = SkillCatalog.Load(_workspaceRoot, globalSkillsPath);
         }
 
@@ -66,7 +68,7 @@ namespace OpenLoop.Core.Loop
                 throw new InvalidOperationException(
                     $"任务 {task.Id} 的技能不可用：{string.Join("；", skillProblems)}");
 
-            var tools = ToolRegistry.Workspace(scope, null, skills, extra: _extraTools);
+            var tools = ToolRegistry.Workspace(scope, null, skills, extra: _extraTools, webFetch: _webFetch);
             var loop = new AgentLoop(tools, _reasonerFor(dir),
                 FeatureCatalog.PolicyFrom(activation, _features), skills: skills);
             string systemPrompt = loop.BuildSystemPrompt(

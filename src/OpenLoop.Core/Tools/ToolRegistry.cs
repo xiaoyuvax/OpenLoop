@@ -53,17 +53,18 @@ namespace OpenLoop.Core.Tools
                 : $"未知工具：{name}（它是技能不是工具，用 ReadSkill(name=\"{skill.Name}\") 读取）";
         }
 
-        /// <summary>v0 的五个通用工作目录工具；有技能时追加 ReadSkill。</summary>
+        /// <summary>v0 的五个通用工作目录工具；有技能时追加 ReadSkill；WebFetch 按模式决定是否提供。</summary>
         public static ToolRegistry Workspace(
             WorkspaceScope scope, ApprovalHandler approve = null,
-            IReadOnlyList<SkillInfo> skills = null, bool fullAccess = false, IEnumerable<ITool> extra = null)
-            => new(Common(scope, approve, skills, fullAccess).Concat(extra ?? []));
+            IReadOnlyList<SkillInfo> skills = null, bool fullAccess = false, IEnumerable<ITool> extra = null,
+            string webFetch = null)
+            => new(Common(scope, approve, skills, fullAccess, webFetch).Concat(extra ?? []));
 
         /// <summary>Loop 的工具集：读用 read 边界、写用 write 边界，外加只读证据通道 + 发现落账。</summary>
         public static ToolRegistry Loop(
             WorkspaceScope read, WorkspaceScope write, string workspaceRoot, ApprovalHandler approve = null,
-            IReadOnlyList<SkillInfo> skills = null, IEnumerable<ITool> extra = null)
-            => new(Common(read, write, approve, skills, fullAccess: false).Concat(
+            IReadOnlyList<SkillInfo> skills = null, IEnumerable<ITool> extra = null, string webFetch = null)
+            => new(Common(read, write, approve, skills, fullAccess: false, webFetch).Concat(
             [
                 new Builtin.ReadEvidenceTool(workspaceRoot),
                 new Builtin.RecordFindingTool(workspaceRoot),
@@ -72,18 +73,22 @@ namespace OpenLoop.Core.Tools
 
         private static IEnumerable<ITool> Common(
             WorkspaceScope scope, ApprovalHandler approve, IReadOnlyList<SkillInfo> skills,
-            bool fullAccess)
-            => Common(scope, scope, approve, skills, fullAccess);
+            bool fullAccess, string webFetch)
+            => Common(scope, scope, approve, skills, fullAccess, webFetch);
 
         private static IEnumerable<ITool> Common(
             WorkspaceScope read, WorkspaceScope write, ApprovalHandler approve,
-            IReadOnlyList<SkillInfo> skills, bool fullAccess)
+            IReadOnlyList<SkillInfo> skills, bool fullAccess, string webFetch)
         {
             yield return new Builtin.ReadFileTool(read);
             yield return new Builtin.WriteFileTool(write);
             yield return new Builtin.ListDirTool(read);
             yield return new Builtin.GrepTool(read);
             yield return new Builtin.ShellTool(write, approve, fullAccess);
+
+            string mode = Builtin.WebFetchTool.NormalizeMode(webFetch);
+            if (mode != "off")
+                yield return new Builtin.WebFetchTool(approve, mode == "ask");
             if (skills is { Count: > 0 })
             {
                 yield return new Builtin.ReadSkillTool(skills);

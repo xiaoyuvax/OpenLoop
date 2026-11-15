@@ -763,7 +763,14 @@ namespace OpenLoop.App
             form.ShellRestart = report =>
             {
                 IterationRunner.WriteReport(report);
-                IterationRunner.LaunchRestarter(new ShellStage(report.ShellDir, report.Version), report.Workspace);
+                bool started = IterationRunner.LaunchRestarter(new ShellStage(report.ShellDir, report.Version), report.Workspace);
+                ExitTrace.Write("壳重启请求：started=" + started + " dir=" + report.ShellDir);
+                if (!started)
+                {
+                    // helper 没起来就退出等于把整个壳丢掉（没人接手）：留在当前版本，把原因说清楚
+                    AppLog.Error("壳重启没有启动起来，继续用当前壳：" + report.ShellDir);
+                    return;
+                }
                 Application.Exit();
             };
             form.FormClosed += (_, _) => _iterationForm = null;

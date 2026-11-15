@@ -356,7 +356,7 @@ namespace OpenLoop.Service.Loop
                 _ => Reasoners.Create(settings, model, effort, workspace),
                 features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath, settings.UseAgentsMd,
                 AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(model, settings),
-                OpenLoop.Service.Web.PuppetTools.For());
+                OpenLoop.Service.Web.PuppetTools.For(), settings.WebFetchMode);
         }
 
         private static string DivergedWorkerExe()

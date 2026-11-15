@@ -50,6 +50,7 @@ namespace OpenLoop.App
             _switchFullAccess.Checked = _source.FullAccess;
             _switchAutoApprove.Checked = _source.AutoApprove;
             _switchOpenCode.Checked = _source.OpenCodeAskPermissions;
+            _cboWebFetch.SelectedValue = string.IsNullOrWhiteSpace(_source.WebFetchMode) ? "allow" : _source.WebFetchMode;
             _switchAgents.Checked = _source.UseAgentsMd;
             _switchThinking.Checked = _source.ThinkingExpandedByDefault;
             _switchAutoEvolve.Checked = _source.AutoEvolve;
@@ -638,6 +639,7 @@ namespace OpenLoop.App
                 FullAccess = _switchFullAccess.Checked,
                 AutoApprove = _switchAutoApprove.Checked,
                 OpenCodeAskPermissions = _switchOpenCode.Checked,
+                WebFetchMode = _cboWebFetch.SelectedValue as string ?? _source.WebFetchMode,
                 //记住的「后续都许可」由审批弹框写入，设置页不重置
                 AllowOutsideWorkspace = _source.AllowOutsideWorkspace,
                 AllowSensitiveActions = _source.AllowSensitiveActions,

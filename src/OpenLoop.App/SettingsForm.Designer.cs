@@ -9,6 +9,12 @@ namespace OpenLoop.App
         private AntdUI.TabPage _pageGeneral;
         private AntdUI.TabPage _pageModels;
         private AntdUI.TabPage _pageOpenCode;
+        private TableLayoutPanel _tools;
+        private AntdUI.Label _lblWebFetch;
+        private AntdUI.Select _cboWebFetch;
+        private AntdUI.Label _lblWebFetchHint;
+        private AntdUI.Label _lblToolsNote;
+        private AntdUI.TabPage _pageTools;
         private TableLayoutPanel _skills;
         private TableLayoutPanel _skillHeader;
         private AntdUI.Select _selSkillScope;
@@ -107,6 +113,7 @@ namespace OpenLoop.App
             _pageGeneral = new AntdUI.TabPage();
             _pageModels = new AntdUI.TabPage();
             _pageOpenCode = new AntdUI.TabPage();
+            _pageTools = new AntdUI.TabPage();
             _pageSkills = new AntdUI.TabPage();
 
             _skills = new TableLayoutPanel();
@@ -143,6 +150,11 @@ namespace OpenLoop.App
             _lblOpenCodeHint = new AntdUI.Label();
             _lblOpenCodeNote = new AntdUI.Label();
             _openCode = new TableLayoutPanel();
+            _tools = new TableLayoutPanel();
+            _lblWebFetch = new AntdUI.Label();
+            _cboWebFetch = new AntdUI.Select();
+            _lblWebFetchHint = new AntdUI.Label();
+            _lblToolsNote = new AntdUI.Label();
             _lblAgents = new AntdUI.Label();
             _agentsFlow = new FlowLayoutPanel();
             _switchAgents = new AntdUI.Switch();
@@ -215,6 +227,10 @@ namespace OpenLoop.App
             _pageOpenCode.Text = "OpenCode";
             _pageOpenCode.ReadOnly = true;
             _pageOpenCode.Dock = DockStyle.Fill;
+
+            _pageTools.Text = "工具";
+            _pageTools.ReadOnly = true;
+            _pageTools.Dock = DockStyle.Fill;
 
             _pageSkills.Text = "技能";
             _pageSkills.ReadOnly = true;
@@ -418,6 +434,47 @@ namespace OpenLoop.App
             _openCode.Controls.Add(_lblOpenCodeNote, 0, 1);
             _openCode.SetColumnSpan(_lblOpenCodeNote, 2);
             _pageOpenCode.Controls.Add(_openCode);
+
+            // 工具
+            _tools.Dock = DockStyle.Fill;
+            _tools.ColumnCount = 2;
+            _tools.RowCount = 3;
+            _tools.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
+            _tools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _tools.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _tools.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _tools.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            _tools.Padding = new Padding(8, 16, 8, 8);
+
+            ConfigureLabel(_lblWebFetch, "WebFetch");
+
+            _cboWebFetch.Dock = DockStyle.Fill;
+            _cboWebFetch.Radius = 8;
+            _cboWebFetch.Margin = new Padding(0, 6, 240, 6);
+            _cboWebFetch.Items.Add(new AntdUI.SelectItem("免审批（默认）") { Tag = "allow" });
+            _cboWebFetch.Items.Add(new AntdUI.SelectItem("每次审批") { Tag = "ask" });
+            _cboWebFetch.Items.Add(new AntdUI.SelectItem("关闭") { Tag = "off" });
+
+            _lblWebFetchHint.AutoSize = true;
+            _lblWebFetchHint.Text = "只读抓取 http/https 网页正文并转纯文本；不执行 JavaScript，内容按不可信数据处理";
+            _lblWebFetchHint.Font = new Font("Segoe UI", 8.5F);
+            _lblWebFetchHint.ForeColor = UiStyle.Muted;
+            _lblWebFetchHint.Margin = new Padding(0, 11, 0, 0);
+
+            _lblToolsNote.AutoSize = false;
+            _lblToolsNote.Dock = DockStyle.Fill;
+            _lblToolsNote.Text = "内网与环回地址一律拒绝；只抓文本/HTML/JSON/XML，单页最多 2MB，结果默认 6000 字符。Worker 与 Loop 同时生效。";
+            _lblToolsNote.Font = new Font("Segoe UI", 8.5F);
+            _lblToolsNote.ForeColor = UiStyle.Muted;
+            _lblToolsNote.TextAlign = ContentAlignment.TopLeft;
+            _lblToolsNote.Margin = new Padding(0, 10, 0, 0);
+
+            _tools.Controls.Add(_lblWebFetch, 0, 0);
+            _tools.Controls.Add(_cboWebFetch, 1, 0);
+            _tools.Controls.Add(_lblWebFetchHint, 1, 1);
+            _tools.Controls.Add(_lblToolsNote, 0, 2);
+            _tools.SetColumnSpan(_lblToolsNote, 2);
+            _pageTools.Controls.Add(_tools);
 
             // 模型
             _models.Dock = DockStyle.Fill;
@@ -692,6 +749,7 @@ namespace OpenLoop.App
 
             _tabs.Pages.Add(_pageGeneral);
             _tabs.Pages.Add(_pageOpenCode);
+            _tabs.Pages.Add(_pageTools);
             _tabs.Pages.Add(_pageModels);
             _tabs.Pages.Add(_pageSkills);
 
