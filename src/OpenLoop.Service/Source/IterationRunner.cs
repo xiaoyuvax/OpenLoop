@@ -83,7 +83,8 @@ namespace OpenLoop.Service.Source
                 (node, declared) => CurrentVersion(node.Id, declared, state, shellExe),
                 scan.Fingerprint,
                 (node, version) => VersionBump.WriteVersion(node.Id, null, version),
-                (node, nodeState) => pending[node.Id] = nodeState);
+                (node, nodeState) => pending[node.Id] = nodeState,
+                node => RunningBinaryVersion(node.Id, shellExe));
 
             VersionState.SavePending(pending);
 
@@ -99,8 +100,8 @@ namespace OpenLoop.Service.Source
         }
 
         /// <summary>
-        /// 计划判断本身（不碰 git、不碰 dotnet）：冷启动（没有基准）时所有节点都算污染，
-        /// 只升 patch；指纹或人工改过的号与基准不一致时也要重编。
+        /// 计划判断本身（不碰 git、不碰 dotnet）：冷启动（没有基准）时，运行中的二进制报的号与源码声明的号一致就算干净，
+        /// 其余节点算污染只升 patch；指纹或人工改过的号与基准不一致时也要重编。
         /// </summary>
         internal static List<RolePlan> Decide(
             IReadOnlyList<VersionNode> nodes,
@@ -110,7 +111,8 @@ namespace OpenLoop.Service.Source
             Func<VersionNode, string, string> currentOf,
             Func<VersionNode, IReadOnlyDictionary<string, string>, IReadOnlyDictionary<string, string>, NodeFingerprint> fingerprintOf,
             Action<VersionNode, string> write,
-            Action<VersionNode, NodeState> record = null)
+            Action<VersionNode, NodeState> record = null,
+            Func<VersionNode, string> binaryOf = null)
         {
             var plans = new List<RolePlan>();
             var versions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -126,10 +128,24 @@ namespace OpenLoop.Service.Source
 
                 NodeState previous = null;
                 bool known = !cold && state.TryGetValue(node.Id, out previous) && previous != null;
-                bool polluted = !known
-                                || !string.Equals(previous.Fingerprint, fingerprint.Value, StringComparison.Ordinal)
-                                // 号被人手工改过（没经过上一轮计划）：按新号重编，不能悄悄跳过
-                                || !SourceSync.SameVersion(previous.Version, declared);
+                bool polluted;
+                if (!known)
+                {
+                    // 没有基准（冷启动）时靠二进制自己报的号判断：号一样就不算改过，别白升一版
+                    // （库与外部组件没有自己的二进制，只能信源码声明的号）；
+                    // 上游这轮动过的话，下游的二进制里装的还是旧上游，必须跟着重编。
+                    string binary = binaryOf?.Invoke(node) ?? "";
+                    bool binaryDiffers = binary.Length > 0 && !SourceSync.SameVersion(binary, declared);
+                    bool upstreamMoved = plans.Any(p => p.Update
+                        && (node.Upstream ?? []).Contains(p.Role, StringComparer.OrdinalIgnoreCase));
+                    polluted = binaryDiffers || upstreamMoved;
+                }
+                else
+                {
+                    polluted = !string.Equals(previous.Fingerprint, fingerprint.Value, StringComparison.Ordinal)
+                               // 号被人手工改过（没经过上一轮计划）：按新号重编，不能悄悄跳过
+                               || !SourceSync.SameVersion(previous.Version, declared);
+                }
 
                 string target = declared;
                 if (polluted)
@@ -177,16 +193,22 @@ namespace OpenLoop.Service.Source
             }
         }
 
+        /// <summary>
+        /// 正在跑的二进制自己报的版本（A/I 看运行态、壳看它自己的 exe）；没有二进制的节点返回空串。
+        /// 冷启动时靠它判断「源码号 = 二进制号」，免得存档丢了就白升一轮。
+        /// </summary>
+        private static string RunningBinaryVersion(string id, string shellExe) => id switch
+        {
+            BusRoles.A or BusRoles.I => RoleVersion(id),
+            "shell" => ExeVersion(string.IsNullOrWhiteSpace(shellExe) ? Environment.ProcessPath : shellExe),
+            _ => ""
+        };
+
         /// <summary>现版本：A/I/壳看运行态，库与外部组件看基准；都读不到就用声明号（冷启动时它会被 patch+1）。</summary>
         private static string CurrentVersion(
             string id, string declared, IReadOnlyDictionary<string, NodeState> state, string shellExe)
         {
-            string current = id switch
-            {
-                BusRoles.A or BusRoles.I => RoleVersion(id),
-                "shell" => ExeVersion(string.IsNullOrWhiteSpace(shellExe) ? Environment.ProcessPath : shellExe),
-                _ => ""
-            };
+            string current = RunningBinaryVersion(id, shellExe);
             if (!string.IsNullOrWhiteSpace(current)) return current;
             if (state != null && state.TryGetValue(id, out var node) && !string.IsNullOrWhiteSpace(node?.Version))
                 return node.Version;

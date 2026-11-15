@@ -187,7 +187,10 @@ namespace OpenLoop.Service.Shell
             File.Move(temp, path, true);
         }
 
-        /// <summary>每个角色只留最近 <paramref name="keep"/> 份（含正在跑的与可回退的），其余删目录。</summary>
+        /// <summary>
+        /// 每个角色只留 <paramref name="keep"/> 份（默认 2 = 正在跑的 + 可回退的上一版）；
+        /// current/previous 指向的目录永不删，配额先留给最新的其余目录。启动时与换版后各清一次。
+        /// </summary>
         public void Prune(string role, int keep = 2)
         {
             try
@@ -197,15 +200,21 @@ namespace OpenLoop.Service.Shell
 
                 string current = Normalize(Current(role)?.Dir);
                 string previous = Normalize(Previous(role)?.Dir);
-                var rest = Directory.GetDirectories(dir)
-                    .Where(d => !SameDir(d, current) && !SameDir(d, previous))
+                var all = Directory.GetDirectories(dir)
                     .OrderByDescending(Directory.GetLastWriteTimeUtc)
-                    .Skip(Math.Max(0, keep - 1))
                     .ToList();
 
-                foreach (string old in rest)
+                int budget = Math.Max(0, keep - all.Count(d => SameDir(d, current) || SameDir(d, previous)));
+                foreach (string item in all)
                 {
-                    try { Directory.Delete(old, true); } catch { }
+                    if (SameDir(item, current) || SameDir(item, previous)) continue;
+                    if (budget > 0)
+                    {
+                        budget--;
+                        continue;
+                    }
+
+                    try { Directory.Delete(item, true); } catch { }
                 }
             }
             catch

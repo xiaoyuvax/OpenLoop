@@ -111,16 +111,35 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
-        public void Decide_cold_start_bumps_every_node_once()
+        public void Decide_cold_start_trusts_the_binaries_that_report_the_declared_version()
         {
-            var harness = new PlanHarness();
+            var harness = new PlanHarness();                 // 没有基准 = 冷启动
+            harness.Binary["a"] = "0.1.0";
+            harness.Binary["i"] = "0.1.0";
+            harness.Binary["shell"] = "0.1.0";
 
             var plans = harness.Plan();
 
-            Assert.All(plans, p => Assert.True(p.Update));
-            Assert.All(plans, p => Assert.Equal("0.1.1", p.Target));
-            Assert.Equal("0.1.1", harness.Declared["core"]);
-            Assert.Equal("0.1.1", harness.Declared["shell"]);
+            // 源码号 = 二进制号：不用重编，但要把基准补回去，下一轮才有对照
+            Assert.All(plans, p => Assert.False(p.Update));
+            Assert.Empty(harness.Written);
+            Assert.All(plans, p => Assert.Equal(harness.Declared[p.Role], harness.Pending[p.Role].Version));
+        }
+
+        [Fact]
+        public void Decide_cold_start_bumps_a_node_whose_binary_is_at_another_version()
+        {
+            var harness = new PlanHarness();
+            harness.Binary["a"] = "0.0.9";
+            harness.Binary["i"] = "0.1.0";
+            harness.Binary["shell"] = "0.1.0";
+
+            var plans = harness.Plan();
+
+            Assert.Equal("0.1.1", plans.Single(p => p.Role == "a").Target);
+            Assert.False(plans.Single(p => p.Role == "i").Update);
+            Assert.False(plans.Single(p => p.Role == "shell").Update);
+            Assert.Equal("0.1.1", harness.Declared["a"]);
         }
 
         [Fact]
@@ -199,21 +218,22 @@ namespace OpenLoop.Service.Tests
             harness.Content["core"] = "core-3";
             var second = harness.Plan();
 
-            Assert.Equal("0.1.2", first.Single(p => p.Role == "core").Target);
-            Assert.Equal("0.1.2", second.Single(p => p.Role == "core").Target);
+            Assert.Equal("0.1.1", first.Single(p => p.Role == "core").Target);
+            Assert.Equal("0.1.1", second.Single(p => p.Role == "core").Target);
         }
 
         [Fact]
         public void Decide_retries_the_planned_number_when_no_baseline_was_promoted()
         {
             var harness = new PlanHarness();
+            harness.Binary["a"] = "0.0.9";         // 二进制落后，冷启动就会升它
 
-            var first = harness.Plan();           // 冷启动：0.1.1，但没 Promote
+            var first = harness.Plan();           // 0.1.1，但没 Promote
             var second = harness.Plan();          // 同一份内容：不往上再跳一版
 
-            Assert.Equal("0.1.1", first.Single(p => p.Role == "core").Target);
-            Assert.Equal("0.1.1", second.Single(p => p.Role == "core").Target);
-            Assert.True(second.Single(p => p.Role == "core").Update);
+            Assert.Equal("0.1.1", first.Single(p => p.Role == "a").Target);
+            Assert.Equal("0.1.1", second.Single(p => p.Role == "a").Target);
+            Assert.True(second.Single(p => p.Role == "a").Update);
         }
 
         /// <summary>把 Decide 接到内存里的节点图上：不碰磁盘，但保留「用上游本轮目标版本算指纹」的语义。</summary>
@@ -233,6 +253,8 @@ namespace OpenLoop.Service.Tests
 
             public readonly Dictionary<string, string> Written = new(StringComparer.OrdinalIgnoreCase);
             public readonly Dictionary<string, NodeState> Pending = new(StringComparer.OrdinalIgnoreCase);
+            /// <summary>运行中的二进制自己报的版本；没有条目的节点（库/外部组件）当作读不到。</summary>
+            public readonly Dictionary<string, string> Binary = new(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, NodeState> State;
 
             private static VersionNode[] Graph() =>
@@ -271,7 +293,8 @@ namespace OpenLoop.Service.Tests
                         Declared[node.Id] = version;
                         Written[node.Id] = version;
                     },
-                    (node, state) => Pending[node.Id] = state);
+                    (node, state) => Pending[node.Id] = state,
+                    node => Binary.TryGetValue(node.Id, out var binary) ? binary : null);
             }
 
             public void Promote() => State = new Dictionary<string, NodeState>(Pending, StringComparer.OrdinalIgnoreCase);

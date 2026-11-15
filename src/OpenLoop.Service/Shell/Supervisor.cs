@@ -42,6 +42,18 @@ namespace OpenLoop.Service.Shell
         /// </summary>
         public string RunDir => _runDir;
 
+        /// <summary>
+        /// 启动时清一次存档：每个角色只留「当前 + 上一版」。A/I 按登记排除正在跑与可回退的，
+        /// 壳没有登记（它从安装目录跑），按最新两份留。
+        /// </summary>
+        public void PruneArchives()
+        {
+            foreach (string role in new[] { BusRoles.A, BusRoles.I, "shell" })
+            {
+                try { _store.Prune(role); } catch { }
+            }
+        }
+
         /// <summary>换版前把会被覆盖的文件存进 versions\&lt;role&gt;\rollback-&lt;时间&gt;，安装失败时用它还原。</summary>
         private static string BackupDir(string role)
             => Path.Combine(AppPaths.VersionsDir, role, "rollback-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));

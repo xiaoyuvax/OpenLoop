@@ -31,6 +31,7 @@ namespace OpenLoop.App
             // 壳只负责拉起 A（Worker）。界面是它的客户端，不再在自己的进程里跑 Agent。
             var store = new VersionStore();
             using var supervisor = new Supervisor(message => AppLog.Info(message), store);
+            supervisor.PruneArchives();
             try
             {
                 string exe = Environment.GetEnvironmentVariable("OPENLOOP_A_PATH");

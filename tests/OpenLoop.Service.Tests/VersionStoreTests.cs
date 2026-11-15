@@ -147,23 +147,42 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
-        public void Prune_never_deletes_the_version_it_could_roll_back_to()
+        public void Prune_keeps_only_the_current_and_the_rollback_target()
         {
-            string previous = MakeVersion("a", "0.9.0-aaa");
+            string oldest = MakeVersion("a", "0.9.0-aaa");
             string middle = MakeVersion("a", "1.0.0-bbb");
             string current = MakeVersion("a", "1.0.1-ccc");
-            Directory.SetLastWriteTimeUtc(previous, DateTime.UtcNow.AddDays(-3));
+            Directory.SetLastWriteTimeUtc(oldest, DateTime.UtcNow.AddDays(-3));
             Directory.SetLastWriteTimeUtc(middle, DateTime.UtcNow.AddDays(-2));
             Directory.SetLastWriteTimeUtc(current, DateTime.UtcNow.AddDays(-1));
 
             var store = new VersionStore(_root);
-            store.Activate("a", new VersionEntry { Version = "0.9.0", Dir = previous });
+            store.Activate("a", new VersionEntry { Version = "0.9.0", Dir = oldest });
             store.Activate("a", new VersionEntry { Version = "1.0.0", Dir = middle });
             store.Activate("a", new VersionEntry { Version = "1.0.1", Dir = current });
             store.Prune("a", keep: 2);
 
-            Assert.True(Directory.Exists(previous));
+            // current + previous.json 指向的那份留下，再早的删掉
+            Assert.False(Directory.Exists(oldest));
+            Assert.True(Directory.Exists(middle));
             Assert.True(Directory.Exists(current));
+        }
+
+        [Fact]
+        public void Prune_without_a_registry_keeps_the_two_newest_shell_archives()
+        {
+            string oldest = MakeVersion("shell", "0.1.9-aaa", withExe: false);
+            string middle = MakeVersion("shell", "0.1.10-bbb", withExe: false);
+            string newest = MakeVersion("shell", "0.1.11-ccc", withExe: false);
+            Directory.SetLastWriteTimeUtc(oldest, DateTime.UtcNow.AddDays(-3));
+            Directory.SetLastWriteTimeUtc(middle, DateTime.UtcNow.AddDays(-2));
+            Directory.SetLastWriteTimeUtc(newest, DateTime.UtcNow.AddDays(-1));
+
+            new VersionStore(_root).Prune("shell");
+
+            Assert.False(Directory.Exists(oldest));
+            Assert.True(Directory.Exists(middle));
+            Assert.True(Directory.Exists(newest));
         }
     }
 }
