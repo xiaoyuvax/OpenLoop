@@ -229,6 +229,48 @@ namespace OpenLoop.App
             RemoveProjectRequested?.Invoke(_project);
         }
 
+        /// <summary>项目右键：打开工作区路径 / 新建会话 / 删除项目（项目下的会话与对话记录一并删除）。</summary>
+        private void OnMenuMouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right) return;
+            var item = _menu.HitTest(e.X, e.Y);
+            if (item?.Tag is not string workspace || string.IsNullOrEmpty(workspace)) return;
+
+            //右键同时选中该项目，菜单里的动作与右侧列表保持一致
+            _menu.Select(item, true);
+            var items = new AntdUI.IContextMenuStripItem[]
+            {
+                new AntdUI.ContextMenuStripItem("打开工作区路径") { ID = "open" },
+                new AntdUI.ContextMenuStripItem("新建会话") { ID = "new" },
+                new AntdUI.ContextMenuStripItemDivider(),
+                new AntdUI.ContextMenuStripItem("删除项目") { ID = "remove" }
+            };
+            AntdUI.ContextMenuStrip.open(_menu, selected => OnProjectMenu(workspace, selected?.ID), items);
+        }
+
+        private void OnProjectMenu(string workspace, string id)
+        {
+            switch (id)
+            {
+                case "open": OpenWorkspace(workspace); break;
+                case "new": NewSessionRequested?.Invoke(workspace); break;
+                case "remove": RemoveProjectRequested?.Invoke(workspace); break;
+            }
+        }
+
+        private static void OpenWorkspace(string workspace)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo { FileName = workspace, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("打开工作区失败：" + ex.Message);
+            }
+        }
+
         private void OnNewSession(object sender, EventArgs e)
         {
             // [Loop] 页没有项目：新建的 Loop 会话工作区取安装目录；空 id = 开一个新的会话，不续用同工作区旧对话

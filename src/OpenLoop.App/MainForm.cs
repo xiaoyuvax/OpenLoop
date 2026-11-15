@@ -1660,7 +1660,7 @@ namespace OpenLoop.App
             var store = new global::OpenLoop.Service.Shell.VersionStore();
             string exe = store.Exe(role);
             if (string.IsNullOrWhiteSpace(exe))
-                exe = System.IO.Path.Combine(AppContext.BaseDirectory, "worker",
+                exe = System.IO.Path.Combine(AppContext.BaseDirectory, "backends",
                     global::OpenLoop.Service.Shell.VersionStore.ExeName(role));
             return ExeVersion(exe);
         }

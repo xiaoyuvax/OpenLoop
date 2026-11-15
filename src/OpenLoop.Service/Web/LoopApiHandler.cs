@@ -84,7 +84,7 @@ namespace OpenLoop.Service.Web
                         if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
                         try
                         {
-                            return Json(req, _iteration.Start(body.Workspace, body.Shell), 202);
+                            return Json(req, _iteration.Start(body.Workspace, body.Shell, body.PublishMode), 202);
                         }
                         catch (InvalidOperationException ex)
                         {
@@ -224,6 +224,9 @@ namespace OpenLoop.Service.Web
 
             /// <summary>是否连壳一起换；Puppet 的无窗口迭代传 false。</summary>
             public bool Shell { get; set; } = true;
+
+            /// <summary>发布形态：framework（默认，需本机装 .NET）/ selfcontained（自带框架）。</summary>
+            public string PublishMode { get; set; }
         }
 
         private sealed class WorkspaceRequest

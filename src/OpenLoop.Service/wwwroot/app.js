@@ -363,9 +363,12 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
   const composer = h('div', { style: { flex: 'none', padding: '4px 16px 8px', borderTop: pending ? '0' : '1px solid #f0f0f0' } },
     h(Input.TextArea, {
       value: text, onChange: e => setText(e.target.value), autoSize: { minRows: 3, maxRows: 10 },
-      placeholder: '描述任务，或声明判据 / 纠正（Ctrl+Enter 发送）',
+      placeholder: '描述任务，或声明判据 / 纠正（Enter 发送，Shift+Enter 换行）',
       onKeyDown: e => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+        // 与 WinForms 一致：Enter 即时发送，Shift+Enter 软换行；输入法组字中的 Enter 不算
+        if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return;
+        e.preventDefault();
+        send();
       }
     }),
     toolbar);
@@ -425,6 +428,7 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
   const [ruleName, setRuleName] = useState('');
   const [ruleText, setRuleText] = useState('');
   const [shellIncluded, setShellIncluded] = useState(true);
+  const [publishMode, setPublishMode] = useState('framework');
   const wsRef = useRef(workspace);
   useEffect(() => { wsRef.current = workspace; }, [workspace]);
   useEffect(() => { if (!workspace && defaultWorkspace) setWorkspace(defaultWorkspace); }, [defaultWorkspace]);
@@ -571,7 +575,7 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
             const ws = workspace.trim();
             if (!ws) return message.warning('先填工作目录');
             try {
-              setIteration(await post('/api/loop/iteration', { workspace: ws, shell: shellIncluded }));
+              setIteration(await post('/api/loop/iteration', { workspace: ws, shell: shellIncluded, publishMode }));
               setTimeout(pollIteration, 2000);
             } catch (e) { message.error('迭代启动失败：' + e.message); }
           }
@@ -595,7 +599,17 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
           onClick: () => post('/api/loop/iteration/stop', {}).catch(e => message.error(e.message))
         }, '停止'),
         h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
-          h(Switch, { size: 'small', checked: shellIncluded, onChange: setShellIncluded }), '连壳')),
+          h(Switch, { size: 'small', checked: shellIncluded, onChange: setShellIncluded }), '连壳'),
+        h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
+          '形态',
+          h(Select, {
+            size: 'small', style: { width: 200 }, value: publishMode, onChange: setPublishMode,
+            disabled: iteration?.state === 'running',
+            options: [
+              { value: 'framework', label: '框架依赖（需装 .NET）' },
+              { value: 'selfcontained', label: '自带框架' }
+            ]
+          }))),
       h(Muted, { style: { display: 'block', marginBottom: 8 } }, iterationText),
       plan ? h('pre', { className: 'ol-tools' }, plan) : null),
 

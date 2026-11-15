@@ -85,21 +85,21 @@ namespace OpenLoop.Service.Tests
             string root = Temp();
             try
             {
-                string source = Dir(root, "source");
+                string source = Dir(root, "staging");
                 string install = Dir(root, "install");
                 string backup = Path.Combine(root, "backup");
                 File.WriteAllText(Path.Combine(source, "OpenLoop.exe"), "NEW");
                 File.WriteAllText(Path.Combine(source, "new.txt"), "ADDED");
-                Directory.CreateDirectory(Path.Combine(install, "worker"));
+                Directory.CreateDirectory(Path.Combine(install, "backends"));
                 File.WriteAllText(Path.Combine(install, "OpenLoop.exe"), "OLD");
-                File.WriteAllText(Path.Combine(install, "worker", "own.txt"), "KEEP");
+                File.WriteAllText(Path.Combine(install, "backends", "own.txt"), "KEEP");
 
                 ShellUpdate.Copy(source, install, backup);
 
                 Assert.Equal("NEW", File.ReadAllText(Path.Combine(install, "OpenLoop.exe")));
                 Assert.Equal("OLD", File.ReadAllText(Path.Combine(backup, "OpenLoop.exe")));
                 Assert.Equal("ADDED", File.ReadAllText(Path.Combine(install, "new.txt")));
-                Assert.Equal("KEEP", File.ReadAllText(Path.Combine(install, "worker", "own.txt")));   // 不镜像
+                Assert.Equal("KEEP", File.ReadAllText(Path.Combine(install, "backends", "own.txt")));   // 不镜像
 
                 ShellUpdate.Restore(backup, install);
                 Assert.Equal("OLD", File.ReadAllText(Path.Combine(install, "OpenLoop.exe")));
@@ -275,6 +275,37 @@ namespace OpenLoop.Service.Tests
             }
 
             public void Promote() => State = new Dictionary<string, NodeState>(Pending, StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// 两套发布参数都是单文件，差别只在「自带框架」：只有它开压缩
+        /// （框架依赖 + 压缩会被 SDK 拒绝，NETSDK1176）；RID 必须显式给（NETSDK1191）。
+        /// </summary>
+        [Fact]
+        public void Publish_args_follow_the_publish_mode()
+        {
+            string[] framework = Iteration.PublishArgs(null, "out");
+            string[] bundled = Iteration.PublishArgs(Iteration.SelfContainedMode, "out");
+
+            foreach (string[] args in new[] { framework, bundled })
+            {
+                Assert.Contains("-p:PublishSingleFile=true", args);
+                Assert.Equal(Iteration.RuntimeIdentifier, ArgAfter(args, "-r"));
+            }
+
+            Assert.Equal("false", ArgAfter(framework, "--self-contained"));
+            Assert.DoesNotContain("-p:EnableCompressionInSingleFile=true", framework);
+
+            Assert.Equal("true", ArgAfter(bundled, "--self-contained"));
+            Assert.Contains("-p:EnableCompressionInSingleFile=true", bundled);
+            // RID 必须是可移植形态（win-x64 / linux-arm64…）：空串或带路径的都会让 publish 直接失败
+            Assert.Matches("^[a-z]+(-[a-z0-9]+)+$", Iteration.RuntimeIdentifier);
+        }
+
+        private static string ArgAfter(string[] args, string name)
+        {
+            int index = Array.IndexOf(args, name);
+            return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
         }
 
         private static string Temp()

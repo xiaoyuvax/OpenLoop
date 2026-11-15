@@ -21,6 +21,55 @@ namespace OpenLoop.Service.Source
 
         private const string Solution = "OpenLoop.slnx";
 
+        /// <summary>框架依赖（默认）：目标机要装 .NET，三个 exe 共享系统那一份框架。</summary>
+        public const string FrameworkMode = "framework";
+
+        /// <summary>自带框架：每个 exe 各带一份运行时，目标机不用装 .NET。</summary>
+        public const string SelfContainedMode = "selfcontained";
+
+        /// <summary>当前机器的可移植 RID（win-x64 / linux-x64 / osx-arm64 …），自带框架发布要用它。</summary>
+        public static string RuntimeIdentifier
+        {
+            get
+            {
+                string rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+                if (!string.IsNullOrWhiteSpace(rid)) return rid;
+                return OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsMacOS() ? "osx-x64" : "linux-x64";
+            }
+        }
+
+        /// <summary>
+        /// 发布参数集：两套都是单文件，差别只在「要不要自带框架」。
+        /// 单文件必须显式给 RID（否则 SDK 报 NETSDK1191）；自带框架才带压缩
+        /// ——框架依赖 + 压缩会被 SDK 拒绝（NETSDK1176）。
+        /// </summary>
+        internal static string[] PublishArgs(string publishMode, string output)
+        {
+            var args = new List<string>
+            {
+                "-c", "Release", "-o", output, "--nologo", "-v", "q",
+                "-r", RuntimeIdentifier,
+                "-p:PublishSingleFile=true",
+                "-p:PublishReadyToRun=false",
+                "-p:PublishTrimmed=false",
+                "-p:DebugType=embedded",
+                "-p:DebugSymbols=false"
+            };
+
+            if (string.Equals(publishMode, SelfContainedMode, StringComparison.OrdinalIgnoreCase))
+            {
+                args.AddRange(["--self-contained", "true",
+                    "-p:IncludeNativeLibrariesForSelfExtract=true",
+                    "-p:EnableCompressionInSingleFile=true"]);
+            }
+            else
+            {
+                args.AddRange(["--self-contained", "false"]);
+            }
+
+            return [.. args];
+        }
+
         public static async Task<Step> BuildAsync(CancellationToken ct = default)
         {
             string root = SourceSync.SourceRoot;
@@ -33,7 +82,8 @@ namespace OpenLoop.Service.Source
         }
 
         /// <summary>发布一个角色到 <c>versions/&lt;role&gt;/&lt;version&gt;-&lt;sha8&gt;/</c>，返回目录。</summary>
-        public static async Task<Step> PublishAsync(string role, string version, CancellationToken ct = default)
+        public static async Task<Step> PublishAsync(
+            string role, string version, string publishMode = null, CancellationToken ct = default)
         {
             string root = SourceSync.SourceRoot;
             string temp = Path.Combine(Path.GetTempPath(), $"openloop-{role}-{Guid.NewGuid():N}");
@@ -41,7 +91,7 @@ namespace OpenLoop.Service.Source
             {
                 var (ok, output) = await ExecAsync("dotnet",
                     ["publish", Path.Combine("src", "OpenLoop." + role.ToUpperInvariant()),
-                        "-c", "Release", "-o", temp, "--nologo", "-v", "q"], root, ct);
+                        .. PublishArgs(publishMode, temp)], root, ct);
                 if (!ok) return new("publish " + role, false, Tail(output, 12));
 
                 string exe = VersionStore.ExePath(temp, role);

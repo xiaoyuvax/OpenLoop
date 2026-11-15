@@ -463,7 +463,11 @@ namespace OpenLoop.App
             foreach (var skill in catalog.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
             {
                 _skillRows.Add(new SkillRow(skill.Name, skill.Description,
-                    enabled.Contains(skill.Name), skill.Global ? "全局" : "项目", skill));
+                    enabled.Contains(skill.Name),
+                    skill.Global ? "全局"
+                        : (skill.Source ?? "").StartsWith(".opencode/", StringComparison.Ordinal) ? "项目 .opencode"
+                        : "项目",
+                    skill));
             }
             RebindSkills();
         }
@@ -552,6 +556,13 @@ namespace OpenLoop.App
             if (!GlobalSkillScope && row.Skill.Global)
             {
                 AntdUI.Notification.warn(this, "卸载技能", "全局技能请切到「全局」里卸载", AntdUI.TAlignFrom.TR, null, 4);
+                return;
+            }
+            //.opencode 下的是 opencode agent 装的：不归 OpenLoop 管，也不在技能库根目录下
+            if (!GlobalSkillScope && (row.Skill.Source ?? "").StartsWith(".opencode/", StringComparison.Ordinal))
+            {
+                AntdUI.Notification.warn(this, "卸载技能",
+                    "这个技能装在 .opencode/skills 里，由 opencode 安装，请在那里删除", AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
             if (MessageBox.Show(this,

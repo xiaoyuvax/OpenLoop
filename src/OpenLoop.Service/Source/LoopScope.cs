@@ -25,7 +25,7 @@ namespace OpenLoop.Service.Source
 
         /// <summary>
         /// 与源码同级、随本仓库一起编译的组件仓库：PuppetCore 两平台都要，ChatFlow 只有 Windows 版本编译。
-        /// 开发布局这是同级检出；安装布局这是 <c>&lt;安装根&gt;\source\</c> 下的克隆（本来就在 InstallRoot 里）。
+        /// 开发布局这是同级检出；安装布局这是 <c>&lt;安装根&gt;\src\</c> 下的克隆（本来就在 InstallRoot 里）。
         /// </summary>
         public static IEnumerable<string> IterableComponents()
         {

@@ -15,14 +15,14 @@ namespace OpenLoop.Shell
             if (ShellUpdate.IsRequested(args))
                 return ShellUpdate.Run(args);
 
-            // 更新过的版本记在 current.json：先看它，再看随包 worker/（与 Windows 壳一致）
+            // 更新过的版本记在 current.json：先看它，再看随包 backends/（与 Windows 壳一致）
             var store = new VersionStore();
             string aPath = Resolve(args, "--a", "OPENLOOP_A_PATH", BusRoles.A, store);
             string iPath = Resolve(args, "--i", "OPENLOOP_I_PATH", BusRoles.I, store);            if (aPath == null || iPath == null)
             {
                 Console.Error.WriteLine(
                     "找不到 A/I 可执行文件。用 --a/--i 或 OPENLOOP_A_PATH/OPENLOOP_I_PATH 指定路径；" +
-                    "默认在壳所在目录及其 worker/ 下找 " + ExeName(BusRoles.A) + " 与 " + ExeName(BusRoles.I) + "。");
+                    "默认在壳所在目录及其 backends/ 下找 " + ExeName(BusRoles.A) + " 与 " + ExeName(BusRoles.I) + "。");
                 return 2;
             }
 
@@ -75,8 +75,8 @@ namespace OpenLoop.Shell
             string current = store?.Exe(role);
             if (!string.IsNullOrWhiteSpace(current)) return Path.GetFullPath(current);
 
-            // 与 Windows 壳一致的布局：A/I 在 worker/ 子目录（各自带依赖），也可与壳并排。
-            foreach (string dir in new[] { Path.Combine(AppContext.BaseDirectory, "worker"), AppContext.BaseDirectory })
+            // 与 Windows 壳一致的布局：A/I 在 backends/ 子目录（各自带依赖），也可与壳并排。
+            foreach (string dir in new[] { Path.Combine(AppContext.BaseDirectory, "backends"), AppContext.BaseDirectory })
             {
                 string candidate = Path.Combine(dir, ExeName(role));
                 if (File.Exists(candidate)) return candidate;

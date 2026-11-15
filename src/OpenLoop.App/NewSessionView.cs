@@ -286,13 +286,16 @@ namespace OpenLoop.App
             Submit?.Invoke(new NewSessionRequest(_project, text, model, effort));
         }
 
-        private void OnInputKeyDown(object sender, KeyEventArgs e)
+        /// <summary>与对话页一致：Enter 发送，Shift+Enter 换行，Ctrl+Enter 发送。</summary>
+        private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
-            if (e.KeyCode == Keys.Enter && e.Control)
-            {
-                e.SuppressKeyPress = true;
-                OnSend(sender, EventArgs.Empty);
-            }
+            bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
+            bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
+            if (!shift && e.KeyData != Keys.Enter && !ctrl) return;
+
+            e.Result = false;
+            if (shift) { ComposerKeys.InsertSoftNewline(_txtInput); return; }
+            OnSend(sender, EventArgs.Empty);
         }
 
         private void Notify(string text, AntdUI.TState state)

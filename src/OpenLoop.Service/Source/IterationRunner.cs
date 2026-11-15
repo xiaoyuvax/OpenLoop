@@ -235,7 +235,8 @@ namespace OpenLoop.Service.Source
         /// 失败就停在原地并回传已完成的步骤，由调用方回退与报告。
         /// </summary>
         public static async Task<IterationReport> RunAsync(
-            List<RolePlan> plan, string workspace, Action<string> progress, CancellationToken ct = default)
+            List<RolePlan> plan, string workspace, Action<string> progress, CancellationToken ct = default,
+            string publishMode = null)
         {
             plan ??= [];
             var report = new IterationReport { Workspace = workspace, Version = UpdatedVersionText(plan) };
@@ -260,7 +261,7 @@ namespace OpenLoop.Service.Source
 
             if (needShell)
             {
-                var publish = await PublishShellAsync(VersionOf("shell"), ct);
+                var publish = await PublishShellAsync(VersionOf("shell"), publishMode, ct);
                 Add(publish);
                 if (!publish.Ok) return Finish(report, false);
                 report.ShellDir = publish.Detail;
@@ -269,7 +270,7 @@ namespace OpenLoop.Service.Source
 
             if (needA || needI)
             {
-                var publish = await Iteration.PublishAsync(BusRoles.A, VersionOf(BusRoles.A), ct);
+                var publish = await Iteration.PublishAsync(BusRoles.A, VersionOf(BusRoles.A), publishMode, ct);
                 Add(publish);
                 if (!publish.Ok) return Finish(report, false);
                 Iteration.PinSource(publish.Detail, BusRoles.A, VersionOf(BusRoles.A), sourceTree);
@@ -279,7 +280,7 @@ namespace OpenLoop.Service.Source
                 if (!stage.Ok) return Finish(report, false);
 
                 // 交接单：A 起来以后自己发布 / 登记 / 重启 I
-                if (needI) WriteLoopUpdate(VersionOf(BusRoles.I), sourceTree);
+                if (needI) WriteLoopUpdate(VersionOf(BusRoles.I), sourceTree, publishMode);
                 else ClearLoopUpdate();
 
                 int previousPid = RuntimeInfo.TryLoad(AppPaths.RuntimeFile(BusRoles.A))?.Pid ?? 0;
@@ -374,7 +375,8 @@ namespace OpenLoop.Service.Source
         }
 
         /// <summary>把壳的发布产物放到 versions/shell/&lt;版本-sha8&gt;；运行目录等最后一步再覆盖。</summary>
-        public static async Task<Iteration.Step> PublishShellAsync(string version, CancellationToken ct = default)
+        public static async Task<Iteration.Step> PublishShellAsync(
+            string version, string publishMode = null, CancellationToken ct = default)
         {
             string root = SourceSync.SourceRoot;
             string project = Path.Combine("src", OperatingSystem.IsWindows() ? "OpenLoop.App" : "OpenLoop.Shell");
@@ -382,7 +384,7 @@ namespace OpenLoop.Service.Source
             try
             {
                 var (ok, output) = await Iteration.ExecAsync("dotnet",
-                    ["publish", project, "-c", "Release", "-o", temp, "--nologo", "-v", "q"],
+                    ["publish", project, .. Iteration.PublishArgs(publishMode, temp)],
                     root, ct);
                 if (!ok) return new("publish shell", false, Iteration.Tail(output, 12));
 
@@ -529,18 +531,18 @@ namespace OpenLoop.Service.Source
         }
 
         /// <summary>A 启动时读交接单；读到就删掉，保证只跑一次。</summary>
-        public static (string Version, string SourceTree, bool Present) TakeLoopUpdate()
+        public static (string Version, string SourceTree, string PublishMode, bool Present) TakeLoopUpdate()
         {
             try
             {
-                if (!File.Exists(RequestPath)) return ("", "", false);
+                if (!File.Exists(RequestPath)) return ("", "", "", false);
                 var request = JsonSerializer.Deserialize<LoopUpdateRequest>(File.ReadAllBytes(RequestPath), BusProtocol.Json);
                 File.Delete(RequestPath);
-                return (request?.Version ?? "", request?.SourceTree ?? "", true);
+                return (request?.Version ?? "", request?.SourceTree ?? "", request?.PublishMode ?? "", true);
             }
             catch
             {
-                return ("", "", false);
+                return ("", "", "", false);
             }
         }
 
@@ -563,7 +565,7 @@ namespace OpenLoop.Service.Source
             }
         }
 
-        private static void WriteLoopUpdate(string version, string sourceTree)
+        private static void WriteLoopUpdate(string version, string sourceTree, string publishMode)
         {
             try
             {
@@ -571,7 +573,12 @@ namespace OpenLoop.Service.Source
                 // 上一轮的 result 必须清掉，否则 WaitLoopUpdateAsync 会立刻读到旧报告、以为 I 已经更完
                 File.Delete(ResultPath);
                 File.WriteAllBytes(RequestPath,
-                    JsonSerializer.SerializeToUtf8Bytes(new LoopUpdateRequest { Version = version, SourceTree = sourceTree }, BusProtocol.Json));
+                    JsonSerializer.SerializeToUtf8Bytes(new LoopUpdateRequest
+                    {
+                        Version = version,
+                        SourceTree = sourceTree,
+                        PublishMode = publishMode
+                    }, BusProtocol.Json));
             }
             catch
             {
@@ -638,7 +645,7 @@ namespace OpenLoop.Service.Source
             var store = new VersionStore();
             string exe = store.Exe(role);
             if (string.IsNullOrWhiteSpace(exe))
-                exe = Path.Combine(AppContext.BaseDirectory, "worker", VersionStore.ExeName(role));
+                exe = Path.Combine(AppContext.BaseDirectory, "backends", VersionStore.ExeName(role));
             return ExeVersion(exe);
         }
 
@@ -661,6 +668,8 @@ namespace OpenLoop.Service.Source
             public string Version { get; set; }
             /// <summary>本次构建的源码树（refs/openloop/version/i/&lt;版本&gt; 要指向它）。</summary>
             public string SourceTree { get; set; }
+            /// <summary>这一轮选定的发布形态（framework / selfcontained）。</summary>
+            public string PublishMode { get; set; }
         }
 
         private sealed class LoopUpdateResult

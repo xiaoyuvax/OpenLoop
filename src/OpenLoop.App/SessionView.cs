@@ -485,10 +485,12 @@ namespace OpenLoop.App
         /// </summary>
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
+            bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
             bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
-            if (e.KeyData != Keys.Enter && !ctrl) return;
+            if (!shift && e.KeyData != Keys.Enter && !ctrl) return;
 
             e.Result = false;
+            if (shift) { ComposerKeys.InsertSoftNewline(_txtInput); return; }
             if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
             if (!ctrl && _cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
             Submit(immediate: !ctrl);

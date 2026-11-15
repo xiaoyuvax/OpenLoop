@@ -23,7 +23,7 @@ namespace OpenLoop.Service.Source
     }
 
     /// <summary>
-    /// 启动时的源码同步：开发布局直接用同级组件仓库，安装布局才克隆/更新到 source\；
+    /// 启动时的源码同步：开发布局直接用同级组件仓库，安装布局才克隆/更新到 src\；
     /// 比较 OpenLoop 源码版本与运行版本（组件只报提交号）。
     /// 只 fetch 不 reset——工作树里可能有 Loop 的改动。
     /// 判定与执行分开：这里只回答「是什么状态」，迭代由 Loop 的迭代轮次负责。
@@ -50,7 +50,7 @@ namespace OpenLoop.Service.Source
                     File.Exists(Path.Combine(inherited.Trim(), "OpenLoop.slnx")))
                     return inherited.Trim();
 
-                return Path.Combine(InstallRoot, "source", "openloop");
+                return Path.Combine(InstallRoot, "src", "openloop");
             }
         }
 
@@ -79,9 +79,9 @@ namespace OpenLoop.Service.Source
             return string.IsNullOrEmpty(parent) ? null : Path.Combine(parent, folder);
         }
 
-        /// <summary>组件仓库根：与源码根同级。开发布局是同级检出，安装布局正好是 <c>source\</c> 下的克隆。</summary>
+        /// <summary>组件仓库根：与源码根同级。开发布局是同级检出，安装布局正好是 <c>src\</c> 下的克隆。</summary>
         public static string ComponentRoot(string folder)
-            => SiblingOf(SourceRoot, folder) ?? Path.Combine(InstallRoot, "source", folder);
+            => SiblingOf(SourceRoot, folder) ?? Path.Combine(InstallRoot, "src", folder);
 
         public static string PuppetRoot => ComponentRoot("PuppetCore");
 
@@ -132,7 +132,7 @@ namespace OpenLoop.Service.Source
                     Path.Combine("ChatFlow", "ChatFlow.csproj"), ct);
 
         /// <summary>
-        /// 组件仓库：同级位置已有检出（开发布局的同级仓库，或安装布局的 source\ 克隆）就直接用，
+        /// 组件仓库：同级位置已有检出（开发布局的同级仓库，或安装布局的 src\ 克隆）就直接用，
         /// 不 fetch，避免把 Loop 的改动冲掉；没有才克隆到同级位置。
         /// </summary>
         private static Task<SourceCheck> CheckComponentAsync(
@@ -274,12 +274,12 @@ namespace OpenLoop.Service.Source
             }
         }
 
-        /// <summary>安装布局的克隆（<c>InstallRoot\source\...</c>）：只有这种副本才用远端版本判断有没有新源码。</summary>
+        /// <summary>安装布局的克隆（<c>InstallRoot\src\...</c>）：只有这种副本才用远端版本判断有没有新源码。</summary>
         private static bool IsInstallClone(string root)
         {
             try
             {
-                string clone = Path.GetFullPath(Path.Combine(InstallRoot, "source")) + Path.DirectorySeparatorChar;
+                string clone = Path.GetFullPath(Path.Combine(InstallRoot, "src")) + Path.DirectorySeparatorChar;
                 return Path.GetFullPath(root).StartsWith(clone, StringComparison.OrdinalIgnoreCase);
             }
             catch
@@ -346,7 +346,7 @@ namespace OpenLoop.Service.Source
             return text;
         }
 
-        /// <summary>运行版本：优先 versions/current.json 里 A 的版本，其次 worker 目录里的 A 版本。</summary>
+        /// <summary>运行版本：优先 versions/current.json 里 A 的版本，其次 backends 目录里的 A 版本。</summary>
         public static string RunningVersion()
         {
             try
@@ -361,7 +361,7 @@ namespace OpenLoop.Service.Source
             try
             {
                 string worker = Path.Combine(
-                    AppContext.BaseDirectory, "worker",
+                    AppContext.BaseDirectory, "backends",
                     OperatingSystem.IsWindows() ? "OpenLoop.A.exe" : "OpenLoop.A");
                 if (File.Exists(worker))
                 {

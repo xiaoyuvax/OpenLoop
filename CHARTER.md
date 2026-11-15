@@ -38,18 +38,18 @@ Loop 的**读**权限与 Worker 相同：可以读机器上任意路径、克隆
   | 内容 | 路径 |
   |---|---|
   | 安装根 | 可执行文件所在目录（可用环境变量 `OPENLOOP_HOME` 覆盖） |
-  | OpenLoop 源码 | `<安装根>/source/openloop` |
-  | PuppetCore 源码 | `<安装根>/source/PuppetCore` |
-  | ChatFlow 源码 | `<安装根>/source/ChatFlow` |
+  | OpenLoop 源码 | `<安装根>/src/openloop` |
+  | PuppetCore 源码 | `<安装根>/src/PuppetCore` |
+  | ChatFlow 源码 | `<安装根>/src/ChatFlow` |
 
   理由：源码的可见性必须与二进制一致——装在私有目录就都私有，装在公共目录就都公有。
   若源码放私有目录、二进制放公共目录，多用户系统上会出现跨用户竞争（谁能改源码、谁在跑哪份二进制说不清）。
-  源码与二进制同根，版本比较才有意义：`<安装根>/source/openloop` 的版本号就是「下一次迭代要编译的那份」。
-- **开发布局**（当前目录就是 OpenLoop 仓库）：组件用同级检出（`../PuppetCore`、`../ChatFlow`），Loop 的写入边界包含这两个同级仓库。**安装布局**没有同级检出，克隆落在 `<安装根>/source/`。两处都只在缺检出时克隆：PuppetCore 必须，ChatFlow 仅 Windows 版本（其它平台不参与编译）。
+  源码与二进制同根，版本比较才有意义：`<安装根>/src/openloop` 的版本号就是「下一次迭代要编译的那份」。
+- **开发布局**（当前目录就是 OpenLoop 仓库）：组件用同级检出（`../PuppetCore`、`../ChatFlow`），Loop 的写入边界包含这两个同级仓库。**安装布局**没有同级检出，克隆落在 `<安装根>/src/`。两处都只在缺检出时克隆：PuppetCore 必须，ChatFlow 仅 Windows 版本（其它平台不参与编译）。
 - 同步只 `fetch`，不 `reset/checkout` 覆盖 Loop 在工作树里的改动；开发检出按本地工作树判断源码版本，
-  只有安装布局（`source/` 克隆）才以远端记录为准。
-- `source/PuppetCore` 用来同步演进 Puppet 工具：Puppet 是 Loop 探查 A + 壳状态的主要通道，可按需修订。
-- `source/ChatFlow` 同为可迭代组件（与 `openloop` 平级，壳在编译期按同级路径引用其源码）：对话渲染/交互归它，迭代后随 Windows 版 OpenLoop 一起编译。
+  只有安装布局（`src/` 克隆）才以远端记录为准。
+- `src/PuppetCore` 用来同步演进 Puppet 工具：Puppet 是 Loop 探查 A + 壳状态的主要通道，可按需修订。
+- `src/ChatFlow` 同为可迭代组件（与 `openloop` 平级，壳在编译期按同级路径引用其源码）：对话渲染/交互归它，迭代后随 Windows 版 OpenLoop 一起编译。
 
 ## 4. 版本与换版
 

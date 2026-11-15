@@ -297,6 +297,25 @@ public sealed class SkillTests : IDisposable
     }
 
     [Fact]
+    public void Load_Reads_Opencode_Skills_With_Openloop_Precedence()
+    {
+        WriteSkillAt(Path.Combine(_root, ".opencode", "skills", "ui"), "ui", "界面", "opencode 正文");
+        WriteSkill("shared", "shared", "项目版本", "项目正文");
+        WriteSkillAt(Path.Combine(_root, ".opencode", "skills", "shared"), "shared", "opencode 版本", "opencode 正文");
+
+        var catalog = SkillCatalog.Load(_root);
+
+        var ui = catalog.Single(s => s.Name == "ui");
+        Assert.False(ui.Global);
+        Assert.Equal(".opencode/skills/ui/SKILL.md", ui.Source);
+
+        // 同名时 .openloop 那份优先
+        var shared = catalog.Single(s => s.Name == "shared");
+        Assert.Contains("项目正文", shared.Body);
+        Assert.Equal(".openloop/skills/shared/SKILL.md", shared.Source);
+    }
+
+    [Fact]
     public void Sync_Global_Disable_Only_Blocks_Skills_Not_Configured_In_Project()
     {
         WriteSkill("demo", "demo-skill", "做演示", "正文");

@@ -134,6 +134,7 @@ namespace OpenLoop.App
             _menu.BackColor = UiStyle.Surface;
             _menu.Margin = new Padding(0, 6, 0, 0);
             _menu.SelectChanged += OnProjectSelect;
+            _menu.MouseUp += OnMenuMouseUp;
 
             _leftFooter.Dock = DockStyle.Fill;
             _leftFooter.FlowDirection = FlowDirection.TopDown;

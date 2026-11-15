@@ -121,7 +121,7 @@ namespace OpenLoop.App
             _txtInput.Font = new Font("Segoe UI", 10F);
             _txtInput.PlaceholderText = Localization.T("NewSessionHint");
             _txtInput.Margin = new Padding(0, 0, 0, 8);
-            _txtInput.KeyDown += OnInputKeyDown;
+            _txtInput.VerifyKeyboard += OnComposerKeyboard;
 
             _toolbar.Dock = DockStyle.Fill;
             _toolbar.ColumnCount = 2;

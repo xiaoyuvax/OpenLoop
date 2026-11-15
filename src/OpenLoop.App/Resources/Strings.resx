@@ -185,7 +185,7 @@
     <value>选择项目并描述任务，开始一个新的会话</value>
   </data>
   <data name="NewSessionHint" xml:space="preserve">
-    <value>描述任务，例如：为这个项目补一个 README（Ctrl+Enter 开始）</value>
+    <value>描述任务，例如：为这个项目补一个 README（Enter 开始，Shift+Enter 换行）</value>
   </data>
   <data name="Start" xml:space="preserve">
     <value>开始</value>

@@ -23,7 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenLoop.Core\OpenLoop.Core.csproj" />
     <ProjectReference Include="..\OpenLoop.Service\OpenLoop.Service.csproj" />
-    <!-- 只为构建顺序：A/I 的可执行文件由下面的 CopyWorker 拷到 worker/，界面按同目录启动它们。 -->
+    <!-- 只为构建顺序：A/I 的可执行文件由下面的 CopyWorker 拷到 backends/，界面按同目录启动它们。 -->
     <ProjectReference Include="..\OpenLoop.A\OpenLoop.A.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\OpenLoop.I\OpenLoop.I.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\..\PuppetCore\Puppet.Core\Puppet.Core.csproj" />
@@ -35,9 +35,9 @@
       <_WorkerFiles Include="..\OpenLoop.A\bin\$(Configuration)\net10.0\**\*" />
       <_WorkerFiles Include="..\OpenLoop.I\bin\$(Configuration)\net10.0\**\*" />
     </ItemGroup>
-    <!-- 放进 worker/ 子目录：A/I 用它们自己那份依赖，不和界面的程序集互相覆盖。 -->
+    <!-- 放进 backends/ 子目录：A/I 用它们自己那份依赖，不和界面的程序集互相覆盖。 -->
     <Copy SourceFiles="@(_WorkerFiles)"
-          DestinationFiles="@(_WorkerFiles->'$(OutDir)worker\%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(_WorkerFiles->'$(OutDir)backends\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
   </Target>
 
@@ -47,7 +47,7 @@
     <Using Include="OpenLoop.Service.Logging" />
   </ItemGroup>
 
-  <!-- ChatFlow 是同级组件仓库（开发态 ../../ChatFlow，安装态 source/ChatFlow），只走源码引用。 -->
+  <!-- ChatFlow 是同级组件仓库（开发态 ../../ChatFlow，安装态 src/ChatFlow），只走源码引用。 -->
   <ItemGroup>
     <ProjectReference Include="..\..\..\ChatFlow\ChatFlow\ChatFlow.csproj" />
   </ItemGroup>

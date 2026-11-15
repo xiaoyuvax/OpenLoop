@@ -57,6 +57,8 @@ namespace OpenLoop.App
             _root.RowStyles[1] = new RowStyle(SizeType.Absolute, 0F);
             _root.RowStyles[2] = new RowStyle(SizeType.Absolute, 0F);
             _btnStart.Visible = false;
+            _modeRow.Visible = false;
+            _root.RowStyles[5] = new RowStyle(SizeType.Absolute, 0F);
             _btnClose.Text = "关闭";
             _txtLog.Text = IterationRunner.ReportText(report);
             _lblStatus.Text = report is { Ok: true }
@@ -151,7 +153,9 @@ namespace OpenLoop.App
             {
                 // 迭代由 I 执行：这里只提交、轮询、显示；换 I 期间请求会短暂断开
                 using var client = new LoopApiClient();
-                await client.StartIterationAsync(_workspace, ct: _cts.Token);
+                string mode = _selMode.SelectedValue as string ?? Iteration.FrameworkMode;
+                Log("发布形态：" + (mode == Iteration.SelfContainedMode ? "自带框架" : "框架依赖"));
+                await client.StartIterationAsync(_workspace, true, mode, _cts.Token);
                 Log("开始：" + (_plan.Where(p => p.Update).Select(p => $"{p.Label} {p.Current}→{p.Target}")
                     .DefaultIfEmpty("仅重新编译").Aggregate((a, b) => a + "；" + b)));
 
@@ -219,6 +223,7 @@ namespace OpenLoop.App
         {
             _btnStart.Enabled = !_reportMode && !_running && _plan.Any(p => p.Update);
             _btnCommit.Enabled = _btnPush.Enabled = _hasGitChanges && !_running && !_gitBusy;
+            _selMode.Enabled = !_reportMode && !_running;
         }
 
         /// <summary>问 I 一次工作树是否干净；I 不可达时保持禁用（提交本来也得走 I）。</summary>

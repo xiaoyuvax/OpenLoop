@@ -85,8 +85,10 @@ namespace OpenLoop.Service.Web
             => await SendAsync<IterationPlanResult>(HttpMethod.Get,
                 "/api/loop/iteration/plan?workspace=" + Uri.EscapeDataString(workspace ?? ""), null, ct).ConfigureAwait(false);
 
-        public async Task<IterationState> StartIterationAsync(string workspace, bool shell = true, CancellationToken ct = default)
-            => await PostAsync<IterationState>("/api/loop/iteration", new { workspace, shell }, ct).ConfigureAwait(false);
+        public async Task<IterationState> StartIterationAsync(
+            string workspace, bool shell = true, string publishMode = null, CancellationToken ct = default)
+            => await PostAsync<IterationState>("/api/loop/iteration",
+                new { workspace, shell, publishMode }, ct).ConfigureAwait(false);
 
         public async Task<IterationState> IterationStateAsync(string workspace, CancellationToken ct = default)
             => await SendAsync<IterationState>(HttpMethod.Get,

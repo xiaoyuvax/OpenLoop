@@ -36,14 +36,14 @@ namespace OpenLoop.App
                 string exe = Environment.GetEnvironmentVariable("OPENLOOP_A_PATH");
                 if (string.IsNullOrWhiteSpace(exe)) exe = store.Exe(BusRoles.A);
                 if (string.IsNullOrWhiteSpace(exe))
-                    exe = Path.Combine(AppContext.BaseDirectory, "worker", VersionStore.ExeName(BusRoles.A));
+                    exe = Path.Combine(AppContext.BaseDirectory, "backends", VersionStore.ExeName(BusRoles.A));
                 if (supervisor.Ensure(BusRoles.A, exe) == null)
                     AppLog.Error("Worker 未就绪，任务将无法执行：" + exe);
 
                 string loopExe = Environment.GetEnvironmentVariable("OPENLOOP_I_PATH");
                 if (string.IsNullOrWhiteSpace(loopExe)) loopExe = store.Exe(BusRoles.I);
                 if (string.IsNullOrWhiteSpace(loopExe))
-                    loopExe = Path.Combine(AppContext.BaseDirectory, "worker", VersionStore.ExeName(BusRoles.I));
+                    loopExe = Path.Combine(AppContext.BaseDirectory, "backends", VersionStore.ExeName(BusRoles.I));
                 if (supervisor.Ensure(BusRoles.I, loopExe) == null)
                     AppLog.Error("Loop 未就绪，演进/回滚将不可用：" + loopExe);
             }
