@@ -1737,7 +1737,7 @@ namespace OpenLoop.App
         {
             try
             {
-                var dir = new System.IO.FileInfo(System.Reflection.Assembly.GetExecutingAssembly().Location).Directory;
+                var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory.TrimEnd('\\', '/'));
                 for (int i = 0; i < 8 && dir != null; i++)
                 {
                     if (System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, ".git", "HEAD")) ||
