@@ -260,6 +260,34 @@ namespace OpenLoop.Service.Source
             _ => "组件仓库，版本号由 I 一并维护"
         };
 
+        /// <summary>
+        /// 「不是本轮计划写入」的未提交改动。计划每轮都会改写版本文件，那几个算正常；
+        /// 其余改动说明工作树里还有别人的活儿——无窗口迭代不该顺手把它发到运行态。
+        /// </summary>
+        internal static List<string> UnexpectedChanges(IEnumerable<string> statusLines)
+        {
+            var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "ShellVersion.props",
+                "src\\OpenLoop.Core\\OpenLoop.Core.csproj",
+                "src\\OpenLoop.Service\\OpenLoop.Service.csproj",
+                "src\\OpenLoop.A\\OpenLoop.A.csproj",
+                "src\\OpenLoop.I\\OpenLoop.I.csproj"
+            };
+
+            var offending = new List<string>();
+            foreach (string line in statusLines ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(line) || line.Length < 4) continue;
+                string path = line.Substring(3).Trim();
+                int arrow = path.LastIndexOf(" -> ", StringComparison.Ordinal);
+                if (arrow >= 0) path = path[(arrow + 4)..];
+                path = path.Trim('"').Replace('/', '\\');
+                if (!allowed.Contains(path)) offending.Add(path);
+            }
+            return offending;
+        }
+
         /// <summary>变更摘要：未提交文件、diff 规模、最近提交。给确认弹框用。</summary>
         public static async Task<string> ChangeSummaryAsync(CancellationToken ct = default)
         {

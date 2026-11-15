@@ -75,6 +75,8 @@ namespace OpenLoop.Service.Loop
 
         public IterationState Start(string workspace, bool includeShell, string publishMode = null)
         {
+            if (!includeShell) EnsureNothingUnexpectedPending();
+
             PersistedJob job;
             lock (_sync)
             {
@@ -104,6 +106,25 @@ namespace OpenLoop.Service.Loop
             var token = _cts.Token;
             _ = Task.Run(() => RunAsync(job, token));
             return Clone(job.State);
+        }
+
+        /// <summary>
+        /// 无窗口的一轮（Puppet 的 StartIteration）没人看差异摘要：工作树里除版本文件外还有别的改动就拒绝，
+        /// 免得把别人没写完的代码顺手发到运行态。窗口版照旧（确认框里已经列出未提交文件）。
+        /// </summary>
+        private static void EnsureNothingUnexpectedPending()
+        {
+            var status = Iteration.ExecAsync("git",
+                    ["-C", SourceSync.SourceRoot, "status", "--porcelain"],
+                    SourceSync.SourceRoot, CancellationToken.None)
+                .GetAwaiter().GetResult();
+
+            var offending = IterationRunner.UnexpectedChanges(status.Output.Split('\n'));
+            if (offending.Count == 0) return;
+
+            throw new InvalidOperationException(
+                "工作树有未提交改动（不是本轮版本文件）：" + string.Join("、", offending.Take(5)) +
+                "。无窗口迭代不发这些改动，请用窗口版确认后再跑。");
         }
 
         public IterationState GetState(string workspace)

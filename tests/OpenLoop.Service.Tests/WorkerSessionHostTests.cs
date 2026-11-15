@@ -362,7 +362,9 @@ namespace OpenLoop.Service.Tests
             host.Send(session.Id, "task", "one");
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
             host.Send(session.Id, "task", "two");
-            await WaitAsync(() => host.Get(session.Id).Turns.Count == 2);
+            // Turns 在 Send 时就多一条用户轮，等它到 2 会在第二轮模型调用之前就返回（曾因此偶发只看到 1 次历史）
+            await WaitAsync(() => { lock (histories) return histories.Count == 2; });
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
 
             lock (histories)
             {

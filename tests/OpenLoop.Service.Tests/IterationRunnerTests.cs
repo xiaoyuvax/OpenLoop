@@ -305,6 +305,29 @@ namespace OpenLoop.Service.Tests
         /// （框架依赖 + 压缩会被 SDK 拒绝，NETSDK1176）；RID 必须显式给（NETSDK1191）。
         /// </summary>
         [Fact]
+        public void Unattended_runs_refuse_changes_outside_the_version_files()
+        {
+            // 计划每轮都会改写版本文件，这几个算正常
+            Assert.Empty(IterationRunner.UnexpectedChanges(
+            [
+                " M ShellVersion.props",
+                " M src/OpenLoop.A/OpenLoop.A.csproj",
+                " M src/OpenLoop.Service/OpenLoop.Service.csproj"
+            ]));
+
+            // 别人没写完的代码不能顺手发出去
+            var offending = IterationRunner.UnexpectedChanges(
+            [
+                " M src/OpenLoop.Core/Tools/Builtin/WebFetchTool.cs",
+                "?? tests/OpenLoop.Core.Tests/WebFetchToolTests.cs",
+                " M src/OpenLoop.A/OpenLoop.A.csproj"
+            ]);
+
+            Assert.Equal(2, offending.Count);
+            Assert.Contains(offending, p => p.EndsWith("WebFetchTool.cs", StringComparison.OrdinalIgnoreCase));
+        }
+
+        [Fact]
         public void Publish_args_follow_the_publish_mode()
         {
             string[] framework = Iteration.PublishArgs(null, "out");
