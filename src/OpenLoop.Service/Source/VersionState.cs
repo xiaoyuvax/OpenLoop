@@ -43,13 +43,26 @@ namespace OpenLoop.Service.Source
 
         public static void SavePending(Dictionary<string, NodeState> state) => WriteFile(PendingPath, state);
 
-        /// <summary>整轮成功：pending → state.json。没有 pending 时什么也不做。</summary>
-        public static bool Promote()
+        /// <summary>
+        /// 整轮成功：pending → state.json。没有 pending 时什么也不做。
+        /// <paramref name="keepOld"/> 里的节点这轮没让它参与（比如不换壳的一轮），沿用旧基准——
+        /// 记成「已发布」会让下一轮以为壳已经换过了，从此不再升它。
+        /// </summary>
+        public static bool Promote(params string[] keepOld)
         {
             try
             {
                 if (!File.Exists(PendingPath)) return false;
                 Directory.CreateDirectory(AppPaths.VersionsDir);
+                if (keepOld is { Length: > 0 })
+                {
+                    var pending = ReadFile(PendingPath);
+                    if (pending != null)
+                    {
+                        KeepOldNodes(pending, ReadFile(FilePath), keepOld);
+                        WriteFile(PendingPath, pending);
+                    }
+                }
                 File.Move(PendingPath, FilePath, true);
                 return true;
             }
@@ -57,6 +70,18 @@ namespace OpenLoop.Service.Source
             {
                 return false;
             }
+        }
+
+        /// <summary>把 <paramref name="keepOld"/> 里的节点还原成旧基准（旧基准里没有的就整条去掉）。</summary>
+        internal static Dictionary<string, NodeState> KeepOldNodes(
+            Dictionary<string, NodeState> pending, Dictionary<string, NodeState> old, string[] keepOld)
+        {
+            foreach (string role in keepOld ?? [])
+            {
+                if (old != null && old.TryGetValue(role, out var entry)) pending[role] = entry;
+                else pending.Remove(role);
+            }
+            return pending;
         }
 
         internal static void WriteFile(string path, Dictionary<string, NodeState> state)

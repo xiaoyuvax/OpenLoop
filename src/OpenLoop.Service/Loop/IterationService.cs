@@ -145,7 +145,8 @@ namespace OpenLoop.Service.Loop
                     : job.Plan.Select(p => p.Role == "shell" ? p with { Update = false } : p).ToList();
 
                 var report = await IterationRunner.RunAsync(
-                    plan, job.State.Workspace, Progress, ct, job.PublishMode);
+                    plan, job.State.Workspace, Progress, ct, job.PublishMode,
+                    job.IncludeShell ? [] : ["shell"]);
                 if (!report.Ok)
                 {
                     Progress("失败，回退到迭代前的版本…");
@@ -201,7 +202,7 @@ namespace OpenLoop.Service.Loop
             var (ok, detail, version) = ReadLoopResult();
             if (ok == true)
             {
-                VersionState.Promote();
+                VersionState.Promote(job.IncludeShell ? [] : ["shell"]);
                 AppendStep(job, "OK update i " + detail);
                 // 换 I 的结果里只有 I 的版本；报告头用的是这一轮壳的目标版本
                 string shellVersion = job.Plan.FirstOrDefault(p => p.Role == "shell")?.Target;

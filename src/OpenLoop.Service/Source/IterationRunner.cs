@@ -266,7 +266,7 @@ namespace OpenLoop.Service.Source
         /// </summary>
         public static async Task<IterationReport> RunAsync(
             List<RolePlan> plan, string workspace, Action<string> progress, CancellationToken ct = default,
-            string publishMode = null)
+            string publishMode = null, string[] skipPromote = null)
         {
             plan ??= [];
             var report = new IterationReport { Workspace = workspace, Version = UpdatedVersionText(plan) };
@@ -333,7 +333,7 @@ namespace OpenLoop.Service.Source
             }
 
             // 整轮成功才把本轮指纹提升为基准；失败保持旧基准，下一轮按同一个号重试
-            VersionState.Promote();
+            VersionState.Promote(skipPromote ?? []);
             return Finish(report, true);
         }
 
