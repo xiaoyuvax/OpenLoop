@@ -24,7 +24,7 @@ namespace OpenLoop.Core.Tools
         public async Task<AgentToolResult> ExecuteAsync(string name, Dictionary<string, object> args, CancellationToken ct)
         {
             var tool = Find(name);
-            if (tool == null) return AgentToolResult.Failure($"未知工具：{name}");
+            if (tool == null) return AgentToolResult.Failure(UnknownToolHint(name));
 
             try
             {
@@ -38,6 +38,19 @@ namespace OpenLoop.Core.Tools
             {
                 return AgentToolResult.Failure($"工具执行异常：{ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 技能名被当成工具名调用是常见误用（模型看到「可用技能」就照着名字调）。
+        /// 命中已加载技能时直接给出正确用法，别只回一句「未知工具」。
+        /// </summary>
+        private string UnknownToolHint(string name)
+        {
+            var skill = _tools.OfType<Builtin.ReadSkillTool>().FirstOrDefault()?.Skills
+                ?.FirstOrDefault(s => string.Equals(s?.Name, name, StringComparison.OrdinalIgnoreCase));
+            return skill == null
+                ? $"未知工具：{name}"
+                : $"未知工具：{name}（它是技能不是工具，用 ReadSkill(name=\"{skill.Name}\") 读取）";
         }
 
         /// <summary>v0 的五个通用工作目录工具；有技能时追加 ReadSkill。</summary>

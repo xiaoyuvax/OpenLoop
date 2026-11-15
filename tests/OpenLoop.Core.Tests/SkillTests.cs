@@ -82,6 +82,23 @@ public sealed class SkillTests : IDisposable
     }
 
     [Fact]
+    public async Task Registry_Tells_The_Model_To_Use_ReadSkill_When_A_Skill_Name_Is_Called_As_A_Tool()
+    {
+        var skills = new[]
+        {
+            new SkillInfo { Name = "finesse-ui", Description = "做界面", Body = "正文", Sha256 = "x", Source = "s" }
+        };
+        var registry = ToolRegistry.Workspace(new WorkspaceScope(_root), null, skills);
+
+        var wrong = await registry.ExecuteAsync("finesse-ui", [], CancellationToken.None);
+        Assert.False(wrong.Ok);
+        Assert.Contains("ReadSkill(name=\"finesse-ui\")", wrong.Error);
+
+        var unknown = await registry.ExecuteAsync("nope", [], CancellationToken.None);
+        Assert.Equal("未知工具：nope", unknown.Error);
+    }
+
+    [Fact]
     public void Activation_Enables_Pinned_Skill_And_Rejects_Changed_Content()
     {
         WriteSkill("demo", "demo-skill", "做演示", "# 正文\n步骤一");
