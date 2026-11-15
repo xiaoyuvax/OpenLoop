@@ -51,11 +51,46 @@ namespace OpenLoop.Service.Source
                 File.WriteAllBytes(ShellStartedPath, JsonSerializer.SerializeToUtf8Bytes(new
                 {
                     pid = Environment.ProcessId,
+                    exe = Environment.ProcessPath,
                     at = DateTimeOffset.Now.ToString("O")
                 }, BusProtocol.Json));
             }
             catch
             {
+            }
+        }
+
+        /// <summary>
+        /// 壳自己的可执行文件。计划由 I 计算，<c>Environment.ProcessPath</c> 是 I 的路径，
+        /// 拿它当壳的现版本会让壳的号一路自己往上漂；这里按壳启动时写下的 pid / exe 反查。
+        /// </summary>
+        public static string RunningShellExe()
+        {
+            int pid = 0;
+            try
+            {
+                if (File.Exists(ShellStartedPath))
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllBytes(ShellStartedPath));
+                    if (doc.RootElement.TryGetProperty("exe", out var exe))
+                    {
+                        string path = exe.GetString();
+                        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path)) return path;
+                    }
+                    if (doc.RootElement.TryGetProperty("pid", out var id)) pid = id.GetInt32();
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                return pid > 0 ? Process.GetProcessById(pid).MainModule?.FileName : null;
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -66,6 +101,7 @@ namespace OpenLoop.Service.Source
         public static async Task<List<RolePlan>> PlanAsync(string shellExe = null, CancellationToken ct = default)
         {
             string root = SourceSync.SourceRoot;
+            shellExe ??= RunningShellExe();
             // restore 失败不在这里拦：真正的错误由 build 给出，但指纹会退化成「没有包闭包」
             await Iteration.ExecAsync("dotnet",
                 ["restore", "OpenLoop.slnx", "--nologo", "-v", "q"], root, ct);
@@ -200,7 +236,7 @@ namespace OpenLoop.Service.Source
         private static string RunningBinaryVersion(string id, string shellExe) => id switch
         {
             BusRoles.A or BusRoles.I => RoleVersion(id),
-            "shell" => ExeVersion(string.IsNullOrWhiteSpace(shellExe) ? Environment.ProcessPath : shellExe),
+            "shell" => ExeVersion(shellExe),
             _ => ""
         };
 

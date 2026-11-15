@@ -321,6 +321,7 @@ namespace OpenLoop.Service.Shell
             Log($"[shell] {role} 连续 {FlapLimit} 次起来就退，回退到上一版本 {previous.Version}（装回 backends，存档 {previous.Dir}）");
             _store.Log(role, "rollback", previous.Version, previous.Dir, "crash loop fallback");
             _store.Activate(role, previous, rememberPrevious: false);
+            _store.Prune(role);
             lock (_lock)
             {
                 _shortLived[role] = 0;
@@ -340,8 +341,7 @@ namespace OpenLoop.Service.Shell
             {
                 Log($"[shell] {role} 10 分钟内更新过多次，跳过本次（{update.Version}）");
                 _store.Log(role, "skipped", update.Version, update.Dir, "too many updates");
-                UpdateRequest.Clear(role);
-                Restart(role, previousExe);
+                GiveUp(role, previousExe, null);
                 return;
             }
 
@@ -351,8 +351,7 @@ namespace OpenLoop.Service.Shell
             {
                 Log($"[shell] {role} 交接单里的目录不可用：{update.Dir}，退回原版本");
                 _store.Log(role, "rollback", update.Version, update.Dir, "missing executable");
-                UpdateRequest.Clear(role);
-                Restart(role, previousExe);
+                GiveUp(role, previousExe, null);
                 return;
             }
 
@@ -366,9 +365,7 @@ namespace OpenLoop.Service.Shell
             {
                 Log($"[shell] {role} 安装到 backends 失败：{ex.Message}，退回原版本");
                 _store.Log(role, "rollback", update.Version, update.Dir, "install failed: " + ex.Message);
-                UpdateRequest.Clear(role);
-                try { ShellUpdate.Restore(backup, _runDir); } catch { }
-                Restart(role, previousExe);
+                GiveUp(role, previousExe, backup);
                 return;
             }
 
@@ -402,8 +399,21 @@ namespace OpenLoop.Service.Shell
 
             Log($"[shell] {role} 新版本没起来，退回原版本");
             _store.Log(role, "rollback", update.Version, update.Dir, "did not report within 10s");
+            GiveUp(role, previousExe, backup);
+        }
+
+        /// <summary>
+        /// 换版失败收尾：清交接单 → 按备份还原 → 剪掉失败留在 versions 里的多余目录 → 拉起原版本。
+        /// 剪枝不能只在成功时做，否则每次失败都会多留一份（版本目录只增不减）。
+        /// </summary>
+        private void GiveUp(string role, string previousExe, string backup)
+        {
             UpdateRequest.Clear(role);
-            try { ShellUpdate.Restore(backup, _runDir); } catch { }
+            if (!string.IsNullOrWhiteSpace(backup))
+            {
+                try { ShellUpdate.Restore(backup, _runDir); } catch { }
+            }
+            _store.Prune(role);
             _exePaths[role] = previousExe;
             Restart(role, previousExe);
         }
