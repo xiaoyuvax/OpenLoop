@@ -17,6 +17,7 @@
         private AntdUI.Select _selMode;
         private FlowLayoutPanel _buttons;
         private AntdUI.Button _btnStart;
+        private AntdUI.Button _btnRollback;
         private AntdUI.Button _btnCommit;
         private AntdUI.Button _btnPush;
         private AntdUI.Button _btnClose;
@@ -44,6 +45,7 @@
             _selMode = new AntdUI.Select();
             _buttons = new FlowLayoutPanel();
             _btnStart = new AntdUI.Button();
+            _btnRollback = new AntdUI.Button();
             _btnCommit = new AntdUI.Button();
             _btnPush = new AntdUI.Button();
             _btnClose = new AntdUI.Button();
@@ -154,6 +156,15 @@
             _btnStart.Margin = new Padding(8, 0, 0, 0);
             _btnStart.Click += OnStart;
 
+            _btnRollback.Text = "退回上一版本";
+            _btnRollback.Ghost = true;
+            _btnRollback.Radius = 8;
+            _btnRollback.Width = 132;
+            _btnRollback.Height = 32;
+            _btnRollback.Margin = new Padding(8, 0, 0, 0);
+            _btnRollback.Visible = false;
+            _btnRollback.Click += OnRollback;
+
             _btnCommit.Text = "仅提交";
             _btnCommit.Ghost = true;
             _btnCommit.Radius = 8;
@@ -179,6 +190,7 @@
             _btnClose.Click += OnClose;
 
             _buttons.Controls.Add(_btnStart);
+            _buttons.Controls.Add(_btnRollback);
             _buttons.Controls.Add(_btnCommit);
             _buttons.Controls.Add(_btnPush);
             _buttons.Controls.Add(_btnClose);

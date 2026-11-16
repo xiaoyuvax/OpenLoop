@@ -22,6 +22,9 @@ namespace OpenLoop.Service.Source
         public bool ShellRestarted { get; set; }
         public bool RolledBack { get; set; }
 
+        /// <summary>计划阶段记录的 A/I 现版本；结果窗口的「退回上一版本」按它退，不按 previous.json（自动回退后那里会指向坏版本）。</summary>
+        public Dictionary<string, VersionEntry> Before { get; set; }
+
         /// <summary>壳的发布目录；有值就说明最后还需要重启壳。</summary>
         public string ShellDir { get; set; }
 

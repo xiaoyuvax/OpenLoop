@@ -1,3 +1,4 @@
+using OpenLoop.Service.Shell;
 using OpenLoop.Service.Source;
 using OpenLoop.Service.Web;
 using Puppet.Core;
@@ -22,6 +23,10 @@ namespace OpenLoop.App
         private bool _hasGitChanges;
         private readonly bool _reportMode;
         private readonly bool _upstreamNewer;
+        private readonly IterationReport _report;
+        private bool _canRollback;
+        private bool _rollingBack;
+        private bool _rolledBack;
 
         public IterationForm(string workspace, List<RolePlan> plan, string summary, bool upstreamNewer = false)
         {
@@ -50,6 +55,11 @@ namespace OpenLoop.App
             _workspace = report?.Workspace ?? "";
             _plan = [];
             _reportMode = true;
+            _report = report;
+            _canRollback = report?.Before?.Keys.Any(k =>
+                string.Equals(k, "a", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(k, "i", StringComparison.OrdinalIgnoreCase)) == true;
+            _btnRollback.Visible = _canRollback;
 
             Text = report is { Ok: true } ? "迭代完成" : "迭代失败";
             _planScroll.Visible = false;
@@ -146,7 +156,7 @@ namespace OpenLoop.App
 
         private async void StartAsync(bool confirmUpstream)
         {
-            if (_running || _reportMode || !_btnStart.Enabled) return;
+            if (_running || _rollingBack || _reportMode || !_btnStart.Enabled) return;
 
             // 上游更新只做提醒，不禁止：用户可以选择仍用本地代码迭代
             if (confirmUpstream && _upstreamNewer &&
@@ -237,7 +247,8 @@ namespace OpenLoop.App
         private void SyncButtons()
         {
             _btnStart.Enabled = !_reportMode && !_running && _plan.Any(p => p.Update);
-            _btnCommit.Enabled = _btnPush.Enabled = _hasGitChanges && !_running && !_gitBusy;
+            _btnCommit.Enabled = _btnPush.Enabled = _hasGitChanges && !_running && !_gitBusy && !_rollingBack;
+            _btnRollback.Enabled = _canRollback && !_rollingBack && !_rolledBack;
             _selMode.Enabled = !_reportMode && !_running;
         }
 
@@ -266,7 +277,7 @@ namespace OpenLoop.App
         /// </summary>
         private async Task CommitAsync(bool push)
         {
-            if (_gitBusy || _running) return;
+            if (_gitBusy || _running || _rollingBack) return;
             _gitBusy = true;
             SyncButtons();
             _lblStatus.Text = push ? "正在提交并推送…" : "正在提交…";
@@ -320,6 +331,99 @@ namespace OpenLoop.App
                 SyncButtons();
                 // 提交后工作树多半干净了：按钮跟着关掉
                 _ = RefreshGitStateAsync();
+            }
+        }
+
+        /// <summary>
+        /// 结果窗口的手动回退：按计划阶段记下的 A/I 版本退（不按 previous.json——自动回退后那里指向刚判坏的版本）。
+        /// 只退 A/I，壳保持当前版本。
+        /// </summary>
+        private async void OnRollback(object sender, EventArgs e)
+        {
+            if (_rollingBack || _rolledBack || !_canRollback) return;
+
+            var before = _report?.Before == null
+                ? null
+                : new Dictionary<string, VersionEntry>(_report.Before, StringComparer.OrdinalIgnoreCase);
+            var roles = RolesToRestore(before);
+            if (roles.Count == 0)
+            {
+                _canRollback = false;
+                _lblStatus.Text = "当前已经是迭代前版本";
+                SyncButtons();
+                return;
+            }
+
+            string target = string.Join("、", roles.Select(r => $"{r} {before[r].Version}"));
+            if (MessageBox.Show(this, $"退回上一版本？\n{target}\n壳保持当前版本。", "退回上一版本",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+
+            _rollingBack = true;
+            SyncButtons();
+            _btnClose.Enabled = false;
+            _lblStatus.Text = "正在退回…";
+            Log("回退：" + target);
+
+            try
+            {
+                var steps = await IterationRunner.RollbackAsync(before, Log);
+                if (steps.Count > 0 && steps.All(s => s.Ok))
+                {
+                    // 下一轮把这两个角色当「未发布」，重编当前源码版本；被退回的 I 可能是旧版，只能改共享基准
+                    VersionState.Forget(roles);
+                    _rolledBack = true;
+                    _lblStatus.Text = "已退回上一版本（壳未变）";
+                    Log("已退回：" + target);
+                }
+                else
+                {
+                    _lblStatus.Text = "退回未全部成功；worker 忙就等这一轮跑完再试";
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("退回失败", ex);
+                Log("退回异常：" + ex.Message);
+                _lblStatus.Text = "退回失败";
+            }
+            finally
+            {
+                _rollingBack = false;
+                _btnClose.Enabled = true;
+                SyncButtons();
+                _ = RefreshGitStateAsync();
+            }
+        }
+
+        /// <summary>当前跑的不是迭代前版本的角色（只算登记的 A/I）。</summary>
+        private static List<string> RolesToRestore(IReadOnlyDictionary<string, VersionEntry> before)
+        {
+            var store = new VersionStore();
+            var roles = new List<string>();
+            foreach (string role in new[] { "a", "i" })
+            {
+                if (before == null || !before.TryGetValue(role, out var entry)) continue;
+                if (string.IsNullOrWhiteSpace(entry?.Dir) || !Directory.Exists(entry.Dir)) continue;
+                if (SameDir(store.Current(role)?.Dir, entry.Dir)) continue;
+                roles.Add(role);
+            }
+            return roles;
+        }
+
+        private static bool SameDir(string left, string right)
+        {
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right)) return false;
+            try
+            {
+                return string.Equals(
+                    Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
             }
         }
 

@@ -44,6 +44,29 @@ namespace OpenLoop.Service.Source
         public static void SavePending(Dictionary<string, NodeState> state) => WriteFile(PendingPath, state);
 
         /// <summary>
+        /// 手动回退后把这些角色从基准里去掉：下一轮按「未发布」重编当前源码版本。
+        /// 由壳在用户点「退回上一版本」后调用——被退回的 I 可能是旧版，认不了新标记，只能改共享基准。
+        /// </summary>
+        public static bool Forget(IEnumerable<string> roles, string path = null)
+        {
+            try
+            {
+                var state = ReadFile(path ?? FilePath);
+                if (state == null) return false;
+                bool changed = false;
+                foreach (string role in roles ?? [])
+                    if (!string.IsNullOrWhiteSpace(role)) changed |= state.Remove(role.Trim());
+                if (!changed) return false;
+                WriteFile(path ?? FilePath, state);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 整轮成功：pending → state.json。没有 pending 时什么也不做。
         /// <paramref name="keepOld"/> 里的节点这轮没让它参与（比如不换壳的一轮），沿用旧基准——
         /// 记成「已发布」会让下一轮以为壳已经换过了，从此不再升它。

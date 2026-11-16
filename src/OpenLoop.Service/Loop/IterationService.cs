@@ -180,6 +180,7 @@ namespace OpenLoop.Service.Loop
                 var report = await IterationRunner.RunAsync(
                     plan, job.State.Workspace, Progress, ct, job.PublishMode,
                     job.IncludeShell ? [] : ["shell"]);
+                report.Before ??= job.Before;
                 if (!report.Ok)
                 {
                     Progress("失败，回退到迭代前的版本…");
@@ -316,6 +317,7 @@ namespace OpenLoop.Service.Loop
                 job.State.Error = error;
                 if (!string.IsNullOrWhiteSpace(version)) job.State.Version = version;
                 job.State.Report ??= new IterationReport { Workspace = job.State.Workspace, Version = job.State.Version };
+                job.State.Report.Before ??= job.Before;
                 job.State.Report.Ok = job.State.Ok;
                 job.State.Report.Version = job.State.Version;
                 job.State.ShellDir = state == "done" ? job.State.ShellDir : null;
