@@ -118,6 +118,7 @@ namespace OpenLoop.Core.Tools.Builtin
                     string body = Decode(bytes, response.Content.Headers.ContentType?.CharSet);
                     string title = TitleOf(body);
                     string text = HtmlToText(body);
+                    if (text.Length == 0) text = "（页面没有可读正文）";
                     string head = title.Length > 0 ? $"URL: {uri}\n标题: {title}\n\n" : $"URL: {uri}\n\n";
                     return AgentToolResult.Success(ToolText.Truncate(head + text, maxChars));
                 }
