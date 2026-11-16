@@ -83,6 +83,7 @@
 - 大量模型（399 个）时 `Select` 只放过滤后的列表；免费模型用绿点 + “免费”副标题标识。
 - 新增 `ChatFlowControl` 必须在 `InitializeComponent()` 后、`Bind` 前显式设 `ChatFont`——它不是 `Control.Font`，字体遍历/`Font` 赋值不会自动覆盖。
 - 新控件的颜色统一从 `UiStyle` 取，不写死 `Color.X`；自绘控件跟随主题。
+- 聊天区链接分流（`ChatPathActions` + 各视图 `OnChatLinkClicked`，Worker 与 Loop 一致）：网址 → 右侧「网页」内置浏览器；目录 → 直接用资源管理器打开；文本 → 右侧「文件」页（同一个页换内容，不叠 tab）；其余文件（二进制/过大/解码失败）→ 问一句再用系统默认程序打开。
 
 ## 工程规则
 

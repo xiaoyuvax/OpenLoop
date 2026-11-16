@@ -247,6 +247,7 @@ namespace OpenLoop.App
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "网页" });
             _sideTabs.SelectIndex = 0;
             _sideTabs.SelectIndexChanged += OnSidePageChanged;
+            _sideTabs.MouseUp += OnSideTabsMouseUp;
 
             _sideHost.Dock = DockStyle.Fill;
             _sideHost.Margin = new Padding(0, 8, 0, 0);

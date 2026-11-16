@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 
 namespace OpenLoop.App
@@ -71,7 +72,8 @@ namespace OpenLoop.App
             OnUi(() =>
             {
                 _interact = enabled;
-                _btnInteract.Text = enabled ? "锁定" : "解锁";
+                _btnInteract.IconSvg = UiIcons.Of(enabled ? UiIcons.Lock : UiIcons.Unlock, UiStyle.Text);
+                _tips.SetToolTip(_btnInteract, enabled ? "锁定：网页由 Agent 控制" : "解锁：允许你自己点按网页");
                 // 锁定时禁用控件本身：Windows 不再把鼠标/键盘送给网页
                 _web.Enabled = enabled;
                 _overlay.Visible = !_ready;
@@ -258,6 +260,24 @@ namespace OpenLoop.App
         private void OnReload(object sender, EventArgs e) => OnWeb(w => w.Reload());
         private void OnGo(object sender, EventArgs e) => Navigate(_txtUrl.Text, out _);
         private void OnUndock(object sender, EventArgs e) => Undock();
+
+        /// <summary>用系统默认浏览器打开当前页；还没导航过就用地址栏里的地址。</summary>
+        private void OpenExternal()
+        {
+            string url = Url;
+            if (string.IsNullOrWhiteSpace(url)) url = Normalize(_txtUrl.Text);
+            if (url == null) return;
+            try
+            {
+                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _overlay.Text = "打开系统浏览器失败：" + ex.Message;
+            }
+        }
+
+        private void OnExternal(object sender, EventArgs e) => OpenExternal();
 
         private void OnUrlKeyDown(object sender, KeyEventArgs e)
         {

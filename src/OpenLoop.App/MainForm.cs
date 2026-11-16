@@ -1516,6 +1516,11 @@ namespace OpenLoop.App
                 ((LoopView)page.Tag).Shutdown();
                 if (_loopPage == page) { _loopPage = null; _loopView = null; }
             }
+            else if (page.Tag is Session session)
+            {
+                // 会话页关掉就释放 WebView2（页面重开时由 ShowBrowser 重建）
+                session.View?.CloseBrowserPage();
+            }
 
             if (selected) _tabs.SelectTab(_overviewPage);
             RefreshOverview();

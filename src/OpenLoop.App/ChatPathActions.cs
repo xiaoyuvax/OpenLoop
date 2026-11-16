@@ -9,42 +9,56 @@ namespace OpenLoop.App
     internal static class ChatPathActions
     {
         /// <summary>
-        /// 文件夹 → 问一句再用资源管理器打开；不存在 → 提示并问是否复制路径；都存在时返回 false（交给文件预览）。
+        /// 文件夹 → 直接用资源管理器打开；不存在 → 提示并问是否复制路径；文件存在则返回 false（交给文件预览）。
         /// 返回 true 表示点击已被这里处理掉。
         /// </summary>
         internal static bool HandleClick(IWin32Window owner, string target, string workspace)
         {
-            string full;
-            try
+            string full = Resolve(target, workspace);
+            if (Directory.Exists(full))
             {
-                full = Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(workspace ?? "", target));
+                Shell(owner, full, "打开文件夹");
+                return true;
             }
-            catch
-            {
-                full = target;   // 连路径都不合法：按「不存在」处理，让用户复制原文
-            }
-
-            if (Directory.Exists(full)) return AskOpenFolder(owner, full);
             if (File.Exists(full)) return false;
             AskMissing(owner, full);
             return true;
         }
 
-        private static bool AskOpenFolder(IWin32Window owner, string full)
+        /// <summary>预览不了的普通文件（二进制、太大、解码失败）：问一句再用系统默认程序打开。</summary>
+        internal static void AskSystemOpen(IWin32Window owner, string target, string workspace, string reason)
         {
-            if (MessageBox.Show(owner, "这是文件夹，用资源管理器打开吗？\n" + full, "打开文件夹",
+            string full = Resolve(target, workspace);
+            string text = (string.IsNullOrWhiteSpace(reason) ? "" : reason + "\n\n") + "要用系统默认程序打开吗？\n" + full;
+            if (MessageBox.Show(owner, text, "打开文件",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-                return true;
+                return;
 
+            Shell(owner, full, "打开文件");
+        }
+
+        private static string Resolve(string target, string workspace)
+        {
+            try
+            {
+                return Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(workspace ?? "", target));
+            }
+            catch
+            {
+                return target;   // 连路径都不合法：按「不存在」处理，让用户复制原文
+            }
+        }
+
+        private static void Shell(IWin32Window owner, string full, string title)
+        {
             try
             {
                 Process.Start(new ProcessStartInfo { FileName = full, UseShellExecute = true });
             }
             catch (Exception ex)
             {
-                MessageBox.Show(owner, "打开失败：" + ex.Message, "打开文件夹", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(owner, "打开失败：" + ex.Message, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-            return true;
         }
 
         private static void AskMissing(IWin32Window owner, string full)

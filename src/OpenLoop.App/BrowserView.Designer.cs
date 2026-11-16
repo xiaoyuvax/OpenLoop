@@ -13,19 +13,29 @@ namespace OpenLoop.App
         private AntdUI.Button _btnGo;
         private AntdUI.Button _btnInteract;
         private AntdUI.Button _btnUndock;
+        private AntdUI.Button _btnExternal;
+        private ToolTip _tips;
         private Panel _host;
         private Microsoft.Web.WebView2.WinForms.WebView2 _web;
         private Label _overlay;
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && (components != null)) components.Dispose();
+            if (disposing)
+            {
+                // 独立窗口里还挂着 _web：一起销毁，否则关掉「网页」页后浏览器进程还在
+                var undocked = _undocked;
+                _undocked = null;
+                if (undocked != null && !undocked.IsDisposed) undocked.Dispose();
+                if (components != null) components.Dispose();
+            }
             base.Dispose(disposing);
         }
 
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
+            _tips = new ToolTip(components);
 
             _root = new TableLayoutPanel();
             _bar = new TableLayoutPanel();
@@ -36,6 +46,7 @@ namespace OpenLoop.App
             _btnGo = new AntdUI.Button();
             _btnInteract = new AntdUI.Button();
             _btnUndock = new AntdUI.Button();
+            _btnExternal = new AntdUI.Button();
             _host = new Panel();
             _web = new Microsoft.Web.WebView2.WinForms.WebView2();
             _overlay = new Label();
@@ -50,17 +61,18 @@ namespace OpenLoop.App
             _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _root.Margin = new Padding(0);
 
-            // 仿常规浏览器：后退 / 前进 / 刷新 / 地址栏 / 前往 / 锁定 / 独立窗口
+            // 仿常规浏览器：后退 / 前进 / 刷新 / 地址栏 / 前往 / 锁定 / 独立窗口 / 系统浏览器
             _bar.Dock = DockStyle.Fill;
-            _bar.ColumnCount = 7;
+            _bar.ColumnCount = 8;
             _bar.RowCount = 1;
             _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 26F));
             _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 26F));
             _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 26F));
             _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38F));
-            _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52F));
-            _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 66F));
+            _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 26F));
+            _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 26F));
+            _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 26F));
+            _bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 26F));
             _bar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _bar.Margin = new Padding(0);
 
@@ -96,28 +108,40 @@ namespace OpenLoop.App
             _txtUrl.KeyDown += OnUrlKeyDown;
 
             _btnGo.Name = "btnGo";
-            _btnGo.Text = "前往";
             _btnGo.Ghost = true;
             _btnGo.Radius = 6;
+            _btnGo.IconSvg = UiIcons.Of(UiIcons.Go, UiStyle.Text);
             _btnGo.Dock = DockStyle.Fill;
             _btnGo.Margin = new Padding(0, 1, 1, 3);
             _btnGo.Click += OnGo;
+            _tips.SetToolTip(_btnGo, "前往");
 
             _btnInteract.Name = "btnInteract";
-            _btnInteract.Text = "解锁";
             _btnInteract.Ghost = true;
             _btnInteract.Radius = 6;
+            _btnInteract.IconSvg = UiIcons.Of(UiIcons.Unlock, UiStyle.Text);
             _btnInteract.Dock = DockStyle.Fill;
             _btnInteract.Margin = new Padding(0, 1, 1, 3);
             _btnInteract.Click += OnToggleInteract;
+            _tips.SetToolTip(_btnInteract, "解锁：允许你自己点按网页");
 
             _btnUndock.Name = "btnUndock";
-            _btnUndock.Text = "独立窗口";
             _btnUndock.Ghost = true;
             _btnUndock.Radius = 6;
+            _btnUndock.IconSvg = UiIcons.Of(UiIcons.Undock, UiStyle.Text);
             _btnUndock.Dock = DockStyle.Fill;
-            _btnUndock.Margin = new Padding(0, 1, 0, 3);
+            _btnUndock.Margin = new Padding(0, 1, 1, 3);
             _btnUndock.Click += OnUndock;
+            _tips.SetToolTip(_btnUndock, "独立窗口：把网页搬进独立窗口");
+
+            _btnExternal.Name = "btnExternal";
+            _btnExternal.Ghost = true;
+            _btnExternal.Radius = 6;
+            _btnExternal.IconSvg = UiIcons.Of(UiIcons.External, UiStyle.Text);
+            _btnExternal.Dock = DockStyle.Fill;
+            _btnExternal.Margin = new Padding(0, 1, 0, 3);
+            _btnExternal.Click += OnExternal;
+            _tips.SetToolTip(_btnExternal, "用系统默认浏览器打开");
 
             _bar.Controls.Add(_btnBack, 0, 0);
             _bar.Controls.Add(_btnForward, 1, 0);
@@ -126,6 +150,7 @@ namespace OpenLoop.App
             _bar.Controls.Add(_btnGo, 4, 0);
             _bar.Controls.Add(_btnInteract, 5, 0);
             _bar.Controls.Add(_btnUndock, 6, 0);
+            _bar.Controls.Add(_btnExternal, 7, 0);
 
             _host.Name = "browserHost";
             _host.Dock = DockStyle.Fill;

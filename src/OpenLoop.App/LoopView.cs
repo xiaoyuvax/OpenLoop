@@ -115,11 +115,46 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public BrowserView Browser => _browser;
 
-        /// <summary>展开右侧栏并切到「网页」页（Agent 用内嵌浏览器时的入口）。</summary>
+        /// <summary>展开右侧栏并切到「网页」页（Agent 用内嵌浏览器时的入口）；页被关掉时重新建。</summary>
         public void ShowBrowser()
         {
             if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
+            if (_browser == null)
+            {
+                _browser = new BrowserView { Dock = DockStyle.Fill, Visible = false };
+                _sideHost.Controls.Add(_browser);
+                _sideTabs.Items.Insert(BrowserPage, new AntdUI.SegmentedItem { Text = "网页" });
+                if (_filePage >= BrowserPage) _filePage++;
+            }
             ShowSidePage(BrowserPage);
+        }
+
+        /// <summary>关掉「网页」页：销毁 WebView2 实例释放内存，再用时由 ShowBrowser 重建。</summary>
+        public void CloseBrowserPage()
+        {
+            if (_browser == null) return;
+            int selected = _sideTabs.SelectIndex;
+            _sideTabs.Items.RemoveAt(BrowserPage);
+            if (_filePage > BrowserPage) _filePage--;
+            var browser = _browser;
+            _browser = null;
+            _sideHost.Controls.Remove(browser);
+            browser.Dispose();
+            // 关掉的不是当前页就停在原页（下标可能前移一位）
+            ShowSidePage(selected == BrowserPage ? 0 : Math.Max(0, selected > BrowserPage ? selected - 1 : selected));
+        }
+
+        private void OnSideTabsMouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right || _browser == null) return;
+            var items = new AntdUI.IContextMenuStripItem[]
+            {
+                new AntdUI.ContextMenuStripItem("关闭网页") { ID = "closebrowser" }
+            };
+            AntdUI.ContextMenuStrip.open(_sideTabs, item =>
+            {
+                if (item?.ID == "closebrowser") CloseBrowserPage();
+            }, items);
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -304,6 +339,7 @@ namespace OpenLoop.App
             _closed = true;
             _cts?.Cancel();
             _sideBtw.Shutdown();
+            CloseBrowserPage();
             SaveLoopChat();
         }
 
@@ -816,21 +852,32 @@ namespace OpenLoop.App
         {
             _detailFlow.Visible = index == 0;
             _sideBtw.Visible = index == 1;
-            _browser.Visible = index == BrowserPage;
+            if (_browser != null)
+            {
+                _browser.Visible = index == BrowserPage;
+                if (index == BrowserPage) _browser.EnsureLoaded();
+            }
             _fileView.Visible = index >= 0 && index == _filePage;
             if (index == 0) ApplyDetail();
-            if (index == BrowserPage) _browser.EnsureLoaded();
         }
 
-        /// <summary>聊天区里点了本地文件路径：在右侧「文件」页打开（第一次点才把该页加出来）。</summary>
+        /// <summary>聊天区里点链接：网址进右侧「网页」页，本地路径进「文件」页（文件夹直接用资源管理器打开）。</summary>
         private void OnChatLinkClicked(object sender, ChatLinkClickedEventArgs e)
         {
-            if (e?.Kind != ChatTextStyler.ChatLinkKind.File) return;
+            if (e == null) return;
+            if (e.Kind == ChatTextStyler.ChatLinkKind.Url)
+            {
+                ShowBrowser();
+                if (!Browser.Navigate(e.Target, out string urlError)) Notify("无法打开网址", urlError, error: true);
+                return;
+            }
+
             if (ChatPathActions.HandleClick(this, e.Target, _workspace)) return;
 
             if (!_fileView.TryShowFile(e.Target, _workspace, out string error))
             {
-                Notify("无法预览", error, error: true);
+                // 二进制/太大/解码失败：改问要不要用系统默认程序打开
+                ChatPathActions.AskSystemOpen(this, e.Target, _workspace, error);
                 return;
             }
             if (_filePage < 0)

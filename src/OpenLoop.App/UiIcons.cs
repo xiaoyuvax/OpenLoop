@@ -75,6 +75,26 @@ namespace OpenLoop.App
         public const string Bolt =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M13 2L4 14h6l-1 8 9-12h-6z'/></svg>";
 
+        /// <summary>地址栏「前往」。</summary>
+        public const string Go =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M13 4.6L20.4 12 13 19.4l-1.4-1.4 5-5H3.6v-2h13l-5-5z'/></svg>";
+
+        /// <summary>用系统默认浏览器打开当前页。</summary>
+        public const string External =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M14 3h7v7h-2V6.4l-8.3 8.3-1.4-1.4L17.6 5H14zM4 4h6v2H6v12h12v-4h2v6H4z'/></svg>";
+
+        /// <summary>锁定网页交互。</summary>
+        public const string Lock =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 2a5 5 0 015 5v2h1a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2v-9a2 2 0 012-2h1V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v2h6V7a3 3 0 00-3-3zm0 8a2 2 0 00-1 3.7V19h2v-3.3A2 2 0 0012 12z'/></svg>";
+
+        /// <summary>解锁网页交互。</summary>
+        public const string Unlock =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 2a5 5 0 015 5h-2a3 3 0 00-6 0v2h8a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2v-9a2 2 0 012-2h1V7a5 5 0 015-5zm0 10a2 2 0 00-1 3.7V19h2v-3.3A2 2 0 0012 12z'/></svg>";
+
+        /// <summary>搬进独立窗口。</summary>
+        public const string Undock =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M3 5h13v3h-2V7H5v10h3v2H3zM10 9h11v11H10zm2 2v7h7v-7z'/></svg>";
+
         /// <summary>等这一轮返回。</summary>
         public const string Clock =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 3a9 9 0 110 18 9 9 0 010-18zm0 2a7 7 0 100 14 7 7 0 000-14zm-1 2h2v5.6l4 2.4-1 1.7-5-3z'/></svg>";
