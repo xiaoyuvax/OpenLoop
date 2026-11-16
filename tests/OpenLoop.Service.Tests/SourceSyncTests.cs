@@ -28,7 +28,8 @@ namespace OpenLoop.Service.Tests
         [Theory]
         [InlineData("0.1.2", "0.1.0", true, "0.1.2")]   // 本地工作树：本地说了算（远端落后不算过旧）
         [InlineData("", "0.1.0", true, "0.1.0")]        // 本地没版本号才回退远端
-        [InlineData("0.1.2", "0.1.5", false, "0.1.5")]  // 安装布局：比远端，看有没有新源码
+        [InlineData("0.1.2", "0.1.5", false, "0.1.5")]  // 安装布局：远端更高，说明有更新的源码
+        [InlineData("0.1.6", "0.1.5", false, "0.1.6")]  // 安装布局：迭代刚写进工作树的本地号不能被远端旧号盖掉
         [InlineData("0.1.2", "", false, "0.1.2")]       // 远端读不到才回退本地
         public void PickSourceVersion_uses_the_local_working_tree_when_building_from_it(
             string local, string remote, bool localCheckout, string expected)

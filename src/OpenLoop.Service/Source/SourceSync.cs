@@ -18,8 +18,11 @@ namespace OpenLoop.Service.Source
     public sealed record SourceCheck(
         SourceState State, string Root, string SourceVersion, string RunningVersion, string Detail)
     {
+        /// <summary>上游（origin）比本地工作树更新：只提示先更新源码，不阻止继续用本地代码迭代。</summary>
+        public bool UpstreamNewer { get; init; }
+
         public override string ToString() =>
-            $"{State} source={SourceVersion} running={RunningVersion} {Detail}".Trim();
+            $"{(UpstreamNewer ? "UpstreamNewer " : "")}{State} source={SourceVersion} running={RunningVersion} {Detail}".Trim();
     }
 
     /// <summary>
@@ -237,25 +240,33 @@ namespace OpenLoop.Service.Source
                     : "";
 
                 // 开发检出（含 OPENLOOP_SOURCE 指定的工作树）里本地工作树就是要编译的源码，
-                // 远端版本落后不该算「源码过旧」；安装布局的克隆才比远端，用来看有没有更新的源码可迭代。
+                // 远端版本落后不该算「源码过旧」；安装布局的克隆也先认本地工作树（迭代的升版还没提交），
+                // 远端只用来发现「上游确实有更新的源码」。
                 bool local = !IsInstallClone(root);
                 string remote = local
                     ? ""
                     : ParseVersion(await GitTextAsync(
                         ["-C", root, "show", "FETCH_HEAD:" + versionFile.Replace('\\', '/')], ct));
 
+                bool upstreamNewer = !local
+                                     && localVersion.Length > 0 && remote.Length > 0
+                                     && Classify(remote, localVersion) == SourceState.Newer;
+
                 string source = PickSourceVersion(localVersion, remote, local);
                 if (source.Length == 0)
                     return new(SourceState.Unknown, root, "", running, "读不到源码版本");
 
                 var state = Classify(source, running);
-                return new(state, root, source, running, state switch
-                {
-                    SourceState.Newer => "源码比运行版本新：可以迭代",
-                    SourceState.Older => "源码比运行版本旧：更新源码、放弃迭代，或用 Puppet 自愈",
-                    SourceState.UpToDate => "源码与运行版本一致",
-                    _ => "版本号无法比较"
-                });
+                string detail = upstreamNewer
+                    ? $"上游有更新（origin {remote} 高于本地工作树 {localVersion}）：请先更新源码；仍可用本地代码继续迭代"
+                    : state switch
+                    {
+                        SourceState.Newer => "源码比运行版本新：可以迭代",
+                        SourceState.Older => "源码比运行版本旧：更新源码、放弃迭代，或用 Puppet 自愈",
+                        SourceState.UpToDate => "源码与运行版本一致",
+                        _ => "版本号无法比较"
+                    };
+                return new(state, root, source, running, detail) { UpstreamNewer = upstreamNewer };
             }
             catch (OperationCanceledException)
             {
@@ -302,14 +313,14 @@ namespace OpenLoop.Service.Source
         }
 
         /// <summary>
-        /// 取哪个版本号当「源码版本」：本地工作树优先，安装布局用远端；
-        /// 首选为空时回退另一个（本地没写过版本号，或远端读不到）。
+        /// 取哪个版本号当「源码版本」：本地工作树就是要编译的源码，优先它；
+        /// 只有远端更高（上游确实有新源码可拉）才算远端，否则安装布局会把迭代刚写进工作树的号误判成过旧。
         /// </summary>
         internal static string PickSourceVersion(string local, string remote, bool localCheckout)
         {
-            if (localCheckout && !string.IsNullOrEmpty(local)) return local;
-            if (!string.IsNullOrEmpty(remote)) return remote;
-            return local ?? "";
+            if (string.IsNullOrEmpty(local)) return remote ?? "";
+            if (localCheckout || string.IsNullOrEmpty(remote)) return local;
+            return Classify(remote, local) == SourceState.Newer ? remote : local;
         }
 
         /// <summary>比较两个版本号；无法解析返回 <see cref="SourceState.Unknown"/>。</summary>

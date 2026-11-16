@@ -12,6 +12,9 @@ namespace OpenLoop.Service.Loop
         public string Workspace { get; set; }
         public List<RolePlan> Plan { get; set; } = [];
         public string Summary { get; set; } = "";
+
+        /// <summary>上游比本地工作树新：窗口只提示，用户仍可选择继续用本地代码迭代。</summary>
+        public bool UpstreamNewer { get; set; }
     }
 
     /// <summary>一轮迭代的投影（壳只轮询这个）。</summary>
@@ -57,7 +60,10 @@ namespace OpenLoop.Service.Loop
             }
 
             var plan = await IterationRunner.PlanAsync(ct: ct);
+            var source = await SourceSync.CheckAsync(ct);
             string summary = await IterationRunner.ChangeSummaryAsync(ct);
+            bool upstreamNewer = source?.UpstreamNewer == true;
+            if (upstreamNewer) summary = "上游有更新，请先更新源码。\n\n" + summary;
             var job = new PersistedJob
             {
                 State = new IterationState { Workspace = workspace },
@@ -70,7 +76,13 @@ namespace OpenLoop.Service.Loop
                 Save(job);
             }
 
-            return new IterationPlanResult { Workspace = workspace, Plan = plan, Summary = summary };
+            return new IterationPlanResult
+            {
+                Workspace = workspace,
+                Plan = plan,
+                Summary = summary,
+                UpstreamNewer = upstreamNewer
+            };
         }
 
         public IterationState Start(string workspace, bool includeShell, string publishMode = null)

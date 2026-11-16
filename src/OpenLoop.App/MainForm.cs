@@ -641,7 +641,10 @@ namespace OpenLoop.App
                 var check = await global::OpenLoop.Service.Source.SourceSync.CheckAsync();
                 AppLog.Info("源码同步：" + check);
 
-                if (check.State == global::OpenLoop.Service.Source.SourceState.Newer)
+                if (check.UpstreamNewer)
+                    AntdUI.Notification.warn(this, "上游有更新", check.Detail,
+                        AntdUI.TAlignFrom.TR, null, 6);
+                else if (check.State == global::OpenLoop.Service.Source.SourceState.Newer)
                     AntdUI.Notification.info(this, "源码有更新",
                         $"源码 {check.SourceVersion} 高于运行版本 {check.RunningVersion}，可以迭代。",
                         AntdUI.TAlignFrom.TR, null, 5);
@@ -759,7 +762,7 @@ namespace OpenLoop.App
             if (string.IsNullOrWhiteSpace(target)) target = Workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _lastSession?.Workspace ?? "";
             if (string.IsNullOrWhiteSpace(target)) target = _settings.Workspace ?? "";
-            var form = new IterationForm(target, plan, summary);
+            var form = new IterationForm(target, plan, summary, planned?.UpstreamNewer == true);
             form.ShellRestart = report =>
             {
                 IterationRunner.WriteReport(report);

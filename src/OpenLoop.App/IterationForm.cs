@@ -21,21 +21,25 @@ namespace OpenLoop.App
         private bool _gitBusy;
         private bool _hasGitChanges;
         private readonly bool _reportMode;
+        private readonly bool _upstreamNewer;
 
-        public IterationForm(string workspace, List<RolePlan> plan, string summary)
+        public IterationForm(string workspace, List<RolePlan> plan, string summary, bool upstreamNewer = false)
         {
             InitializeComponent();
             _workspace = workspace ?? "";
             _plan = plan ?? [];
+            _upstreamNewer = upstreamNewer;
 
             Text = "迭代确认";
             _txtSummary.Text = summary ?? "";
             // 行高用 Dip() 缩放，容器高度也用同一把尺子：否则高分屏上最后几个部件会被裁掉
             _root.RowStyles[0] = new RowStyle(SizeType.Absolute, Dip(222));
             RenderPlan();
-            _lblStatus.Text = _plan.Any(p => p.Update)
-                ? "确认后开始：A 与 I 不会同时换，壳最后重启。"
-                : "没有部件需要更新：源码或依赖有变化才需要迭代。";
+            _lblStatus.Text = upstreamNewer
+                ? "上游有更新，请先更新源码；仍可用本地代码继续迭代。"
+                : _plan.Any(p => p.Update)
+                    ? "确认后开始：A 与 I 不会同时换，壳最后重启。"
+                    : "没有部件需要更新：源码或依赖有变化才需要迭代。";
             SyncButtons();
         }
 
@@ -90,7 +94,7 @@ namespace OpenLoop.App
 
         public string StatusText => _lblStatus.Text;
 
-        public void StartFromPuppet() => OnStart(null, EventArgs.Empty);
+        public void StartFromPuppet() => StartAsync(confirmUpstream: false);
 
         private void RenderPlan()
         {
@@ -138,9 +142,20 @@ namespace OpenLoop.App
             _planHost.Controls.Add(label, column, row);
         }
 
-        private async void OnStart(object sender, EventArgs e)
+        private void OnStart(object sender, EventArgs e) => StartAsync(confirmUpstream: true);
+
+        private async void StartAsync(bool confirmUpstream)
         {
             if (_running || _reportMode || !_btnStart.Enabled) return;
+
+            // 上游更新只做提醒，不禁止：用户可以选择仍用本地代码迭代
+            if (confirmUpstream && _upstreamNewer &&
+                MessageBox.Show(this,
+                    "上游有更新，请先更新源码。\n仍要用本地代码继续迭代吗？",
+                    "上游有更新", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+
             _running = true;
             _btnStart.Enabled = false;
             _btnClose.Enabled = false;
