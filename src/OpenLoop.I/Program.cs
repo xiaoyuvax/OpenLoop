@@ -21,6 +21,7 @@ namespace OpenLoop.I
             {
                 bus.Busy = () => loop.IsBusy;
                 bus.Use(puppet.HandleApi)
+                   .Use(new SettingsApiHandler(key).Handle)
                    .Use(new LoopApiHandler(loop, iteration, key).Handle)
                    .Use(ui.Handle);
             });

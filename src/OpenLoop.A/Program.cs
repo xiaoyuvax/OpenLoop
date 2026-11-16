@@ -29,6 +29,7 @@ namespace OpenLoop.A
                 bus.Busy = () => sessions.IsBusy;
                 bus.Use(puppet.HandleApi)
                    .Use(proxy.Handle)
+                   .Use(new SettingsApiHandler(key).Handle)
                    .Use(new WorkerApiHandler(sessions, key).Handle)
                    .Use(ui.Handle);
             });

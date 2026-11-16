@@ -11,7 +11,11 @@ const { Text } = Typography;
 async function api(path, options = {}) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
   const text = await res.text();
-  if (!res.ok) throw new Error(text || ('HTTP ' + res.status));
+  if (!res.ok) {
+    let msg = text;
+    try { const j = JSON.parse(text); msg = j.error || j.message || text; } catch { /* 非 JSON 错误体 */ }
+    throw new Error(msg || ('HTTP ' + res.status));
+  }
   return text ? JSON.parse(text) : null;
 }
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
@@ -48,7 +52,7 @@ const PuppetRow = ({ shot, setShot }) => h('div', { style: { display: 'flex', al
 
 // ---------------- 顶栏 ----------------
 
-function TopBar({ menu, onAbout }) {
+function TopBar({ menu, onSettings }) {
   return h('div', {
     style: {
       height: 54, flex: 'none', display: 'flex', alignItems: 'center', gap: 10,
@@ -61,8 +65,8 @@ function TopBar({ menu, onAbout }) {
       h('span', { style: { fontSize: 17, fontWeight: 700 } }, 'OpenLoop'),
       h('span', { style: { fontSize: 12, color: '#8c8c8c' } }, '多会话 · 关闭标签不停止')),
     h('div', { style: { flex: 1 } }),
-    h(Tooltip, { title: '关于' },
-      h(Button, { type: 'text', style: { width: 38, height: 34, borderRadius: 8 }, onClick: onAbout }, '⚙')));
+    h(Tooltip, { title: '设置' },
+      h(Button, { type: 'text', style: { width: 38, height: 34, borderRadius: 8 }, onClick: onSettings }, '⚙')));
 }
 
 // ---------------- 会话列表（Tab0） ----------------
@@ -678,6 +682,391 @@ async function capturePage(region) {
 
 // ---------------- App ----------------
 
+// ---------------- 设置（对齐 WinForms 设置页） ----------------
+
+const SettingRow = ({ label, children }) => h('div', {
+  style: { display: 'grid', gridTemplateColumns: '88px 1fr', alignItems: 'center', gap: 10, marginBottom: 10 }
+},
+  h('div', { style: { fontSize: 13, color: '#595959' } }, label),
+  h('div', { style: { minWidth: 0 } }, children));
+
+const SettingHint = ({ children, warn }) => h('div', {
+  style: { fontSize: 12, color: warn ? '#ff4d4f' : '#8c8c8c', margin: '-4px 0 12px 98px' }
+}, children);
+
+const SwitchRow = ({ label, checked, onChange, hint, warn }) => h('div', null,
+  h(SettingRow, { label },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+      h(Switch, { checked: !!checked, onChange }),
+      hint ? h('span', { style: { fontSize: 12, color: warn ? '#ff4d4f' : '#8c8c8c' } }, hint) : null)));
+
+const blankProvider = () => ({
+  name: 'OpenRouter', kind: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',
+  hasKey: false, key: null, models: []
+});
+
+function SettingsPanel({ caps, onClose }) {
+  const [loaded, setLoaded] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [tab, setTab] = useState('general');
+  const [busy, setBusy] = useState(false);
+  const [providerIndex, setProviderIndex] = useState(0);
+  const [modelInput, setModelInput] = useState('');
+  const [propsModel, setPropsModel] = useState(null);
+  const [propsDraft, setPropsDraft] = useState({ name: '', contextLimit: 0 });
+  const [providerStatus, setProviderStatus] = useState('');
+  const [skills, setSkills] = useState({ root: '', rows: [], error: '' });
+  const [skillScope, setSkillScope] = useState('project');
+  const [installPath, setInstallPath] = useState('');
+  const workspace = caps?.workspace || localStorage.getItem('openloop.workspace') || '';
+
+  const reload = async () => {
+    try {
+      const s = await api('/api/settings');
+      setLoaded(s);
+      setDraft(JSON.parse(JSON.stringify(s)));
+      setProviderIndex(0);
+    } catch (e) { message.error('读取设置失败：' + e.message); }
+  };
+  useEffect(() => { reload(); }, []);
+
+  const loadSkills = async scope => {
+    try {
+      setSkills(await api(`/api/settings/skills?scope=${scope}&workspace=${encodeURIComponent(workspace)}`) || {});
+    } catch (e) { message.error('读取技能失败：' + e.message); }
+  };
+  useEffect(() => { if (tab === 'skills') loadSkills(skillScope); }, [tab, skillScope]);
+
+  const patch = p => setDraft(d => ({ ...d, ...p }));
+  const providers = draft?.providers || [];
+  const provider = providers[providerIndex] || null;
+  const setProvider = (i, p) => setDraft(d => {
+    const list = [...(d.providers || [])];
+    list[i] = { ...list[i], ...p };
+    return { ...d, providers: list };
+  });
+
+  const save = async () => {
+    if (draft.fullAccess && !loaded.fullAccess
+      && !window.confirm('完全许可会关闭路径边界、命令审批与环境变量隔离，子进程可能拿到密钥，也可以直接访问网络与任意路径。确定启用？')) return;
+    setBusy(true);
+    try {
+      const modelProps = {};
+      for (const [id, p] of Object.entries(draft.modelProps || {})) {
+        if (!id) continue;
+        if ((p?.name || '') === '' && !p?.contextLimit) continue;
+        modelProps[id] = { name: p?.name || '', contextLimit: p?.contextLimit || 0 };
+      }
+      await post('/api/settings', { ...draft, modelProps });
+      message.success('已保存');
+      await reload();
+    } catch (e) { message.error('保存失败：' + e.message); }
+    setBusy(false);
+  };
+
+  const addProvider = () => {
+    const list = [...providers, blankProvider()];
+    setDraft(d => ({ ...d, providers: list }));
+    setProviderIndex(list.length - 1);
+    setProviderStatus('');
+  };
+
+  const removeProvider = () => {
+    if (!provider) return;
+    if (!window.confirm(`删除提供商「${provider.name}」？`)) return;
+    const list = providers.filter((_, i) => i !== providerIndex);
+    setDraft(d => ({ ...d, providers: list }));
+    setProviderIndex(Math.max(0, Math.min(providerIndex, list.length - 1)));
+    setProviderStatus('');
+  };
+
+  const providerBody = extra => ({
+    name: provider?.name || '', kind: provider?.kind || '', baseUrl: provider?.baseUrl || '',
+    key: provider?.key ?? null, ...extra
+  });
+
+  const fetchModels = async () => {
+    if (!provider) return;
+    setProviderStatus('正在拉取模型…');
+    try {
+      const r = await post('/api/settings/provider/fetch', providerBody({}));
+      const merged = [...new Set([...(provider.models || []), ...(r.models || [])])];
+      setProvider(providerIndex, { models: merged });
+      setProviderStatus(`拉取到 ${(r.models || []).length} 个模型`);
+    } catch (e) {
+      setProviderStatus('拉取失败');
+      message.error('拉取失败：' + e.message);
+    }
+  };
+
+  const testProvider = async () => {
+    if (!provider) return;
+    const model = (provider.models || [])[0];
+    if (!model) return message.warning('先拉取或添加一个模型');
+    setProviderStatus('正在测试连接…');
+    try {
+      const r = await post('/api/settings/provider/test', providerBody({ model }));
+      setProviderStatus('连接正常：' + (r.reply || ''));
+    } catch (e) {
+      setProviderStatus('连接失败');
+      message.error('连接失败：' + e.message);
+    }
+  };
+
+  const addModel = () => {
+    const id = modelInput.trim();
+    if (!id || !provider) return;
+    if ((provider.models || []).some(m => m.toLowerCase() === id.toLowerCase())) return;
+    setProvider(providerIndex, { models: [...(provider.models || []), id] });
+    setModelInput('');
+  };
+
+  const removeModel = id => {
+    if (!provider) return;
+    setProvider(providerIndex, { models: (provider.models || []).filter(m => m !== id) });
+  };
+
+  const openProps = id => {
+    const p = draft?.modelProps?.[id];
+    setPropsDraft({ name: p?.name || '', contextLimit: p?.contextLimit || 0 });
+    setPropsModel(id);
+  };
+
+  const applyProps = () => {
+    setDraft(d => ({
+      ...d,
+      modelProps: { ...(d.modelProps || {}), [propsModel]: { name: propsDraft.name.trim(), contextLimit: propsDraft.contextLimit || 0 } }
+    }));
+    setPropsModel(null);
+  };
+
+  const toggleSkill = async (row, enabled) => {
+    try {
+      await post('/api/settings/skills', { workspace, scope: skillScope, name: row.name, enabled });
+      await loadSkills(skillScope);
+    } catch (e) { message.error('切换失败：' + e.message); }
+  };
+
+  const uninstallSkill = async row => {
+    if (!window.confirm(`确定卸载技能「${row.name}」？\n\n会删除整个目录，不可恢复：\n${row.directory}`)) return;
+    try {
+      await post('/api/settings/skills/uninstall', { workspace, scope: skillScope, name: row.name });
+      message.success('已卸载 ' + row.name);
+      await loadSkills(skillScope);
+    } catch (e) { message.error('卸载失败：' + e.message); }
+  };
+
+  const installSkill = async () => {
+    if (!installPath.trim()) return message.warning('先填技能目录的绝对路径');
+    try {
+      const r = await post('/api/settings/skills/install', {
+        workspace, scope: skillScope, path: installPath.trim()
+      });
+      setInstallPath('');
+      message.success('已安装到 ' + r.directory);
+      await loadSkills(skillScope);
+    } catch (e) { message.error('安装失败：' + e.message); }
+  };
+
+  if (!draft) return h('div', { style: { padding: 30, textAlign: 'center' } }, h(Muted, null, '正在读取设置…'));
+
+  const general = [
+    h(SettingRow, { key: 'lang', label: '语言' },
+      h(Select, {
+        value: draft.language || '', style: { maxWidth: 240 },
+        onChange: v => patch({ language: v }),
+        options: [{ value: '', label: '跟随系统' }, { value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]
+      })),
+    h(SettingRow, { key: 'theme', label: '主题色' },
+      h(Select, {
+        value: draft.theme || 'light', style: { maxWidth: 240 },
+        onChange: v => patch({ theme: v }),
+        options: [{ value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }, { value: 'grayblue', label: '灰蓝' }]
+      })),
+    h(SwitchRow, {
+      key: 'full', label: '完全许可', checked: draft.fullAccess,
+      onChange: v => patch({ fullAccess: v }),
+      hint: '关闭路径边界、命令审批与环境隔离，可直连网络', warn: true
+    }),
+    h(SwitchRow, {
+      key: 'auto', label: '自动审批', checked: draft.autoApprove,
+      onChange: v => patch({ autoApprove: v }),
+      hint: '一切工具调用都无需审批（含工作区外访问与风险操作）'
+    }),
+    h(SwitchRow, {
+      key: 'agents', label: 'AGENTS.md', checked: draft.useAgentsMd,
+      onChange: v => patch({ useAgentsMd: v }),
+      hint: '把全局与项目 AGENTS.md 注入系统提示词'
+    }),
+    h(SwitchRow, {
+      key: 'think', label: '思考过程', checked: draft.thinkingExpandedByDefault,
+      onChange: v => patch({ thinkingExpandedByDefault: v }),
+      hint: '新回话默认展开「思考与工具过程」'
+    }),
+    h(SwitchRow, {
+      key: 'evolve', label: '自动演进', checked: draft.autoEvolve,
+      onChange: v => patch({ autoEvolve: v }),
+      hint: '攒够新证据就自己跑一轮演进（阈值与冷却见 settings.json）'
+    }),
+    h(SettingHint, { key: 'note' }, '主题与语言在重启 OpenLoop 后生效；完全许可、自动审批与自动演进立即生效。')
+  ];
+
+  const openCode = [
+    h(SwitchRow, {
+      key: 'ask', label: '权限审批', checked: draft.openCodeAskPermissions,
+      onChange: v => patch({ openCodeAskPermissions: v }),
+      hint: '委派给 OpenCode 时，每个动作都经本应用审批'
+    }),
+    h(SettingHint, { key: 'note' }, '服务通过 ~/.local/state/opencode/service.json 自动发现；未就绪时不会出现在模型列表里。')
+  ];
+
+  const tools = [
+    h(SettingRow, { key: 'webfetch', label: 'WebFetch' },
+      h(Select, {
+        value: draft.webFetchMode || 'allow', style: { maxWidth: 240 },
+        onChange: v => patch({ webFetchMode: v }),
+        options: [
+          { value: 'allow', label: '免审批（默认）' },
+          { value: 'ask', label: '每次审批' },
+          { value: 'off', label: '关闭' }
+        ]
+      })),
+    h(SettingHint, { key: 'hint' }, '只读抓取 http/https 网页正文并转纯文本；不执行 JavaScript，内容按不可信数据处理。'),
+    h(SettingHint, { key: 'note' }, '内网与环回地址一律拒绝；只抓文本/HTML/JSON/XML，单页最多 2MB，结果默认 6000 字符，一轮最多 8 次。Worker 与 Loop 同时生效。')
+  ];
+
+  const providerOptions = providers.map((p, i) => ({ value: i, label: p.name || ('提供商 ' + (i + 1)) }));
+  const modelProps = draft.modelProps || {};
+
+  const models = [
+    h(SettingRow, { key: 'provider', label: '提供商' },
+      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+        h(Select, {
+          value: providers.length ? providerIndex : undefined, placeholder: '还没有提供商',
+          style: { minWidth: 220 }, options: providerOptions,
+          onChange: v => { setProviderIndex(v); setProviderStatus(''); }
+        }),
+        h(Button, { onClick: addProvider }, '添加'),
+        h(Button, { danger: true, disabled: !provider, onClick: removeProvider }, '删除'))),
+    h(SettingRow, { key: 'name', label: '名称' },
+      h(Input, {
+        value: provider?.name || '', disabled: !provider, style: { maxWidth: 320 },
+        onChange: e => setProvider(providerIndex, { name: e.target.value })
+      })),
+    h(SettingRow, { key: 'url', label: '接口地址' },
+      h(Input, {
+        value: provider?.baseUrl || '', disabled: !provider, style: { maxWidth: 420 },
+        onChange: e => setProvider(providerIndex, { baseUrl: e.target.value })
+      })),
+    h(SettingRow, { key: 'key', label: '密钥' },
+      h(Input.Password, {
+        value: provider?.key ?? '', disabled: !provider, style: { maxWidth: 420 },
+        placeholder: provider?.hasKey && provider?.key == null ? '已保存（留空表示不改）' : '粘贴 API Key',
+        onChange: e => setProvider(providerIndex, { key: e.target.value })
+      })),
+    h(SettingRow, { key: 'actions', label: '' },
+      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+        h(Button, { disabled: !provider, onClick: fetchModels }, '拉取模型'),
+        h(Button, { disabled: !provider, onClick: testProvider }, '测试'),
+        h(Muted, null, providerStatus))),
+    h(SettingRow, { key: 'models', label: '模型' },
+      h('div', null,
+        h('div', { style: { display: 'flex', gap: 8, marginBottom: 8 } },
+          h(Input, {
+            value: modelInput, placeholder: '模型 id，回车加入', style: { maxWidth: 320 },
+            onChange: e => setModelInput(e.target.value),
+            onPressEnter: addModel
+          }),
+          h(Button, { disabled: !provider, onClick: addModel }, '加入')),
+        h('div', {
+          className: 'ol-scroll',
+          style: { height: 220, border: '1px solid #f0f0f0', borderRadius: 8, background: '#fafafa', padding: 6 }
+        },
+          (provider?.models || []).length === 0
+            ? h(Muted, { style: { display: 'block', padding: 8 } }, '这个提供商还没有模型')
+            : (provider.models || []).map(id => h('div', {
+              key: id,
+              style: { display: 'flex', alignItems: 'center', gap: 8, padding: '3px 6px' }
+            },
+              h('span', { style: { flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' } }, id),
+              modelProps[id]?.name || modelProps[id]?.contextLimit
+                ? h(Muted, null, `${modelProps[id]?.name || ''}${modelProps[id]?.contextLimit ? ' · ' + modelProps[id].contextLimit : ''}`)
+                : null,
+              h(Button, { size: 'small', type: 'link', onClick: () => openProps(id) }, '属性'),
+              h(Button, { size: 'small', type: 'link', danger: true, onClick: () => removeModel(id) }, '删除')))))),
+    h(SettingHint, { key: 'note' }, '「拉取模型」会请求提供商的 /models；「测试」会真的发一次最小补全。属性可设显示名称与上下文上限。')
+  ];
+
+  const skillRows = skills.rows || [];
+  const skillsPage = [
+    h(SettingRow, { key: 'scope', label: '范围' },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+        h(Segmented, {
+          value: skillScope, onChange: setSkillScope,
+          options: [{ value: 'global', label: '全局' }, { value: 'project', label: '项目' }]
+        }),
+        h(Muted, null, skills.root || (workspace ? '' : '先在项目里打开一个会话，或切到「全局」管理全局技能')))),
+    h(SettingRow, { key: 'install', label: '安装' },
+      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+        h(Input, {
+          value: installPath, placeholder: '含 SKILL.md 的目录（绝对路径）', style: { maxWidth: 420 },
+          onChange: e => setInstallPath(e.target.value)
+        }),
+        h(Button, { onClick: installSkill }, '安装'))),
+    h('div', {
+      className: 'ol-scroll',
+      style: { height: 320, border: '1px solid #f0f0f0', borderRadius: 8, padding: 6 }
+    },
+      skills.error ? h(Muted, { style: { display: 'block', padding: 8 } }, skills.error)
+        : skillRows.length === 0 ? h(Muted, { style: { display: 'block', padding: 8 } }, '没有可管理的技能')
+          : skillRows.map(row => h('div', {
+            key: row.name,
+            style: { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderBottom: '1px solid #f5f5f5' }
+          },
+            h(Switch, { size: 'small', checked: row.enabled, onChange: v => toggleSkill(row, v) }),
+            h('div', { style: { minWidth: 0, flex: 1 } },
+              h('div', { style: { fontSize: 13 } }, row.name,
+                h(Muted, { style: { marginLeft: 8 } }, row.global ? '全局' : row.opencode ? '项目 .opencode' : '项目')),
+              h(Muted, { style: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                row.description || row.directory || '')),
+            h(Button, {
+              size: 'small', danger: true,
+              disabled: skillScope === 'project' && (row.global || row.opencode),
+              onClick: () => uninstallSkill(row)
+            }, '卸载')))),
+    h(SettingHint, { key: 'note' }, '项目技能停用/启用走账本（由 I 收敛）；全局技能只改本机开关。.opencode/skills 里的技能由 opencode 管理，这里只能看。')
+  ];
+
+  return h('div', null,
+    h(Tabs, {
+      size: 'small', activeKey: tab, onChange: setTab,
+      items: [
+        { key: 'general', label: '普通', children: h('div', { style: { paddingTop: 12 } }, general) },
+        { key: 'opencode', label: 'OpenCode', children: h('div', { style: { paddingTop: 12 } }, openCode) },
+        { key: 'tools', label: '工具', children: h('div', { style: { paddingTop: 12 } }, tools) },
+        { key: 'models', label: '模型', children: h('div', { style: { paddingTop: 12 } }, models) },
+        { key: 'skills', label: '技能', children: h('div', { style: { paddingTop: 12 } }, skillsPage) }
+      ]
+    }),
+    h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 } },
+      h(Button, { onClick: onClose }, '取消'),
+      h(Button, { type: 'primary', loading: busy, onClick: save }, '保存')),
+    h(Modal, {
+      open: propsModel != null, title: '模型属性', okText: '确定', cancelText: '取消',
+      onOk: applyProps, onCancel: () => setPropsModel(null), width: 420
+    },
+      h('div', { style: { display: 'grid', gap: 10, paddingTop: 8 } },
+        h(Muted, null, propsModel),
+        h(Input, {
+          value: propsDraft.name, placeholder: '显示名称（留空沿用模型 id）',
+          onChange: e => setPropsDraft(p => ({ ...p, name: e.target.value }))
+        }),
+        h(Input, {
+          value: String(propsDraft.contextLimit || ''), placeholder: '上下文上限（token，0 表示自动）',
+          onChange: e => setPropsDraft(p => ({ ...p, contextLimit: parseInt(e.target.value, 10) || 0 }))
+        }))));
+}
+
 function App() {
   const [caps, setCaps] = useState(null);
   const [models, setModels] = useState([]);
@@ -691,6 +1080,7 @@ function App() {
   const [shot, setShot] = useState(localStorage.getItem('openloop.shot') === '1');
   const [newOpen, setNewOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [newWorkspace, setNewWorkspace] = useState('');
   const [newModel, setNewModel] = useState('');
   const [status, setStatus] = useState('');
@@ -840,6 +1230,7 @@ function App() {
     { key: 'list', label: '会话列表' },
     { key: 'loop', label: 'Loop' },
     { type: 'divider' },
+    { key: 'settings', label: '设置' },
     { key: 'about', label: '关于' }
   ];
 
@@ -851,6 +1242,7 @@ function App() {
         setNewOpen(true);
       } else if (key === 'list') setActiveKey('overview');
       else if (key === 'loop') setActiveKey('loop');
+      else if (key === 'settings') setSettingsOpen(true);
       else if (key === 'about') setAboutOpen(true);
     }
   };
@@ -897,7 +1289,7 @@ function App() {
     button: { autoInsertSpace: false }
   },
     h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#f5f6f7' } },
-      h(TopBar, { menu, onAbout: () => setAboutOpen(true) }),
+      h(TopBar, { menu, onSettings: () => setSettingsOpen(true) }),
       h('div', { style: { flex: 'none', background: '#fff', padding: '0 12px' } },
         h(Tabs, {
           type: 'editable-card', size: 'small', hideAdd: true,
@@ -919,6 +1311,11 @@ function App() {
         h('div', { style: { display: 'grid', gap: 8 } },
           h(Input, { value: newWorkspace, onChange: e => setNewWorkspace(e.target.value), placeholder: '工作目录（绝对路径）' }),
           h(Input, { value: newModel, onChange: e => setNewModel(e.target.value), placeholder: '模型，如 opencode/xxx（留空用默认）' }))),
+      h(Modal, {
+        open: settingsOpen, title: '设置', width: 960, footer: null,
+        onCancel: () => setSettingsOpen(false), destroyOnClose: true
+      },
+        h(SettingsPanel, { caps, onClose: () => setSettingsOpen(false) })),
       h(Modal, {
         open: aboutOpen, title: '关于', footer: null, onCancel: () => setAboutOpen(false)
       },
