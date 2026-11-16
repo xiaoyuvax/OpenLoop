@@ -69,6 +69,8 @@
     <PackageReference Include="AntdUI" />
     <!-- md 文件预览与 ChatFlow 用同一个渲染控件 -->
     <PackageReference Include="CDS.Markdown.Lite" />
+    <!-- 右侧栏内嵌浏览器 -->
+    <PackageReference Include="Microsoft.Web.WebView2" />
   </ItemGroup>
 
 </Project>
