@@ -13,7 +13,7 @@ namespace OpenLoop.Service.Worker
     /// ConnMan 没在运行或连不上都继续重试（它可能在更新/重启）：前 3 次间隔 5 秒，之后指数退避。
     /// 只有用户又动了这个会话（发消息、停、换模型…）才停。
     /// </summary>
-    internal static class FreeLimitRecovery
+    public static class FreeLimitRecovery
     {
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan WaitTimeout = TimeSpan.FromMinutes(10);
@@ -31,25 +31,28 @@ namespace OpenLoop.Service.Worker
         /// <summary>
         /// 失败轮结束后调用。userEpoch 读会话的用户动作计数（会话已不存在返回 null）；
         /// 用户动过会话就停；sendContinue 在节点可用时发一条「继续」。
+        /// key 只用来区分重试（缺省用 sessionId；壳里多个 Loop 页可能共用同一个 session id）。
         /// </summary>
-        public static void TryStart(string sessionId, string model, Func<int?> userEpoch, Func<string, bool> sendContinue)
+        public static void TryStart(string sessionId, string model, Func<int?> userEpoch, Func<string, bool> sendContinue,
+            string key = null)
         {
             if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(model)) return;
             // 只修 opencode 的免费额度；付费模型/别的后端不归 ConnMan 管
             if (!model.StartsWith("opencode/", StringComparison.OrdinalIgnoreCase)) return;
+            key = string.IsNullOrWhiteSpace(key) ? sessionId : key.Trim();
 
             var cts = new CancellationTokenSource();
             lock (Gate)
             {
                 // 同一会话又失败一次（用户发过新消息后）：顶掉旧的重试
-                if (Loops.Remove(sessionId, out var old)) old.Cancel();
-                Loops[sessionId] = cts;
+                if (Loops.Remove(key, out var old)) old.Cancel();
+                Loops[key] = cts;
             }
 
-            _ = Task.Run(() => RunAsync(sessionId, model, userEpoch, sendContinue, cts));
+            _ = Task.Run(() => RunAsync(sessionId, key, model, userEpoch, sendContinue, cts));
         }
 
-        private static async Task RunAsync(string sessionId, string model, Func<int?> userEpoch,
+        private static async Task RunAsync(string sessionId, string key, string model, Func<int?> userEpoch,
             Func<string, bool> sendContinue, CancellationTokenSource cts)
         {
             try
@@ -101,7 +104,7 @@ namespace OpenLoop.Service.Worker
             {
                 lock (Gate)
                 {
-                    if (Loops.TryGetValue(sessionId, out var current) && current == cts) Loops.Remove(sessionId);
+                    if (Loops.TryGetValue(key, out var current) && current == cts) Loops.Remove(key);
                 }
                 cts.Dispose();
             }

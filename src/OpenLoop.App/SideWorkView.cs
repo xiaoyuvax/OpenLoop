@@ -9,6 +9,7 @@ using OpenLoop.Core.Skills;
 using OpenLoop.Core.Store;
 using OpenLoop.Core.Tools;
 using OpenLoop.Core.Trace;
+using OpenLoop.Service.Worker;
 
 namespace OpenLoop.App
 {
@@ -26,6 +27,13 @@ namespace OpenLoop.App
         private string _model = "";
         private string _effort = "";
         private bool _running;
+
+        /// <summary>用户动作计数（跑新旁路、停、换模型、清空）：免费额度自愈据此判断用户动没动过这个旁路。</summary>
+        private int _userEpoch;
+        private bool _closed;
+
+        /// <summary>自愈重试表的键：同一个 SideWorkView 实例同一时刻只留一个重试。</summary>
+        private readonly string _recoveryKey = "btw-" + Guid.NewGuid().ToString("N")[..8];
 
         public SideWorkView()
         {
@@ -49,12 +57,18 @@ namespace OpenLoop.App
 
         public void SetModel(string model)
         {
-            if (!string.IsNullOrWhiteSpace(model)) _model = model.Trim();
+            if (string.IsNullOrWhiteSpace(model)) return;
+            if (!string.Equals(model.Trim(), _model, StringComparison.Ordinal)) _userEpoch++;
+            _model = model.Trim();
         }
 
         public void SetEffort(string effort) => _effort = effort ?? "";
 
-        public void Stop() => _cts?.Cancel();
+        public void Stop()
+        {
+            _userEpoch++;
+            _cts?.Cancel();
+        }
 
         /// <summary>当前旁路的历史快照（供挤走时转成普通会话；克隆一份，旁路清空后仍可用）。</summary>
         public IReadOnlyList<ChatTurn> Snapshot() =>
@@ -73,11 +87,20 @@ namespace OpenLoop.App
         /// <summary>清空当前旁路，给新旁路让位。</summary>
         public void Reset()
         {
+            _userEpoch++;
             _book.Clear();
             _lblStatus.Text = "只读 · 尚未运行";
         }
 
-        public void Shutdown() => _cts?.Cancel();
+        public void Shutdown()
+        {
+            _userEpoch++;
+            _closed = true;
+            _cts?.Cancel();
+        }
+
+        /// <summary>免费额度自愈读的用户动作计数；这个旁路已关/已销毁返回 null（自愈据此收工）。</summary>
+        private int? UserEpochOf() => _closed || IsDisposed ? null : _userEpoch;
 
         /// <summary>用给定上下文跑一次旁路任务；结果只落在本视图。</summary>
         public async void Run(string text, IReadOnlyList<LlmMessage> context)
@@ -90,6 +113,7 @@ namespace OpenLoop.App
 
             text = text?.Trim() ?? "";
             if (text.Length == 0) return;
+            _userEpoch++;
 
             var settings = _settings();
             if (!Directory.Exists(_workspace))
@@ -299,6 +323,17 @@ namespace OpenLoop.App
                 trace.Finish("error", turn.AssistantText);
                 _lblStatus.Text = "只读 · error";
                 Notify("旁路执行失败", ex.Message, error: true);
+                // 免费额度耗尽：让 ConnMan 换节点，就绪后重跑同一条旁路任务（旁路没有「继续」的会话，
+                // 只能把这次请求原样再发一遍）。回调在后台线程，Run 会碰控件，必须回 UI 线程。
+                if (ServerNotice.IsQuotaFailure(turn.AssistantText))
+                {
+                    FreeLimitRecovery.TryStart(_recoveryKey, model, UserEpochOf, _ =>
+                    {
+                        if (UserEpochOf() == null) return false;
+                        RunOnUi(() => Run(text, context));
+                        return true;
+                    }, _recoveryKey);
+                }
             }
             finally
             {

@@ -362,17 +362,32 @@ namespace OpenLoop.App
 
         // ---- 内嵌浏览器（右侧栏「网页」页）：默认只读，Agent 驱动 ----
 
-        private BrowserView Browser => Current?.View?.Browser;
+        private BrowserView Browser => VisibleLoop?.Browser ?? Current?.View?.Browser;
+
+        /// <summary>选中标签页如果是 Loop 页，就返回它（Loop 页有自己的右侧栏与「网页」页）。</summary>
+        private LoopView VisibleLoop => (_tabs.SelectedTab as AntdUI.TabPage)?.Tag as LoopView;
 
         [PuppetAction(Desc = "打开右侧栏「网页」页的内嵌浏览器；url 省略 = 只切页")]
         public OperationResult OpenBrowser(string url = null)
         {
-            var view = Current?.View;
-            if (view == null) return OperationResult.Failure("还没有会话");
-            view.ShowBrowser();
+            if (VisibleLoop != null)
+            {
+                VisibleLoop.ShowBrowser();
+            }
+            else
+            {
+                var view = Current?.View;
+                if (view == null) return OperationResult.Failure("还没有会话");
+                // 目标会话不在前台时先切过去，否则用户看不到这个浏览器
+                if (Active == null) ShowSession(Current);
+                view.ShowBrowser();
+            }
+
+            var browser = Browser;
+            if (browser == null) return OperationResult.Failure("还没有会话");
             if (string.IsNullOrWhiteSpace(url)) return OperationResult.Success("已打开网页页");
-            return view.Browser.Navigate(url, out string error)
-                ? OperationResult.Success("已打开 " + url, view.Browser.Url)
+            return browser.Navigate(url, out string error)
+                ? OperationResult.Success("已打开 " + url, browser.Url)
                 : OperationResult.Failure(error);
         }
 

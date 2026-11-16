@@ -11,6 +11,7 @@ using OpenLoop.Core.Tools;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Trace;
 using OpenLoop.Service.Pending;
+using OpenLoop.Service.Worker;
 
 namespace OpenLoop.App
 {
@@ -51,6 +52,10 @@ namespace OpenLoop.App
 
         /// <summary>「立即」标记：当前轮在下一个 step 前收尾（进行中的工具不打断）。</summary>
         private bool _interrupt;
+
+        /// <summary>用户动作计数（发消息、停、换模型、关页都会加）：免费额度自愈据此判断用户动没动过这个会话。</summary>
+        private int _userEpoch;
+        private bool _closed;
 
         /// <summary>账本归 I 所有：技能激活集从这里读，本进程不写账本。</summary>
         private OpenLoop.Service.Web.LoopApiClient _loopClient;
@@ -103,6 +108,18 @@ namespace OpenLoop.App
         {
             _sideTabs.SelectIndex = index;
             UpdateSideVisibility(index);
+        }
+
+        private const int BrowserPage = 2;
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public BrowserView Browser => _browser;
+
+        /// <summary>展开右侧栏并切到「网页」页（Agent 用内嵌浏览器时的入口）。</summary>
+        public void ShowBrowser()
+        {
+            if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
+            ShowSidePage(BrowserPage);
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -232,6 +249,7 @@ namespace OpenLoop.App
         public void SetModel(string model)
         {
             if (string.IsNullOrWhiteSpace(model)) return;
+            _userEpoch++;
             _model = model.Trim();
             var provider = _selProvider.SelectedValue as ProviderConfig;
             if (provider != null && !(provider.Models ?? []).Any(m =>
@@ -274,14 +292,23 @@ namespace OpenLoop.App
             Send(next.Text);
         }
 
-        public void Stop() => _cts?.Cancel();
+        public void Stop()
+        {
+            _userEpoch++;
+            _cts?.Cancel();
+        }
 
         public void Shutdown()
         {
+            _userEpoch++;
+            _closed = true;
             _cts?.Cancel();
             _sideBtw.Shutdown();
             SaveLoopChat();
         }
+
+        /// <summary>免费额度自愈读的用户动作计数；这个 Loop 页已关/已销毁返回 null（自愈据此收工）。</summary>
+        private int? UserEpochOf() => _closed || IsDisposed ? null : _userEpoch;
 
         /// <summary>对话正文按「工作区|会话 id」存；顺带把项目记进 Loop 索引，供 [Loop] 页列出。</summary>
         private void SaveLoopChat()
@@ -306,6 +333,7 @@ namespace OpenLoop.App
         private async void SendAsync(string text = null)
         {
             if (_running) return;
+            _userEpoch++;
 
             var settings = _settings();
             bool fromInput = text == null;
@@ -572,6 +600,17 @@ namespace OpenLoop.App
                 trace.Finish("error", turn.AssistantText);
                 _lblStatus.Text = "状态: error";
                 Notify("Loop 执行失败", ex.Message, error: true);
+                // 免费额度耗尽：让 ConnMan 换节点，就绪后由它回调这里给原会话发「继续」
+                if (ServerNotice.IsQuotaFailure(turn.AssistantText))
+                {
+                    // 回调在后台线程：SendAsync 会碰控件，必须回 UI 线程
+                    FreeLimitRecovery.TryStart(_sessionId, model, UserEpochOf, text =>
+                    {
+                        if (UserEpochOf() == null) return false;
+                        RunOnUi(() => SendAsync(text));
+                        return true;
+                    }, _workspace + "|" + _sessionId);
+                }
             }
             finally
             {
@@ -777,8 +816,10 @@ namespace OpenLoop.App
         {
             _detailFlow.Visible = index == 0;
             _sideBtw.Visible = index == 1;
+            _browser.Visible = index == BrowserPage;
             _fileView.Visible = index >= 0 && index == _filePage;
             if (index == 0) ApplyDetail();
+            if (index == BrowserPage) _browser.EnsureLoaded();
         }
 
         /// <summary>聊天区里点了本地文件路径：在右侧「文件」页打开（第一次点才把该页加出来）。</summary>
