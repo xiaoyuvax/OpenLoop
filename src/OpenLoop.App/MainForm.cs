@@ -360,6 +360,85 @@ namespace OpenLoop.App
             }
         }
 
+        // ---- 内嵌浏览器（右侧栏「网页」页）：默认只读，Agent 驱动 ----
+
+        private BrowserView Browser => Current?.View?.Browser;
+
+        [PuppetAction(Desc = "打开右侧栏「网页」页的内嵌浏览器；url 省略 = 只切页")]
+        public OperationResult OpenBrowser(string url = null)
+        {
+            var view = Current?.View;
+            if (view == null) return OperationResult.Failure("还没有会话");
+            view.ShowBrowser();
+            if (string.IsNullOrWhiteSpace(url)) return OperationResult.Success("已打开网页页");
+            return view.Browser.Navigate(url, out string error)
+                ? OperationResult.Success("已打开 " + url, view.Browser.Url)
+                : OperationResult.Failure(error);
+        }
+
+        [PuppetAction(Desc = "在内嵌浏览器里导航到 url")]
+        public OperationResult NavigateBrowser(string url)
+        {
+            var browser = Browser;
+            if (browser == null) return OperationResult.Failure("还没有会话");
+            return browser.Navigate(url, out string error)
+                ? OperationResult.Success("已导航到 " + url, browser.Url)
+                : OperationResult.Failure(error);
+        }
+
+        [PuppetAction(Desc = "在内嵌浏览器里执行 JS；data 是 WebView2 的 JSON 结果串（字符串结果带引号）")]
+        public OperationResult EvalBrowserScript(string script)
+        {
+            var browser = Browser;
+            if (browser == null) return OperationResult.Failure("还没有会话");
+            return browser.Eval(script, out string value, out string error)
+                ? OperationResult.Success("已执行", value)
+                : OperationResult.Failure(error);
+        }
+
+        [PuppetAction(Desc = "截取内嵌浏览器当前页面（PNG，作为可下载产物返回）")]
+        public OperationResult BrowserScreenshot()
+        {
+            var browser = Browser;
+            if (browser == null) return OperationResult.Failure("还没有会话");
+            if (!browser.Screenshot(out string png, out string error)) return OperationResult.Failure(error);
+            return OperationResult.Success("已截图",
+                new PuppetArtifact("browser.png", "image/png", Convert.FromBase64String(png)));
+        }
+
+        [PuppetAction(Desc = "解锁/锁定内嵌浏览器：解锁后用户可以直接点按网页")]
+        public OperationResult SetBrowserInteract(bool enabled)
+        {
+            var browser = Browser;
+            if (browser == null) return OperationResult.Failure("还没有会话");
+            browser.SetInteract(enabled);
+            return OperationResult.Success(enabled ? "已解锁：用户可以操作网页" : "已锁定：网页由 Agent 控制");
+        }
+
+        [PuppetAction(Desc = "把内嵌浏览器搬进独立窗口")]
+        public OperationResult UndockBrowser()
+        {
+            var browser = Browser;
+            if (browser == null) return OperationResult.Failure("还没有会话");
+            browser.Undock();
+            return OperationResult.Success("已搬进独立窗口");
+        }
+
+        [PuppetAction(Desc = "把独立窗口里的浏览器搬回右侧栏")]
+        public OperationResult DockBrowser()
+        {
+            var browser = Browser;
+            if (browser == null) return OperationResult.Failure("还没有会话");
+            browser.BringBack();
+            return OperationResult.Success("已搬回右侧栏");
+        }
+
+        public string BrowserUrl => Browser?.Url ?? "";
+
+        public string BrowserState => Browser is { } b
+            ? $"{(b.InteractEnabled ? "unlocked" : "locked")} | {(b.IsUndocked ? "undocked" : "docked")} | {b.Url}"
+            : "无会话";
+
         public bool LoopBusy => _loopView?.Busy ?? false;
 
         public string LoopStatus => _loopView?.Status ?? "";

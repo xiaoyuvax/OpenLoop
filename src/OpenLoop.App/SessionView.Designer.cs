@@ -23,6 +23,7 @@ namespace OpenLoop.App
         private FlowLayoutPanel _detailFlow;
         private SideWorkView _sideBtw;
         private FilePreviewView _fileView;
+        private BrowserView _browser;
         private AntdUI.Button _btnOpenLoop;
         private System.Windows.Forms.Label _lblDModel;
         private AntdUI.Label _lblDEffort;
@@ -243,6 +244,7 @@ namespace OpenLoop.App
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Loop" });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabDetail") });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "旁路" });
+            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "网页" });
             _sideTabs.SelectIndex = 0;
             _sideTabs.SelectIndexChanged += OnSidePageChanged;
 
@@ -262,6 +264,7 @@ namespace OpenLoop.App
 
             _sideBtw = new SideWorkView { Dock = DockStyle.Fill, Visible = false };
             _fileView = new FilePreviewView { Dock = DockStyle.Fill, Visible = false };
+            _browser = new BrowserView { Dock = DockStyle.Fill, Visible = false };
 
             _lblDef.AutoSize = true;
             _lblDef.MaximumSize = new Size(260, 0);
@@ -427,6 +430,7 @@ namespace OpenLoop.App
             _sideHost.Controls.Add(_detailFlow);
             _sideHost.Controls.Add(_sideBtw);
             _sideHost.Controls.Add(_fileView);
+            _sideHost.Controls.Add(_browser);
             _side.Controls.Add(_sideTabs, 0, 0);
             _side.Controls.Add(_sideHost, 0, 1);
             _upperSplit.Panel2.Controls.Add(_side);

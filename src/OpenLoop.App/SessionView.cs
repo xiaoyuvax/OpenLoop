@@ -45,6 +45,9 @@ namespace OpenLoop.App
         /// <summary>「文件」页在侧栏标签里的下标；第一次点文件路径时才加出来（-1 = 还没有）。</summary>
         private int _filePage = -1;
 
+        /// <summary>「网页」页在侧栏标签里的固定下标（内嵌浏览器）。</summary>
+        private const int BrowserPage = 3;
+
         /// <summary>访问 A 的 /api/sessions；界面不再自己跑 Agent。</summary>
         private WorkerApiClient _client;
         private readonly HashSet<string> _answeredPrompts = [];
@@ -279,13 +282,25 @@ namespace OpenLoop.App
             UpdateSideVisibility(index);
         }
 
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public BrowserView Browser => _browser;
+
+        /// <summary>展开右侧栏并切到「网页」页（Agent 用内嵌浏览器时的入口）。</summary>
+        public void ShowBrowser()
+        {
+            if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
+            ShowSidePage(BrowserPage);
+        }
+
         private void UpdateSideVisibility(int index)
         {
             _loopFlow.Visible = index == 0;
             _detailFlow.Visible = index == 1;
             _sideBtw.Visible = index == 2;
             _fileView.Visible = index >= 0 && index == _filePage;
+            _browser.Visible = index == BrowserPage;
             if (index == 1) ApplyDetail();
+            if (index == BrowserPage) _browser.EnsureLoaded();
         }
 
         /// <summary>聊天区里点了本地文件路径：在右侧「文件」页打开（第一次点才把该页加出来）。</summary>
