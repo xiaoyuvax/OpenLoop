@@ -24,13 +24,17 @@
     <ProjectReference Include="..\OpenLoop.Core\OpenLoop.Core.csproj" />
     <ProjectReference Include="..\OpenLoop.Service\OpenLoop.Service.csproj" />
     <!-- 只为构建顺序：A/I 的可执行文件由下面的 CopyWorker 拷到 backends/，界面按同目录启动它们。 -->
-    <ProjectReference Include="..\OpenLoop.A\OpenLoop.A.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\OpenLoop.I\OpenLoop.I.csproj" ReferenceOutputAssembly="false" />
+    <!-- 只在 Debug 下引用 A/I：借构建顺序把它们的产物拷进 bin\backends\，方便本地直接跑。
+         Release/发布不带 A/I（发布产物只含壳），backends 由换版链路填充。 -->
+    <ProjectReference Include="..\OpenLoop.A\OpenLoop.A.csproj" ReferenceOutputAssembly="false"
+                      Condition="'$(Configuration)' == 'Debug'" />
+    <ProjectReference Include="..\OpenLoop.I\OpenLoop.I.csproj" ReferenceOutputAssembly="false"
+                      Condition="'$(Configuration)' == 'Debug'" />
     <ProjectReference Include="..\..\..\PuppetCore\Puppet.Core\Puppet.Core.csproj" />
     <ProjectReference Include="..\..\..\PuppetCore\Puppet.Core.WinForms\Puppet.Core.WinForms.csproj" />
   </ItemGroup>
 
-  <Target Name="CopyWorker" AfterTargets="Build">
+  <Target Name="CopyWorker" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
     <ItemGroup>
       <_WorkerFiles Include="..\OpenLoop.A\bin\$(Configuration)\net10.0\**\*" />
       <_WorkerFiles Include="..\OpenLoop.I\bin\$(Configuration)\net10.0\**\*" />
@@ -39,6 +43,15 @@
     <Copy SourceFiles="@(_WorkerFiles)"
           DestinationFiles="@(_WorkerFiles->'$(OutDir)backends\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- 壳不宿主 Web 界面（A/I 各用自己 backends\wwwroot）；发布时不要把 Service 带过来的 wwwroot 复制到安装根。 -->
+  <Target Name="DropShellWwwRoot" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <_ShellWwwRoot Include="@(ResolvedFileToPublish)"
+                     Condition="$([System.String]::Copy('%(RelativePath)').Replace('/','\').StartsWith('wwwroot\'))" />
+      <ResolvedFileToPublish Remove="@(_ShellWwwRoot)" />
+    </ItemGroup>
   </Target>
 
   <ItemGroup>
