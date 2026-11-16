@@ -23,7 +23,7 @@ namespace OpenLoop.App
         private bool _hasGitChanges;
         private readonly bool _reportMode;
         private readonly bool _upstreamNewer;
-        private readonly IterationReport _report;
+        private readonly IReadOnlyDictionary<string, VersionEntry> _before;
         private bool _canRollback;
         private bool _rollingBack;
         private bool _rolledBack;
@@ -55,10 +55,10 @@ namespace OpenLoop.App
             _workspace = report?.Workspace ?? "";
             _plan = [];
             _reportMode = true;
-            _report = report;
-            _canRollback = report?.Before?.Keys.Any(k =>
-                string.Equals(k, "a", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(k, "i", StringComparison.OrdinalIgnoreCase)) == true;
+            // 旧壳写报告时不认识 Before：成功且没自动回退时，previous.json 就是迭代前的版本
+            _before = report?.Before is { Count: > 0 } before ? before : PreviousVersions(report);
+            _canRollback = _before != null && RolesToRestore(
+                new Dictionary<string, VersionEntry>(_before, StringComparer.OrdinalIgnoreCase)).Count > 0;
             _btnRollback.Visible = _canRollback;
 
             Text = report is { Ok: true } ? "迭代完成" : "迭代失败";
@@ -342,9 +342,9 @@ namespace OpenLoop.App
         {
             if (_rollingBack || _rolledBack || !_canRollback) return;
 
-            var before = _report?.Before == null
+            var before = _before == null
                 ? null
-                : new Dictionary<string, VersionEntry>(_report.Before, StringComparer.OrdinalIgnoreCase);
+                : new Dictionary<string, VersionEntry>(_before, StringComparer.OrdinalIgnoreCase);
             var roles = RolesToRestore(before);
             if (roles.Count == 0)
             {
@@ -394,6 +394,23 @@ namespace OpenLoop.App
                 SyncButtons();
                 _ = RefreshGitStateAsync();
             }
+        }
+
+        /// <summary>
+        /// 报告里没有 Before 时的兜底：只有「成功且没自动回退」的迭代，previous.json 才一定是迭代前版本。
+        /// 失败自动回退后 previous 可能指向刚判坏的版本，不能用。
+        /// </summary>
+        private static Dictionary<string, VersionEntry> PreviousVersions(IterationReport report)
+        {
+            if (report is not { Ok: true, RolledBack: false }) return null;
+            var store = new VersionStore();
+            var map = new Dictionary<string, VersionEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (string role in new[] { "a", "i" })
+            {
+                var entry = store.Previous(role);
+                if (entry?.Dir is { Length: > 0 }) map[role] = entry;
+            }
+            return map.Count > 0 ? map : null;
         }
 
         /// <summary>当前跑的不是迭代前版本的角色（只算登记的 A/I）。</summary>
