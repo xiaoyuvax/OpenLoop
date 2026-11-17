@@ -7,7 +7,6 @@ namespace OpenLoop.App
         private TableLayoutPanel _root;
         private TableLayoutPanel _header;
         private AntdUI.Label _lblTitle;
-        private AntdUI.Label _lblSub;
         private FlowLayoutPanel _headerRight;
         private AntdUI.Button _btnPanel;
         private AntdUI.Button _btnSummary;
@@ -61,7 +60,6 @@ namespace OpenLoop.App
             _root = new TableLayoutPanel();
             _header = new TableLayoutPanel();
             _lblTitle = new AntdUI.Label();
-            _lblSub = new AntdUI.Label();
             _headerRight = new FlowLayoutPanel();
             _btnPanel = new AntdUI.Button();
             _btnSummary = new AntdUI.Button();
@@ -108,15 +106,15 @@ namespace OpenLoop.App
             _root.ColumnCount = 1;
             _root.RowCount = 3;
             _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
             _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 1F));
             _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _root.BackColor = UiStyle.Page;
 
             _header.Dock = DockStyle.Fill;
-            _header.ColumnCount = 4;
+            // 与 Worker 的页头同构：按钮 · 标题（占满剩余宽度）· 右侧操作
+            _header.ColumnCount = 3;
             _header.RowCount = 1;
-            _header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -124,22 +122,16 @@ namespace OpenLoop.App
             _header.BackColor = UiStyle.Surface;
             _header.Padding = new Padding(16, 0, 10, 0);
 
-            _lblTitle.AutoSize = true;
+            // 标题格式与 Worker 一致（同一字号/位置/省略号），只有颜色不同；Loop 身份靠前缀图标
+            _lblTitle.Dock = DockStyle.Fill;
             _lblTitle.Text = "Loop";
-            _lblTitle.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
-            _lblTitle.ForeColor = Color.FromArgb(0x72, 0x2E, 0xD1);
+            _lblTitle.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+            _lblTitle.ForeColor = UiStyle.Loop;
             _lblTitle.TextAlign = ContentAlignment.MiddleLeft;
-            _lblTitle.Margin = new Padding(0, 0, 10, 0);
-            // TableLayoutPanel 里不设 Top/Bottom 锚点 = 在行内纵向居中（AutoSize 标签默认贴顶）
-            _lblTitle.Anchor = AnchorStyles.Left;
-
-            _lblSub.Dock = DockStyle.Fill;
-            _lblSub.Text = Localization.T("LoopSubtitle");
-            _lblSub.Font = new Font("Segoe UI", 9F);
-            _lblSub.ForeColor = UiStyle.Muted;
-            _lblSub.TextAlign = ContentAlignment.MiddleLeft;
-            _lblSub.AutoEllipsis = true;
-            _lblSub.Margin = new Padding(0);
+            _lblTitle.AutoEllipsis = true;
+            _lblTitle.PrefixSvg = UiIcons.Of(UiIcons.Loop, UiStyle.Loop);
+            _lblTitle.IconGap = 6;
+            _lblTitle.Margin = new Padding(0);
 
             _headerRight.Dock = DockStyle.Fill;
             _headerRight.FlowDirection = FlowDirection.RightToLeft;
@@ -168,8 +160,7 @@ namespace OpenLoop.App
 
             _header.Controls.Add(_btnSummary, 0, 0);
             _header.Controls.Add(_lblTitle, 1, 0);
-            _header.Controls.Add(_lblSub, 2, 0);
-            _header.Controls.Add(_headerRight, 3, 0);
+            _header.Controls.Add(_headerRight, 2, 0);
             _headerRight.Controls.Add(_btnPanel);
 
             _line.Dock = DockStyle.Fill;

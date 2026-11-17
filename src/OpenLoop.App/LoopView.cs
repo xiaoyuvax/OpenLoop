@@ -225,11 +225,10 @@ namespace OpenLoop.App
                 if (_chkSelect.Checked != _chat.ShowSelection) _chkSelect.Checked = _chat.ShowSelection;
             };
             _chat.Bind(_book);
-            _lblSub.Text = "工作区 · " + UiStyle.ShortPath(_workspace);
-            _tips.SetToolTip(_lblSub, _workspace);
             _tips.SetToolTip(_btnSummary, "用当前模型重新总结会话标题");
             string savedTitle = LoopIndex.Title(_workspace, _sessionId);
-            _lblTitle.Text = Session.ComposeTitle(_workspace, savedTitle, loop: true);
+            // 标题格式与 Worker 对齐（工作区文件夹名 · 内容简述），Loop 身份靠页头图标与颜色
+            _lblTitle.Text = Session.ComposeTitle(_workspace, savedTitle);
             _chat.ScrollToEnd();
 
             _lblStatus.TextChanged += (_, _) => ApplyDetail();
@@ -270,7 +269,7 @@ namespace OpenLoop.App
                 if (title.Length == 0) return;
                 bool same = string.Equals(LoopIndex.Title(_workspace, _sessionId), title, StringComparison.Ordinal);
                 LoopIndex.Rename(_workspace, _sessionId, title);
-                _lblTitle.Text = Session.ComposeTitle(_workspace, title, loop: true);
+                _lblTitle.Text = Session.ComposeTitle(_workspace, title);
                 TitleChanged?.Invoke(_lblTitle.Text);
                 if (notify) Notify(same ? "标题未变化" : "标题已更新", _lblTitle.Text);
             }

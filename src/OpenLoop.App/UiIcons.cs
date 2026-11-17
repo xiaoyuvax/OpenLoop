@@ -95,6 +95,10 @@ namespace OpenLoop.App
         public const string Undock =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M3 5h13v3h-2V7H5v10h3v2H3zM10 9h11v11H10zm2 2v7h7v-7z'/></svg>";
 
+        /// <summary>Loop 标识：观察者（同心圆），与 Worker 的纯文字标题区分。</summary>
+        public const string Loop =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 2a10 10 0 110 20 10 10 0 010-20zm0 3a7 7 0 100 14 7 7 0 000-14zm0 4a3 3 0 110 6 3 3 0 010-6z'/></svg>";
+
         /// <summary>等这一轮返回。</summary>
         public const string Clock =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 3a9 9 0 110 18 9 9 0 010-18zm0 2a7 7 0 100 14 7 7 0 000-14zm-1 2h2v5.6l4 2.4-1 1.7-5-3z'/></svg>";

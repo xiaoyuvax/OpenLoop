@@ -621,7 +621,7 @@ namespace OpenLoop.App
             var page = new AntdUI.TabPage
             {
                 Text = LoopTabText(target, id),
-                IconSvg = UiIcons.Dot(UiStyle.Loop),
+                IconSvg = UiIcons.Of(UiIcons.Loop, UiStyle.Loop),
                 ReadOnly = false,
                 Tag = view,
                 Dock = DockStyle.Fill
@@ -647,7 +647,8 @@ namespace OpenLoop.App
         private static string LoopTabText(string workspace, string sessionId)
         {
             string summary = LoopIndex.Title(workspace, sessionId);
-            string text = Session.ComposeTitle(workspace, summary, loop: true);
+            // 与 Worker 标签同格式（工作区文件夹名 · 内容简述），Loop 身份由紫色 Loop 图标区分
+            string text = Session.ComposeTitle(workspace, summary);
             // 同一项目可以有多个 Loop 会话：还没总结出标题时补 id 尾段，免得标签页文本一模一样
             if (string.IsNullOrWhiteSpace(summary)
                 && !string.Equals(sessionId, LoopRef.LegacyId, StringComparison.Ordinal))
