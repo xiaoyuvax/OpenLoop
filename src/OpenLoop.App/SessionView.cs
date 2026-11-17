@@ -555,19 +555,18 @@ namespace OpenLoop.App
 
         /// <summary>
         /// Enter 在 AntdUI 的 WM_KEYDOWN 里先被消化成换行（早于 KeyDown 事件），
-        /// 所以只能在这里拦：Enter 发送（运行中=等本轮返回），Ctrl+Enter 插到下一步，Shift+Enter 换行。
+        /// 所以只能在这里拦：Enter / Ctrl+Enter 发送（运行中=等本轮返回，不打断），Shift+Enter 换行。
         /// </summary>
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
             bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
-            bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
-            if (!shift && e.KeyData != Keys.Enter && !ctrl) return;
+            if (!shift && e.KeyData != Keys.Enter && e.KeyData != (Keys.Control | Keys.Enter)) return;
 
             e.Result = false;
             if (shift) { ComposerKeys.InsertSoftNewline(_txtInput); UpdateSendButton(); return; }
             if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
-            if (!ctrl && _cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
-            Submit(immediate: ctrl);
+            if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
+            Submit();
         }
 
         private void OnInputTextChanged(object sender, EventArgs e)
@@ -760,7 +759,7 @@ namespace OpenLoop.App
             }
         }
 
-        private (bool Ok, string Message) Submit(bool immediate = false)
+        private (bool Ok, string Message) Submit()
         {
             string text = _txtInput.Text.Trim();
 
@@ -808,14 +807,9 @@ namespace OpenLoop.App
                     StopRun();
                     return (true, "已停止当前轮");
                 }
-                Enqueue(text, _mode, immediate ? PendingMode.NextStep : PendingMode.AfterTurn);
+                Enqueue(text, _mode);
                 _txtInput.Clear();
                 SetMode("task");
-                if (immediate)
-                {
-                    RequestInterrupt();
-                    return (true, "已入队（立即），当前轮会在下一个 step 前收尾");
-                }
                 return (true, "已入队，本轮结束后发送");
             }
 
@@ -835,7 +829,7 @@ namespace OpenLoop.App
                 SetMode("task");
                 return;
             }
-            // 运行中点发送 = 排队等本轮返回；要打断当前轮就点队列行的「立即」或按 Ctrl+Enter
+            // 运行中点发送 = 排队等本轮返回；要打断当前轮就点队列行的「立即」
             Submit();
         }
 

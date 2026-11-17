@@ -14,9 +14,6 @@ namespace OpenLoop.Service.Web
         public DateTime LastAt { get; set; }
         public string LastText { get; set; }
         public bool Live { get; set; }
-
-        /// <summary>最近一条留言的时间（心跳可能比它新，但列表要展示的是留言摘要）。</summary>
-        public DateTime LastMessageAt { get; set; }
     }
 
     /// <summary>留言板上的一条消息。</summary>
@@ -31,8 +28,8 @@ namespace OpenLoop.Service.Web
     }
 
     /// <summary>
-    /// 会话页 [Puppet] 的只读视图：合并 @A、@I（以及本进程兜底）三张留言板。
-    /// 这些会话没有主 agent 驱动，谁在板上说话就显示谁；用户以 U 的身份参与。
+    /// 会话页 [Puppet] 的只读视图：同一时刻只有一块板——@A 可达就用 @A，A 不可达才落到 @I，
+    /// 两者都不在时用本进程兜底。板上的多个 agent 共用这一行对话；用户以 U 的身份参与。
     /// </summary>
     public static class PuppetBoard
     {
@@ -45,7 +42,7 @@ namespace OpenLoop.Service.Web
         private static List<PuppetSession> _sessions = [];
         private static DateTime _sessionsAt;
 
-        /// <summary>合并后的会话列表（2 秒缓存：会话总览刷新很频繁，不能每次都打 HTTP）。</summary>
+        /// <summary>留言板只有一行：优先 @A，其次 @I，最后本进程兜底（2 秒缓存，刷新太频繁不能每次都打 HTTP）。</summary>
         public static IReadOnlyList<PuppetSession> Sessions()
         {
             lock (Gate)
@@ -53,45 +50,14 @@ namespace OpenLoop.Service.Web
                 if (DateTime.UtcNow - _sessionsAt < CacheFor) return _sessions.ToList();
             }
 
-            var now = DateTime.Now;
-            var sessions = new Dictionary<string, PuppetSession>(StringComparer.Ordinal);
-            foreach (var host in SessionBoard.Hosts())
+            var result = new List<PuppetSession>();
+            var hosts = SessionBoard.Hosts();
+            var host = hosts.FirstOrDefault(h => !h.Local) ?? hosts.FirstOrDefault();
+            if (host != null)
             {
                 var state = Read(host);
-                foreach (var a in state.Agents)
-                {
-                    string key = host.Name + "|" + a.Id;
-                    sessions[key] = new PuppetSession
-                    {
-                        Host = host.Name,
-                        Id = a.Id,
-                        Purpose = a.Purpose,
-                        Doing = a.Operation,
-                        Steps = a.Steps,
-                        LastAt = a.LastActive,
-                        Live = now - a.LastActive <= LiveWithin
-                    };
-                }
-                foreach (var m in state.Messages)
-                {
-                    string key = host.Name + "|" + m.AgentId;
-                    if (!sessions.TryGetValue(key, out var session))
-                        sessions[key] = session = new PuppetSession { Host = host.Name, Id = m.AgentId };
-                    if (m.At > session.LastAt) session.LastAt = m.At;
-                    if (m.At >= session.LastMessageAt)
-                    {
-                        session.LastMessageAt = m.At;
-                        session.LastText = m.Text;
-                    }
-                }
+                result.Add(Summarize(host.Name, state.Agents, state.Messages, DateTime.Now));
             }
-
-            var result = sessions.Values
-                .Where(s => !string.IsNullOrEmpty(s.Id)
-                    && !string.Equals(s.Id, UserId, StringComparison.Ordinal)
-                    && now - s.LastAt <= AgentBook.Retention)
-                .OrderByDescending(s => s.LastAt)
-                .ToList();
 
             lock (Gate)
             {
@@ -99,6 +65,27 @@ namespace OpenLoop.Service.Web
                 _sessionsAt = DateTime.UtcNow;
             }
             return result.ToList();
+        }
+
+        /// <summary>一块板合成一行：最近活动的 agent 负责「在做什么 + 步骤」，最近一条留言做摘要。</summary>
+        internal static PuppetSession Summarize(string hostName, IReadOnlyList<BookAgent> agents,
+            IReadOnlyList<PuppetMessage> messages, DateTime now)
+        {
+            var agent = agents.OrderByDescending(a => a.LastActive).FirstOrDefault();
+            var message = messages.OrderByDescending(m => m.At).ThenByDescending(m => m.Seq).FirstOrDefault();
+            DateTime lastAt = agent?.LastActive ?? DateTime.MinValue;
+            if (message != null && message.At > lastAt) lastAt = message.At;
+            return new PuppetSession
+            {
+                Host = hostName,
+                Id = "",
+                Purpose = agent?.Purpose ?? "",
+                Doing = agent?.Operation ?? "",
+                Steps = agent?.Steps ?? [],
+                LastAt = lastAt == DateTime.MinValue ? now : lastAt,
+                LastText = message?.Text,
+                Live = lastAt != DateTime.MinValue && now - lastAt <= LiveWithin
+            };
         }
 
         /// <summary>某个会话在它所在板上的对话：它说的、发给它的、用户消息与广播。</summary>
@@ -138,7 +125,7 @@ namespace OpenLoop.Service.Web
         public static string HostsText()
             => string.Join(" ", SessionBoard.Hosts().Select(h => h.Name));
 
-        private sealed class BookAgent
+        internal sealed class BookAgent
         {
             public string Id { get; set; }
             public string Purpose { get; set; }

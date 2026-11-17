@@ -53,9 +53,6 @@ namespace OpenLoop.App
         /// <summary>「立即」标记：当前轮在下一个 step 前收尾（进行中的工具不打断）。</summary>
         private bool _interrupt;
 
-        /// <summary>已经提示过的新同伴会话 id：同一个会话只入队一次，免得每轮都塞提示。</summary>
-        private readonly HashSet<string> _peersAnnounced = new(StringComparer.Ordinal);
-
         /// <summary>用户动作计数（发消息、停、换模型、关页都会加）：免费额度自愈据此判断用户动没动过这个会话。</summary>
         private int _userEpoch;
         private bool _closed;
@@ -364,20 +361,6 @@ namespace OpenLoop.App
             return AgentIdentity.IdFor("I", id);
         }
 
-        /// <summary>同工作区出现新会话：往排队框放一条协作提示（与用户输入同队列，可撤回）。</summary>
-        private void AnnouncePeers(IReadOnlyList<OpenLoop.Service.Web.PeerInfo> peers)
-        {
-            var fresh = peers.Where(p => _peersAnnounced.Add(p.Id)).ToList();
-            if (fresh.Count == 0) return;
-            string text = OpenLoop.Service.Web.SessionBoard.PeerNotice(
-                fresh.Select(p => p.Summary()).ToList());
-            RunOnUi(() =>
-            {
-                _queue.Add(text);
-                _pending.Sync();
-            });
-        }
-
         private string LastWords()
         {
             var last = _book.Turns.LastOrDefault();
@@ -486,7 +469,6 @@ namespace OpenLoop.App
                         AppLog.Warn("读取策略激活集失败：" + ex.Message);
                     }
                     var peers = OpenLoop.Service.Web.SessionBoard.Peers(_workspace, BoardId(), remote: true);
-                    AnnouncePeers(peers);
                     var activeSkills = BuiltinSkills.Merge(ActiveSkills(skillCatalog, out var problems),
                         peers.Select(p => p.Summary()).ToList());
                     OpenLoop.Core.Safety.ApprovalHandler approve = AskApproval;
@@ -1001,7 +983,7 @@ namespace OpenLoop.App
             _layoutReady = true;
         }
 
-        private void Submit(bool immediate = false)
+        private void Submit()
         {
             string text = _txtInput.Text.Trim();
 
@@ -1045,11 +1027,9 @@ namespace OpenLoop.App
                     Stop();
                     return;
                 }
-                _queue.Add(text, "task",
-                    immediate ? OpenLoop.Service.Pending.PendingMode.NextStep : OpenLoop.Service.Pending.PendingMode.AfterTurn);
+                _queue.Add(text, "task", OpenLoop.Service.Pending.PendingMode.AfterTurn);
                 _txtInput.Clear();
                 _pending.Sync();
-                if (immediate) _interrupt = true;
                 return;
             }
 
@@ -1186,7 +1166,7 @@ namespace OpenLoop.App
                 SendAsync(Localization.T("ContinuePrompt"));
                 return;
             }
-            // 运行中点发送 = 排队等本轮返回；要打断当前轮就点队列行的「立即」或按 Ctrl+Enter
+            // 运行中点发送 = 排队等本轮返回；要打断当前轮就点队列行的「立即」
             Submit();
         }
 
@@ -1360,20 +1340,19 @@ namespace OpenLoop.App
 
         /// <summary>
         /// Enter 在 AntdUI 的 WM_KEYDOWN 里先被消化成换行（早于 KeyDown 事件），
-        /// 所以只能在这里拦：Enter 发送（运行中=等本轮返回），Ctrl+Enter 插到下一步，Shift+Enter 换行。
+        /// 所以只能在这里拦：Enter / Ctrl+Enter 发送（运行中=等本轮返回，不打断），Shift+Enter 换行。
         /// </summary>
         private void InsertSoftNewline() => ComposerKeys.InsertSoftNewline(_txtInput);
 
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
             bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
-            bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
-            if (!shift && e.KeyData != Keys.Enter && !ctrl) return;
+            if (!shift && e.KeyData != Keys.Enter && e.KeyData != (Keys.Control | Keys.Enter)) return;
             e.Result = false;
             if (shift) { InsertSoftNewline(); return; }
-            if (!ctrl && _cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
             if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
-            Submit(immediate: ctrl);
+            if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
+            Submit();
         }
 
         private IReadOnlyList<SkillInfo> ActiveSkills(

@@ -97,16 +97,6 @@ namespace OpenLoop.Service.Web
             });
         }
 
-        /// <summary>同工作区出现新会话时塞进输入队列的一条提示：与用户输入同一条队列，用户可以撤回。</summary>
-        public static string PeerNotice(IReadOnlyList<string> peers)
-        {
-            string list = string.Join("；", peers ?? Array.Empty<string>());
-            string target = OpenLoop.Core.Agent.AgentIdentity.BoardTarget;
-            return $"【协作提示】同工作区新会话已启动：{list}。技能 peer-board 已可用："
-                + $"Puppet(target=\"{target}\", action=\"book\") 看它的工具步骤，"
-                + $"Puppet(target=\"{target}\", action=\"say\", to=\"<对方 id>\", text=\"...\") 定向留言；改动同一文件前先问一句。";
-        }
-
         /// <summary>
         /// 同工作区的其他会话：与留言同一保留期（<see cref="AgentBook.Retention"/>，30 分钟内有心跳），
         /// 是否还在干活看 PeerInfo.IdleSeconds。工作区按登记时的 Purpose 后缀精确比对。

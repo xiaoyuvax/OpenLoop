@@ -693,7 +693,7 @@ namespace OpenLoop.App
                 EnsureLoop(_lastSession?.Workspace ?? SourceSync.InstallRoot, select: false)?.Post(text);
             var page = new AntdUI.TabPage
             {
-                Text = "Puppet · " + agentId,
+                Text = "Puppet · " + (string.IsNullOrWhiteSpace(agentId) ? host : agentId),
                 IconSvg = UiIcons.Of(UiIcons.List, UiStyle.Puppet),
                 ReadOnly = false,
                 Tag = view,

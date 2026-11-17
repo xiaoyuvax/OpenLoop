@@ -158,17 +158,16 @@ namespace OpenLoop.App
 
             if (_project == PuppetTag)
             {
-                foreach (var s in OpenLoop.Service.Web.PuppetBoard.Sessions()
-                             .Where(s => q.Length == 0
-                                         || s.Id.Contains(q, StringComparison.OrdinalIgnoreCase)
-                                         || (s.LastText ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)))
+                foreach (var s in OpenLoop.Service.Web.PuppetBoard.Sessions())
                 {
+                    string title = string.IsNullOrWhiteSpace(s.LastText) ? "" : OneLine(s.LastText);
+                    if (q.Length > 0 && !(s.Host + " " + title).Contains(q, StringComparison.OrdinalIgnoreCase)) continue;
                     _rows.Add(new Session
                     {
                         Id = "puppet:" + s.Host + "|" + s.Id,
                         Workspace = s.Host,
                         IsPuppet = true,
-                        CustomTitle = s.Id + (string.IsNullOrWhiteSpace(s.LastText) ? "" : " · " + OneLine(s.LastText)),
+                        CustomTitle = title,
                         StartedAt = s.LastAt,
                         LastActiveAt = s.LastAt,
                         State = s.Live ? SessionState.Running : SessionState.Idle,
@@ -209,7 +208,7 @@ namespace OpenLoop.App
             _lblProjectPath.Text = loops
                 ? "Loop 会话（全部项目）· 关于OpenLoop自身迭代和演进的所有会话"
                 : puppets
-                    ? "Puppet 会话（@A / @I）· 各会话的 agent 在留言板上自行对话，没有主 agent 驱动"
+                    ? "Puppet 留言板 · 各会话的 agent 在同一块板上自行对话（默认 @A，A 不可达时转 @I），没有主 agent 驱动"
                     : _project;
             // 行没变就别重置数据源：整表重绘还会把滚动位置拉回顶部
             bool same = _shownRows.Count == _rows.Count;

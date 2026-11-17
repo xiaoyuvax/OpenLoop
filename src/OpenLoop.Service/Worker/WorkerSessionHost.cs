@@ -412,19 +412,6 @@ namespace OpenLoop.Service.Worker
             return true;
         }
 
-        /// <summary>同工作区有新会话时往队列里放一条协作提示（与用户输入同队列，可撤回）。</summary>
-        private void AnnouncePeers(Session session)
-        {
-            // 调用方持有 _lock
-            var peers = OpenLoop.Service.Web.SessionBoard.Peers(
-                session.Workspace, AgentIdentity.IdFor("A", session.Id));
-            var fresh = peers.Where(p => session.PeersAnnounced.Add(p.Id)).ToList();
-            if (fresh.Count == 0) return;
-            session.Pending.Add(OpenLoop.Service.Web.SessionBoard.PeerNotice(
-                fresh.Select(p => p.Summary()).ToList()));
-            session.Revision++;
-        }
-
         /// <summary>会话关闭时留给留言板的最后一句：优先最后一条回答，未完成的任务说清楚。</summary>
         private static string LastWords(Session session)
         {
@@ -528,7 +515,6 @@ namespace OpenLoop.Service.Worker
             // 留言板报到：首轮附自我介绍（身份+任务），之后每次开轮只更新「在做的事」。
             OpenLoop.Service.Web.SessionBoard.Opening(
                 AgentIdentity.IdFor("A", session.Id), "Worker", session.Workspace, session.Model, text);
-            AnnouncePeers(session);
 
             string id = session.Id;
             // 流式正文只在确认不是工具调用协议时才写进 Assistant，与 LoopView/SideWorkView 的
@@ -888,8 +874,6 @@ namespace OpenLoop.Service.Worker
             public List<string> Pending { get; } = [];
             public List<Prompt> Prompts { get; } = [];
 
-            /// <summary>已经提示过的新同伴会话 id：同一个会话只入队一次，免得每轮都塞提示。</summary>
-            public HashSet<string> PeersAnnounced { get; } = new(StringComparer.Ordinal);
             public string State { get; set; } = Idle;
             public int Revision { get; set; }
 
