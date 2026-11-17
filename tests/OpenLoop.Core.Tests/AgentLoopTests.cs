@@ -418,6 +418,19 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task ContextTokens_Uses_Prompt_Estimate_Not_Channel_Bill()
+        {
+            var history = new List<OpenLoop.Core.Messages.LlmMessage> { new("user", "你好") };
+            var loop = Loops.Build(new FakeTool(), new BillingReasoner(700_000));
+            int sent = 0;
+
+            var result = await loop.RunAsync(history, "hi", onRequest: (_, tokens) => sent = tokens);
+
+            Assert.Equal(sent, result.ContextTokens ?? -1);
+            Assert.True(result.ContextTokens is > 0 and < 700_000);
+        }
+
+        [Fact]
         public void LongArgPreviewElidesMiddleAndKeepsFileTail()
         {
             string path = @"C:\root\" + new string('a', 80) + @"\Main.cs";

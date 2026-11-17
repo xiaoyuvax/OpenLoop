@@ -15,7 +15,7 @@ namespace OpenLoop.Core.Agent
         public decimal? ChatCost { get; set; }
         public bool Compressed => Guards.Compressions > 0;
 
-        /// <summary>最近一次补全的输入 token 数（上下文占用），通道不报价时为 null。</summary>
+        /// <summary>本轮最后一次补全前估算的输入占用（与压缩阈值同一套估算），供界面算占比。</summary>
         public int? ContextTokens { get; set; }
 
         /// <summary>用户请求停止后，在下一轮开始前终止。</summary>

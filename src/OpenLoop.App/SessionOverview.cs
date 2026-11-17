@@ -25,12 +25,21 @@ namespace OpenLoop.App
         private bool _ready;
         private bool _building;
 
+        /// <summary>上一次真正重建的项目菜单与表格行；相同就不动控件（切标签会连续触发两次刷新）。</summary>
+        private List<string> _builtProjects = [];
+        private readonly List<(string Id, SessionState State, string Title, int Steps)> _shownRows = [];
+
+        /// <summary>搜索框防抖：每敲一个字就整表重置重绘代价太大。</summary>
+        private readonly System.Windows.Forms.Timer _searchDelay = new() { Interval = 250 };
+
         /// <summary>项目列表底部的固定项 [Loop]：列出全部项目的 Loop 会话。</summary>
         internal const string LoopTag = "\u0001loop";
 
         public SessionOverview()
         {
             InitializeComponent();
+            _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); RefreshRows(); };
+            Disposed += (_, _) => _searchDelay.Dispose();
         }
 
         internal event Action<Session> OpenRequested;
@@ -82,20 +91,32 @@ namespace OpenLoop.App
             if (!projects.Any(p => Paths.Same(p, _project)) && _project != LoopTag)
                 _project = projects.FirstOrDefault() ?? "";
 
+            if (!projects.SequenceEqual(_builtProjects, StringComparer.OrdinalIgnoreCase))
+            {
+                _builtProjects = projects;
+                _building = true;
+                try
+                {
+                    _menu.Items.Clear();
+                    foreach (var path in projects)
+                    {
+                        string name = ProjectName(path);
+                        var item = new AntdUI.MenuItem(name, UiIcons.Avatar(name, AvatarColor(path), 28))
+                        {
+                            Tag = path
+                        };
+                        _menu.Items.Add(item);
+                    }
+                }
+                finally
+                {
+                    _building = false;
+                }
+            }
+
             _building = true;
             try
             {
-                _menu.Items.Clear();
-                foreach (var path in projects)
-                {
-                    string name = ProjectName(path);
-                    var item = new AntdUI.MenuItem(name, UiIcons.Avatar(name, AvatarColor(path), 28))
-                    {
-                        Tag = path
-                    };
-                    _menu.Items.Add(item);
-                }
-
                 // 固定项 [Loop] 不在列表里：它是控件底部的按钮，固定在设置按钮上方
                 var selected = _menu.Items.FirstOrDefault(i =>
                     i.Tag is string tag && Paths.Same(tag, _project));
@@ -143,8 +164,29 @@ namespace OpenLoop.App
 
             bool loops = _project == LoopTag;
             _lblProjectPath.Text = loops ? "Loop 会话（全部项目）" : _project;
-            _table.DataSource = null;
-            _table.DataSource = _rows;
+            // 行没变就别重置数据源：整表重绘还会把滚动位置拉回顶部
+            bool same = _shownRows.Count == _rows.Count;
+            if (same)
+            {
+                for (int i = 0; i < _rows.Count; i++)
+                {
+                    var row = _rows[i];
+                    var shown = _shownRows[i];
+                    if (shown.Id != row.Id || shown.State != row.State || shown.Steps != row.Steps
+                        || !string.Equals(shown.Title, row.Title, StringComparison.Ordinal))
+                    {
+                        same = false;
+                        break;
+                    }
+                }
+            }
+            if (!same)
+            {
+                _shownRows.Clear();
+                foreach (var row in _rows) _shownRows.Add((row.Id, row.State, row.Title, row.Steps));
+                _table.DataSource = null;
+                _table.DataSource = _rows;
+            }
             // [Loop] 页也能开会话：没有项目可依附，工作区用安装目录
             _btnNewSession.Enabled = loops || !string.IsNullOrEmpty(_project);
             _btnRemoveProject.Enabled = !loops && !string.IsNullOrEmpty(_project);
@@ -218,7 +260,11 @@ namespace OpenLoop.App
             RefreshRows();
         }
 
-        private void OnSearchChanged(object sender, EventArgs e) => RefreshRows();
+        private void OnSearchChanged(object sender, EventArgs e)
+        {
+            _searchDelay.Stop();
+            _searchDelay.Start();
+        }
 
         private void OnAddProject(object sender, EventArgs e) => NewSessionRequested?.Invoke("");
 

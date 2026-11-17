@@ -185,7 +185,11 @@ namespace OpenLoop.App
                 markdown.Width = Math.Max(100, host.ClientSize.Width - SystemInformation.VerticalScrollBarWidth);
                 markdown.Height = Math.Max(host.ClientSize.Height, markdown.GetPreferredContentHeight());
             }
-            host.Resize += (_, _) => Fit();
+            // 拖分隔条会连续触发 Resize：整篇 markdown 重排太贵，合并成一次
+            var delay = new System.Windows.Forms.Timer { Interval = 120 };
+            delay.Tick += (_, _) => { delay.Stop(); Fit(); };
+            host.Resize += (_, _) => { delay.Stop(); delay.Start(); };
+            host.Disposed += (_, _) => delay.Dispose();
             markdown.SetMarkdown(text);
             Fit();
             return host;

@@ -513,6 +513,9 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
       h(Muted, { style: { display: 'block', margin: '6px 0 16px' } }, ledger || '—'),
 
       h('div', { className: 'ol-section-title' }, '演进'),
+      h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
+        '只改当前工作区的激活集（护栏开关、阈值、规则与技能顺序）；不改代码/工具/提示词，'
+        + '其它工作区不受影响；考核题 A/B 更好才采纳。'),
       h(Space, { wrap: true, style: { marginBottom: 6 } },
         h(Input, { value: model, onChange: e => setModel(e.target.value), placeholder: '模型（留空用默认）', style: { width: 280 } }),
         h(Button, {

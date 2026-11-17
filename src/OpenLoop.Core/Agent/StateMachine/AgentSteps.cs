@@ -99,7 +99,10 @@ namespace OpenLoop.Core.Agent
 
             state.Step++;
 
-            context.OnRequest?.Invoke(state.Messages, AgentContext.EstimateTokens(state.Messages));
+            // 上下文占比用本轮实际发出的消息估算（与压缩阈值同源）；通道回报的 TokensIn 是会话累计账单，不能当窗口占用。
+            int promptTokens = AgentContext.EstimateTokens(state.Messages);
+            state.Result.ContextTokens = promptTokens;
+            context.OnRequest?.Invoke(state.Messages, promptTokens);
 
             CompletionResult completion;
             try
@@ -156,7 +159,7 @@ namespace OpenLoop.Core.Agent
                 foreach (var extra in extras)
                     effects.Add(new AppendMessageEffect(extra.Role, extra.Content));
             effects.Add(new AppendMessageEffect("assistant", content));
-            effects.Add(new RecordUsageEffect(completion?.Cost, completion?.TokensIn));
+            effects.Add(new RecordUsageEffect(completion?.Cost));
             return AgentStepResult.Continue(effects.ToArray());
         }
     }

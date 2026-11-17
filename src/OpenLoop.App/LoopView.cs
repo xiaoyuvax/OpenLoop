@@ -198,7 +198,7 @@ namespace OpenLoop.App
             FillModels();
             SelectEffort(_effort);
             SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort);
-            _tips.SetToolTip(_btnIterate, "把当前源码编译并登记为 A/I 新版本（不自动重启）");
+            _tips.SetToolTip(_btnIterate, "先出计划（谁升版、改了什么），确认后编译并换 A/I，最后重启壳（界面会短暂退出）");
             _pending.Bind(_queue);
             _pending.EditRequested += BeginEdit;
             _pending.ImmediateRequested += OnImmediateRequested;
@@ -437,7 +437,7 @@ namespace OpenLoop.App
                     {
                         AppLog.Warn("读取策略激活集失败：" + ex.Message);
                     }
-                    var activeSkills = ActiveSkills(skillCatalog, out var problems);
+                    var activeSkills = BuiltinSkills.Merge(ActiveSkills(skillCatalog, out var problems));
                     OpenLoop.Core.Safety.ApprovalHandler approve = AskApproval;
                     // 章程 §2：Loop 读与 Worker 同宽，写只限配置/源码/安装路径
                     var (readScope, writeScope) = OpenLoop.Service.Source.LoopScope.Create(approve);
@@ -478,10 +478,15 @@ namespace OpenLoop.App
             _promptTokens = 0;
             _liveTokens = 0;
             var timeline = new RunTimeline();
+            long lastDeltaUi = 0;
             Action<string> onDelta = piece =>
             {
                 lock (_streamBuffer) _streamBuffer.Append(piece);
                 _liveTokens += AgentContext.EstimateTokens(piece);
+                // 每个 token 都整段 ToString + 清洗再投 UI，等于 O(n²)：按 250ms 合并，收尾时用最终正文重建
+                long now = Environment.TickCount64;
+                if (now - Interlocked.Read(ref lastDeltaUi) < 250) return;
+                Interlocked.Exchange(ref lastDeltaUi, now);
                 string snapshot;
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
                 if (AgentToolCallParser.LooksLikeToolCallText(snapshot)) return;
@@ -551,7 +556,6 @@ namespace OpenLoop.App
                         lock (timeline) turn.TimelineText = timeline.Render();
                         turn.ToolStatusText = null;
                         RefreshChat();
-                        _chat.ScrollToEnd();
                     });
                     trace.Step(step);
                 },
@@ -655,7 +659,6 @@ namespace OpenLoop.App
                 _cts = null;
                 SetRunning(false);
                 RefreshChat();
-                _chat.ScrollToEnd();
                 SaveLoopChat();
                 // 首轮结束后自动总结一次标题（已有标题就不再覆盖），和 Worker 一致
                 if (!IsDisposed && IsHandleCreated && _book.Turns.Count == 1
@@ -699,7 +702,6 @@ namespace OpenLoop.App
                 });
                 SaveLoopChat();
                 RefreshChat();
-                _chat.ScrollToEnd();
             }
             if (IsDisposed || !IsHandleCreated) return;
             if (InvokeRequired) BeginInvoke(new Action(Apply)); else Apply();

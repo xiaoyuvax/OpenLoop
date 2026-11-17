@@ -35,6 +35,7 @@ namespace OpenLoop.App
         private AntdUI.Label _lblTrace;
         private AntdUI.Label _lblCost;
         private AntdUI.Label _lblStatus;
+        private AntdUI.Label _lblEvolveHint;
         private AntdUI.Button _btnDrafts;
         private AntdUI.Button _btnReport;
         private AntdUI.Button _btnEvolve;
@@ -101,6 +102,7 @@ namespace OpenLoop.App
             _lblTrace = new AntdUI.Label();
             _lblCost = new AntdUI.Label();
             _lblStatus = new AntdUI.Label();
+            _lblEvolveHint = new AntdUI.Label();
             _btnDrafts = new AntdUI.Button();
             _btnReport = new AntdUI.Button();
             _btnEvolve = new AntdUI.Button();
@@ -310,6 +312,14 @@ namespace OpenLoop.App
             _lblStatus.ForeColor = UiStyle.Text;
             _lblStatus.Margin = new Padding(0, 0, 0, 16);
 
+            _lblEvolveHint.AutoSize = true;
+            _lblEvolveHint.MaximumSize = new Size(236, 0);
+            _lblEvolveHint.Text = "演进只改当前工作区的激活集：护栏开关、阈值、规则与技能顺序；"
+                + "不改代码/工具/提示词，其它工作区不受影响；考核题 A/B 更好才采纳。";
+            _lblEvolveHint.Font = new Font("Segoe UI", 9F);
+            _lblEvolveHint.ForeColor = UiStyle.Muted;
+            _lblEvolveHint.Margin = new Padding(0, 0, 0, 8);
+
             _btnDrafts.Name = "btnDrafts";
             _btnDrafts.Text = Localization.T("TaskDrafts");
             _btnDrafts.Radius = 8;
@@ -416,6 +426,7 @@ namespace OpenLoop.App
             _loopFlow.Controls.Add(_lblStatus);
             _loopFlow.Controls.Add(_btnDrafts);
             _loopFlow.Controls.Add(_btnReport);
+            _loopFlow.Controls.Add(_lblEvolveHint);
             _loopFlow.Controls.Add(_btnEvolve);
             _loopFlow.Controls.Add(_btnRollback);
             _loopFlow.Controls.Add(_btnRule);

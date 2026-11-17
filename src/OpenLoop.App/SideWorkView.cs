@@ -193,9 +193,14 @@ namespace OpenLoop.App
 
             _streamBuffer.Clear();
             var timeline = new RunTimeline();
+            long lastDeltaUi = 0;
             Action<string> onDelta = piece =>
             {
                 lock (_streamBuffer) _streamBuffer.Append(piece);
+                // 逐 token 整段 ToString + 清洗是 O(n²)：250ms 合并一次，收尾用最终正文
+                long now = Environment.TickCount64;
+                if (now - Interlocked.Read(ref lastDeltaUi) < 250) return;
+                Interlocked.Exchange(ref lastDeltaUi, now);
                 string snapshot;
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
                 if (AgentToolCallParser.LooksLikeToolCallText(snapshot)) return;
@@ -253,7 +258,6 @@ namespace OpenLoop.App
                         lock (timeline) turn.TimelineText = timeline.Render();
                         turn.ToolStatusText = null;
                         RefreshChat();
-                        _chat.ScrollToEnd();
                     });
                     trace.Step(step);
                 },
@@ -342,7 +346,6 @@ namespace OpenLoop.App
                 _cts = null;
                 SetRunning(false);
                 RefreshChat();
-                _chat.ScrollToEnd();
             }
         }
 

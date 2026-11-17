@@ -102,8 +102,14 @@ namespace OpenLoop.App
         public static string Dot(Color color)
             => $"<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='7' fill='{Hex(color)}'/></svg>";
 
+        // 项目列表每次刷新都会重画全部头像：同（字母, 颜色, 尺寸）只画一次，位图全程复用。
+        private static readonly Dictionary<(string, Color, int), Image> Avatars = new();
+
         public static Image Avatar(string text, Color color, int size)
         {
+            string letter = string.IsNullOrWhiteSpace(text) ? "?" : text.Trim()[..1].ToUpperInvariant();
+            if (Avatars.TryGetValue((letter, color, size), out var cached)) return cached;
+
             var bmp = new Bitmap(size, size);
             using var g = Graphics.FromImage(bmp);
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
@@ -116,10 +122,10 @@ namespace OpenLoop.App
             path.AddArc(0, size - r * 2, r * 2, r * 2, 90, 90);
             path.CloseFigure();
             using (var brush = new SolidBrush(color)) g.FillPath(brush, path);
-            string letter = string.IsNullOrWhiteSpace(text) ? "?" : text.Trim()[..1].ToUpperInvariant();
             using var font = new Font("Segoe UI", size * 0.45F, FontStyle.Bold, GraphicsUnit.Pixel);
             using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             g.DrawString(letter, font, Brushes.White, new RectangleF(0, 0, size, size), sf);
+            Avatars[(letter, color, size)] = bmp;
             return bmp;
         }
 

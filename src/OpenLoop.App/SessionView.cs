@@ -42,6 +42,15 @@ namespace OpenLoop.App
         private readonly Dictionary<ChatTurn, string> _turnCheckpoints = [];
         private string _tracePath = "";
 
+        /// <summary>上一次并进界面的 A 快照版本；相同就整段跳过（轮询 4 次/秒，历史越长越贵）。</summary>
+        private int _snapshotRevision = -1;
+
+        /// <summary>每轮上次清洗过的原始正文；原样没变就不再跑正则、不再重挂 transcript。</summary>
+        private readonly Dictionary<ChatTurn, string> _rawAnswers = [];
+
+        /// <summary>已经挂过收尾 transcript 的轮次。</summary>
+        private readonly HashSet<ChatTurn> _attachedTranscripts = [];
+
         /// <summary>「文件」页在侧栏标签里的下标；第一次点文件路径时才加出来（-1 = 还没有）。</summary>
         private int _filePage = -1;
 
@@ -1015,7 +1024,7 @@ namespace OpenLoop.App
         private void FitLoopLabels()
         {
             int width = Math.Max(Dip(120), _loopFlow.ClientSize.Width - Dip(28));
-            foreach (var label in new[] { _lblDef, _lblTasks, _lblCost, _lblStatus })
+            foreach (var label in new[] { _lblDef, _lblTasks, _lblCost, _lblStatus, _lblEvolveHint })
                 label.MaximumSize = new Size(width, 0);
 
             _lblTrace.Width = width;
@@ -1338,7 +1347,6 @@ namespace OpenLoop.App
             Session.Steps = remoteTurn?.Steps ?? Session.Steps;
             SetState(outcome is "ok" or "budget" ? SessionState.Done : SessionState.Interrupted);
             RefreshChat();
-            _chat.ScrollToEnd();
             RefreshLedgerInfo();
             ChatStore.Save(workspace, Session.Book.Turns, Session.Id, _model, _effort);
             // 首轮成功结束后由所选模型生成短标题（已有人工/历史标题就不再覆盖）
@@ -1351,6 +1359,12 @@ namespace OpenLoop.App
         private void ApplySnapshot(WorkerSessionSnapshot snapshot)
         {
             if (snapshot == null) return;
+            // 版本没动 = 与上次完全一样：整条映射都可以省掉（流式期间每 250ms 来一次）
+            if (snapshot.Revision > 0)
+            {
+                if (snapshot.Revision == _snapshotRevision) return;
+                _snapshotRevision = snapshot.Revision;
+            }
 
             bool structure = false;
             while (Session.Book.Turns.Count < snapshot.Turns.Count)
@@ -1383,8 +1397,18 @@ namespace OpenLoop.App
                 turn.ToolStatusText = string.IsNullOrEmpty(remote.Status) ? null : remote.Status;
                 if (!string.IsNullOrEmpty(remote.Checkpoint))
                     _turnCheckpoints[turn] = remote.Checkpoint;
-                turn.AssistantText = LlmTextSanitizer.StripSafetyLines(remote.Assistant ?? "");
-                if (remote.Transcript is { Count: > 0 })
+                // 正文没变就别再清洗：StripSafetyLines 是整段复制 + 逐行正则，历史越长越贵
+                string raw = remote.Assistant ?? "";
+                bool changed = !_rawAnswers.TryGetValue(turn, out string lastRaw)
+                               || !string.Equals(lastRaw, raw, StringComparison.Ordinal);
+                if (changed)
+                {
+                    _rawAnswers[turn] = raw;
+                    turn.AssistantText = LlmTextSanitizer.StripSafetyLines(raw);
+                }
+                // transcript 收尾时再挂一次（流式中途只跟着正文变化走），避免每拍把所有历史重挂一遍
+                if (remote.Transcript is { Count: > 0 }
+                    && (changed || (!remote.Streaming && _attachedTranscripts.Add(turn))))
                     ChatStore.AttachTranscript(turn, remote.Transcript);
             }
 
@@ -1396,7 +1420,6 @@ namespace OpenLoop.App
             if (!string.IsNullOrEmpty(snapshot.TraceDirectory)) SetTrace(snapshot.Workspace, snapshot.TraceDirectory);
             if (snapshot.ActivationVersion > 0)
                 _lblDef.Text = $"def: v{snapshot.ActivationVersion} · {snapshot.FeatureCount} {Localization.T("Features")} · {snapshot.RuleCount} {Localization.T("Rules")}";
-            if (structure) _chat.ScrollToEnd();
         }
 
         /// <summary>
@@ -1465,49 +1488,75 @@ namespace OpenLoop.App
                 AntdUI.Notification.success(form, title, text, AntdUI.TAlignFrom.TR, null, 3);
         }
 
+        private int _ledgerVersion;
+
         private void RefreshLedgerInfo()
         {
             string workspace = Session.Workspace.Trim();
+            int version = ++_ledgerVersion;
+            string features = Localization.T("Features");
+            string rules = Localization.T("Rules");
+            string tasksLabel = Localization.T("Tasks");
+            string tasksUnit = Localization.T("TasksUnit");
             if (!Directory.Exists(workspace))
             {
-                _lblDef.Text = "def: —";
-                _lblTasks.Text = Localization.T("Tasks") + ": —";
-                _btnDrafts.Text = Localization.T("TaskDrafts");
-                _btnReport.Text = Localization.T("EvalReports");
+                ApplyLedger("def: —", tasksLabel + ": —", null, 0, 0, version);
                 return;
             }
-            try
-            {
-                var ledger = Ledger.Open(workspace);
-                var current = ledger.Activations().LastOrDefault();
-                if (current == null)
-                {
-                    _lblDef.Text = "def: —（首次运行后初始化）";
-                }
-                else
-                {
-                    var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
-                    int rules = current.Features.Count(r => r?.Id != null
-                        && (features.TryGetValue(r.Id, out var f)
-                            ? f.Kind == "rule"
-                            : r.Id.StartsWith("rule.", StringComparison.Ordinal)));
-                    _lblDef.Text = $"def: v{current.Version} · {current.Features.Count} {Localization.T("Features")} · {rules} {Localization.T("Rules")}  ›";
-                }
-                _lblTasks.Text = Localization.T("Tasks") + $": {TaskSet.Load(ledger.EvalDir).Tasks.Count} {Localization.T("TasksUnit")}  ›";
-                _tips.SetToolTip(_lblTasks, "点击查看考核题\n" + Path.Combine(ledger.EvalDir, "tasks"));
 
-                int drafts = TaskDrafts.PendingCount(workspace);
-                _btnDrafts.Text = Localization.T("TaskDrafts") + (drafts > 0 ? " " + drafts : "");
-                int reports = EvalReportStore.List(workspace).Count;
-                _btnReport.Text = Localization.T("EvalReports") + (reports > 0 ? " " + reports : "");
-            }
-            catch (Exception ex)
+            // 这几个是磁盘读（账本、考核题、草稿、报告各一次）：别放在界面线程上，一轮结束会连刷几次
+            _ = Task.Run(() =>
             {
-                _lblDef.Text = "def: 读取失败：" + ex.Message;
-                _lblTasks.Text = Localization.T("Tasks") + ": —";
-                _btnDrafts.Text = Localization.T("TaskDrafts");
-                _btnReport.Text = Localization.T("EvalReports");
+                string def, tasks, tip = null;
+                int drafts = 0, reports = 0;
+                try
+                {
+                    var ledger = Ledger.Open(workspace);
+                    var current = ledger.Activations().LastOrDefault();
+                    if (current == null)
+                    {
+                        def = "def: —（首次运行后初始化）";
+                    }
+                    else
+                    {
+                        var known = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
+                        int ruleCount = current.Features.Count(r => r?.Id != null
+                            && (known.TryGetValue(r.Id, out var f)
+                                ? f.Kind == "rule"
+                                : r.Id.StartsWith("rule.", StringComparison.Ordinal)));
+                        def = $"def: v{current.Version} · {current.Features.Count} {features} · {ruleCount} {rules}  ›";
+                    }
+                    tasks = tasksLabel + $": {TaskSet.Load(ledger.EvalDir).Tasks.Count} {tasksUnit}  ›";
+                    tip = "点击查看考核题\n" + Path.Combine(ledger.EvalDir, "tasks");
+                    drafts = TaskDrafts.PendingCount(workspace);
+                    reports = EvalReportStore.List(workspace).Count;
+                }
+                catch (Exception ex)
+                {
+                    def = "def: 读取失败：" + ex.Message;
+                    tasks = tasksLabel + ": —";
+                }
+                ApplyLedger(def, tasks, tip, drafts, reports, version);
+            });
+        }
+
+        /// <summary>后台刷新回填用的 UI 上下文（窗口句柄可能还没建，BeginInvoke 会抛）。</summary>
+        private readonly SynchronizationContext _ui = SynchronizationContext.Current;
+
+        private void ApplyLedger(string def, string tasks, string tip, int drafts, int reports, int version)
+        {
+            if (IsDisposed) return;
+            if (_ui != null && SynchronizationContext.Current != _ui)
+            {
+                _ui.Post(_ => ApplyLedger(def, tasks, tip, drafts, reports, version), null);
+                return;
             }
+            if (version != _ledgerVersion) return;   // 期间又刷新过：丢掉这份过期结果
+            _lblDef.Text = def;
+            _lblTasks.Text = tasks;
+            if (tip != null) _tips.SetToolTip(_lblTasks, tip);
+            _btnDrafts.Text = Localization.T("TaskDrafts") + (drafts > 0 ? " " + drafts : "");
+            _btnReport.Text = Localization.T("EvalReports") + (reports > 0 ? " " + reports : "");
         }
 
         internal void SetTraceDebug(string path) => SetTrace(Session.Workspace, path);

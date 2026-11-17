@@ -36,18 +36,15 @@ namespace OpenLoop.Core.Agent
     public sealed class RecordUsageEffect : IAgentEffect
     {
         private readonly decimal? _cost;
-        private readonly int? _contextTokens;
 
-        public RecordUsageEffect(decimal? cost, int? contextTokens)
+        public RecordUsageEffect(decimal? cost)
         {
             _cost = cost;
-            _contextTokens = contextTokens;
         }
 
         public void Apply(AgentState state, AgentRunContext context)
         {
             if (_cost is decimal cost) state.Result.ChatCost = (state.Result.ChatCost ?? 0m) + cost;
-            if (_contextTokens is int tokens) state.Result.ContextTokens = tokens;
         }
     }
 

@@ -74,6 +74,13 @@ namespace OpenLoop.Core.Tests
         }
     }
 
+    /// <summary>账单式通道：TokensIn 报累计输入（远大于真实上下文），用于验证界面占比不采信道账单。</summary>
+    internal sealed class BillingReasoner(int tokensIn) : IReasoner
+    {
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+            => Task.FromResult(new CompletionResult { Content = "完成", TokensIn = tokensIn });
+    }
+
     /// <summary>压缩摘要固定返回给定文本，其它调用返回最终答复；用于验证压缩不会无限重试。</summary>
     internal sealed class SummarizeReasoner(string summary) : IReasoner
     {

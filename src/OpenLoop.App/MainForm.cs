@@ -32,6 +32,9 @@ namespace OpenLoop.App
         private Session _lastSession;
         private bool _closing;
 
+        /// <summary>3 秒一次的同步和打开会话都复用它：每次 new 一个客户端等于每次新建 HttpClient。</summary>
+        private WorkerApiClient _workerClient;
+
         public MainForm()
         {
 
@@ -47,6 +50,7 @@ namespace OpenLoop.App
 
         private Session Active => (_tabs.SelectedTab as AntdUI.TabPage)?.Tag as Session;
         private Session Current => Active ?? _lastSession;
+        private WorkerApiClient Worker => _workerClient ??= new WorkerApiClient();
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int SessionCount => _sessions.Count;
@@ -130,7 +134,11 @@ namespace OpenLoop.App
         private (Session Session, string Error) ResolveSession(string title)
         {
             var session = string.IsNullOrWhiteSpace(title) ? Active : FindByTitle(title);
-            return session?.View != null
+            if (session == null)
+                return (null, string.IsNullOrWhiteSpace(title) ? "没有打开的会话" : $"找不到会话「{title}」");
+            // 视图是按需建的：先建出来，停止/打断这类动作才不会因为「没有视图」被误报成没有任务
+            EnsureView(session);
+            return session.View != null
                 ? (session, null)
                 : (null, string.IsNullOrWhiteSpace(title) ? "没有打开的会话" : $"找不到会话「{title}」");
         }
@@ -140,41 +148,41 @@ namespace OpenLoop.App
             => OnCurrent(v => v.AnswerLastSurvey(summary), "已回答最近一条询问");
 
         public string AddDemoSurvey(string title, string body)
-            => Current?.View.AddSurvey(title, body, "choice") ?? "";
+            => Current?.View?.AddSurvey(title, body, "choice") ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string Mode => Active?.View.Mode ?? "";
+        public string Mode => Active?.View?.Mode ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public bool Busy => Active?.View.Busy ?? false;
+        public bool Busy => Active?.View?.Busy ?? false;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string Status => Active?.View.Status ?? "";
+        public string Status => Active?.View?.Status ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string Model => Active?.View.Model ?? "";
+        public string Model => Active?.View?.Model ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public int ModelOptionCount => Active?.View.ModelOptionCount ?? 0;
+        public int ModelOptionCount => Active?.View?.ModelOptionCount ?? 0;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string ProviderOptionNames => Active?.View.ProviderOptionNames ?? "";
+        public string ProviderOptionNames => Active?.View?.ProviderOptionNames ?? "";
 
         /// <summary>B 面状态：当前会话可选的模型名（SetModel 的合法取值）。</summary>
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string ModelOptionNames => Active?.View.ModelOptionNames ?? "";
+        public string ModelOptionNames => Active?.View?.ModelOptionNames ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string ReasoningText => Active?.View.ReasoningText ?? "";
+        public string ReasoningText => Active?.View?.ReasoningText ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string ChatDiagnostics => Active?.View.ChatDiagnostics ?? "";
+        public string ChatDiagnostics => Active?.View?.ChatDiagnostics ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public int PendingCount => Active?.View.PendingCount ?? 0;
+        public int PendingCount => Active?.View?.PendingCount ?? 0;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string PendingSummary => Active?.View.PendingSummary ?? "";
+        public string PendingSummary => Active?.View?.PendingSummary ?? "";
 
         [PuppetAction(Desc = "移除第 index 个排队请求（从 0 开始）")]
         public OperationResult RemovePending(int index)
@@ -200,10 +208,10 @@ namespace OpenLoop.App
                 : OnActive(v => v.EnqueueText(text), "已加入排队");
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public string ComposerSendText => Active?.View.SendText ?? "";
+        public string ComposerSendText => Active?.View?.SendText ?? "";
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public bool EvolveEnabled => Active?.View.EvolveEnabled ?? false;
+        public bool EvolveEnabled => Active?.View?.EvolveEnabled ?? false;
 
         [PuppetAction(Desc = "对该会话发起一轮演进（走 I 的 /api/loop/evolve）")]
         public OperationResult StartEvolve()
@@ -236,20 +244,20 @@ namespace OpenLoop.App
 
         public bool OnlyFreeModels
         {
-            get => Active?.View.OnlyFreeModels ?? true;
+            get => Active?.View?.OnlyFreeModels ?? true;
             set
             {
-                if (Active != null) Active.View.OnlyFreeModels = value;
+                if (Active?.View != null) Active.View.OnlyFreeModels = value;
             }
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ComposerText
         {
-            get => Active?.View.ComposerText ?? "";
+            get => Active?.View?.ComposerText ?? "";
             set
             {
-                if (Active != null) Active.View.ComposerText = value;
+                if (Active?.View != null) Active.View.ComposerText = value;
             }
         }
 
@@ -324,7 +332,7 @@ namespace OpenLoop.App
         {
             var (session, error) = ResolveSession(title);
             if (session == null) return OperationResult.Failure(error);
-            return session.View.Stop()
+            return session.View?.Stop() == true
                 ? OperationResult.Success($"已停止会话「{session.Title}」的当前轮", session.Id)
                 : OperationResult.Failure($"会话「{session.Title}」没有正在运行的任务");
         }
@@ -334,7 +342,7 @@ namespace OpenLoop.App
         {
             var (session, error) = ResolveSession(title);
             if (session == null) return OperationResult.Failure(error);
-            return session.View.Interrupt()
+            return session.View?.Interrupt() == true
                 ? OperationResult.Success($"已请求软打断会话「{session.Title}」", session.Id)
                 : OperationResult.Failure($"会话「{session.Title}」没有正在运行的任务");
         }
@@ -1076,6 +1084,7 @@ namespace OpenLoop.App
                 session.View?.Shutdown();
             }
             foreach (var loop in _loops.Values) loop.View.Shutdown();
+            _workerClient?.Dispose();
             PuppetHost.Stop();
         }
 
@@ -1124,17 +1133,6 @@ namespace OpenLoop.App
                 LastActiveAt = lastActiveAt ?? startedAt ?? DateTime.Now
             };
             session.CustomTitle = title;
-            session.View = new SessionView { Dock = DockStyle.Fill };
-            session.View.Initialize(session, () => _settings);
-            session.View.StateChanged += OnSessionStateChanged;
-            session.View.OpenLoopRequested += workspace => OpenLoop(workspace);
-            session.View.ComplaintRequested += OnComplaint;
-            session.View.ForkRequested += ForkSession;
-            session.View.NewSessionRequested += NewSessionFrom;
-            session.View.TransferToLoop = turns => TransferToLoop(session.Workspace, turns);
-            session.View.TitleChanged += OnSessionTitleChanged;
-            session.View.SideWorkEvicted += OnSideWorkEvicted;
-
             session.Page = new AntdUI.TabPage
             {
                 Text = session.Title,
@@ -1143,9 +1141,31 @@ namespace OpenLoop.App
                 Tag = session,
                 Dock = DockStyle.Fill
             };
-            session.Page.Controls.Add(session.View);
             _sessions.Add(session);
             return session;
+        }
+
+        /// <summary>
+        /// 会话视图按需创建：启动恢复的会话先只登记元数据，点开时才读历史、建控件。
+        /// </summary>
+        private SessionView EnsureView(Session session)
+        {
+            if (session == null) return null;
+            if (session.View != null) return session.View;
+
+            var view = new SessionView { Dock = DockStyle.Fill };
+            session.View = view;
+            view.Initialize(session, () => _settings);
+            view.StateChanged += OnSessionStateChanged;
+            view.OpenLoopRequested += workspace => OpenLoop(workspace);
+            view.ComplaintRequested += OnComplaint;
+            view.ForkRequested += ForkSession;
+            view.NewSessionRequested += NewSessionFrom;
+            view.TransferToLoop = turns => TransferToLoop(session.Workspace, turns);
+            view.TitleChanged += OnSessionTitleChanged;
+            view.SideWorkEvicted += OnSideWorkEvicted;
+            session.Page?.Controls.Add(view);
+            return view;
         }
 
         private void OnSurveyStoreChanged(string workspace, string sessionId)
@@ -1197,14 +1217,17 @@ namespace OpenLoop.App
             {
                 bool created = false;
                 string newestWorkspace = null;
-                foreach (var saved in ChatStore.SavedSessions())
+                // 索引是一整份 JSON + 每条 File.Exists：磁盘读放后台，别让每 3 秒一次的同步卡住界面
+                var saved = await Task.Run(ChatStore.SavedSessions);
+                if (_closing) return;
+                foreach (var item in saved)
                 {
-                    if (_sessions.Any(s => s.Id == saved.Id) || !Directory.Exists(saved.Workspace)) continue;
-                    CreateSession(saved.Workspace, saved.Id, saved.Title, saved.StartedAt, saved.LastActiveAt);
+                    if (_sessions.Any(s => s.Id == item.Id) || !Directory.Exists(item.Workspace)) continue;
+                    CreateSession(item.Workspace, item.Id, item.Title, item.StartedAt, item.LastActiveAt);
                     created = true;
                 }
 
-                using var client = new WorkerApiClient();
+                var client = Worker;
                 if (!await client.PingAsync()) return;
                 var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var brief in await client.ListAsync(summary: true))
@@ -1223,7 +1246,7 @@ namespace OpenLoop.App
                     //跑着的时候每 3 秒并一次实时进度，刚跑完再补一次定稿
                     if (session.Page?.Parent != null
                         && (brief.State == WorkerSessionHost.Running || session.State == SessionState.Running))
-                        session.View.SyncFromWorker(await client.GetAsync(brief.Id) ?? brief);
+                        session.View?.SyncFromWorker(await client.GetAsync(brief.Id) ?? brief);
 
                     var state = StateOf(brief.State);
                     if (session.State != state)
@@ -1262,10 +1285,9 @@ namespace OpenLoop.App
             if (session == null) return;
             try
             {
-                using var client = new WorkerApiClient();
-                var snapshot = await client.GetAsync(session.Id);
+                var snapshot = await Worker.GetAsync(session.Id);
                 if (snapshot == null) return;
-                session.View.SyncFromWorker(snapshot);
+                session.View?.SyncFromWorker(snapshot);
                 var state = StateOf(snapshot.State);
                 if (session.State != state)
                 {
@@ -1280,12 +1302,11 @@ namespace OpenLoop.App
         }
 
         /// <summary>删除一条会话时也让 A 忘掉它，否则同步定时器 3 秒后又把行拾回来。</summary>
-        private static async Task ForgetOnWorkerAsync(string id)
+        private async Task ForgetOnWorkerAsync(string id)
         {
             try
             {
-                using var client = new WorkerApiClient();
-                await client.DeleteAsync(id);
+                await Worker.DeleteAsync(id);
             }
             catch (Exception ex)
             {
@@ -1305,6 +1326,7 @@ namespace OpenLoop.App
         {
             if (session == null) return;
             _lastSession = session;
+            EnsureView(session);
             if (session.Page.Parent == null) _tabs.Pages.Add(session.Page);
             _tabs.SelectTab(session.Page);
             RefreshOverview();
@@ -1346,8 +1368,9 @@ namespace OpenLoop.App
         {
             if (source == null) return;
             var session = CreateSession(source.Workspace);
-            session.View.SetModel(source.View.Model);
-            session.View.SetEffort(source.View.Effort);
+            var view = EnsureView(session);
+            view.SetModel(source.View?.Model);
+            view.SetEffort(source.View?.Effort);
             ShowSession(session);
             if (string.IsNullOrWhiteSpace(request)) return;
             session.View.ComposerText = request;
@@ -1654,7 +1677,7 @@ namespace OpenLoop.App
             session.Book.ReplaceAll(turns, null);
             ChatStore.Save(workspace, turns, session.Id);
             ChatStore.Touch(workspace, session.Id);
-            session.View.RequestTitle();
+            EnsureView(session).RequestTitle();
             RefreshOverview();
         }
 
@@ -1681,9 +1704,9 @@ namespace OpenLoop.App
                 if (page != null) CloseTab(page);
 
                 var session = CreateSession(request.Workspace);
+                ShowSession(session);
                 session.View.SetModel(request.Model);
                 session.View.SetEffort(request.Effort);
-                ShowSession(session);
                 session.View.ComposerText = request.Text;
                 session.View.SendMode("task");
             };

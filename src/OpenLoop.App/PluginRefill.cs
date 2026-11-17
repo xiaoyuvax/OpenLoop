@@ -33,14 +33,15 @@ namespace OpenLoop.App
                 {
                     await Task.Delay(Delay);
                     if (owner.IsDisposed) return;
-
-                    if (owner.InvokeRequired) owner.Invoke(refresh);
-                    else refresh();
-
-                    if (!Pending) return;
+                    // 还没就绪就继续等：每秒清空重建一次下拉（几百项带图标）代价太大
+                    if (Pending) continue;
+                    Refresh(owner, refresh);
+                    return;
                 }
 
-                AppLog.Warn($"插件下拉重填了 {Attempts} 次仍有服务没就绪，等下次打开再试");
+                // 超时也填一次，把已经就绪的那部分分组显示出来
+                Refresh(owner, refresh);
+                AppLog.Warn($"{Attempts} 秒内仍有服务没就绪，先按当前目录填一次");
             }
             catch (Exception ex)
             {
@@ -50,6 +51,12 @@ namespace OpenLoop.App
             {
                 Running.Remove(owner);
             }
+        }
+
+        private static void Refresh(Control owner, Action refresh)
+        {
+            if (owner.InvokeRequired) owner.Invoke(refresh);
+            else refresh();
         }
     }
 }

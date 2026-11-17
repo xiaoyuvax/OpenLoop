@@ -134,6 +134,7 @@ namespace OpenLoop.Service.Worker
                 skills = SkillCatalog.Active(activation, features, skillCatalog, out skillProblems);
             else
                 AppLog.Warn("拿不到 I 的激活集，本轮按全部关闭运行：" + workspace);
+            skills = BuiltinSkills.Merge(skills);
 
             if (skillProblems.Count > 0)
                 AppLog.Warn("技能不可用：" + string.Join("；", skillProblems));

@@ -41,6 +41,8 @@ namespace OpenLoop.Core.Tools.Builtin
                 string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
             if (skill == null)
                 return AgentToolResult.Failure($"未知技能：{name}");
+            if (string.IsNullOrEmpty(skill.Directory))
+                return AgentToolResult.Failure($"技能 {skill.Name} 没有 scripts/ 目录");
 
             string relative = script.Replace('\\', '/').TrimStart('/');
             if (!relative.StartsWith("scripts/", StringComparison.OrdinalIgnoreCase))

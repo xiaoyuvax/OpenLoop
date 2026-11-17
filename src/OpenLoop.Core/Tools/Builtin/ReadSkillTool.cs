@@ -92,6 +92,7 @@ namespace OpenLoop.Core.Tools.Builtin
         private static IReadOnlyList<string> ListFiles(SkillInfo skill)
         {
             var list = new List<string>();
+            if (string.IsNullOrEmpty(skill.Directory)) return list;
             foreach (string sub in new[] { "references", "scripts" })
             {
                 string dir = Path.Combine(skill.Directory ?? "", sub);
