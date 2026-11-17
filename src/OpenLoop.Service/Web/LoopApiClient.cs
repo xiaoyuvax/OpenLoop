@@ -185,7 +185,8 @@ namespace OpenLoop.Service.Web
 
         private HttpClient NewClient(string endpoint)
         {
-            var http = new HttpClient
+            // loopback：系统代理就是 VPN 自己，走代理会把本地请求发到隧道外
+            var http = new HttpClient(new SocketsHttpHandler { UseProxy = false })
             {
                 BaseAddress = new Uri("http://" + endpoint),
                 Timeout = _timeout

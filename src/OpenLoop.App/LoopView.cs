@@ -68,7 +68,7 @@ namespace OpenLoop.App
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public bool Busy => _running;
+        public bool Busy => _running || _sideBtw.Busy;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Status => _lblStatus.Text;
@@ -438,8 +438,10 @@ namespace OpenLoop.App
                     }
                     var activeSkills = BuiltinSkills.Merge(ActiveSkills(skillCatalog, out var problems));
                     OpenLoop.Core.Safety.ApprovalHandler approve = AskApproval;
-                    // 章程 §2：Loop 读与 Worker 同宽，写只限配置/源码/安装路径
-                    var (readScope, writeScope) = OpenLoop.Service.Source.LoopScope.Create(approve);
+                    // 章程 §2：Loop 只读来源会话的工作区（/complain、worker 转来）与安装/配置路径，
+                    // 写只限配置/源码/安装路径
+                    var (readScope, writeScope) = OpenLoop.Service.Source.LoopScope.Create(
+                        approve, sessionWorkspace: _workspace);
                     var loopTools = ToolRegistry.Loop(readScope, writeScope, _workspace, approve, activeSkills,
                         OpenCodeTools.For(writeScope.Root, approve, settings.OpenCodeAskPermissions)
                             .Concat(DshTools.For(settings, writeScope.Root, approve))
@@ -514,12 +516,10 @@ namespace OpenLoop.App
                 {
                     turn.ReasoningText = snapshot;
                     lock (timeline) turn.TimelineText = timeline.Render();
-                    // 就地重绑最后一行：避免全量重建把高度打回估算值导致滚动条跳动
-                    string text;
-                    lock (_streamBuffer) text = _streamBuffer.ToString();
                     _contextTokens = _promptTokens + _liveTokens;
                     ApplyDetail();
-                    _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(text));
+                    // 与 Worker 一致：正文只由 onDelta 写（已过滤协议原文），推理增量只刷新思考区
+                    _chat.UpdateStreamingMessage(turn, null);
                 });
             };
 
@@ -577,7 +577,7 @@ namespace OpenLoop.App
                 settings.UseAgentsMd
                     ? AgentsInstructions.Load(_workspace, AppSettings.GlobalAgentsPath)
                     : null,
-                _workspace);
+                _workspace, LoopPrompt.Access);
             history.Insert(0, new LlmMessage("system", systemPrompt));
             trace.SystemPrompt(systemPrompt);
 
@@ -947,12 +947,21 @@ namespace OpenLoop.App
             // 正在编辑排队项：这一下只保存，不发送
             if (_editing != null)
             {
-                if (text.Length == 0) _queue.Remove(_editing);
-                else _editing.Text = text;
+                var editing = _editing;
                 _editing = null;
+                bool removed = text.Length == 0;
+                if (removed) _queue.Remove(editing);
+                else
+                {
+                    editing.Text = text;
+                    // 编辑期间这一条被搁置，保存后才重新可发
+                    _queue.Release(editing);
+                }
                 _txtInput.Clear();
                 _pending.Sync();
                 UpdateSendButton();
+                // 本轮可能早在编辑时就收尾了（队列因搁置取不到东西）：保存后补发
+                if (!removed && !_running) DrainQueue();
                 return;
             }
 
@@ -1388,6 +1397,8 @@ namespace OpenLoop.App
         {
             if (item == null || !_queue.Items.Contains(item)) return;
             _editing = item;
+            // 编辑期间先搁置：本轮结束也不会被自动发出去，保存后才重新入列
+            _queue.Hold(item);
             _txtInput.Text = item.Text;
             _txtInput.SelectionStart = _txtInput.Text.Length;
             _txtInput.Focus();

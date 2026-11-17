@@ -43,9 +43,9 @@ namespace OpenLoop.Core.Agent
             _skills = skills;
         }
 
-        public string BuildSystemPrompt(string role = null, IReadOnlyList<string> rules = null, string instructions = null, string workspace = null)
+        public string BuildSystemPrompt(string role = null, IReadOnlyList<string> rules = null, string instructions = null, string workspace = null, string access = null)
             => SystemPromptBuilder.Build(
-                _tools.Tools, _policy.MaxSteps, role, rules, instructions, _skills, workspace);
+                _tools.Tools, _policy.MaxSteps, role, rules, instructions, _skills, workspace, access);
 
         public AgentStateMachine CreateMachine() => new(AgentPipeline.Create());
 

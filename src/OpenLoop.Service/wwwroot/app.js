@@ -63,7 +63,7 @@ function TopBar({ menu, onSettings }) {
       h(Button, { type: 'text', style: { width: 38, height: 34, borderRadius: 8 } }, '☰')),
     h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 } },
       h('span', { style: { fontSize: 17, fontWeight: 700 } }, 'OpenLoop'),
-      h('span', { style: { fontSize: 12, color: '#8c8c8c' } }, '多会话 · 关闭标签不停止')),
+      h('span', { style: { fontSize: 12, color: '#8c8c8c' } }, '一个可自我迭代的开放式Agent')),
     h('div', { style: { flex: 1 } }),
     h(Tooltip, { title: '设置' },
       h(Button, { type: 'text', style: { width: 38, height: 34, borderRadius: 8 }, onClick: onSettings }, '⚙')));
@@ -909,9 +909,20 @@ function SettingsPanel({ caps, onClose }) {
     h(SwitchRow, {
       key: 'evolve', label: '自动演进', checked: draft.autoEvolve,
       onChange: v => patch({ autoEvolve: v }),
-      hint: '攒够新证据就自己跑一轮演进（阈值与冷却见 settings.json）'
+      hint: '改行为版本：护栏、阈值、规则与技能顺序'
     }),
-    h(SettingHint, { key: 'note' }, '主题与语言在重启 OpenLoop 后生效；完全许可、自动审批与自动演进立即生效。')
+    h(SettingHint, { key: 'evolve-hint' },
+      '演进的对象是 Agent 的行为版本：只改当前工作区的护栏、阈值、规则与技能顺序（.openloop 激活集），'
+      + '不编译、不换二进制；攒够新证据就自动跑一轮 A/B 考核，候选更好才采纳。'),
+    h(SwitchRow, {
+      key: 'iterate', label: '自动迭代', checked: draft.autoIterate,
+      onChange: v => patch({ autoIterate: v }),
+      hint: '改程序版本：工作树源码构建升版，换掉 A/I'
+    }),
+    h(SettingHint, { key: 'iterate-hint' },
+      '迭代的对象是 OpenLoop 程序本身：把工作树里的源码改动构建、升版并替换 A/I（不连壳，壳仍由 Loop 页「迭代」换）。'
+      + '演进采纳后自动跑一次，会重启 A、中断正在跑的会话；工作树有未提交改动时跳过。'),
+    h(SettingHint, { key: 'note' }, '主题与语言在重启 OpenLoop 后生效；完全许可、自动审批、自动演进与自动迭代立即生效。')
   ];
 
   const openCode = [

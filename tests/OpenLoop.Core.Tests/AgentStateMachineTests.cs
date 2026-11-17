@@ -105,6 +105,29 @@ namespace OpenLoop.Core.Tests
             Assert.Equal(4, tool.Calls);
         }
 
+        /// <summary>并行只读批次不走 ExecuteWithArgRepairAsync：OnToolStart 仍须每个调用各报一次。</summary>
+        [Fact]
+        public async Task Parallel_ReadOnly_Batch_Reports_Every_Tool_Start()
+        {
+            var alpha = new FakeTool { Name = "alpha", IsReadOnly = true };
+            var beta = new FakeTool { Name = "beta", IsReadOnly = true };
+            var reasoner = new ScriptedReasoner(
+                Loops.Call("alpha") + "\n" + Loops.Call("beta"), "结束");
+            var starts = new List<string>();
+            var loop = new AgentLoop(
+                new ToolRegistry([alpha, beta]), reasoner,
+                onToolStart: (name, _) => starts.Add(name));
+
+            var result = await loop.RunAsync([], "看看");
+
+            Assert.Equal("结束", result.FinalAnswer);
+            Assert.Equal(1, alpha.Calls);
+            Assert.Equal(1, beta.Calls);
+            Assert.Equal(2, starts.Count);
+            Assert.Contains("alpha", starts);
+            Assert.Contains("beta", starts);
+        }
+
         private sealed class DelegateStep : IAgentStep
         {
             private readonly Func<AgentState, AgentRunContext, AgentStepResult> _run;

@@ -205,7 +205,8 @@ namespace OpenLoop.Service.Source
 
             try
             {
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+                using var http = new HttpClient(new SocketsHttpHandler { UseProxy = false })
+                    { Timeout = TimeSpan.FromSeconds(20) };
                 http.DefaultRequestHeaders.Add(BusProtocol.KeyHeader, key);
                 using var content = new StringContent(body, Encoding.UTF8, "application/json");
                 using var response = await http.PostAsync($"http://{runtime.Bus}{path}", content, ct);

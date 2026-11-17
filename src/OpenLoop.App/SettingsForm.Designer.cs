@@ -62,6 +62,10 @@ namespace OpenLoop.App
         private FlowLayoutPanel _autoEvolveFlow;
         private AntdUI.Switch _switchAutoEvolve;
         private AntdUI.Label _lblAutoEvolveHint;
+        private AntdUI.Label _lblAutoIterate;
+        private FlowLayoutPanel _autoIterateFlow;
+        private AntdUI.Switch _switchAutoIterate;
+        private AntdUI.Label _lblAutoIterateHint;
         private AntdUI.Label _lblGeneralNote;
 
         private TableLayoutPanel _models;
@@ -167,6 +171,10 @@ namespace OpenLoop.App
             _autoEvolveFlow = new FlowLayoutPanel();
             _switchAutoEvolve = new AntdUI.Switch();
             _lblAutoEvolveHint = new AntdUI.Label();
+            _lblAutoIterate = new AntdUI.Label();
+            _autoIterateFlow = new FlowLayoutPanel();
+            _switchAutoIterate = new AntdUI.Switch();
+            _lblAutoIterateHint = new AntdUI.Label();
             _lblGeneralNote = new AntdUI.Label();
 
             _models = new TableLayoutPanel();
@@ -239,9 +247,10 @@ namespace OpenLoop.App
             // 普通
             _general.Dock = DockStyle.Fill;
             _general.ColumnCount = 2;
-            _general.RowCount = 8;
+            _general.RowCount = 9;
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
@@ -260,6 +269,7 @@ namespace OpenLoop.App
             ConfigureLabel(_lblAgents, "AGENTS.md");
             ConfigureLabel(_lblThinking, "思考过程");
             ConfigureLabel(_lblAutoEvolve, "自动演进");
+            ConfigureLabel(_lblAutoIterate, "自动迭代");
 
             _cboLanguage.Dock = DockStyle.Fill;
             _cboLanguage.Radius = 8;
@@ -376,7 +386,7 @@ namespace OpenLoop.App
             _switchAutoEvolve.Margin = new Padding(0, 9, 8, 0);
 
             _lblAutoEvolveHint.AutoSize = true;
-            _lblAutoEvolveHint.Text = "攒够新证据就自己跑一轮演进（阈值与冷却见 settings.json）";
+            _lblAutoEvolveHint.Text = "改行为版本：护栏、阈值、规则与技能顺序，攒够证据自动跑考核";
             _lblAutoEvolveHint.Font = new Font("Segoe UI", 8.5F);
             _lblAutoEvolveHint.ForeColor = UiStyle.Muted;
             _lblAutoEvolveHint.Margin = new Padding(0, 11, 0, 0);
@@ -384,9 +394,27 @@ namespace OpenLoop.App
             _autoEvolveFlow.Controls.Add(_switchAutoEvolve);
             _autoEvolveFlow.Controls.Add(_lblAutoEvolveHint);
 
+            _autoIterateFlow.Dock = DockStyle.Fill;
+            _autoIterateFlow.FlowDirection = FlowDirection.LeftToRight;
+            _autoIterateFlow.WrapContents = false;
+            _autoIterateFlow.Margin = new Padding(0);
+
+            _switchAutoIterate.Width = 44;
+            _switchAutoIterate.Height = 22;
+            _switchAutoIterate.Margin = new Padding(0, 9, 8, 0);
+
+            _lblAutoIterateHint.AutoSize = true;
+            _lblAutoIterateHint.Text = "源码攒够提交后自动升版换 A/I（有会话在跑会先问，默认关）";
+            _lblAutoIterateHint.Font = new Font("Segoe UI", 8.5F);
+            _lblAutoIterateHint.ForeColor = UiStyle.Muted;
+            _lblAutoIterateHint.Margin = new Padding(0, 11, 0, 0);
+
+            _autoIterateFlow.Controls.Add(_switchAutoIterate);
+            _autoIterateFlow.Controls.Add(_lblAutoIterateHint);
+
             _lblGeneralNote.AutoSize = false;
             _lblGeneralNote.Dock = DockStyle.Fill;
-            _lblGeneralNote.Text = "主题与语言在重启 OpenLoop 后生效；完全许可、自动审批与自动演进立即生效。";
+            _lblGeneralNote.Text = "主题与语言在重启 OpenLoop 后生效；完全许可、自动审批、自动演进与自动迭代立即生效。";
             _lblGeneralNote.Font = new Font("Segoe UI", 8.5F);
             _lblGeneralNote.ForeColor = UiStyle.Muted;
             _lblGeneralNote.TextAlign = ContentAlignment.TopLeft;
@@ -406,7 +434,9 @@ namespace OpenLoop.App
             _general.Controls.Add(_thinkingFlow, 1, 5);
             _general.Controls.Add(_lblAutoEvolve, 0, 6);
             _general.Controls.Add(_autoEvolveFlow, 1, 6);
-            _general.Controls.Add(_lblGeneralNote, 0, 7);
+            _general.Controls.Add(_lblAutoIterate, 0, 7);
+            _general.Controls.Add(_autoIterateFlow, 1, 7);
+            _general.Controls.Add(_lblGeneralNote, 0, 8);
             _general.SetColumnSpan(_lblGeneralNote, 2);
             _pageGeneral.Controls.Add(_general);
 
@@ -780,8 +810,8 @@ namespace OpenLoop.App
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = UiStyle.Surface;
-            ClientSize = new Size(780, 540);
-            MinimumSize = new Size(740, 500);
+            ClientSize = new Size(780, 600);
+            MinimumSize = new Size(740, 560);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;

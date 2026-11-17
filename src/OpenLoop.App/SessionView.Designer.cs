@@ -316,9 +316,10 @@ namespace OpenLoop.App
             _lblEvolveHint.MaximumSize = new Size(236, 0);
             _lblEvolveHint.Text = "演进只改当前工作区的激活集：护栏开关、阈值、规则与技能顺序；"
                 + "不改代码/工具/提示词，其它工作区不受影响；考核题 A/B 更好才采纳。";
-            _lblEvolveHint.Font = new Font("Segoe UI", 9F);
+            _lblEvolveHint.Font = new Font("Segoe UI", 8F);
             _lblEvolveHint.ForeColor = UiStyle.Muted;
-            _lblEvolveHint.Margin = new Padding(0, 0, 0, 8);
+            // 放在按钮组下方：与上方按钮留一段距离，别贴着
+            _lblEvolveHint.Margin = new Padding(0, 12, 0, 0);
 
             _btnDrafts.Name = "btnDrafts";
             _btnDrafts.Text = Localization.T("TaskDrafts");
@@ -426,11 +427,12 @@ namespace OpenLoop.App
             _loopFlow.Controls.Add(_lblStatus);
             _loopFlow.Controls.Add(_btnDrafts);
             _loopFlow.Controls.Add(_btnReport);
-            _loopFlow.Controls.Add(_lblEvolveHint);
             _loopFlow.Controls.Add(_btnEvolve);
             _loopFlow.Controls.Add(_btnRollback);
             _loopFlow.Controls.Add(_btnRule);
             _loopFlow.Controls.Add(_btnOpenLoop);
+            // 说明文字放最后：所有按钮之下，占住底部空白区
+            _loopFlow.Controls.Add(_lblEvolveHint);
 
             _detailFlow.Controls.Add(_lblDModel);
             _detailFlow.Controls.Add(_lblDEffort);

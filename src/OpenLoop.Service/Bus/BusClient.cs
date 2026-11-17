@@ -10,7 +10,7 @@ namespace OpenLoop.Service.Bus
 
         public BusClient(string busEndpoint, string key = null)
         {
-            _http = new HttpClient
+            _http = new HttpClient(new SocketsHttpHandler { UseProxy = false })
             {
                 BaseAddress = new Uri("http://" + busEndpoint),
                 Timeout = TimeSpan.FromSeconds(5)

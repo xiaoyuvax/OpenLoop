@@ -5,7 +5,7 @@ using OpenLoop.Service.Runtime;
 namespace OpenLoop.Service.Source
 {
     /// <summary>
-    /// Loop 的读写边界（章程 §2）：读得宽（任意路径、克隆仓库、查配置），
+    /// Loop 的读写边界（章程 §2）：读只到安装/配置路径与来源会话的工作区（/complain、worker 转来），
     /// 写得窄（配置目录、源码仓库、二进制安装路径，以及与源码同级、参与编译的组件仓库）。
     /// </summary>
     public static class LoopScope
@@ -45,16 +45,24 @@ namespace OpenLoop.Service.Source
 
         /// <param name="ask">越界写入的审批通道（模型位/工具位的用户确认）；为 null 时直接拒绝。</param>
         /// <param name="writableComponents">额外可写的组件仓库；不传时按 <see cref="IterableComponents"/> 判定。</param>
+        /// <param name="sessionWorkspace">本 Loop 会话来源会话的工作区（/complain、worker 转来）：额外只读。</param>
         public static (WorkspaceScope Read, WorkspaceScope Write) Create(
-            ApprovalHandler ask = null, IEnumerable<string> writableComponents = null)
+            ApprovalHandler ask = null, IEnumerable<string> writableComponents = null, string sessionWorkspace = null)
         {
             string root = SourceRoot;
             var components = (writableComponents ?? IterableComponents()).ToList();
 
             var read = new WorkspaceScope(root)
             {
-                // 读：与 Worker 相同，不设边界
-                Approve = _ => ApprovalDecision.AllowAlways
+                // 读：安装路径、配置目录、参与编译的组件仓库，以及来源会话的工作区；
+                // 其它工作区不读（不弹审批，免得变成"问一句就能看"）
+                Approve = request =>
+                    Under(request.Detail, SourceSync.InstallRoot)
+                    || Under(request.Detail, AppPaths.DataRoot)
+                    || Under(request.Detail, sessionWorkspace)
+                    || components.Any(c => Under(request.Detail, c))
+                        ? ApprovalDecision.AllowAlways
+                        : ApprovalDecision.Deny
             };
 
             var write = new WorkspaceScope(root)

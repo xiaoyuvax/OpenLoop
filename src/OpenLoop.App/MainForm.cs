@@ -711,6 +711,7 @@ namespace OpenLoop.App
             _overview.SettingsRequested += OpenSettings;
 
             _settings = AppSettings.Load();
+            ChatFlow.ChatFlowControl.MarkdownMaxChars = _settings.MarkdownMaxChars;
             if (string.IsNullOrWhiteSpace(_settings.Workspace))
                 _settings.Workspace = TryGetDevRepoWorkspace() ?? Directory.GetCurrentDirectory();
             await OpenCodeHub.RefreshAsync();
@@ -729,9 +730,84 @@ namespace OpenLoop.App
 
             _workerSync.Tick += OnWorkerSyncTick;
             _workerSync.Start();
+            _autoIterateGrace = DateTime.Now.AddSeconds(AutoIterateGraceSeconds);
         }
 
-        private void OnWorkerSyncTick(object sender, EventArgs e) => _ = SyncWorkerSessionsAsync();
+        private void OnWorkerSyncTick(object sender, EventArgs e)
+        {
+            _ = SyncWorkerSessionsAsync();
+            CheckAutoIterate();
+        }
+
+        /// <summary>
+        /// 自动迭代：I 在启动/入账时算好「源码攒够提交没有」，这里只负责人——没会话在跑就倒计时后换版，
+        /// 有会话在跑先问一句（换版会中断它们）。开关在设置里，默认关。
+        /// </summary>
+        private void CheckAutoIterate()
+        {
+            if (!_settings.AutoIterate || _autoIterateBusy || _closing) return;
+            if (_iterationStatus is "running" or "restarting") return;
+            if (_iterationForm is { IsDisposed: false }) return;
+            if (DateTime.Now < _autoIterateGrace) return;
+
+            var state = AutoIterate.Load();
+            if (!state.Available)
+            {
+                _autoIterateCountdown = null;
+                return;
+            }
+
+            string head = state.Head ?? "";
+            if (string.IsNullOrEmpty(head)) return;
+            if (string.Equals(head, _autoIterateHead, StringComparison.OrdinalIgnoreCase)) return;
+
+            if (_autoIterateCountdown == null)
+            {
+                _autoIterateHead = head;
+                _autoIterateCountdown = DateTime.Now.AddSeconds(AutoIterateCountdownSeconds);
+                AntdUI.Notification.info(this, "准备自动更新",
+                    $"源码已累积 {state.Commits} 次提交，{AutoIterateCountdownSeconds} 秒后自动更新 A/I" +
+                    (BusySessions().Length > 0 ? "（有会话在跑，到时会先问你）" : "。"),
+                    AntdUI.TAlignFrom.TR, null, 8);
+                return;
+            }
+
+            if (DateTime.Now < _autoIterateCountdown.Value) return;
+            _autoIterateCountdown = null;
+
+            string busy = BusySessions();
+            if (busy.Length > 0 && MessageBox.Show(this,
+                    "这些会话还在跑：\n" + busy + "\n\n现在更新会中断它们。继续吗？",
+                    "自动更新 A/I", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+            {
+                AutoIterate.Skip(head);
+                AppLog.Info("用户跳过这次自动迭代：" + head);
+                return;
+            }
+
+            _ = RunAutoIterationAsync();
+        }
+
+        private async Task RunAutoIterationAsync()
+        {
+            _autoIterateBusy = true;
+            try
+            {
+                AntdUI.Notification.info(this, "自动更新", "开始构建并换版 A/I，期间别关界面。",
+                    AntdUI.TAlignFrom.TR, null, 6);
+                string detail = await RunIterationAsync();
+                AppLog.Info("自动迭代：" + detail);
+                if (detail.StartsWith("迭代完成", StringComparison.Ordinal))
+                    AntdUI.Notification.success(this, "自动更新完成", detail, AntdUI.TAlignFrom.TR, null, 6);
+                else
+                    AntdUI.Notification.warn(this, "自动更新未完成", detail, AntdUI.TAlignFrom.TR, null, 8);
+            }
+            finally
+            {
+                _autoIterateBusy = false;
+            }
+        }
 
         /// <summary>
         /// 启动时对比源码与运行版本（章程 §3）。这里只报状态：
@@ -744,7 +820,11 @@ namespace OpenLoop.App
                 var check = await global::OpenLoop.Service.Source.SourceSync.CheckAsync();
                 AppLog.Info("源码同步：" + check);
 
-                if (check.UpstreamNewer)
+                if (check.State == global::OpenLoop.Service.Source.SourceState.NoGit)
+                    AntdUI.Notification.warn(this, "未找到 git",
+                        "撤回对话、迭代与版本溯源都依赖 git，请安装并加入 PATH 后重启。",
+                        AntdUI.TAlignFrom.TR, null, 8);
+                else if (check.UpstreamNewer)
                     AntdUI.Notification.warn(this, "上游有更新", check.Detail,
                         AntdUI.TAlignFrom.TR, null, 6);
                 else if (check.State == global::OpenLoop.Service.Source.SourceState.Newer)
@@ -772,6 +852,16 @@ namespace OpenLoop.App
         private readonly List<string> _iterationSteps = new();
         private string _iterationStatus = "idle";
         private IterationForm _iterationForm;
+
+        /// <summary>自动迭代：壳启动后先安定一会儿再读 I 的判据。</summary>
+        private DateTime _autoIterateGrace;
+        /// <summary>已经提示、倒计时中；null = 没在等。</summary>
+        private DateTime? _autoIterateCountdown;
+        /// <summary>已经提示/处理过的那次 HEAD，避免同一个状态反复弹。</summary>
+        private string _autoIterateHead;
+        private bool _autoIterateBusy;
+        private const int AutoIterateGraceSeconds = 30;
+        private const int AutoIterateCountdownSeconds = 20;
 
         /// <summary>Puppet 用：上一轮迭代状态（idle / running / ok / staged / failed）与逐步结果。</summary>
         public string IterationStatus => _iterationStatus;
@@ -868,6 +958,17 @@ namespace OpenLoop.App
             var form = new IterationForm(target, plan, summary, planned?.UpstreamNewer == true);
             form.ShellRestart = report =>
             {
+                // 壳重启会把 A/I 与本进程里的 Loop/旁路一起掐掉：还有会话在跑就先问一句
+                string busy = BusySessions();
+                if (busy.Length > 0 && MessageBox.Show(form,
+                        "这些会话还在跑：\n" + busy + "\n\n现在重启壳会中断它们。仍然继续吗？",
+                        "还有会话在运行", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                        MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                {
+                    AppLog.Info("用户暂不重启壳，仍在运行：" + busy.Replace('\n', '；'));
+                    return false;
+                }
+
                 IterationRunner.WriteReport(report);
                 bool started = IterationRunner.LaunchRestarter(new ShellStage(report.ShellDir, report.Version), report.Workspace);
                 ExitTrace.Write("壳重启请求：started=" + started + " dir=" + report.ShellDir);
@@ -875,12 +976,14 @@ namespace OpenLoop.App
                 {
                     // helper 没起来就退出等于把整个壳丢掉（没人接手）：留在当前版本，把原因说清楚
                     AppLog.Error("壳重启没有启动起来，继续用当前壳：" + report.ShellDir);
-                    return;
+                    return false;
                 }
                 Application.Exit();
+                return true;
             };
             form.FormClosed += (_, _) => _iterationForm = null;
             _iterationForm = form;
+            ShowOnOwnScreen(form);
             form.Show(this);
             form.Activate();
 
@@ -939,8 +1042,49 @@ namespace OpenLoop.App
             var form = new IterationForm(report);
             form.FormClosed += (_, _) => _iterationForm = null;
             _iterationForm = form;
+            ShowOnOwnScreen(form);
             form.Show(this);
             form.Activate();
+        }
+
+        /// <summary>
+        /// 子窗口统一摆到主窗口所在屏幕的正中：跨屏时 CenterParent 会按主屏算，窗口就跑到另一块屏上。
+        /// </summary>
+        private void ShowOnOwnScreen(Form form)
+        {
+            if (form == null) return;
+            // 最小化时控件矩形不可靠（在屏幕外），按还原后的位置取屏
+            var area = (WindowState == FormWindowState.Minimized
+                ? Screen.FromRectangle(RestoreBounds)
+                : Screen.FromControl(this)).WorkingArea;
+            form.StartPosition = FormStartPosition.Manual;
+            form.Location = CenterIn(area, form.Size);   // 先落到正确屏幕，避免先闪在别的屏
+            // 建好句柄后自动缩放会改尺寸（高分屏）：尺寸定下来再正一次
+            form.Shown += (_, _) =>
+            {
+                form.Size = new Size(Math.Min(form.Width, area.Width), Math.Min(form.Height, area.Height));
+                form.Location = CenterIn(area, form.Size);
+            };
+        }
+
+        private static Point CenterIn(Rectangle area, Size size)
+            => new(area.X + Math.Max(0, (area.Width - size.Width) / 2),
+                   area.Y + Math.Max(0, (area.Height - size.Height) / 2));
+
+        /// <summary>还在跑一轮的会话（Worker 轮 / Loop 轮 / 右侧旁路）：重启壳会把它们一起中断。</summary>
+        private string BusySessions()
+        {
+            var running = new List<string>();
+            foreach (var session in _sessions)
+            {
+                if (session.View?.AnyBusy == true || session.State == SessionState.Running)
+                    running.Add("Worker「" + session.Title + "」");
+            }
+            foreach (var loop in _loops.Values)
+            {
+                if (loop.View?.Busy == true) running.Add("Loop「" + loop.Page?.Text + "」");
+            }
+            return string.Join("\n", running);
         }
 
         /// <summary>恢复上次窗口位置：原屏幕还在就原位启动，不在则回主屏居中（保留尺寸）。</summary>
@@ -1849,6 +1993,7 @@ namespace OpenLoop.App
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
                 _settings = dialog.Result;
+                ChatFlow.ChatFlowControl.MarkdownMaxChars = _settings.MarkdownMaxChars;
                 try
                 {
                     _settings.Save();

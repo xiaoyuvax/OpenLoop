@@ -14,7 +14,7 @@ namespace OpenLoop.Core.Agent
         public static string Build(
             IReadOnlyList<ITool> tools, int maxSteps, string role = null,
             IEnumerable<string> rules = null, string instructions = null,
-            IReadOnlyList<SkillInfo> skills = null, string workspace = null)
+            IReadOnlyList<SkillInfo> skills = null, string workspace = null, string access = null)
         {
             var sb = new StringBuilder();
             bool hasWebFetch = tools.Any(t => string.Equals(t.Name, "WebFetch", StringComparison.OrdinalIgnoreCase));
@@ -31,9 +31,12 @@ namespace OpenLoop.Core.Agent
                 sb.AppendLine();
             }
             sb.AppendLine("# 你的能力边界");
-            sb.AppendLine(hasWebFetch
-                ? "- 你只能通过下面列出的工具访问环境：文件读写限定在工作目录内，联网只能通过 WebFetch 只读抓取网页正文。"
-                : "- 你只能通过下面列出的工具访问环境：不能联网，不能读写工作目录之外的文件。");
+            if (!string.IsNullOrWhiteSpace(access))
+                sb.AppendLine("- " + access.Trim());
+            else
+                sb.AppendLine(hasWebFetch
+                    ? "- 你只能通过下面列出的工具访问环境：文件读写限定在工作目录内，联网只能通过 WebFetch 只读抓取网页正文。"
+                    : "- 你只能通过下面列出的工具访问环境：不能联网，不能读写工作目录之外的文件。");
             sb.AppendLine("- 拿不准时先用只读工具了解现场，不要猜参数。");
             sb.AppendLine();
 

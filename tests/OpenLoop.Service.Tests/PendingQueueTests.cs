@@ -60,5 +60,22 @@ namespace OpenLoop.Service.Tests
             queue.Paused = false;
             Assert.NotNull(queue.TakeNext());
         }
+
+        [Fact]
+        public void TakeNext_skips_item_being_edited()
+        {
+            var queue = new PendingQueue();
+            var editing = queue.Add("draft");
+            var next = queue.Add("later");
+            queue.Hold(editing);
+
+            // 正在编辑的那一条搁置：先发后面的，没有别的可发就不发
+            Assert.Equal(next, queue.TakeNext());
+            Assert.Null(queue.TakeNext());
+
+            queue.Release(editing);
+            Assert.Equal(editing, queue.TakeNext());
+            Assert.Null(queue.TakeNext());
+        }
     }
 }

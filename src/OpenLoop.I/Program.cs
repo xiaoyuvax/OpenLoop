@@ -12,6 +12,9 @@ namespace OpenLoop.I
         {
             var loop = new LoopService();
             var iteration = new IterationService();
+            loop.Iteration = iteration;
+            // 自动迭代：启动就先看一次源码攒了多少提交（壳起来后读这份判据）
+            _ = Task.Run(() => iteration.RefreshAutoIterateAsync());
             string key = KeyFile.ReadOrCreate(AppPaths.BusKeyPath);
             var ui = new WebUiHandler(key);
             using var puppet = new WebPuppet(key);

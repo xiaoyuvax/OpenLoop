@@ -30,6 +30,9 @@ namespace OpenLoop.Service.Pending
     {
         private readonly List<PendingItem> _items = [];
 
+        /// <summary>正在输入框里编辑的条目：留在队列里，但不被自动取走。</summary>
+        private readonly HashSet<PendingItem> _held = [];
+
         /// <summary>队列内容变了（增删、切模式、取走）：宿主用它落盘。</summary>
         public event Action Changed;
 
@@ -66,6 +69,7 @@ namespace OpenLoop.Service.Pending
         public void Restore(IEnumerable<PendingItem> items, bool paused = false)
         {
             _items.Clear();
+            _held.Clear();
             foreach (var item in items ?? [])
             {
                 if (string.IsNullOrWhiteSpace(item?.Text)) continue;
@@ -77,8 +81,23 @@ namespace OpenLoop.Service.Pending
         public bool Remove(PendingItem item)
         {
             if (item == null || !_items.Remove(item)) return false;
+            _held.Remove(item);
             Changed?.Invoke();
             return true;
+        }
+
+        /// <summary>进入编辑态：这一条搁置，等 <see cref="Release"/> 之后才重新可发。</summary>
+        public void Hold(PendingItem item)
+        {
+            if (item == null) return;
+            _held.Add(item);
+        }
+
+        /// <summary>编辑结束（保存）：重新入列可发。</summary>
+        public void Release(PendingItem item)
+        {
+            if (item == null || !_held.Remove(item)) return;
+            Changed?.Invoke();
         }
 
         /// <summary>在「等本轮」与「立即」之间切换；返回切换后的条目（不在队列里则返回 null）。</summary>
@@ -90,12 +109,15 @@ namespace OpenLoop.Service.Pending
             return item;
         }
 
-        /// <summary>取下一个要发的：优先「立即」，其次按入队顺序；暂停时不取。</summary>
+        /// <summary>取下一个要发的：优先「立即」，其次按入队顺序；暂停或正在编辑时不取。</summary>
         public PendingItem TakeNext()
         {
             if (Paused || _items.Count == 0) return null;
-            var next = _items.FirstOrDefault(i => i.Immediate) ?? _items[0];
+            var next = _items.FirstOrDefault(i => i.Immediate && !_held.Contains(i))
+                       ?? _items.FirstOrDefault(i => !_held.Contains(i));
+            if (next == null) return null;
             _items.Remove(next);
+            _held.Remove(next);
             Changed?.Invoke();
             return next;
         }
@@ -104,6 +126,7 @@ namespace OpenLoop.Service.Pending
         {
             if (_items.Count == 0) return;
             _items.Clear();
+            _held.Clear();
             Changed?.Invoke();
         }
     }

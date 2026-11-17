@@ -17,7 +17,8 @@ namespace OpenLoop.Service.Web
         public WorkerApiClient(string endpoint = null, string key = null)
         {
             Endpoint = string.IsNullOrWhiteSpace(endpoint) ? Discover() : endpoint;
-            _http = new HttpClient
+            // loopback：系统代理就是 VPN 自己，走代理会把本地请求发到隧道外
+            _http = new HttpClient(new SocketsHttpHandler { UseProxy = false })
             {
                 BaseAddress = new Uri("http://" + Endpoint),
                 Timeout = TimeSpan.FromSeconds(30)
@@ -55,13 +56,24 @@ namespace OpenLoop.Service.Web
                    summary ? "/api/sessions?summary=1" : "/api/sessions", BusProtocol.Json, ct)
                ?? [];
 
-        /// <summary>没有这个会话时返回 null（A 用 404 表示）。</summary>
+        /// <summary>没有这个会话时返回 null（A 用 404 表示）。传输层瞬断重试一次：
+        /// 界面每 250ms 轮询一次，不该因为一条 reset 就把还在跑的轮次判成失败。</summary>
         public async Task<WorkerSessionSnapshot> GetAsync(string id, CancellationToken ct = default)
         {
-            using var response = await _http.GetAsync(Path(id), ct);
-            if (response.StatusCode == HttpStatusCode.NotFound) return null;
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<WorkerSessionSnapshot>(BusProtocol.Json, ct);
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    using var response = await _http.GetAsync(Path(id), ct);
+                    if (response.StatusCode == HttpStatusCode.NotFound) return null;
+                    response.EnsureSuccessStatusCode();
+                    return await response.Content.ReadFromJsonAsync<WorkerSessionSnapshot>(BusProtocol.Json, ct);
+                }
+                catch (HttpRequestException) when (attempt == 0)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+                }
+            }
         }
 
         public async Task<WorkerSessionSnapshot> CreateAsync(string id, string workspace, string model,

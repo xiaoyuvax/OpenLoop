@@ -180,6 +180,9 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool Busy => _running;
 
+        /// <summary>主轮或右侧旁路还在跑：重启壳会把它们一起中断（迭代换壳前要据此问用户）。</summary>
+        internal bool AnyBusy => _running || _sideBtw.Busy;
+
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Status => _lblStatus.Text;
 
@@ -764,13 +767,21 @@ namespace OpenLoop.App
             // 正在编辑排队项：这一下只保存，不发送
             if (_editing != null)
             {
-                bool removed = text.Length == 0;
-                if (removed) _queue.Remove(_editing);
-                else _editing.Text = text;
+                var editing = _editing;
                 _editing = null;
+                bool removed = text.Length == 0;
+                if (removed) _queue.Remove(editing);
+                else
+                {
+                    editing.Text = text;
+                    // 编辑期间这一条被搁置，保存后才重新可发
+                    _queue.Release(editing);
+                }
                 _txtInput.Clear();
                 _pending.Sync();
                 UpdateSendButton();
+                // 本轮可能早在编辑时就收尾了（队列因搁置取不到东西）：保存后补发
+                if (!removed && !_running) DrainQueue();
                 return (true, removed ? "已移除排队项" : "已更新排队项");
             }
 
@@ -941,6 +952,8 @@ namespace OpenLoop.App
         {
             if (item == null || !_queue.Items.Contains(item)) return;
             _editing = item;
+            // 编辑期间先搁置：本轮结束也不会被自动发出去，保存后才重新入列
+            _queue.Hold(item);
             _txtInput.Text = item.Text;
             _txtInput.SelectionStart = _txtInput.Text.Length;
             _txtInput.Focus();

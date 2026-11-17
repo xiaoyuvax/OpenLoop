@@ -163,7 +163,9 @@ namespace OpenLoop.App
             }
 
             bool loops = _project == LoopTag;
-            _lblProjectPath.Text = loops ? "Loop 会话（全部项目）" : _project;
+            _lblProjectPath.Text = loops
+                ? "Loop 会话（全部项目）· 关于OpenLoop自身迭代和演进的所有会话"
+                : _project;
             // 行没变就别重置数据源：整表重绘还会把滚动位置拉回顶部
             bool same = _shownRows.Count == _rows.Count;
             if (same)

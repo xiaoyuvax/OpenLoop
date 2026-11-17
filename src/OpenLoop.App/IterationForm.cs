@@ -81,8 +81,11 @@ namespace OpenLoop.App
             SyncButtons();
         }
 
-        /// <summary>壳重启交给 MainForm：写报告 → 起重启脚本 → 退出本进程。</summary>
-        public Action<IterationReport> ShellRestart { get; set; }
+        /// <summary>壳重启交给 MainForm：写报告 → 起重启脚本 → 退出本进程。返回 false = 这次先不重启。</summary>
+        public Func<IterationReport, bool> ShellRestart { get; set; }
+
+        /// <summary>壳已发布、用户选了先不重启：按钮改成「重启壳」，等会话跑完再点。</summary>
+        private IterationReport _pendingRestart;
 
         protected override void OnShown(EventArgs e)
         {
@@ -104,7 +107,11 @@ namespace OpenLoop.App
 
         public string StatusText => _lblStatus.Text;
 
-        public void StartFromPuppet() => StartAsync(confirmUpstream: false);
+        public void StartFromPuppet()
+        {
+            if (_pendingRestart != null) { RestartShell(); return; }
+            StartAsync(confirmUpstream: false);
+        }
 
         private void RenderPlan()
         {
@@ -152,7 +159,18 @@ namespace OpenLoop.App
             _planHost.Controls.Add(label, column, row);
         }
 
-        private void OnStart(object sender, EventArgs e) => StartAsync(confirmUpstream: true);
+        private void OnStart(object sender, EventArgs e)
+        {
+            if (_pendingRestart != null) { RestartShell(); return; }
+            StartAsync(confirmUpstream: true);
+        }
+
+        /// <summary>壳已发布、等用户点头再切：成功会退出进程；返回说明这次仍不重启，按钮留着。</summary>
+        private void RestartShell()
+        {
+            if (_pendingRestart == null) return;
+            if (ShellRestart?.Invoke(_pendingRestart) == true) _pendingRestart = null;
+        }
 
         private async void StartAsync(bool confirmUpstream)
         {
@@ -206,7 +224,13 @@ namespace OpenLoop.App
                     _lblStatus.Text = "即将重启壳：界面会退出，重启后自动回到这里";
                     Log("3 秒后重启壳（A/I 已完成，壳放到最后一步）。");
                     await Task.Delay(3000);
-                    ShellRestart?.Invoke(report);
+                    if (ShellRestart?.Invoke(report) == true) return;
+                    // 用户选择先不重启（有会话在跑）：A/I 已是新版本、新壳已发布，留个入口稍后切换
+                    _pendingRestart = report;
+                    report.ShellRestarted = false;
+                    _lblStatus.Text = "成功（壳未重启）：会话跑完点「重启壳」";
+                    Log("壳未重启：新壳已发布，会话跑完后点「重启壳」完成切换。");
+                    Finish();
                     return;
                 }
 
@@ -246,7 +270,9 @@ namespace OpenLoop.App
         /// <summary>按钮可用性只有一处口径：没有要升/重编的部件不给开始，工作树干净不给提交。</summary>
         private void SyncButtons()
         {
-            _btnStart.Enabled = !_reportMode && !_running && _plan.Any(p => p.Update);
+            _btnStart.Text = _pendingRestart != null ? "重启壳" : "开始迭代";
+            _btnStart.Enabled = !_reportMode && !_running
+                && (_pendingRestart != null || _plan.Any(p => p.Update));
             _btnCommit.Enabled = _btnPush.Enabled = _hasGitChanges && !_running && !_gitBusy && !_rollingBack;
             _btnRollback.Enabled = _canRollback && !_rollingBack && !_rolledBack;
             _selMode.Enabled = !_reportMode && !_running;

@@ -62,7 +62,7 @@
     <value>OpenLoop</value>
   </data>
   <data name="AppSubtitle" xml:space="preserve">
-    <value>多会话 · 关闭标签不停止</value>
+    <value>一个可自我迭代的开放式Agent</value>
   </data>
   <data name="MenuNewSession" xml:space="preserve">
     <value>新建会话…</value>

@@ -1,5 +1,7 @@
 using System.Text.Json;
 using OpenLoop.Service.Bus;
+using OpenLoop.Service.Config;
+using OpenLoop.Service.Logging;
 using OpenLoop.Service.Runtime;
 using OpenLoop.Service.Shell;
 using OpenLoop.Service.Source;
@@ -116,6 +118,7 @@ namespace OpenLoop.Service.Loop
             }
 
             var token = _cts.Token;
+            AutoIterate.NoteAttempt(null);
             _ = Task.Run(() => RunAsync(job, token));
             return Clone(job.State);
         }
@@ -200,6 +203,8 @@ namespace OpenLoop.Service.Loop
                     job.State.Report = report;
                     Save(job);
                 }
+
+                if (report.Ok) await MarkIteratedAsync(CancellationToken.None);
             }
             catch (OperationCanceledException)
             {
@@ -242,6 +247,7 @@ namespace OpenLoop.Service.Loop
                 string shellVersion = job.Plan.FirstOrDefault(p => p.Role == "shell")?.Target;
                 lock (_sync) job.State.Version = string.IsNullOrWhiteSpace(shellVersion) ? version : shellVersion;
                 Finish(job, "done", null);
+                await MarkIteratedAsync(CancellationToken.None);
                 return;
             }
 
@@ -253,6 +259,82 @@ namespace OpenLoop.Service.Loop
                 lock (_sync) job.State.RolledBack = rollback.All(s => s.Ok);
             }
             Finish(job, "error", "换 I 后没拿到成功结果");
+        }
+
+        /// <summary>
+        /// 自动迭代的判据源头：I 启动后、以及每轮证据入账后看一次源码攒了多少提交。
+        /// 只读 git（不构建、不写源码），结论落在 <c>runtime/auto-iterate.json</c>，壳轮询它。
+        /// </summary>
+        public async Task<AutoIterateState> RefreshAutoIterateAsync(CancellationToken ct = default)
+        {
+            var state = AutoIterate.Load();
+            try
+            {
+                string head = await GitAsync(["rev-parse", "HEAD"], ct).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(head)) return state;
+
+                // 第一次（或还没记录基准）：把当前 HEAD 当基准，不提示换版
+                if (string.IsNullOrWhiteSpace(state.Baseline))
+                {
+                    state.Baseline = head;
+                    AutoIterate.Save(state);
+                    return state;
+                }
+
+                string count = await GitAsync(["rev-list", "--count", state.Baseline + "..HEAD"], ct).ConfigureAwait(false);
+                int commits = int.TryParse(count, out int parsed) ? parsed : 0;
+                bool clean = await IsCleanAsync(ct).ConfigureAwait(false);
+
+                state.Head = head;
+                state.Commits = commits;
+                state.Summary = commits == 0 ? "" : $"{commits} 次提交待发布";
+                state.Available = clean && AutoIterate.ShouldOffer(
+                    AppSettings.Load().AutoIterate, commits, head, state, DateTimeOffset.Now, out _);
+                state.At = DateTimeOffset.Now.ToString("O");
+                AutoIterate.Save(state);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("自动迭代检测失败：" + ex.Message);
+            }
+
+            return state;
+        }
+
+        /// <summary>换版成功：基准挪到当前 HEAD，下次要攒新的提交才会再提。</summary>
+        private static async Task MarkIteratedAsync(CancellationToken ct)
+        {
+            try
+            {
+                var state = AutoIterate.Load();
+                string head = await GitAsync(["rev-parse", "HEAD"], ct).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(head)) state.Baseline = head;
+                state.Skipped = "";
+                state.Available = false;
+                state.Commits = 0;
+                state.Summary = "";
+                state.At = DateTimeOffset.Now.ToString("O");
+                AutoIterate.Save(state);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("自动迭代基准未更新：" + ex.Message);
+            }
+        }
+
+        private static async Task<string> GitAsync(IEnumerable<string> args, CancellationToken ct)
+        {
+            var result = await Iteration.ExecAsync("git",
+                ["-C", SourceSync.SourceRoot, .. args], SourceSync.SourceRoot, ct).ConfigureAwait(false);
+            return result.Ok ? result.Output.Trim() : null;
+        }
+
+        /// <summary>工作树干净才发版：无窗口迭代本来就会拒绝非版本文件的改动。</summary>
+        private static async Task<bool> IsCleanAsync(CancellationToken ct)
+        {
+            var status = await Iteration.ExecAsync("git",
+                ["-C", SourceSync.SourceRoot, "status", "--porcelain"], SourceSync.SourceRoot, ct).ConfigureAwait(false);
+            return status.Ok && IterationRunner.UnexpectedChanges(status.Output.Split('\n')).Count == 0;
         }
 
         private PersistedJob GetJob()

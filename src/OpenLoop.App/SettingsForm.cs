@@ -54,6 +54,7 @@ namespace OpenLoop.App
             _switchAgents.Checked = _source.UseAgentsMd;
             _switchThinking.Checked = _source.ThinkingExpandedByDefault;
             _switchAutoEvolve.Checked = _source.AutoEvolve;
+            _switchAutoIterate.Checked = _source.AutoIterate;
             _filling = false;
 
             RefreshProviderCombo(_providers.FirstOrDefault());
@@ -645,7 +646,9 @@ namespace OpenLoop.App
                 AllowSensitiveActions = _source.AllowSensitiveActions,
                 UseAgentsMd = _switchAgents.Checked,
                 ThinkingExpandedByDefault = _switchThinking.Checked,
+                MarkdownMaxChars = _source.MarkdownMaxChars,
                 AutoEvolve = _switchAutoEvolve.Checked,
+                AutoIterate = _switchAutoIterate.Checked,
                 AutoEvolveRuns = _source.AutoEvolveRuns,
                 AutoEvolveCooldownMinutes = _source.AutoEvolveCooldownMinutes,
                 AutoEvolvePerDay = _source.AutoEvolvePerDay,

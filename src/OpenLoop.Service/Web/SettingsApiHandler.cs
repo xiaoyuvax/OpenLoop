@@ -72,6 +72,7 @@ namespace OpenLoop.Service.Web
                 autoEvolveRuns = settings.AutoEvolveRuns,
                 autoEvolveCooldownMinutes = settings.AutoEvolveCooldownMinutes,
                 autoEvolvePerDay = settings.AutoEvolvePerDay,
+                autoIterate = settings.AutoIterate,
                 providers = (settings.Providers ?? []).Select(p => new
                 {
                     name = p.Name,
@@ -105,6 +106,7 @@ namespace OpenLoop.Service.Web
             if (body.AutoEvolveCooldownMinutes is > 0)
                 settings.AutoEvolveCooldownMinutes = body.AutoEvolveCooldownMinutes.Value;
             if (body.AutoEvolvePerDay is > 0) settings.AutoEvolvePerDay = body.AutoEvolvePerDay.Value;
+            if (body.AutoIterate.HasValue) settings.AutoIterate = body.AutoIterate.Value;
             if (body.ModelProps != null)
                 settings.ModelProps = body.ModelProps
                     .Where(pair => !string.IsNullOrWhiteSpace(pair.Key))
@@ -414,6 +416,7 @@ namespace OpenLoop.Service.Web
             public int? AutoEvolveRuns { get; set; }
             public int? AutoEvolveCooldownMinutes { get; set; }
             public int? AutoEvolvePerDay { get; set; }
+            public bool? AutoIterate { get; set; }
             public List<ProviderRequest> Providers { get; set; }
             public Dictionary<string, ModelProps> ModelProps { get; set; }
         }

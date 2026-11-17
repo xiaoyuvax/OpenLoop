@@ -58,6 +58,12 @@ namespace OpenLoop.Service.Config
         /// <summary>每个工作区每天最多自动跑几轮。</summary>
         public int AutoEvolvePerDay { get; set; } = 3;
 
+        /// <summary>
+        /// 自动迭代：源码提交攒够、工作树干净时，壳在启动安定后提示并倒计时换 A/I（有会话在跑先问）。
+        /// 对象是二进制，和只改激活集的 <see cref="AutoEvolve"/> 是两件事；默认关，会中断正在跑的会话。
+        /// </summary>
+        public bool AutoIterate { get; set; }
+
         /// <summary>多提供商配置；旧的单 BaseUrl/KeyProtected 仍作为回退。</summary>
         public List<ProviderConfig> Providers { get; set; } = [];
 
@@ -88,6 +94,9 @@ namespace OpenLoop.Service.Config
 
         /// <summary>新回话的「思考与工具过程」默认展开。</summary>
         public bool ThinkingExpandedByDefault { get; set; }
+
+        /// <summary>正文按 markdown 渲染的字符上限；超过改用纯文本（默认 3000）。</summary>
+        public int MarkdownMaxChars { get; set; } = 3000;
 
         /// <summary>完全许可：关闭路径边界、命令审批与环境隔离（仅交互 Worker）。</summary>
         public bool FullAccess { get; set; }

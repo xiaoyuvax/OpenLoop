@@ -222,9 +222,8 @@ namespace OpenLoop.App
                 {
                     turn.ReasoningText = snapshot;
                     lock (timeline) turn.TimelineText = timeline.Render();
-                    string text;
-                    lock (_streamBuffer) text = _streamBuffer.ToString();
-                    _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(text));
+                    // 与 Worker 一致：正文只由 onDelta 写（已过滤协议原文），推理增量只刷新思考区
+                    _chat.UpdateStreamingMessage(turn, null);
                 });
             };
 

@@ -1,3 +1,4 @@
+using OpenLoop.Service.Runtime;
 using OpenLoop.Service.Source;
 using Xunit;
 
@@ -46,12 +47,16 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
-        public void Loop_reads_outside_its_roots_but_does_not_write_there()
+        public void Loop_reads_only_its_session_workspace_and_never_writes_other_workspaces()
         {
-            var (read, write) = LoopScope.Create();
+            string sessionRoot = Path.Combine(Path.GetTempPath(), "loop-workspace-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(sessionRoot);
             string outside = Path.Combine(Path.GetTempPath(), "loop-scope-" + Guid.NewGuid().ToString("N"));
+            var (read, write) = LoopScope.Create(sessionWorkspace: sessionRoot);
 
-            Assert.True(read.TryResolve(outside, out _, out _));
+            Assert.True(read.TryResolve(Path.Combine(sessionRoot, "notes", "a.md"), out _, out _));
+            Assert.True(read.TryResolve(Path.Combine(AppPaths.DataRoot, "puppet.key"), out _, out _));
+            Assert.False(read.TryResolve(outside, out _, out _));
             Assert.False(write.TryResolve(outside, out _, out _));
         }
 

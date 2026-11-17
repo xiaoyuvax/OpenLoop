@@ -45,6 +45,9 @@ namespace OpenLoop.Service.Loop
         /// <summary>自动演进开关与当前配额/冷却的一句话说明（界面直接显示）。</summary>
         public bool AutoEnabled { get; set; }
         public string AutoHint { get; set; }
+
+        /// <summary>自动迭代开关；与自动演进并列的另一个开关。</summary>
+        public bool AutoIterateEnabled { get; set; }
     }
 
     /// <summary>
@@ -56,6 +59,9 @@ namespace OpenLoop.Service.Loop
         private readonly object _lock = new();
         private readonly Dictionary<string, Job> _jobs = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _autoStarting = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>换版服务（由 I 在启动时挂上）：每轮证据入账后顺带刷新「源码攒了多少提交」。</summary>
+        public IterationService Iteration { get; set; }
 
         public LoopEvolveState GetState(string workspace)
         {
@@ -73,6 +79,7 @@ namespace OpenLoop.Service.Loop
         {
             var settings = AppSettings.Load();
             state.AutoEnabled = settings.AutoEvolve;
+            state.AutoIterateEnabled = settings.AutoIterate;
             if (!settings.AutoEvolve || string.IsNullOrWhiteSpace(workspace)) return;
 
             var auto = AutoEvolve.Load(workspace);
@@ -195,6 +202,8 @@ namespace OpenLoop.Service.Loop
                 RunSpool.Remove(path);
             }
             if (drained > 0) TryAutoEvolve(ledger.Workspace);
+            // 源码可能在这期间攒了新提交：顺手更新自动迭代的判据（壳轮询它）
+            if (drained > 0 && Iteration != null) _ = Task.Run(() => Iteration.RefreshAutoIterateAsync());
             return drained;
         }
 
@@ -314,6 +323,8 @@ namespace OpenLoop.Service.Loop
                     s.TaskCount = report.Tasks.Count;
                     s.Detail = report.Adopted ? null : report.Reason;
                 });
+
+                // 演进只改激活集：二进制由自动迭代按源码提交另外换，两者不再互相触发
             }
             catch (OperationCanceledException)
             {

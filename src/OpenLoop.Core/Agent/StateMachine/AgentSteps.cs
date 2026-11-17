@@ -228,7 +228,12 @@ namespace OpenLoop.Core.Agent
             if (parallel)
             {
                 var tasks = calls.Select(async c =>
-                    (c, await ExecuteToolSafeAsync(context.Tools, c, ct), (string)null));
+                {
+                    // 并行批次不走 ExecuteWithArgRepairAsync，这里也要报一次开始：
+                    // 界面靠它清掉上一段流式正文（否则 tool-call 原文会留在正文里）
+                    context.OnToolStart?.Invoke(c.Tool, c.Args);
+                    return (c, await ExecuteToolSafeAsync(context.Tools, c, ct), (string)null);
+                });
                 executed.AddRange(await Task.WhenAll(tasks));
             }
             else
@@ -238,11 +243,13 @@ namespace OpenLoop.Core.Agent
                     // 「立即」的边界是工具调用：已经要求收尾，就不再开始后面的调用（结果照补，保持 tool-call 配对）。
                     if (context.ShouldStop?.Invoke() == true)
                     {
+                        context.OnToolStart?.Invoke(call.Tool, call.Args);
                         executed.Add((call, AgentToolResult.Failure("用户已要求立即发送新消息，本次调用未执行。"), null));
                         continue;
                     }
                     if (state.BannedSignatures.Contains(AgentLoop.SignatureOf(call.Tool, call.Args)))
                     {
+                        context.OnToolStart?.Invoke(call.Tool, call.Args);
                         executed.Add((call, AgentToolResult.Failure(
                             $"该调用（{call.Tool} + 完全相同的参数）因重复被临时禁用一轮，本轮不执行。" +
                             "请换工具、换参数，或直接给出结论。"), null));
