@@ -42,6 +42,9 @@ namespace OpenLoop.App
         /// <summary>[Loop] 页的行：标题按 Loop 规格带前缀。</summary>
         public bool IsLoop { get; init; }
 
+        /// <summary>[Puppet] 页的行：留言板上的会话，标题用不同颜色 + 图标标识。</summary>
+        public bool IsPuppet { get; init; }
+
         public string Title
         {
             get

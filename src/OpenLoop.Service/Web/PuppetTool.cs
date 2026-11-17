@@ -22,12 +22,14 @@ namespace OpenLoop.Service.Web
 
         public string Description =>
             "探测 Puppet 实例与状态。target=self 走本进程内 Hub（不经端口、无网络）；target=a / i / shell 走 Puppet 接口。" +
-            "壳只被动提供窗口/会话状态；Web 页面是不完整 Puppet（实例 WebUi，只有页面状态与截图钩子，截图需页面勾选开关）。";
+            "壳只被动提供窗口/会话状态；Web 页面是不完整 Puppet（实例 WebUi，只有页面状态与截图钩子，截图需页面勾选开关）。" +
+            "chat=读本机会话留言板；book=看在场会话、各自在做的事与最近几次工具步骤；say=以本会话身份发言（text、to），用于会话间协作。";
 
         public string ParamsSchema =>
-            "target: self|a|i|shell（默认 self）; action: registry|state|get|describe|invoke（默认 registry）; " +
+            "target: self|a|i|shell（默认 self）; action: registry|state|get|describe|invoke|chat|book|say（默认 registry）; " +
             "instance: string（state/get/describe/invoke 必填）; path: string（get 的属性路径）; " +
-            "method: string（invoke 的方法名）; args: array（invoke 的位置参数，JSON 数组）";
+            "method: string（invoke 的方法名）; args: array（invoke 的位置参数，JSON 数组）; " +
+            "chat: tail/q/from/to（读留言板）; say: text（要说的内容）、to（对方 id，省略=广播）";
 
         public bool IsReadOnly => false;
 
@@ -77,60 +79,101 @@ namespace OpenLoop.Service.Web
                     Add("method", method);
                     body = RawJson(args.Raw.TryGetValue("args", out var v) ? v : null);
                     break;
+                case "chat":
+                    route = "/agent/chat";
+                    Add("tail", args.Str("tail") ?? "10");
+                    Add("q", args.Str("q"));
+                    Add("from", args.Str("from"));
+                    Add("to", args.Str("to"));
+                    break;
+                case "book":
+                    route = "/agent/book";
+                    break;
+                case "say":
+                    {
+                        string self = AgentIdentity.Id;
+                        if (string.IsNullOrWhiteSpace(self))
+                            return AgentToolResult.Failure("当前会话没有留言板身份，不能发言");
+                        string text = args.Str("text") ?? args.Str("message");
+                        if (string.IsNullOrWhiteSpace(text)) return AgentToolResult.Failure("say 需要 text");
+                        route = "/agent/book/heartbeat";
+                        body = JsonSerializer.Serialize(new { id = self, say = text, sayTo = args.Str("to") });
+                        break;
+                    }
                 default:
-                    return AgentToolResult.Failure($"未知 action：{action}（可用 registry/state/get/describe/invoke）");
+                    return AgentToolResult.Failure($"未知 action：{action}（可用 registry/state/get/describe/invoke/chat/book/say）");
             }
 
-            string urlPath = query.Count == 0 ? route : route + "?" + string.Join("&", query);
-            bool post = action == "invoke";
+            // 留言板在 A 的 Puppet 实例上：壳里的 Loop 会话固定走 a，A 里的 Worker 会话走 self。
+            if ((action is "chat" or "say" or "book") && !string.IsNullOrWhiteSpace(AgentIdentity.Id))
+                target = AgentIdentity.BoardTarget;
 
-            // 本进程：直调 ProcessWebRequest（Hub），不经监听端口
-            if (target == "self" && PuppetBridge.LocalHub is { } hub)
+            string urlPath = query.Count == 0 ? route : route + "?" + string.Join("&", query);
+            bool post = action is "invoke" or "say";
+            bool board = action is "chat" or "say" or "book";
+
+            // 留言板在 A 上；A 掉线时同一个会话继续用 I（再不行用本进程兜底）。
+            string[] candidates = board && !string.IsNullOrWhiteSpace(AgentIdentity.Id)
+                ? (target == "a" ? new[] { "a", "i", "self" } : new[] { target, "self" })
+                : new[] { target };
+
+            Exception lastError = null;
+            string lastTarget = null;
+            foreach (string candidate in candidates)
             {
+                // 本进程：直调 ProcessWebRequest（Hub），不经监听端口
+                if (candidate == "self" && PuppetBridge.LocalHub is { } hub)
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(post ? body ?? "[]" : "[]");
+                        var response = post
+                            ? await hub.PostAsync(urlPath, body: doc.RootElement)
+                            : await hub.GetAsync(urlPath);
+                        return Result(response.Status, response.Body);
+                    }
+                    catch (Exception ex)
+                    {
+                        lastError = ex;
+                        continue;
+                    }
+                }
+
+                string endpoint = candidate switch
+                {
+                    "self" => SelfEndpoint(),
+                    "a" or "i" => RuntimeInfo.TryLoad(AppPaths.RuntimeFile(candidate)) is { IsAlive: true } peer ? peer.Bus : null,
+                    "shell" => PuppetBridge.ShellEndpoint,
+                    _ => null
+                };
+                if (string.IsNullOrWhiteSpace(endpoint)) continue;
+                lastTarget = candidate;
+
+                string key = PuppetBridge.Key;
+                if (string.IsNullOrWhiteSpace(key)) return AgentToolResult.Failure("读不到 Puppet key 文件");
+
                 try
                 {
-                    using var doc = JsonDocument.Parse(post ? body ?? "[]" : "[]");
-                    var response = post
-                        ? await hub.PostAsync(urlPath, body: doc.RootElement)
-                        : await hub.GetAsync(urlPath);
-                    return Result(response.Status, response.Body);
+                    using var request = new HttpRequestMessage(
+                        post ? HttpMethod.Post : HttpMethod.Get,
+                        (endpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? endpoint : "http://" + endpoint) + urlPath);
+                    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + key);
+                    if (post)
+                        request.Content = new StringContent(body ?? "[]", Encoding.UTF8, "application/json");
+
+                    using var response = await Http.SendAsync(request, ct);
+                    string text = await response.Content.ReadAsStringAsync(ct);
+                    return Result((int)response.StatusCode, text);
                 }
                 catch (Exception ex)
                 {
-                    return AgentToolResult.Failure("进程内 Puppet 调用失败：" + ex.Message);
+                    lastError = ex;
                 }
             }
 
-            string endpoint = target switch
-            {
-                "self" => SelfEndpoint(),
-                "a" or "i" => RuntimeInfo.TryLoad(AppPaths.RuntimeFile(target)) is { IsAlive: true } peer ? peer.Bus : null,
-                "shell" => PuppetBridge.ShellEndpoint,
-                _ => null
-            };
-            if (string.IsNullOrWhiteSpace(endpoint))
+            if (lastTarget == null)
                 return AgentToolResult.Failure($"找不到 target={target} 的 Puppet 端点（壳未写发现文件 / 对端未启动）");
-
-            string key = PuppetBridge.Key;
-            if (string.IsNullOrWhiteSpace(key)) return AgentToolResult.Failure("读不到 Puppet key 文件");
-
-            try
-            {
-                using var request = new HttpRequestMessage(
-                    post ? HttpMethod.Post : HttpMethod.Get,
-                    (endpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? endpoint : "http://" + endpoint) + urlPath);
-                request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + key);
-                if (post)
-                    request.Content = new StringContent(body ?? "[]", Encoding.UTF8, "application/json");
-
-                using var response = await Http.SendAsync(request, ct);
-                string text = await response.Content.ReadAsStringAsync(ct);
-                return Result((int)response.StatusCode, text);
-            }
-            catch (Exception ex)
-            {
-                return AgentToolResult.Failure($"Puppet 接口调用失败（{target}）：{ex.Message}");
-            }
+            return AgentToolResult.Failure($"Puppet 接口调用失败（{lastTarget}）：{lastError?.Message}");
         }
 
         private static string SelfEndpoint()

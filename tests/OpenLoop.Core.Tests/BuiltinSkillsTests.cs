@@ -44,4 +44,18 @@ public sealed class BuiltinSkillsTests : IDisposable
 
         Assert.Equal("正文", Assert.Single(merged).Body);
     }
+
+    [Fact]
+    public void Peer_board_skill_only_when_the_workspace_has_peers()
+    {
+        using var identity = OpenLoop.Core.Agent.AgentIdentity.Begin("A-self", "self");
+
+        Assert.DoesNotContain(BuiltinSkills.Merge([]), s => s.Name == BuiltinSkills.PeerBoardName);
+
+        var merged = BuiltinSkills.Merge([], ["A-other（在做：改 ChatFlow；最近：Edit[x] → ok）"]);
+
+        var skill = Assert.Single(merged, s => s.Name == BuiltinSkills.PeerBoardName);
+        Assert.Contains("A-other", skill.Description);
+        Assert.Contains("Edit[x] → ok", skill.Body);
+    }
 }

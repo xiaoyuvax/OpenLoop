@@ -43,18 +43,55 @@ namespace OpenLoop.Core.Tools.Builtin
             if (!Directory.Exists(workingDir))
                 return AgentToolResult.Failure($"工作目录不存在：{args.Str("cwd")}");
 
-            if (verdict.Risk == CommandRisk.Risky)
+            // cwd 受限不等于参数受限：findstr /s x C:\other\* 之类能读工作目录外的文件。
+            // 越界的绝对路径参数一律按风险处理（无审批通道就不执行）。
+            string outside = FirstOutsideArgument(argv);
+            if (verdict.Risk == CommandRisk.Risky || outside != null)
             {
+                string reason = verdict.Risk == CommandRisk.Risky
+                    ? verdict.Reason
+                    : $"参数引用工作目录之外：{outside}";
                 string line = string.Join(" ", argv);
                 if (_approve == null)
-                    return AgentToolResult.Failure($"需要用户批准才能执行（{verdict.Reason}）：{line}");
-                var decision = _approve(new ApprovalRequest(ApprovalKind.SensitiveAction, Name, line, verdict.Reason));
+                    return AgentToolResult.Failure($"需要用户批准才能执行（{reason}）：{line}");
+                var decision = _approve(new ApprovalRequest(ApprovalKind.SensitiveAction, Name, line, reason));
                 if (decision == ApprovalDecision.Deny)
                     return AgentToolResult.Failure($"用户拒绝执行：{line}");
             }
 
             int timeoutSeconds = Math.Clamp(args.Int("timeoutSeconds", 60), 1, 600);
             return await ProcessRunner.RunAsync(argv, workingDir, timeoutSeconds, ct, _inheritEnvironment);
+        }
+
+        /// <summary>参数里第一个越界的绝对路径；没有就返回 null。</summary>
+        private string FirstOutsideArgument(IReadOnlyList<string> argv)
+        {
+            if (_scope.Unrestricted) return null;
+            foreach (string arg in argv.Skip(1))
+            {
+                foreach (string candidate in PathCandidates(arg))
+                {
+                    if (IsRooted(candidate) && !_scope.Contains(candidate)) return candidate;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>一个参数里可能藏路径的写法：自身，以及 <c>--out=C:\x</c> 的等号右侧。</summary>
+        private static IEnumerable<string> PathCandidates(string arg)
+        {
+            yield return arg;
+            int eq = arg.IndexOf('=');
+            if (eq > 0 && eq < arg.Length - 1) yield return arg[(eq + 1)..];
+        }
+
+        private static bool IsRooted(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || value.Length < 2) return false;
+            if (value.StartsWith(@"\\", StringComparison.Ordinal)) return true;
+            if (char.IsLetter(value[0]) && value[1] == ':' && value.Length > 2
+                && (value[2] == '\\' || value[2] == '/')) return true;
+            return !OperatingSystem.IsWindows() && value[0] == '/';
         }
     }
 }

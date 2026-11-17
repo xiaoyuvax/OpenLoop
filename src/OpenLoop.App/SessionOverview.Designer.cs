@@ -14,6 +14,7 @@ namespace OpenLoop.App
         private AntdUI.Menu _menu;
         private FlowLayoutPanel _leftFooter;
         private AntdUI.Button _btnLoop;
+        private AntdUI.Button _btnPuppet;
         private AntdUI.Button _btnSettings;
         private Panel _right;
         private TableLayoutPanel _rightLayout;
@@ -49,6 +50,7 @@ namespace OpenLoop.App
             _menu = new AntdUI.Menu();
             _leftFooter = new FlowLayoutPanel();
             _btnLoop = new AntdUI.Button();
+            _btnPuppet = new AntdUI.Button();
             _btnSettings = new AntdUI.Button();
             _right = new Panel();
             _rightLayout = new TableLayoutPanel();
@@ -87,7 +89,7 @@ namespace OpenLoop.App
             _leftLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
             _leftLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            _leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 78F));
+            _leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 112F));
 
             _leftHeader.Dock = DockStyle.Fill;
             _leftHeader.ColumnCount = 3;
@@ -153,6 +155,17 @@ namespace OpenLoop.App
             _btnLoop.Margin = new Padding(0, 0, 0, 2);
             _btnLoop.Click += OnLoopOverview;
 
+            _btnPuppet.Name = "btnPuppet";
+            _btnPuppet.Text = "[Puppet]";
+            _btnPuppet.Ghost = true;
+            _btnPuppet.Radius = 8;
+            _btnPuppet.Height = 34;
+            _btnPuppet.Width = 250;
+            _btnPuppet.IconSvg = UiIcons.Dot(UiStyle.Puppet);
+            _btnPuppet.ForeColor = UiStyle.Muted;
+            _btnPuppet.Margin = new Padding(0, 0, 0, 2);
+            _btnPuppet.Click += OnPuppetOverview;
+
             _btnSettings.Name = "btnSettings";
             _btnSettings.Text = Localization.T("Settings");
             _btnSettings.Ghost = true;
@@ -165,6 +178,7 @@ namespace OpenLoop.App
             _btnSettings.Click += OnSettings;
 
             _leftFooter.Controls.Add(_btnLoop);
+            _leftFooter.Controls.Add(_btnPuppet);
             _leftFooter.Controls.Add(_btnSettings);
 
             _leftLayout.Controls.Add(_leftHeader, 0, 0);

@@ -47,6 +47,13 @@ namespace OpenLoop.Core.Agent
                 sb.AppendLine("- 另一个 agent 进程（target=a / i）和 WinForms 壳（target=shell）只能走 Puppet 接口探测；壳只被动提供窗口/会话状态。");
                 sb.AppendLine("- Web 页面是不完整的 Puppet（实例 WebUi）：只有页面状态与截图钩子，截图需页面勾选「允许 Puppet 截图」。");
                 sb.AppendLine("- 需要了解对端状态或调试跨进程行为时用它；不要用它替代正常业务接口，也不要在任务里无目的地探测。");
+                if (!string.IsNullOrWhiteSpace(AgentIdentity.Id))
+                {
+                    string target = AgentIdentity.BoardTarget;
+                    sb.AppendLine($"- 本机的多个会话共用同一张 Puppet 留言板（同一个 Puppet 实例里的多个会话，不是多个实例）：你的身份是 {AgentIdentity.Id}，宿主已替你报到并写明当前任务；其他会话也用 A-<会话id> / I-<会话id> 自我介绍。");
+                    sb.AppendLine($"- 看在场会话与留言：Puppet(target=\"{target}\", action=\"book\") / Puppet(target=\"{target}\", action=\"chat\", tail=10)；任何 Puppet 响应也会附带 peers（在场会话）与 chat（最近一条）。");
+                    sb.AppendLine($"- 发留言：Puppet(target=\"{target}\", action=\"say\", text=\"...\", to=\"A-xxxx\")；省略 to 即广播。只在需要别的会话协作/信息、或你的改动会影响它时发言，无关会话不要打扰。");
+                }
                 sb.AppendLine();
             }
 

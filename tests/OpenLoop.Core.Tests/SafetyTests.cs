@@ -240,6 +240,30 @@ public sealed class SafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task RunCommand_Argument_Path_Outside_Workspace_Needs_Approval()
+    {
+        string outside = Path.Combine(Path.GetTempPath(), "openloop-outside", Guid.NewGuid().ToString("N"), "secret.txt");
+        var scope = new WorkspaceScope(_root);
+
+        // 没有审批通道：不执行，也不碰那个文件
+        var blocked = await new ShellTool(scope).ExecuteAsync(
+            new ToolArgs(new() { ["argv"] = new[] { "findstr", "/s", "top-secret", outside } }), CancellationToken.None);
+        Assert.False(blocked.Ok);
+        Assert.Contains("批准", blocked.Error);
+        Assert.DoesNotContain("top-secret", blocked.Data ?? "");
+
+        // 有审批通道：按 SensitiveAction 问一次，理由点名越界
+        var asked = new List<ApprovalRequest>();
+        var tool = new ShellTool(scope, request => { asked.Add(request); return ApprovalDecision.Deny; });
+        var denied = await tool.ExecuteAsync(
+            new ToolArgs(new() { ["argv"] = new[] { "findstr", "/s", "top-secret", outside } }), CancellationToken.None);
+        Assert.False(denied.Ok);
+        var request = Assert.Single(asked);
+        Assert.Equal(ApprovalKind.SensitiveAction, request.Kind);
+        Assert.Contains("工作目录之外", request.Reason);
+    }
+
+    [Fact]
     public async Task RunCommand_Safe_Does_Not_Ask()
     {
         var scope = new WorkspaceScope(_root);

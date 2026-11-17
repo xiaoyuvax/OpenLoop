@@ -58,6 +58,7 @@ namespace OpenLoop.Service.Tests
             Assert.True(read.TryResolve(Path.Combine(AppPaths.DataRoot, "puppet.key"), out _, out _));
             Assert.False(read.TryResolve(outside, out _, out _));
             Assert.False(write.TryResolve(outside, out _, out _));
+            Assert.False(write.TryResolve(Path.Combine(sessionRoot, "notes", "a.md"), out _, out _));
         }
 
         [Fact]

@@ -28,6 +28,9 @@ namespace OpenLoop.Service.Worker
         public string Tag { get; set; } = "task";
         public string Text { get; set; }
 
+        /// <summary>会话 id：作为留言板身份（A-会话id）与跨会话协作的依据。</summary>
+        public string SessionId { get; set; }
+
         /// <summary>不含 system；服务会在开头插入系统提示词。</summary>
         public List<LlmMessage> History { get; set; } = [];
 
@@ -105,6 +108,9 @@ namespace OpenLoop.Service.Worker
         public async Task<WorkerRunResult> RunAsync(WorkerRunRequest request, CancellationToken ct)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
+            using var identity = string.IsNullOrWhiteSpace(request.SessionId)
+                ? null
+                : AgentIdentity.Begin(AgentIdentity.IdFor("A", request.SessionId), "self");
             var settings = request.Settings ?? new AppSettings();
             string workspace = request.Workspace?.Trim() ?? "";
             bool fullAccess = settings.FullAccess;
@@ -134,7 +140,9 @@ namespace OpenLoop.Service.Worker
                 skills = SkillCatalog.Active(activation, features, skillCatalog, out skillProblems);
             else
                 AppLog.Warn("拿不到 I 的激活集，本轮按全部关闭运行：" + workspace);
-            skills = BuiltinSkills.Merge(skills);
+            // 每轮重算同伴：同工作区有新会话加入时，这一轮的技能清单就会带上协作入口
+            var peers = OpenLoop.Service.Web.SessionBoard.Peers(workspace, AgentIdentity.Id);
+            skills = BuiltinSkills.Merge(skills, peers.Select(p => p.Summary()).ToList());
 
             if (skillProblems.Count > 0)
                 AppLog.Warn("技能不可用：" + string.Join("；", skillProblems));

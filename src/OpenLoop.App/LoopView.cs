@@ -53,6 +53,9 @@ namespace OpenLoop.App
         /// <summary>「立即」标记：当前轮在下一个 step 前收尾（进行中的工具不打断）。</summary>
         private bool _interrupt;
 
+        /// <summary>已经提示过的新同伴会话 id：同一个会话只入队一次，免得每轮都塞提示。</summary>
+        private readonly HashSet<string> _peersAnnounced = new(StringComparer.Ordinal);
+
         /// <summary>用户动作计数（发消息、停、换模型、关页都会加）：免费额度自愈据此判断用户动没动过这个会话。</summary>
         private int _userEpoch;
         private bool _closed;
@@ -337,9 +340,41 @@ namespace OpenLoop.App
             _userEpoch++;
             _closed = true;
             _cts?.Cancel();
+            OpenLoop.Service.Web.SessionBoard.Leaving(BoardId(), LastWords(), remote: true);
             _sideBtw.Shutdown();
             CloseBrowserPage();
             SaveLoopChat();
+        }
+
+        /// <summary>留言板身份：新会话 id 本身唯一；老的单例会话 id 是固定的 "loop"，用工作区散列区分。</summary>
+        private string BoardId()
+        {
+            string id = _sessionId;
+            if (string.Equals(id, LoopRef.LegacyId, StringComparison.Ordinal))
+                id += "-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                    Encoding.UTF8.GetBytes((_workspace ?? "").ToLowerInvariant())))[..6].ToLowerInvariant();
+            return AgentIdentity.IdFor("I", id);
+        }
+
+        /// <summary>同工作区出现新会话：往排队框放一条协作提示（与用户输入同队列，可撤回）。</summary>
+        private void AnnouncePeers(IReadOnlyList<OpenLoop.Service.Web.PeerInfo> peers)
+        {
+            var fresh = peers.Where(p => _peersAnnounced.Add(p.Id)).ToList();
+            if (fresh.Count == 0) return;
+            string text = OpenLoop.Service.Web.SessionBoard.PeerNotice(
+                fresh.Select(p => p.Summary()).ToList());
+            RunOnUi(() =>
+            {
+                _queue.Add(text);
+                _pending.Sync();
+            });
+        }
+
+        private string LastWords()
+        {
+            var last = _book.Turns.LastOrDefault();
+            if (last?.Streaming == true) return "（Loop 会话被关闭，任务未完成）";
+            return string.IsNullOrWhiteSpace(last?.AssistantText) ? "（Loop 会话结束）" : last.AssistantText;
         }
 
         /// <summary>免费额度自愈读的用户动作计数；这个 Loop 页已关/已销毁返回 null（自愈据此收工）。</summary>
@@ -389,6 +424,12 @@ namespace OpenLoop.App
                 return;
             }
 
+            // 本会话在留言板上的身份（I-会话id）：提示词、技能与 Puppet 工具都靠它识别自己。
+            using var identity = AgentIdentity.Begin(BoardId(), "a");
+            OpenLoop.Service.Web.SessionBoard.Opening(
+                agentId: BoardId(), role: "Loop",
+                workspace: _workspace, model: model, task: text, remote: true);
+
             // 先把用户消息挂上并让界面画出来：技能扫描、工具注册、快照（多次 git 子进程）和 trace 都放后台，
             // 否则按下 Enter 到消息出现之间会卡好几秒。
             var history = BuildHistory();   // 不含本轮：本轮文本随 RunAsync 单独传入
@@ -436,7 +477,10 @@ namespace OpenLoop.App
                     {
                         AppLog.Warn("读取策略激活集失败：" + ex.Message);
                     }
-                    var activeSkills = BuiltinSkills.Merge(ActiveSkills(skillCatalog, out var problems));
+                    var peers = OpenLoop.Service.Web.SessionBoard.Peers(_workspace, BoardId(), remote: true);
+                    AnnouncePeers(peers);
+                    var activeSkills = BuiltinSkills.Merge(ActiveSkills(skillCatalog, out var problems),
+                        peers.Select(p => p.Summary()).ToList());
                     OpenLoop.Core.Safety.ApprovalHandler approve = AskApproval;
                     // 章程 §2：Loop 只读来源会话的工作区（/complain、worker 转来）与安装/配置路径，
                     // 写只限配置/源码/安装路径
@@ -557,6 +601,9 @@ namespace OpenLoop.App
                         RefreshChat();
                     });
                     trace.Step(step);
+                    string note = step.DisplayLine.Replace(" >> ", "");
+                    if (!string.IsNullOrEmpty(step.Summary)) note += " → " + step.Summary;
+                    OpenLoop.Service.Web.SessionBoard.Working(BoardId(), note, remote: true);
                 },
                 onToolStart: (name, _) =>
                 {

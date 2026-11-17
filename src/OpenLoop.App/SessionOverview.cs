@@ -32,20 +32,34 @@ namespace OpenLoop.App
         /// <summary>搜索框防抖：每敲一个字就整表重置重绘代价太大。</summary>
         private readonly System.Windows.Forms.Timer _searchDelay = new() { Interval = 250 };
 
+        /// <summary>[Puppet] 页每 3 秒刷新一次：留言板上的会话由各 agent 随时加入/退出。</summary>
+        private readonly System.Windows.Forms.Timer _puppetRefresh = new() { Interval = 3000 };
+
         /// <summary>项目列表底部的固定项 [Loop]：列出全部项目的 Loop 会话。</summary>
         internal const string LoopTag = "\u0001loop";
+
+        /// <summary>固定项 [Puppet]：列出 @A / @I 留言板上的会话（没有主 agent 驱动）。</summary>
+        internal const string PuppetTag = "\u0001puppet";
 
         public SessionOverview()
         {
             InitializeComponent();
             _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); RefreshRows(); };
-            Disposed += (_, _) => _searchDelay.Dispose();
+            _puppetRefresh.Tick += (_, _) =>
+            {
+                if (_project == PuppetTag) RefreshRows();
+                else _puppetRefresh.Stop();
+            };
+            Disposed += (_, _) => { _searchDelay.Dispose(); _puppetRefresh.Dispose(); };
         }
 
         internal event Action<Session> OpenRequested;
 
         /// <summary>(工作区, Loop 会话 id)；id 为空 = 新建一个新会话。</summary>
         internal event Action<string, string> LoopRequested;
+
+        /// <summary>(宿主 @A/@I, 会话 id)：在 [Puppet] 页点开会话。</summary>
+        internal event Action<string, string> PuppetRequested;
         internal event Action<string> NewSessionRequested;
         internal event Action<IReadOnlyList<Session>> DeleteRequested;
         internal event Action<string> RemoveProjectRequested;
@@ -56,6 +70,10 @@ namespace OpenLoop.App
             if (_ready) return;
             _ready = true;
             _colState.Render = (value, row, index) => Badge(row as Session);
+            // 留言板会话的标题用青色 + 列表图标标出来，和 Worker/Loop 行区分
+            _colTitle.Render = (value, row, index) => row is Session { IsPuppet: true }
+                ? PuppetTitle(value as string)
+                : value;
             _table.RowHeight = 44;
             SizeColumns();
             _table.DataSource = _rows;
@@ -88,7 +106,7 @@ namespace OpenLoop.App
                 .OrderBy(w => w, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            if (!projects.Any(p => Paths.Same(p, _project)) && _project != LoopTag)
+            if (!projects.Any(p => Paths.Same(p, _project)) && _project != LoopTag && _project != PuppetTag)
                 _project = projects.FirstOrDefault() ?? "";
 
             if (!projects.SequenceEqual(_builtProjects, StringComparer.OrdinalIgnoreCase))
@@ -135,7 +153,27 @@ namespace OpenLoop.App
             string q = _txtSearch.Text?.Trim() ?? "";
             _rows.Clear();
 
-            if (_project == LoopTag)
+            if (_project == PuppetTag)
+            {
+                foreach (var s in OpenLoop.Service.Web.PuppetBoard.Sessions()
+                             .Where(s => q.Length == 0
+                                         || s.Id.Contains(q, StringComparison.OrdinalIgnoreCase)
+                                         || (s.LastText ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _rows.Add(new Session
+                    {
+                        Id = "puppet:" + s.Host + "|" + s.Id,
+                        Workspace = s.Host,
+                        IsPuppet = true,
+                        CustomTitle = s.Id + (string.IsNullOrWhiteSpace(s.LastText) ? "" : " · " + OneLine(s.LastText)),
+                        StartedAt = s.LastAt,
+                        LastActiveAt = s.LastAt,
+                        State = s.Live ? SessionState.Running : SessionState.Idle,
+                        Steps = s.Steps?.Length ?? 0
+                    });
+                }
+            }
+            else if (_project == LoopTag)
             {
                 foreach (var loop in LoopIndex.List()
                              .Where(l => q.Length == 0 ||
@@ -163,9 +201,12 @@ namespace OpenLoop.App
             }
 
             bool loops = _project == LoopTag;
+            bool puppets = _project == PuppetTag;
             _lblProjectPath.Text = loops
                 ? "Loop 会话（全部项目）· 关于OpenLoop自身迭代和演进的所有会话"
-                : _project;
+                : puppets
+                    ? "Puppet 会话（@A / @I）· 各会话的 agent 在留言板上自行对话，没有主 agent 驱动"
+                    : _project;
             // 行没变就别重置数据源：整表重绘还会把滚动位置拉回顶部
             bool same = _shownRows.Count == _rows.Count;
             if (same)
@@ -189,14 +230,23 @@ namespace OpenLoop.App
                 _table.DataSource = null;
                 _table.DataSource = _rows;
             }
-            // [Loop] 页也能开会话：没有项目可依附，工作区用安装目录
-            _btnNewSession.Enabled = loops || !string.IsNullOrEmpty(_project);
-            _btnRemoveProject.Enabled = !loops && !string.IsNullOrEmpty(_project);
+            // [Loop] 页也能开会话：没有项目可依附，工作区用安装目录；[Puppet] 页的会话由 agent 自己出现，不能新建
+            _btnNewSession.Enabled = loops || (!puppets && !string.IsNullOrEmpty(_project));
+            _btnRemoveProject.Enabled = !loops && !puppets && !string.IsNullOrEmpty(_project);
+            // 留言板会话不是本地会话，删除要由各自的 agent 收场，这里不给删
+            _btnDelete.Enabled = !puppets;
+            // [Puppet] 页每 3 秒刷新一次：代理会话由各 agent 随时加入/退出
+            if (puppets)
+            {
+                if (!_puppetRefresh.Enabled) _puppetRefresh.Start();
+            }
+            else _puppetRefresh.Stop();
         }
 
         /// <summary>勾选（复选列 / Ctrl+Shift 多选）后删除；没勾选什么都不做。</summary>
         private void OnDelete(object sender, EventArgs e)
         {
+            if (_project == PuppetTag) return;
             var picked = _rows.Where(r => r.Selected)
                 .Concat((_table.SelectedIndexs ?? [])
                     .Where(i => i >= 1 && i <= _rows.Count)
@@ -223,6 +273,12 @@ namespace OpenLoop.App
             }
         }
 
+        /// <summary>留言摘要压成一行：换行/连续空白折成空格，超长截断。</summary>
+        private static string OneLine(string text)
+        {
+            string joined = string.Join(" ", (text ?? "").Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+            return joined.Length <= 80 ? joined : joined[..80] + "…";
+        }
         private static Color AvatarColor(string seed)
         {
             int hash = 17;
@@ -236,6 +292,18 @@ namespace OpenLoop.App
             SessionState.Interrupted => new AntdUI.CellBadge(AntdUI.TState.Error),
             SessionState.Done => new AntdUI.CellBadge(AntdUI.TState.Success),
             _ => new AntdUI.CellBadge(AntdUI.TState.Default)
+        };
+
+        /// <summary>[Puppet] 行标题：青色文字 + 列表图标（与 [Puppet] 页图标一致）。</summary>
+        private static AntdUI.CellButton PuppetTitle(string title) => new(title ?? "")
+        {
+            IconSvg = UiIcons.Of(UiIcons.List, UiStyle.Puppet),
+            IconGap = 6,
+            Fore = UiStyle.Puppet,
+            Type = AntdUI.TTypeMini.Default,
+            Ghost = true,
+            BorderWidth = 0,
+            Radius = 8
         };
 
         private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
@@ -271,6 +339,8 @@ namespace OpenLoop.App
         private void OnAddProject(object sender, EventArgs e) => NewSessionRequested?.Invoke("");
 
         private void OnLoopOverview(object sender, EventArgs e) => SelectLoop();
+
+        private void OnPuppetOverview(object sender, EventArgs e) => SelectPuppet();
 
         /// <summary>项目行右键：打开工作区路径 / 复制路径 / 新建会话 / 删除项目。</summary>
         private void OnProjectItemClick(object sender, AntdUI.MenuItemEventArgs e)
@@ -313,6 +383,7 @@ namespace OpenLoop.App
 
         private void OnNewSession(object sender, EventArgs e)
         {
+            if (_project == PuppetTag) return;
             // [Loop] 页没有项目：新建的 Loop 会话工作区取安装目录；空 id = 开一个新的会话，不续用同工作区旧对话
             if (_project == LoopTag) LoopRequested?.Invoke(SourceSync.InstallRoot, "");
             else NewSessionRequested?.Invoke(_project);
@@ -326,6 +397,13 @@ namespace OpenLoop.App
             // 复选列只勾选，Ctrl/Shift 多选也不打开会话（AntdUI 在触发 CellClick 前已经处理完选择）
             if (e.Column is AntdUI.ColumnCheck) return;
             if ((ModifierKeys & (Keys.Control | Keys.Shift)) != 0) return;
+            if (session.Id.StartsWith("puppet:", StringComparison.Ordinal))
+            {
+                string rest = session.Id["puppet:".Length..];
+                int bar = rest.IndexOf('|');
+                if (bar > 0) PuppetRequested?.Invoke(rest[..bar], rest[(bar + 1)..]);
+                return;
+            }
             if (session.Id.StartsWith("loop:", StringComparison.Ordinal))
                 LoopRequested?.Invoke(session.Workspace, session.Id["loop:".Length..]);
             else OpenRequested?.Invoke(session);
@@ -335,7 +413,7 @@ namespace OpenLoop.App
 
         internal string[] MenuItems() => _menu.Items.Select(i => i.Text ?? "").ToArray();
 
-        internal string Selection => _project == LoopTag ? "[Loop]" : _project;
+        internal string Selection => _project == LoopTag ? "[Loop]" : _project == PuppetTag ? "[Puppet]" : _project;
 
         internal string[] RowTitles() => _rows.Select(r => r.Title).ToArray();
 
@@ -358,5 +436,23 @@ namespace OpenLoop.App
         }
 
         internal string LoopEntryText => _btnLoop.Text;
+
+        internal string PuppetEntryText => _btnPuppet.Text;
+
+        internal bool SelectPuppet()
+        {
+            _project = PuppetTag;
+            _building = true;
+            try
+            {
+                _menu.USelect();
+            }
+            finally
+            {
+                _building = false;
+            }
+            RefreshRows();
+            return _project == PuppetTag;
+        }
     }
 }

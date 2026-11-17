@@ -12,7 +12,8 @@ namespace OpenLoop.App
         /// <summary>能力边界那一句：读范围由来源会话决定，别照抄 Worker 的"仅工作目录"。</summary>
         public const string Access =
             "文件工具只读 OpenLoop 安装/配置路径与本 Loop 会话来源会话的工作区（/complain、worker 转来）；" +
-            "其它工作区不可读，需要外部资料走 WebFetch；联网只能通过 WebFetch 只读抓取网页正文。";
+            "其它工作区不可读，需要外部资料走 WebFetch；联网只能通过 WebFetch 只读抓取网页正文。" +
+            "Shell 的 cwd 与参数里的工作目录外路径按风险操作提交用户审批，未获批准不执行。";
 
         public static readonly string[] Rules =
         [

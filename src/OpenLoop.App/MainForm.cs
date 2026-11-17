@@ -29,6 +29,7 @@ namespace OpenLoop.App
         private AntdUI.TabPage _loopPage;
         private LoopView _loopView;
         private readonly Dictionary<string, (LoopView View, AntdUI.TabPage Page)> _loops = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, (PuppetView View, AntdUI.TabPage Page)> _puppets = new(StringComparer.Ordinal);
         private Session _lastSession;
         private bool _closing;
 
@@ -519,6 +520,16 @@ namespace OpenLoop.App
 
         public string LoopEntry => _overview.LoopEntryText;
 
+        /// <summary>B 面状态：[Puppet] 入口文案。</summary>
+        public string PuppetEntry => _overview.PuppetEntryText;
+
+        /// <summary>B 面状态：留言板上的会话（宿主 + id + 最近一句）。</summary>
+        public string[] PuppetSessions() => PuppetBoard.Sessions()
+            .Select(s => s.Host + "\t" + s.Id + "\t" + (s.LastText ?? ""))
+            .ToArray();
+
+        public int PuppetTabs => _puppets.Count;
+
         public string OverviewSelection => _overview.Selection;
 
         public string[] OverviewRows() => _overview.RowTitles();
@@ -658,6 +669,36 @@ namespace OpenLoop.App
             return text;
         }
 
+        /// <summary>[Puppet] 页点开会话：同一宿主 + 会话 id 只开一个标签页，内容由留言板定时刷新。</summary>
+        private PuppetView EnsurePuppet(string host, string agentId)
+        {
+            string key = host + "|" + agentId;
+            if (_puppets.TryGetValue(key, out var existing))
+            {
+                _tabs.SelectTab(existing.Page);
+                return existing.View;
+            }
+
+            var view = new PuppetView { Dock = DockStyle.Fill };
+            view.ComplaintRequested += text =>
+                EnsureLoop(_lastSession?.Workspace ?? SourceSync.InstallRoot, select: false)?.Post(text);
+            var page = new AntdUI.TabPage
+            {
+                Text = "Puppet · " + agentId,
+                IconSvg = UiIcons.Of(UiIcons.List, UiStyle.Puppet),
+                ReadOnly = false,
+                Tag = view,
+                Dock = DockStyle.Fill
+            };
+            page.Controls.Add(view);
+            _tabs.Pages.Add(page);
+            view.Initialize(host, agentId);
+            _tabs.SelectTab(page);
+            view.Reload();
+            _puppets[key] = (view, page);
+            return view;
+        }
+
         public OperationResult SelectProject(string workspace)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return OperationResult.Failure("工作区不能为空");
@@ -705,6 +746,7 @@ namespace OpenLoop.App
             _overview.Initialize();
             _overview.OpenRequested += ShowSession;
             _overview.LoopRequested += (workspace, sessionId) => EnsureLoop(workspace, true, sessionId);
+            _overview.PuppetRequested += (host, agentId) => EnsurePuppet(host, agentId);
             _overview.NewSessionRequested += OpenNewSessionTab;
             _overview.DeleteRequested += OnDeleteRequested;
             _overview.RemoveProjectRequested += OnRemoveProjectRequested;
@@ -1229,6 +1271,7 @@ namespace OpenLoop.App
                 session.View?.Shutdown();
             }
             foreach (var loop in _loops.Values) loop.View.Shutdown();
+            foreach (var puppet in _puppets.Values) puppet.View.Shutdown();
             _workerClient?.Dispose();
             PuppetHost.Stop();
         }
@@ -1683,6 +1726,12 @@ namespace OpenLoop.App
                 if (!string.IsNullOrEmpty(entry.Key)) _loops.Remove(entry.Key);
                 ((LoopView)page.Tag).Shutdown();
                 if (_loopPage == page) { _loopPage = null; _loopView = null; }
+            }
+            else if (page.Tag is PuppetView puppet)
+            {
+                var entry = _puppets.FirstOrDefault(p => p.Value.Page == page);
+                if (!string.IsNullOrEmpty(entry.Key)) _puppets.Remove(entry.Key);
+                puppet.Shutdown();
             }
             else if (page.Tag is Session session)
             {

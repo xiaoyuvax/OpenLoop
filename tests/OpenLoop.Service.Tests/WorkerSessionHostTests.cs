@@ -3,6 +3,7 @@ using OpenLoop.Core.Safety;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Storage;
 using OpenLoop.Service.Worker;
+using Puppet.Core;
 using Xunit;
 
 namespace OpenLoop.Service.Tests
@@ -42,6 +43,33 @@ namespace OpenLoop.Service.Tests
                 await Task.Delay(20);
             }
             Assert.True(condition(), "等待超时");
+        }
+
+        [Fact]
+        public async Task New_peer_in_the_same_workspace_queues_one_notice()
+        {
+            string peer = "A-peer" + Guid.NewGuid().ToString("N")[..8];
+            AgentBook.Heartbeat(peer, "Worker 会话 · " + _chats, "改 ChatFlow", 0, "openloop");
+            var gate = new TaskCompletionSource<WorkerRunResult>();
+            try
+            {
+                var host = NewHost((request, ct) => gate.Task);
+                var session = host.Create(_chats, "openrouter/free", "", () => new AppSettings());
+
+                host.Send(session.Id, "task", "先做我的");
+                host.Send(session.Id, "task", "再说一句");
+
+                var snapshot = host.Get(session.Id);
+                var notice = Assert.Single(snapshot.Pending, t => t.Contains(peer));
+                Assert.Contains("action=\"book\"", notice);
+
+                gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
+                await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Idle);
+            }
+            finally
+            {
+                AgentBook.Release(peer);
+            }
         }
 
         [Fact]

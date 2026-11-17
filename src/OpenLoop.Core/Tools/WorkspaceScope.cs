@@ -56,6 +56,27 @@ namespace OpenLoop.Core.Tools
             return false;
         }
 
+        /// <summary>
+        /// 纯包含判断：只看路径在不在 root 之下，不触发审批、不看 denied 名单。
+        /// 传入相对路径时按进程当前目录解析，调用方要自己按真正的工作目录拼好绝对路径。
+        /// </summary>
+        public bool Contains(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+            try
+            {
+                string full = RealPath(Path.GetFullPath(path));
+                string prefix = Root.EndsWith(Path.DirectorySeparatorChar)
+                    ? Root
+                    : Root + Path.DirectorySeparatorChar;
+                return full.Equals(Root, PathComparison) || full.StartsWith(prefix, PathComparison);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public bool TryResolve(string path, out string full, out string error, string tool = null)
         {
             full = null;

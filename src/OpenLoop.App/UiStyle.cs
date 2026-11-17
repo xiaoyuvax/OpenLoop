@@ -23,6 +23,7 @@ namespace OpenLoop.App
         public static Color Success { get; private set; } = Color.FromArgb(82, 196, 26);
         public static Color Error { get; private set; } = Color.FromArgb(255, 77, 79);
         public static Color Loop { get; private set; } = Color.FromArgb(114, 46, 209);
+        public static Color Puppet { get; private set; } = Color.FromArgb(19, 194, 194);
 
         public static AppTheme Theme { get; private set; } = AppTheme.Light;
 
@@ -59,6 +60,7 @@ namespace OpenLoop.App
                     Success = Color.FromArgb(82, 196, 26);
                     Error = Color.FromArgb(255, 120, 117);
                     Loop = Color.FromArgb(179, 127, 235);
+                    Puppet = Color.FromArgb(94, 219, 219);
                     break;
                 case AppTheme.GrayBlue:
                     Accent = Color.FromArgb(59, 110, 165);
@@ -72,6 +74,7 @@ namespace OpenLoop.App
                     Success = Color.FromArgb(82, 196, 26);
                     Error = Color.FromArgb(220, 60, 60);
                     Loop = Color.FromArgb(124, 107, 176);
+                    Puppet = Color.FromArgb(38, 166, 154);
                     break;
                 default:
                     Accent = Color.FromArgb(22, 119, 255);
@@ -85,6 +88,7 @@ namespace OpenLoop.App
                     Success = Color.FromArgb(82, 196, 26);
                     Error = Color.FromArgb(255, 77, 79);
                     Loop = Color.FromArgb(114, 46, 209);
+                    Puppet = Color.FromArgb(19, 194, 194);
                     break;
             }
 
