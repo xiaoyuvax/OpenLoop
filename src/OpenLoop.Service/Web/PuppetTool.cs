@@ -87,7 +87,8 @@ namespace OpenLoop.Service.Web
                     Add("to", args.Str("to"));
                     break;
                 case "book":
-                    route = "/agent/book";
+                    // 与 peer-board 技能同一窗口：30 分钟内活动过的都算在场，是否停手看 idleSeconds
+                    route = "/agent/book?includeStale=true";
                     break;
                 case "say":
                     {

@@ -58,6 +58,9 @@ namespace OpenLoop.App
         /// <summary>(工作区, Loop 会话 id)；id 为空 = 新建一个新会话。</summary>
         internal event Action<string, string> LoopRequested;
 
+        /// <summary>[Loop] 行的运行状态来自本进程里还活着的 Loop 会话（关掉标签页也在跑）。</summary>
+        internal Func<string, string, SessionState> LoopState;
+
         /// <summary>(宿主 @A/@I, 会话 id)：在 [Puppet] 页点开会话。</summary>
         internal event Action<string, string> PuppetRequested;
         internal event Action<string> NewSessionRequested;
@@ -188,7 +191,8 @@ namespace OpenLoop.App
                         IsLoop = true,
                         CustomTitle = loop.Title,
                         StartedAt = loop.UpdatedAt.LocalDateTime,
-                        LastActiveAt = loop.UpdatedAt.LocalDateTime
+                        LastActiveAt = loop.UpdatedAt.LocalDateTime,
+                        State = LoopState?.Invoke(loop.Workspace, loop.SessionId) ?? SessionState.Idle
                     });
                 }
             }

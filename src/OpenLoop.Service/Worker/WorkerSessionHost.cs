@@ -690,12 +690,14 @@ namespace OpenLoop.Service.Worker
                     turn.Streaming = false;
                     turn.Status = "";
                     turn.Steps = result.Steps > turn.Steps ? result.Steps : turn.Steps;
-                    turn.Assistant = result.Outcome == "error"
-                        ? ServerNotice.FailedPrefix + result.ErrorMessage
-                        : result.FinalAnswer ?? turn.Assistant;
-                    // 被「立即」打断时正文常常还没开始写：给个明确文案，别显示成空回复
-                    if (result.Outcome == "stopped" && string.IsNullOrWhiteSpace(turn.Assistant))
-                        turn.Assistant = ServerNotice.Stopped;
+                    turn.Assistant = result.Outcome switch
+                    {
+                        "error" => ServerNotice.FailedPrefix + result.ErrorMessage,
+                        // 被打断的轮次保留已经流出来的正文，否则用户前面看到的输出会凭空消失
+                        "stopped" when string.IsNullOrWhiteSpace(result.FinalAnswer) || ServerNotice.IsNotice(result.FinalAnswer)
+                            => string.IsNullOrWhiteSpace(turn.Assistant) ? ServerNotice.Stopped : turn.Assistant,
+                        _ => result.FinalAnswer ?? turn.Assistant
+                    };
                     turn.Failed = result.Outcome == "error";
                     turn.FinishReason = result.FinishReason;
                     turn.Transcript = result.Transcript as List<LlmMessage> ?? result.Transcript?.ToList();

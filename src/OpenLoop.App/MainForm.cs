@@ -616,6 +616,8 @@ namespace OpenLoop.App
             string key = LoopKey(target, id);
             if (_loops.TryGetValue(key, out var existing))
             {
+                // 关掉的标签页只是从标签栏移除：会话与视图继续存活，这里把页面挂回去
+                if (existing.Page.Parent == null) _tabs.Pages.Add(existing.Page);
                 if (select) _tabs.SelectTab(existing.Page);
                 _loopView = existing.View;
                 _loopPage = existing.Page;
@@ -632,12 +634,18 @@ namespace OpenLoop.App
             var page = new AntdUI.TabPage
             {
                 Text = LoopTabText(target, id),
-                IconSvg = UiIcons.Of(UiIcons.Loop, UiStyle.Loop),
+                IconSvg = UiIcons.Of(UiIcons.Loop, UiStyle.Muted),
                 ReadOnly = false,
                 Tag = view,
                 Dock = DockStyle.Fill
             };
             page.Controls.Add(view);
+            view.StateChanged += v =>
+            {
+                page.IconSvg = UiIcons.Of(UiIcons.Loop, LoopStateColor(v.State));
+                // 标签页关掉后只剩会话列表能看状态：[Loop] 页的行跟着刷新
+                RefreshOverview();
+            };
             view.TitleChanged += text =>
             {
                 page.Text = text;
@@ -658,7 +666,8 @@ namespace OpenLoop.App
         private static string LoopTabText(string workspace, string sessionId)
         {
             string summary = LoopIndex.Title(workspace, sessionId);
-            // 与 Worker 标签同格式（工作区文件夹名 · 内容简述），Loop 身份由紫色 Loop 图标区分
+            // 与 Worker 标签同格式（工作区文件夹名 · 内容简述），Loop 身份由 Loop 图形区分，
+            // 颜色跟 Worker 一样表示状态：运行中紫色、中断/失败红色、空闲灰色
             string text = Session.ComposeTitle(workspace, summary);
             // 同一项目可以有多个 Loop 会话：还没总结出标题时补 id 尾段，免得标签页文本一模一样
             if (string.IsNullOrWhiteSpace(summary)
@@ -746,6 +755,11 @@ namespace OpenLoop.App
             _overview.Initialize();
             _overview.OpenRequested += ShowSession;
             _overview.LoopRequested += (workspace, sessionId) => EnsureLoop(workspace, true, sessionId);
+            // 会话列表里 Loop 行的状态取自仍然存活的视图（标签页关掉后仍在跑）
+            _overview.LoopState = (workspace, sessionId) =>
+                _loops.TryGetValue(LoopKey(workspace, sessionId), out var live)
+                    ? live.View.State
+                    : SessionState.Idle;
             _overview.PuppetRequested += (host, agentId) => EnsurePuppet(host, agentId);
             _overview.NewSessionRequested += OpenNewSessionTab;
             _overview.DeleteRequested += OnDeleteRequested;
@@ -1647,9 +1661,14 @@ namespace OpenLoop.App
         /// <summary>删掉一个 Loop 会话：先关标签（关标签会落盘），再删对话文件与索引。</summary>
         private void DeleteLoopSession(string workspace, string sessionId)
         {
-            if (_loops.TryGetValue(LoopKey(workspace, sessionId), out var entry)
-                && _tabs.Pages.Contains(entry.Page))
-                CloseTab(entry.Page);
+            string key = LoopKey(workspace, sessionId);
+            if (_loops.TryGetValue(key, out var entry))
+            {
+                if (_tabs.Pages.Contains(entry.Page)) CloseTab(entry.Page);
+                entry.View.Shutdown();
+                _loops.Remove(key);
+                if (_loopPage == entry.Page) { _loopPage = null; _loopView = null; }
+            }
             ChatStore.Delete(workspace, sessionId);
             LoopIndex.Remove(workspace, sessionId);
         }
@@ -1720,14 +1739,8 @@ namespace OpenLoop.App
             bool selected = _tabs.SelectedTab == page;
             _tabs.Pages.Remove(page);
             if (page == _newPage) _newPage = null;
-            if (page.Tag is LoopView)
-            {
-                var entry = _loops.FirstOrDefault(p => p.Value.Page == page);
-                if (!string.IsNullOrEmpty(entry.Key)) _loops.Remove(entry.Key);
-                ((LoopView)page.Tag).Shutdown();
-                if (_loopPage == page) { _loopPage = null; _loopView = null; }
-            }
-            else if (page.Tag is PuppetView puppet)
+            // LoopView 不需要收场：关标签只移除页面（_loops 里保留条目），Loop 轮继续跑，重开时复用同一个视图
+            if (page.Tag is PuppetView puppet)
             {
                 var entry = _puppets.FirstOrDefault(p => p.Value.Page == page);
                 if (!string.IsNullOrEmpty(entry.Key)) _puppets.Remove(entry.Key);
@@ -1878,6 +1891,13 @@ namespace OpenLoop.App
         private static Color StateColor(SessionState state) => state switch
         {
             SessionState.Running => UiStyle.Success,
+            SessionState.Interrupted => UiStyle.Error,
+            _ => UiStyle.Muted
+        };
+
+        private static Color LoopStateColor(SessionState state) => state switch
+        {
+            SessionState.Running => UiStyle.Loop,
             SessionState.Interrupted => UiStyle.Error,
             _ => UiStyle.Muted
         };

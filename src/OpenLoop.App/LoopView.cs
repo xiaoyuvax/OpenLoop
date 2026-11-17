@@ -179,6 +179,12 @@ namespace OpenLoop.App
         /// <summary>标题（重新总结后）变了：宿主用它刷新标签页文本。</summary>
         internal event Action<string> TitleChanged;
 
+        /// <summary>运行状态变了：宿主用它刷新标签页图标的颜色。</summary>
+        internal event Action<LoopView> StateChanged;
+
+        /// <summary>当前轮状态（Running=运行中，Done=上一轮正常收尾，Interrupted=停止/失败）。</summary>
+        internal SessionState State { get; private set; }
+
         internal IReadOnlyList<ChatTurn> Turns => _book.Turns;
 
         internal void Initialize(string workspace, Func<AppSettings> settings,
@@ -346,10 +352,12 @@ namespace OpenLoop.App
             SaveLoopChat();
         }
 
-        /// <summary>留言板身份：新会话 id 本身唯一；老的单例会话 id 是固定的 "loop"，用工作区散列区分。</summary>
+        /// <summary>留言板身份与 Worker 一致（A-会话id / I-会话id）：去掉 "loop-" 前缀；老的单例会话 id 是固定的 "loop"，用工作区散列区分。</summary>
         private string BoardId()
         {
             string id = _sessionId;
+            if (id?.StartsWith("loop-", StringComparison.OrdinalIgnoreCase) == true)
+                id = id["loop-".Length..];
             if (string.Equals(id, LoopRef.LegacyId, StringComparison.Ordinal))
                 id += "-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
                     Encoding.UTF8.GetBytes((_workspace ?? "").ToLowerInvariant())))[..6].ToLowerInvariant();
@@ -510,6 +518,7 @@ namespace OpenLoop.App
                 _cts = null;
                 SetRunning(false);
                 _lblStatus.Text = "状态: error";
+                SetState(SessionState.Interrupted);
                 RefreshChat();
                 Notify("Loop 执行失败", ex.Message, error: true);
                 return;
@@ -535,11 +544,13 @@ namespace OpenLoop.App
                 string snapshot;
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
                 if (AgentToolCallParser.LooksLikeToolCallText(snapshot)) return;
+                // 正文先进数据：标签页关掉（句柄失效）时界面更新会被跳过，重开后按数据重建
+                turn.AssistantText = LlmTextSanitizer.StripSafetyLines(snapshot);
                 RunOnUi(() =>
                 {
                     _contextTokens = _promptTokens + _liveTokens;
                     ApplyDetail();
-                    _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot));
+                    _chat.UpdateStreamingMessage(turn, null);
                 });
             };
 
@@ -665,6 +676,7 @@ namespace OpenLoop.App
                 _lastCost = result.ChatCost?.ToString("0.0000") ?? "—";
                 _contextTokens = result.ContextTokens ?? _contextTokens;
                 _lblStatus.Text = $"状态: {outcome} · {result.Steps.Count} 步 · 成本 {_lastCost}";
+                SetState(outcome == "ok" ? SessionState.Done : SessionState.Interrupted);
                 ApplyDetail();
             }
             catch (OperationCanceledException)
@@ -676,6 +688,7 @@ namespace OpenLoop.App
                 if (string.IsNullOrEmpty(turn.AssistantText)) turn.AssistantText = "（已停止）";
                 trace.Finish("stopped", turn.AssistantText);
                 _lblStatus.Text = "状态: stopped";
+                SetState(SessionState.Interrupted);
             }
             catch (Exception ex)
             {
@@ -685,6 +698,7 @@ namespace OpenLoop.App
                 turn.AssistantText = "执行失败：" + ex.Message;
                 trace.Finish("error", turn.AssistantText);
                 _lblStatus.Text = "状态: error";
+                SetState(SessionState.Interrupted);
                 Notify("Loop 执行失败", ex.Message, error: true);
                 // 免费额度耗尽：让 ConnMan 换节点，就绪后由它回调这里给原会话发「继续」
                 if (ServerNotice.IsQuotaFailure(turn.AssistantText))
@@ -1172,7 +1186,8 @@ namespace OpenLoop.App
                 SendAsync(Localization.T("ContinuePrompt"));
                 return;
             }
-            Submit(immediate: true);
+            // 运行中点发送 = 排队等本轮返回；要打断当前轮就点队列行的「立即」或按 Ctrl+Enter
+            Submit();
         }
 
         private void OnChatCopy(object sender, ChatFlowActionEventArgs e)
@@ -1345,7 +1360,7 @@ namespace OpenLoop.App
 
         /// <summary>
         /// Enter 在 AntdUI 的 WM_KEYDOWN 里先被消化成换行（早于 KeyDown 事件），
-        /// 所以只能在这里拦：Enter 发送（运行中=步后插入），Ctrl+Enter 等本轮排队，Shift+Enter 换行。
+        /// 所以只能在这里拦：Enter 发送（运行中=等本轮返回），Ctrl+Enter 插到下一步，Shift+Enter 换行。
         /// </summary>
         private void InsertSoftNewline() => ComposerKeys.InsertSoftNewline(_txtInput);
 
@@ -1358,7 +1373,7 @@ namespace OpenLoop.App
             if (shift) { InsertSoftNewline(); return; }
             if (!ctrl && _cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
             if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
-            Submit(immediate: !ctrl);
+            Submit(immediate: ctrl);
         }
 
         private IReadOnlyList<SkillInfo> ActiveSkills(
@@ -1395,7 +1410,15 @@ namespace OpenLoop.App
         private void SetRunning(bool running)
         {
             _running = running;
+            if (running) SetState(SessionState.Running);
             UpdateSendButton();
+        }
+
+        private void SetState(SessionState state)
+        {
+            if (State == state) return;
+            State = state;
+            StateChanged?.Invoke(this);
         }
 
         /// <summary>运行中且输入为空 = 停止；有内容 = 排队发送；编辑排队项时 = 保存。</summary>
@@ -1472,7 +1495,8 @@ namespace OpenLoop.App
 
         private void RunOnUi(Action action)
         {
-            if (IsDisposed) return;
+            // 标签页关掉后视图不再挂在窗体上：句柄可能已销毁，BeginInvoke 会抛，直接跳过（重开时按 _book 重建界面）
+            if (IsDisposed || !IsHandleCreated) return;
             if (InvokeRequired) BeginInvoke(action);
             else action();
         }

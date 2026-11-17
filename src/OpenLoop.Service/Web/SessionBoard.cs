@@ -107,16 +107,19 @@ namespace OpenLoop.Service.Web
                 + $"Puppet(target=\"{target}\", action=\"say\", to=\"<对方 id>\", text=\"...\") 定向留言；改动同一文件前先问一句。";
         }
 
-        /// <summary>同工作区的其他会话（5 分钟内有心跳）。工作区按登记时的 Purpose 后缀精确比对。</summary>
+        /// <summary>
+        /// 同工作区的其他会话：与留言同一保留期（<see cref="AgentBook.Retention"/>，30 分钟内有心跳），
+        /// 是否还在干活看 PeerInfo.IdleSeconds。工作区按登记时的 Purpose 后缀精确比对。
+        /// </summary>
         public static IReadOnlyList<PeerInfo> Peers(string workspace, string selfId, bool remote = false)
         {
-            string ws = (workspace ?? "").TrimEnd('\\', '/');
+            string ws = Normalize(workspace);
             if (ws.Length == 0) return [];
 
             var all = new List<PeerInfo>();
             if (!remote)
             {
-                all.AddRange(AgentBook.GetAll().Select(ToPeer));
+                all.AddRange(AgentBook.GetAll(includeStale: true).Select(ToPeer));
             }
             else
             {
@@ -124,17 +127,18 @@ namespace OpenLoop.Service.Web
                 {
                     if (host.Local)
                     {
-                        all.AddRange(AgentBook.GetAll().Select(ToPeer));
+                        all.AddRange(AgentBook.GetAll(includeStale: true).Select(ToPeer));
                         continue;
                     }
-                    string json = GetFrom(host, "/agent/book");
+                    string json = GetFrom(host, "/agent/book?includeStale=true");
                     if (string.IsNullOrWhiteSpace(json)) continue;
                     try
                     {
                         var book = JsonSerializer.Deserialize<BookResponse>(json, BookJson);
                         all.AddRange((book?.Agents ?? new List<BookAgent>()).Select(a => new PeerInfo
                         {
-                            Id = a.Id, Purpose = a.Purpose, Doing = a.Operation, Steps = a.Steps?.ToArray() ?? []
+                            Id = a.Id, Purpose = a.Purpose, Doing = a.Operation,
+                            Steps = a.Steps?.ToArray() ?? [], IdleSeconds = a.IdleSeconds
                         }));
                     }
                     catch
@@ -148,15 +152,22 @@ namespace OpenLoop.Service.Web
                 .GroupBy(p => p.Id, StringComparer.Ordinal)
                 .Select(g => g.First())
                 .Where(p => !string.IsNullOrEmpty(p.Id) && !string.Equals(p.Id, selfId, StringComparison.Ordinal)
-                    && (p.Purpose ?? "").TrimEnd('\\', '/').EndsWith(ws, StringComparison.OrdinalIgnoreCase))
+                    && p.IdleSeconds <= AgentBook.Retention.TotalSeconds
+                    && Normalize(p.Purpose).EndsWith(ws, StringComparison.OrdinalIgnoreCase))
                 .ToList();
         }
+
+        /// <summary>工作区比较只认路径形态：去掉尾部斜杠、统一成反斜杠（Web 壳传进来的可能是正斜杠）。</summary>
+        private static string Normalize(string path)
+            => (path ?? "").Trim().TrimEnd('\\', '/').Replace('/', '\\');
 
         private static PeerInfo ToPeer(Puppet.Core.AgentInfo a)
         {
             return new PeerInfo
             {
-                Id = a.Id, Purpose = a.Purpose, Doing = a.Operation, Steps = AgentBook.SnapshotSteps(a)
+                Id = a.Id, Purpose = a.Purpose, Doing = a.Operation,
+                Steps = AgentBook.SnapshotSteps(a),
+                IdleSeconds = (int)Math.Max(0, (DateTime.Now - a.LastHeartbeatAt).TotalSeconds)
             };
         }
 
@@ -254,6 +265,7 @@ namespace OpenLoop.Service.Web
             public string Purpose { get; set; }
             public string Operation { get; set; }
             public List<string> Steps { get; set; }
+            public int IdleSeconds { get; set; }
         }
 
         private static string Clip(string text, int max)
@@ -268,17 +280,24 @@ namespace OpenLoop.Service.Web
         public string Doing { get; set; }
         public string[] Steps { get; set; } = [];
 
-        /// <summary>一行摘要：A-xxxx（在做：…；最近：Edit[src/a.cs] → ok；Shell[build] → 失败）</summary>
+        /// <summary>最近一次心跳距今的秒数（由留言板宿主统一计时，避免各会话时钟不一致）。</summary>
+        public int IdleSeconds { get; set; }
+
+        /// <summary>一行摘要：A-xxxx（空闲 42s；在做：…；最近：20:38:12 Edit[src/a.cs] → ok；…）</summary>
         public string Summary()
         {
             string doing = Doing ?? "";
             if (doing.Length > 80) doing = doing[..80] + "…";
             var steps = Steps ?? Array.Empty<string>();
             var sb = new StringBuilder(Id ?? "");
-            if (doing.Length > 0) sb.Append("（在做：").Append(doing);
-            if (steps.Length > 0)
-                sb.Append(doing.Length > 0 ? "；最近：" : "（最近：").Append(string.Join("；", steps.TakeLast(3)));
+            sb.Append("（空闲 ").Append(IdleText(IdleSeconds));
+            if (doing.Length > 0) sb.Append("；在做：").Append(doing);
+            if (steps.Length > 0) sb.Append("；最近：").Append(string.Join("；", steps.TakeLast(3)));
             return sb.Append('）').ToString();
         }
+
+        private static string IdleText(int seconds) => seconds < 60
+            ? seconds + "s"
+            : seconds < 3600 ? (seconds / 60) + "m" : (seconds / 3600) + "h";
     }
 }

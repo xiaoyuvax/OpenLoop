@@ -326,7 +326,7 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
     ? h('div', { className: 'ol-pending' },
         h(Muted, { style: { flex: 'none' } }, '排队'),
         (snapshot.pending || []).map((item, i) => h('div', { key: i, className: 'ol-pending-row' },
-          h('span', { style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, item),
+          h('span', { title: item, style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, item),
           h(Button, { size: 'small', type: 'link', onClick: () => act('pending', { index: i, action: 'now' }) }, '立即'),
           h(Button, { size: 'small', type: 'link', danger: true, onClick: () => act('pending', { index: i, action: 'remove' }) }, '撤回'))))
     : null;

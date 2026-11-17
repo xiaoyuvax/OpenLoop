@@ -32,6 +32,8 @@ namespace OpenLoop.App
         private static ApprovalDecision Prompt(Control owner, Func<AppSettings> settings, ApprovalRequest request)
         {
             var form = owner as Form ?? owner.FindForm();
+            // Loop 标签页关掉后视图不再挂在窗体上：审批框还得弹，退回当前主窗口
+            if (form == null) form = Application.OpenForms.Cast<Form>().FirstOrDefault();
             if (form == null) return ApprovalDecision.Deny;
 
             string title = TitleFor(request);

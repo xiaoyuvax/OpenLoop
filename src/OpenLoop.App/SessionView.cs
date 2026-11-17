@@ -555,7 +555,7 @@ namespace OpenLoop.App
 
         /// <summary>
         /// Enter 在 AntdUI 的 WM_KEYDOWN 里先被消化成换行（早于 KeyDown 事件），
-        /// 所以只能在这里拦：Enter 发送（运行中=步后插入），Ctrl+Enter 等本轮排队，Shift+Enter 换行。
+        /// 所以只能在这里拦：Enter 发送（运行中=等本轮返回），Ctrl+Enter 插到下一步，Shift+Enter 换行。
         /// </summary>
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
@@ -567,7 +567,7 @@ namespace OpenLoop.App
             if (shift) { ComposerKeys.InsertSoftNewline(_txtInput); UpdateSendButton(); return; }
             if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
             if (!ctrl && _cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
-            Submit(immediate: !ctrl);
+            Submit(immediate: ctrl);
         }
 
         private void OnInputTextChanged(object sender, EventArgs e)
@@ -800,6 +800,8 @@ namespace OpenLoop.App
 
             if (_running)
             {
+                // shortcut: 壳自己的队列（_queue）和 Worker 的队列（snapshot.Pending）是两套，
+                // 轮询还没发现「别人发起的轮」时提交的消息会落到 Worker 队列里看不到；要合并得让队列栏直接读 Pending。
                 if (text.Length == 0)
                 {
                     _queue.Paused = true;
@@ -833,7 +835,8 @@ namespace OpenLoop.App
                 SetMode("task");
                 return;
             }
-            Submit(immediate: true);
+            // 运行中点发送 = 排队等本轮返回；要打断当前轮就点队列行的「立即」或按 Ctrl+Enter
+            Submit();
         }
 
         /// <summary>识别 /btw、/fork；返回 true 表示这条输入已被命令消费。</summary>
@@ -1250,8 +1253,6 @@ namespace OpenLoop.App
                 return;
             }
 
-            ChatTurn turn = null;
-
             _cts?.Dispose();
             var cts = new CancellationTokenSource();
             _cts = cts;
@@ -1280,14 +1281,7 @@ namespace OpenLoop.App
                 //发出即落盘：进程被杀时最多丢流式中的半条回复，而不是整轮对话
                 ChatStore.Save(workspace, Session.Book.Turns, Session.Id, _model, _effort);
 
-                while (snapshot.State == WorkerSessionHost.Running)
-                {
-                    await Task.Delay(250, ct);
-                    snapshot = await client.GetAsync(Session.Id, ct);
-                    if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
-                    snapshot = AnswerPromptsAsync(client, snapshot, ct);
-                    ApplySnapshot(snapshot);
-                }
+                snapshot = await AwaitRunAsync(snapshot, client, ct);
             }
             catch (OperationCanceledException)
             {
@@ -1304,6 +1298,31 @@ namespace OpenLoop.App
                 if (ReferenceEquals(_cts, cts)) _cts = null;
             }
 
+            await FinishRunAsync(client, workspace, snapshot, failure);
+        }
+
+        /// <summary>等这一轮跑完：流式期间把快照并进界面，返回最后一帧。</summary>
+        private async Task<WorkerSessionSnapshot> AwaitRunAsync(WorkerSessionSnapshot snapshot, WorkerApiClient client,
+            CancellationToken ct)
+        {
+            while (snapshot.State == WorkerSessionHost.Running)
+            {
+                await Task.Delay(250, ct);
+                snapshot = await client.GetAsync(Session.Id, ct);
+                if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
+                snapshot = AnswerPromptsAsync(client, snapshot, ct);
+                ApplySnapshot(snapshot);
+            }
+
+            return snapshot;
+        }
+
+        /// <summary>
+        /// 这一轮已经跑完（不管是谁发起的）：收尾、落盘，然后把队列里的下一条发出去。
+        /// </summary>
+        private async Task FinishRunAsync(WorkerApiClient client, string workspace, WorkerSessionSnapshot snapshot,
+            string failure)
+        {
             //停止/失败也取一次最终快照：状态与正文以 Worker 为准
             try
             {
@@ -1322,7 +1341,7 @@ namespace OpenLoop.App
             string outcome = failure == "stopped" ? "stopped"
                 : failure != null ? "error"
                 : snapshot?.Outcome ?? "error";
-            turn = Session.Book.Turns.Count > 0 ? Session.Book.Turns[^1] : null;
+            var turn = Session.Book.Turns.Count > 0 ? Session.Book.Turns[^1] : null;
             var remoteTurn = snapshot?.Turns.Count == Session.Book.Turns.Count ? snapshot.Turns[^1] : null;
             if (turn != null)
             {
@@ -1366,6 +1385,40 @@ namespace OpenLoop.App
             if (outcome == "ok" && Session.Book.Turns.Count == 1)
                 _ = SummarizeTitleAsync(force: false);
             if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
+        }
+
+        /// <summary>
+        /// 这一轮不是壳发起的（免费额度自愈发的「继续」、网页、Puppet…）：跟着它跑到底。
+        /// 否则 _running 一直是假的，用户这时输入会被直接塞进 Worker 的队列，队列栏看不到。
+        /// </summary>
+        private async Task TrackExternalAsync(WorkerSessionSnapshot snapshot)
+        {
+            var client = Client;
+            string workspace = Session.Workspace.Trim();
+            _cts?.Dispose();
+            var cts = new CancellationTokenSource();
+            _cts = cts;
+            string failure = null;
+            try
+            {
+                snapshot = await AwaitRunAsync(snapshot, client, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                failure = "stopped";
+            }
+            catch (Exception ex)
+            {
+                // 轮询断了不算这一轮失败：下一拍 SyncFromWorker 发现还在跑会重新接上
+                AppLog.Warn("跟随外部轮次失败：" + ex.Message);
+            }
+            finally
+            {
+                cts.Dispose();
+                if (ReferenceEquals(_cts, cts)) _cts = null;
+            }
+
+            await FinishRunAsync(client, workspace, snapshot, failure);
         }
 
         /// <summary>把 A 的快照映射到本地对话：新轮次建 turn，已有的更新正文/工具行/思考区。</summary>
@@ -1436,19 +1489,28 @@ namespace OpenLoop.App
         }
 
         /// <summary>
-        /// 这一轮不是壳发起的（会话是直接走 A 的 API / 网页 / 别的 agent 跑的）：把 A 的快照并进界面，
-        /// 打开的页面上能看到实时进度，跑完也能看到定稿。壳自己正在跑时不插手。
+        /// 这一轮不是壳发起的（会话是直接走 A 的 API / 网页 / 自愈的「继续」/ 别的 agent 跑的）：
+        /// 把 A 的快照并进界面；还在跑就跟着跑，界面才算真的「运行中」，用户此时输入才会进队列栏。
         /// </summary>
         internal void SyncFromWorker(WorkerSessionSnapshot snapshot)
         {
             if (snapshot == null || _running || Session == null || IsDisposed || !IsHandleCreated) return;
 
+            if (snapshot.State == WorkerSessionHost.Running)
+            {
+                ApplySnapshot(snapshot);
+                _lblStatus.Text = Localization.T("Status") + ": 运行中…";
+                SetState(SessionState.Running);
+                SetRunning(true);
+                _ = TrackExternalAsync(snapshot);
+                return;
+            }
+
             ApplySnapshot(snapshot);
             Session.Steps = snapshot.Turns?.LastOrDefault()?.Steps ?? Session.Steps;
             UpdateContext(snapshot.ContextTokens);
-            _lblStatus.Text = Localization.T("Status") + (snapshot.State == WorkerSessionHost.Running
-                ? ": 运行中…"
-                : string.IsNullOrEmpty(snapshot.Outcome) ? "" : ": " + snapshot.Outcome);
+            _lblStatus.Text = Localization.T("Status")
+                              + (string.IsNullOrEmpty(snapshot.Outcome) ? "" : ": " + snapshot.Outcome);
             if (snapshot.Cost.HasValue)
                 _lblCost.Text = Localization.T("Cost") + $": {snapshot.Cost.Value:0.0000} · {Session.Steps} {Localization.T("Steps")}";
         }

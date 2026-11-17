@@ -93,7 +93,7 @@ Windows 中文环境下发 HTTP 请求一律用 zcurl，不要用 curl：curl �
 
 {string.Join("\n", peers.Select(p => "- " + p))}
 
-- 看最新进展：`Puppet(target="{target}", action="book")`，`agents[].steps` 是对方最近几次工具调用与结果（旧→新）；`operation` 是它自报在做的事。看留言：`Puppet(target="{target}", action="chat", tail=10)`，可用 q/from/to 过滤。任何 Puppet 响应也会附带 peers（在场会话）与 chat（最近一条）。
+- 看最新进展：`Puppet(target="{target}", action="book")`，`agents[].steps` 是对方最近几次工具调用与结果（旧→新），每条前面是**该步骤发生的时间**（HH:mm:ss，由留言板宿主统一打点）；`idleSeconds` 是对方距上次心跳的秒数（空闲越久越可能已停手），`operation` 是它自报在做的事。看留言：`Puppet(target="{target}", action="chat", tail=10)`，每条带 `at`（ISO 8601 时间戳），可用 q/from/to 过滤。任何 Puppet 响应也会附带 peers（在场会话，含 idleSeconds）与 chat（最近一条）。
 - 留言板可能在 @A 或 @I：A 掉线时留言会自动落到 I，`chat`/`book`/`say` 也会自动切换，不需要你改 target。
 - 动共享文件前先看一眼：对方刚改过同一文件时先问一句，别覆盖它的改动；改完可以留言告诉它。
 - 发留言：`Puppet(target="{target}", action="say", text="...", to="A-xxxx")`；省略 to 即广播。
