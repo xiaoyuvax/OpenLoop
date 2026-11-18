@@ -369,13 +369,29 @@ namespace OpenLoop.Service.Source
             // 这样每个版本目录都能追到「究竟是哪份源码编出来的」（不需要提交）
             string sourceTree = OpenLoop.Core.Safety.Snapshots.Tree(SourceSync.SourceRoot);
 
-            var build = await Iteration.BuildAsync(ct);
+            // 源码不在的组件按包编译：packageVersion 只是下限，实际取 nuget.org 最新版，最新版编不过再退回参考版本
+            var packages = PackageFallback.Plans();
+            var properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var package in packages)
+                properties[package.Property] = await PackageFallback.LatestAsync(package.PackageId, package.Reference, ct);
+            if (packages.Count > 0)
+                Add(new Iteration.Step("fallback", true, DescribePackages(packages, properties)));
+
+            var build = await Iteration.BuildAsync(ct, properties);
             Add(build);
+            if (!build.Ok && packages.Any(p => Differs(properties[p.Property], p.Reference)))
+            {
+                foreach (var package in packages) properties[package.Property] = package.Reference;
+                Add(new Iteration.Step("fallback", true,
+                    "最新版编不过，退回参考版本：" + DescribePackages(packages, properties)));
+                build = await Iteration.BuildAsync(ct, properties);
+                Add(build);
+            }
             if (!build.Ok) return Finish(report, false);
 
             if (needShell)
             {
-                var publish = await PublishShellAsync(VersionOf("shell"), publishMode, ct);
+                var publish = await PublishShellAsync(VersionOf("shell"), publishMode, ct, properties);
                 Add(publish);
                 if (!publish.Ok) return Finish(report, false);
                 report.ShellDir = publish.Detail;
@@ -384,7 +400,7 @@ namespace OpenLoop.Service.Source
 
             if (needA || needI)
             {
-                var publish = await Iteration.PublishAsync(BusRoles.A, VersionOf(BusRoles.A), publishMode, ct);
+                var publish = await Iteration.PublishAsync(BusRoles.A, VersionOf(BusRoles.A), publishMode, ct, properties);
                 Add(publish);
                 if (!publish.Ok) return Finish(report, false);
                 Iteration.PinSource(publish.Detail, BusRoles.A, VersionOf(BusRoles.A), sourceTree);
@@ -420,6 +436,15 @@ namespace OpenLoop.Service.Source
             VersionState.Promote(skipPromote ?? []);
             return Finish(report, true);
         }
+
+        /// <summary>「Vax-FCTB 2.19.0.236（参考 2.19.0.233）」这样一行，写进迭代步骤。</summary>
+        private static string DescribePackages(
+            IReadOnlyList<PackageFallbackPlan> packages, IReadOnlyDictionary<string, string> versions)
+            => string.Join("；", packages.Select(p => p.PackageId + " " + versions[p.Property] +
+                (Differs(versions[p.Property], p.Reference) ? $"（参考 {p.Reference}）" : "")));
+
+        private static bool Differs(string left, string right)
+            => !string.Equals((left ?? "").Trim(), (right ?? "").Trim(), StringComparison.OrdinalIgnoreCase);
 
         /// <summary>迭代前 current.json 里、迭代中确实换过、且旧目录还在的角色。</summary>
         internal static List<string> RolesToRollback(
@@ -491,7 +516,8 @@ namespace OpenLoop.Service.Source
 
         /// <summary>把壳的发布产物放到 versions/shell/&lt;版本-sha8&gt;；运行目录等最后一步再覆盖。</summary>
         public static async Task<Iteration.Step> PublishShellAsync(
-            string version, string publishMode = null, CancellationToken ct = default)
+            string version, string publishMode = null, CancellationToken ct = default,
+            IReadOnlyDictionary<string, string> properties = null)
         {
             string root = SourceSync.SourceRoot;
             string project = Path.Combine("src", OperatingSystem.IsWindows() ? "OpenLoop.App" : "OpenLoop.Shell");
@@ -499,7 +525,7 @@ namespace OpenLoop.Service.Source
             try
             {
                 var (ok, output) = await Iteration.ExecAsync("dotnet",
-                    ["publish", project, .. Iteration.PublishArgs(publishMode, temp)],
+                    ["publish", project, .. Iteration.PublishArgs(publishMode, temp, properties)],
                     root, ct);
                 if (!ok) return new("publish shell", false, Iteration.Tail(output, 12));
 

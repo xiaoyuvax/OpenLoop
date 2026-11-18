@@ -152,8 +152,7 @@ namespace OpenLoop.Service.Source
 
             // 新加的 fork 条目只留了目录名：没地址就别去 clone，直接说清楚缺什么
             if (string.IsNullOrWhiteSpace(spec.Url))
-                return new(SourceState.Unknown, root, "", "",
-                    "清单没有仓库地址：把 fork 地址写进 components.json 的 url 再重试");
+                return Unavailable(spec, root, "清单没有仓库地址：把地址写进 components.json 的 url 再重试");
 
             var check = await CheckCommitAsync(spec, root, ct);
             string official = ComponentCatalog.DefaultUrl(spec.Id);
@@ -163,8 +162,20 @@ namespace OpenLoop.Service.Source
 
             var fallback = await CheckCommitAsync(spec with { Url = official }, root, ct);
             return fallback.State == SourceState.Failed
-                ? fallback with { Detail = $"清单地址 {spec.Url} 与官方地址 {official} 都拉不下来：{fallback.Detail}" }
+                ? Unavailable(spec, root, $"清单地址 {spec.Url} 与官方地址 {official} 都拉不下来：{fallback.Detail}")
                 : fallback with { Detail = $"清单地址 {spec.Url} 不可用，已按官方地址克隆：{fallback.Detail}" };
+        }
+
+        /// <summary>
+        /// 源码拿不到：有包兜底就说明「消费方按同名包编译、该组件本轮不参与迭代」，没有才是硬失败。
+        /// </summary>
+        internal static SourceCheck Unavailable(ComponentSpec spec, string root, string reason)
+        {
+            string package = (spec.PackageId ?? "").Trim();
+            if (package.Length == 0) return new(SourceState.Failed, root, "", "", reason);
+            string version = (spec.PackageVersion ?? "").Trim();
+            return new(SourceState.Unknown, root, "", "",
+                $"{reason}；已退回 NuGet 包 {package}（参考 {version}，实际取 nuget.org 最新版；该组件不参与迭代）");
         }
 
         /// <summary>可迭代组件仓库：只同步 + 报提交号。</summary>

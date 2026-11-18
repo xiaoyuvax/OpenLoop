@@ -19,8 +19,8 @@ namespace OpenLoop.Service.Models
         }
 
         /// <summary>
-        /// 上下文上限，优先级：设置里的逐模型覆盖 → 目录/OpenCode 报的值 →
-        /// 内置表（服务商不报上下文的模型）→ 保守默认值。
+        /// 上下文上限，优先级：设置里的逐模型覆盖 → 清单声明的窗口（想整家放宽时用）
+        /// → 服务商在 /models 报的窗口 → 目录/OpenCode 报的值 → 内置表 → 保守默认值。
         /// </summary>
         public static int ContextLimit(string model, AppSettings settings = null)
         {
@@ -29,6 +29,12 @@ namespace OpenLoop.Service.Models
 
             int overridden = settings?.PropsFor(id)?.ContextLimit ?? 0;
             if (overridden > 0) return overridden;
+
+            int declared = ModelWindows.DeclaredLimit(id);
+            if (declared > 0) return declared;
+
+            int reported = ModelWindows.ReportedLimit(id);
+            if (reported > 0) return reported;
 
             var known = Exact(id) ?? Leaf(id);
             if (known?.ContextLength > 0) return known.ContextLength;

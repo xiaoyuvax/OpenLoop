@@ -3,6 +3,7 @@ using System.Text.Json;
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Tools;
 using OpenLoop.Service.Logging;
+using OpenLoop.Service.Models;
 using OpenLoop.Service.Runtime;
 
 namespace OpenLoop.Service.Plugins
@@ -59,6 +60,10 @@ namespace OpenLoop.Service.Plugins
                     }
                     if (!ids.Add(manifest.Id)) continue;
                     found.Add(manifest);
+
+                    // 清单声明的窗口：静态模型（/models 里没有或没报窗口）靠它，免得落回 32K
+                    foreach (var provider in manifest.Contributions?.Providers ?? [])
+                        ModelWindows.Declare(provider.ModelPrefix, provider.Models, provider.ContextWindow);
                 }
             }
 
@@ -254,7 +259,10 @@ namespace OpenLoop.Service.Plugins
                     if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
                         foreach (var item in data.EnumerateArray())
                             if (item.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+                            {
                                 ids.Add(id.GetString());
+                                ModelWindows.Report(id.GetString(), ModelWindows.Read(item));
+                            }
                 }
                 else
                 {

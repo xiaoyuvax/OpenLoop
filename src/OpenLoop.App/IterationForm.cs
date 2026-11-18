@@ -59,7 +59,8 @@ namespace OpenLoop.App
             _before = report?.Before is { Count: > 0 } before ? before : PreviousVersions(report);
             _canRollback = _before != null && RolesToRestore(
                 new Dictionary<string, VersionEntry>(_before, StringComparer.OrdinalIgnoreCase)).Count > 0;
-            _btnRollback.Visible = _canRollback;
+            // 报告模式没有可退回的版本时也留着按钮（灰掉），别让入口忽隐忽现
+            _btnRollback.Visible = true;
 
             Text = report is { Ok: true } ? "迭代完成" : "迭代失败";
             _planScroll.Visible = false;

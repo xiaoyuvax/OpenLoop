@@ -36,7 +36,9 @@ namespace OpenLoop.Service.Models
                 if (item.ValueKind != JsonValueKind.Object) continue;
                 if (!item.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String) continue;
                 string value = id.GetString();
-                if (!string.IsNullOrWhiteSpace(value)) ids.Add(value);
+                if (string.IsNullOrWhiteSpace(value)) continue;
+                ids.Add(value);
+                ModelWindows.Report(value, ModelWindows.Read(item));
             }
             return ids.Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)

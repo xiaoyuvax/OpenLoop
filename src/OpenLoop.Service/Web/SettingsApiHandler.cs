@@ -8,6 +8,7 @@ using OpenLoop.Service.Bus;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Logging;
 using OpenLoop.Service.Models;
+using OpenLoop.Service.Plugins;
 
 namespace OpenLoop.Service.Web
 {
@@ -47,6 +48,11 @@ namespace OpenLoop.Service.Web
                     return method == "POST" ? InstallSkill(req) : NotFound(req);
                 case "skills/uninstall":
                     return method == "POST" ? UninstallSkill(req) : NotFound(req);
+                case "plugins":
+                    if (method == "GET") return Json(req, PluginRows(req));
+                    return method == "POST" ? SavePlugin(req) : NotFound(req);
+                case "plugins/remove":
+                    return method == "POST" ? RemovePlugin(req) : NotFound(req);
                 default:
                     return NotFound(req);
             }
@@ -366,6 +372,67 @@ namespace OpenLoop.Service.Web
             }
         }
 
+        // ---------------- 插件 ----------------
+
+        private static object PluginRows(WebRequest req)
+        {
+            string workspace = Query(req, "workspace");
+            try
+            {
+                return new
+                {
+                    workspaceRoot = PluginStore.RootFor(workspace),
+                    globalRoot = PluginStore.GlobalRoot,
+                    rows = PluginStore.List(workspace)
+                };
+            }
+            catch (Exception ex)
+            {
+                return new { rows = Array.Empty<object>(), error = "读取插件失败：" + ex.Message };
+            }
+        }
+
+        private static bool SavePlugin(WebRequest req)
+        {
+            var body = ReadBody<PluginRequest>(req);
+            if (body == null) return Bad(req, "invalid body");
+
+            try
+            {
+                string dir = PluginStore.Save(body.Workspace ?? "", new PluginStore.Item
+                {
+                    Directory = body.Directory,
+                    Id = body.Id,
+                    Name = body.Name,
+                    BaseUrl = body.BaseUrl,
+                    ModelsUrl = body.ModelsUrl,
+                    ModelPrefix = body.ModelPrefix,
+                    Key = body.Key
+                });
+                return Json(req, new { ok = true, directory = dir });
+            }
+            catch (Exception ex)
+            {
+                return Bad(req, "保存失败：" + ex.Message);
+            }
+        }
+
+        private static bool RemovePlugin(WebRequest req)
+        {
+            var body = ReadBody<PluginRequest>(req);
+            if (body == null || string.IsNullOrWhiteSpace(body.Directory)) return Bad(req, "缺少 directory");
+
+            try
+            {
+                PluginStore.Remove(body.Workspace ?? "", body.Directory);
+                return Json(req, new { ok = true, trash = PluginStore.TrashRoot });
+            }
+            catch (Exception ex)
+            {
+                return Bad(req, "卸载失败：" + ex.Message);
+            }
+        }
+
         // ---------------- 基础设施 ----------------
 
         private static string Query(WebRequest req, string name) => req.Queries?[name] ?? "";
@@ -438,6 +505,18 @@ namespace OpenLoop.Service.Web
             public string Name { get; set; }
             public string Path { get; set; }
             public bool Enabled { get; set; }
+        }
+
+        private sealed class PluginRequest
+        {
+            public string Workspace { get; set; }
+            public string Directory { get; set; }
+            public string Id { get; set; }
+            public string Name { get; set; }
+            public string BaseUrl { get; set; }
+            public string ModelsUrl { get; set; }
+            public string ModelPrefix { get; set; }
+            public string Key { get; set; }
         }
     }
 }

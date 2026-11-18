@@ -523,8 +523,8 @@ namespace OpenLoop.Service.Worker
                 AgentIdentity.IdFor("A", session.Id), "Worker", session.Workspace, session.Model, text);
 
             string id = session.Id;
-            // 流式正文只在确认不是工具调用协议时才写进 Assistant，与 LoopView/SideWorkView 的
-            // streamBuffer + LooksLikeToolCallText 过滤保持一致；协议原文不能出现在正文里。
+            // 流式正文只写截掉协议片段后的部分（CutToolCallText），与 LoopView/SideWorkView 的
+            // streamBuffer 过滤保持一致；协议原文不能出现在正文里。
             string stream = "";
             // 上下文占比：本轮 prompt 估算 + 已生成内容（按增量累加，避免每次 delta 重扫整段）
             int promptTokens = 0, liveTokens = 0;
@@ -559,7 +559,8 @@ namespace OpenLoop.Service.Worker
                     {
                         stream += piece;
                         liveTokens += AgentContext.EstimateTokens(piece);
-                        if (!AgentToolCallParser.LooksLikeToolCallText(stream)) turn.Assistant = stream;
+                        // 正文只放截掉协议片段后的部分：模型边写正文边吐调用原文时，别让协议原文先闪现
+                        turn.Assistant = AgentToolCallParser.CutToolCallText(stream);
                         session.ContextTokens = promptTokens + liveTokens;
                         session.Revision++;
                     }

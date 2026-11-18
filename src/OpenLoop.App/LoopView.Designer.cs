@@ -42,6 +42,9 @@ namespace OpenLoop.App
         private AntdUI.Label _lblFree;
         private AntdUI.Button _btnSend;
         private AntdUI.Button _btnIterate;
+        private AntdUI.Button _btnCommit;
+        private AntdUI.Button _btnPush;
+        private AntdUI.Button _btnRollback;
         private AntdUI.Label _lblStatus;
         private ToolTip _tips;
 
@@ -94,6 +97,9 @@ namespace OpenLoop.App
             _lblFree = new AntdUI.Label();
             _btnSend = new AntdUI.Button();
             _btnIterate = new AntdUI.Button();
+            _btnCommit = new AntdUI.Button();
+            _btnPush = new AntdUI.Button();
+            _btnRollback = new AntdUI.Button();
             _lblStatus = new AntdUI.Label();
 
             SuspendLayout();
@@ -266,6 +272,9 @@ namespace OpenLoop.App
             _detailFlow.Controls.Add(_lblDStatus);
             _detailFlow.Controls.Add(_lblDPath);
             _detailFlow.Controls.Add(_btnIterate);
+            _detailFlow.Controls.Add(_btnCommit);
+            _detailFlow.Controls.Add(_btnPush);
+            _detailFlow.Controls.Add(_btnRollback);
 
             _sideHost.Controls.Add(_detailFlow);
             _sideHost.Controls.Add(_sideBtw);
@@ -399,6 +408,37 @@ namespace OpenLoop.App
             _btnIterate.IconSvg = UiIcons.Of(UiIcons.Refresh, UiStyle.Muted);
             _btnIterate.Margin = new Padding(0, 0, 0, 8);
             _btnIterate.Click += OnIterateClick;
+
+            // 仓库动作：没有改动/没有上一版本时灰着，同步见 SyncRepoButtons
+            _btnCommit.Name = "btnCommit";
+            _btnCommit.Text = "提交";
+            _btnCommit.Ghost = true;
+            _btnCommit.Radius = 8;
+            _btnCommit.Width = 76;
+            _btnCommit.Height = 30;
+            _btnCommit.Enabled = false;
+            _btnCommit.Margin = new Padding(0, 0, 0, 6);
+            _btnCommit.Click += OnCommitClick;
+
+            _btnPush.Name = "btnPush";
+            _btnPush.Text = "提交并推送";
+            _btnPush.Ghost = true;
+            _btnPush.Radius = 8;
+            _btnPush.Width = 110;
+            _btnPush.Height = 30;
+            _btnPush.Enabled = false;
+            _btnPush.Margin = new Padding(0, 0, 0, 6);
+            _btnPush.Click += OnPushClick;
+
+            _btnRollback.Name = "btnRollback";
+            _btnRollback.Text = "退回上一个版本";
+            _btnRollback.Ghost = true;
+            _btnRollback.Radius = 8;
+            _btnRollback.Width = 132;
+            _btnRollback.Height = 30;
+            _btnRollback.Enabled = false;
+            _btnRollback.Margin = new Padding(0, 0, 0, 6);
+            _btnRollback.Click += OnRollbackClick;
 
             _lblStatus.AutoSize = true;
             _lblStatus.Text = "";

@@ -39,6 +39,14 @@ namespace OpenLoop.Service.Source
         /// <summary>留在清单里但不再参与迭代（比如已经收编成包）。</summary>
         public bool Retired { get; init; }
 
+        /// <summary>
+        /// 源码不可用时的包兜底（消费方的 csproj 按同名包编译）；空 = 没有兜底，源码拉不到就是硬失败。
+        /// 临时组件（如 fctb）靠它保证不因为少一份检出就编不过。
+        /// </summary>
+        public string PackageId { get; init; } = "";
+
+        public string PackageVersion { get; init; } = "";
+
         /// <summary>谁引用它：这些项目就是它的下游，依赖方向由此反推。</summary>
         public List<ComponentConsumer> Consumers { get; init; } = [];
 
@@ -65,7 +73,10 @@ namespace OpenLoop.Service.Source
             public List<ComponentSpec> Components { get; set; } = [];
         }
 
-        /// <summary>硬编码兜底：当前部署的组件构成（官方仓库）。</summary>
+        /// <summary>
+        /// 硬编码兜底：常驻组件（官方仓库）。临时组件（如 fctb）只写在 components.json 里，
+        /// 没有清单时不复活它——ChatFlow 会退回 NuGet 包。
+        /// </summary>
         public static IReadOnlyList<ComponentSpec> Defaults() =>
         [
             new()

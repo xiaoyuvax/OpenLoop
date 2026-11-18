@@ -28,7 +28,7 @@
     {
       "id": "fctb",
       "label": "FastColoredTextBox",
-      "url": "",
+      "url": "https://github.com/xiaoyuvax/FastColoredTextBox.git",
       "dir": "FastColoredTextBox",
       "marker": "FastColoredTextBox/FastColoredTextBox.csproj",
       "versionFile": "FastColoredTextBox/FastColoredTextBox.csproj",
@@ -37,7 +37,8 @@
       "consumers": [
         { "repo": "ChatFlow", "project": "ChatFlow" }
       ],
-      "retired": true
+      "packageId": "Vax-FCTB",
+      "packageVersion": "2.19.0.233"
     }
   ]
 }

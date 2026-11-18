@@ -71,7 +71,7 @@
 
 ## UI 规则
 
-- Worker（`WorkerSessionHost`）与 Loop、旁路的会话展示保持一致：流式正文先过滤工具协议原文（统一用 `AgentToolCallParser.LooksLikeToolCallText`），不要各写一份判据。
+- Worker（`WorkerSessionHost`）与 Loop、旁路的会话展示保持一致：流式正文一律用 `AgentToolCallParser.CutToolCallText` 截掉协议片段（不只判「整段以 marker 开头」，否则协议原文会先闪现再被收尾清掉），不要各写一份判据。
 - 仓库采用 AntdUI（2.4.15）；`AntdUI.xml` 是 API 事实来源，不猜属性。
 - 本机 250% DPI：
   - 设计器里的尺寸会自动缩放；**运行时算出来的像素必须 `DeviceDpi/96` 缩放**。
@@ -91,7 +91,7 @@
 - 请求体构建抽成 `internal` 纯函数并单测，不在 async 方法里内联拼字典；可空字段条件写入（`JsonIgnoreCondition.WhenWritingNull` 不作用于 `Dictionary` 的值）。
 - WinForms 菜单不要在 `Closed` 里同步 `Dispose`：`ModalMenuFilter` 关闭流程还会访问句柄，会抛 `ObjectDisposedException` 崩进程；用 `BeginInvoke` 延后销毁。
 - A/I 的二进制一律从安装目录 `backends\` 启动（与壳同处安装目录）；`%APPDATA%\OpenLoop\versions\<role>\<ver>-<sha>\` 只是版本存档与回退源，每角色**只留当前 + 上一版**（壳启动时清一次，换版后清一次）。换版 = 存档 → 覆盖 `backends\`（旧文件先备份）→ 从 `backends\` 重启；起不来就用备份还原。
-- 参与迭代的外部组件在仓库根 `components.json`（url / 检出目录 / 程序集 / 版本号文件 / `consumers`）；清单缺失或漏项按内置官方组件兜底。换 fork 只改该组件的 `url`，由 Loop 代改；`consumers` 没写对，组件会判成「走包」而不参与迭代。
+- 参与迭代的外部组件在仓库根 `components.json`（url / 检出目录 / 程序集 / 版本号文件 / `consumers` / `packageId`+`packageVersion`）；清单缺失或漏项按内置官方组件兜底（临时组件不进兜底）。换 fork 只改该组件的 `url`，由 Loop 代改；`consumers` 没写对，组件会判成「走包」而不参与迭代。源码拉不到时按 `packageId` 走包（消费方 csproj 里按 `-p:OpenLoopPkg_<包id去标点>` 注入条件引用），组件本轮不参与迭代；`packageVersion` 只是下限，迭代时实际取 nuget.org 上 >= 它的最高稳定版，最新版编不过就退回这个参考版本。没有 `packageId` 就是硬失败，编译不过留给用户处理。
 
 ## 设计器兼容（强制）
 

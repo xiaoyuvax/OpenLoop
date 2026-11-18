@@ -107,6 +107,12 @@ namespace OpenLoop.Service.Plugins
         public string BaseUrl { get; set; }
         public List<string> Models { get; set; } = [];
 
+        /// <summary>
+        /// 可选：这家模型的上下文窗口。上游 <c>/models</c> 不报窗口时靠它，否则落回 32K 默认值把长上下文截断。
+        /// 0 表示不声明（有报值就用报值）。
+        /// </summary>
+        public int ContextWindow { get; set; }
+
         /// <summary>密钥所在环境变量名；空表示不带鉴权。</summary>
         public string KeyEnv { get; set; }
 

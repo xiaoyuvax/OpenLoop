@@ -14,6 +14,8 @@ namespace OpenLoop.Service.Tests
 
             Assert.Contains(list, c => c.Id == "puppetcore" && c.Url == SourceSync.PuppetCoreUrl);
             Assert.Contains(list, c => c.Id == "chatflow" && c.Url == SourceSync.ChatFlowUrl);
+            // fctb 是临时组件：没有清单时不硬编码兜底（ChatFlow 走包引用）
+            Assert.DoesNotContain(list, c => c.Id == "fctb");
         }
 
         [Fact]
@@ -52,6 +54,18 @@ namespace OpenLoop.Service.Tests
                 """)).ToList();
 
             Assert.True(list.FindIndex(c => c.Id == "fctb") < list.FindIndex(c => c.Id == "chatflow"));
+        }
+
+        [Fact]
+        public void Package_fallback_fields_are_read_from_the_catalog()
+        {
+            var list = ComponentCatalog.Merge(ComponentCatalog.Parse("""
+                { "components": [ { "id": "fctb", "packageId": "Vax-FCTB", "packageVersion": "2.19.0.233" } ] }
+                """));
+
+            var fctb = list.Single(c => c.Id == "fctb");
+            Assert.Equal("Vax-FCTB", fctb.PackageId);
+            Assert.Equal("2.19.0.233", fctb.PackageVersion);
         }
 
         [Fact]

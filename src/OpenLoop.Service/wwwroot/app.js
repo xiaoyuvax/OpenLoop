@@ -721,6 +721,8 @@ function SettingsPanel({ caps, onClose }) {
   const [skills, setSkills] = useState({ root: '', rows: [], error: '' });
   const [skillScope, setSkillScope] = useState('project');
   const [installPath, setInstallPath] = useState('');
+  const [plugins, setPlugins] = useState({ workspaceRoot: '', globalRoot: '', rows: [], error: '' });
+  const [pluginDraft, setPluginDraft] = useState(null);
   const workspace = caps?.workspace || localStorage.getItem('openloop.workspace') || '';
 
   const reload = async () => {
@@ -739,6 +741,13 @@ function SettingsPanel({ caps, onClose }) {
     } catch (e) { message.error('读取技能失败：' + e.message); }
   };
   useEffect(() => { if (tab === 'skills') loadSkills(skillScope); }, [tab, skillScope]);
+
+  const loadPlugins = async () => {
+    try {
+      setPlugins(await api(`/api/settings/plugins?workspace=${encodeURIComponent(workspace)}`) || { rows: [] });
+    } catch (e) { message.error('读取插件失败：' + e.message); }
+  };
+  useEffect(() => { if (tab === 'plugins') loadPlugins(); }, [tab]);
 
   const patch = p => setDraft(d => ({ ...d, ...p }));
   const providers = draft?.providers || [];
@@ -869,6 +878,31 @@ function SettingsPanel({ caps, onClose }) {
       message.success('已安装到 ' + r.directory);
       await loadSkills(skillScope);
     } catch (e) { message.error('安装失败：' + e.message); }
+  };
+
+  const blankPlugin = () => ({
+    directory: '', id: '', name: '', baseUrl: '', modelsUrl: '', modelPrefix: '', key: '', models: 0
+  });
+
+  const savePlugin = async () => {
+    if (!pluginDraft) return;
+    if (!(pluginDraft.id || '').trim()) return message.warning('插件 id 不能为空');
+    try {
+      await post('/api/settings/plugins', { ...pluginDraft, workspace });
+      message.success('已保存，会话里的提供商下拉重开一次就能看到新模型');
+      setPluginDraft(null);
+      await loadPlugins();
+    } catch (e) { message.error('保存失败：' + e.message); }
+  };
+
+  const removePlugin = async row => {
+    const where = row.from === '全局' ? '全局' : '当前工作区';
+    if (!window.confirm(`卸载${where}插件 ${row.id}？\n\n整个目录会移进 OpenLoop 的插件回收目录，需要时能捞回来。\n${row.directory}`)) return;
+    try {
+      await post('/api/settings/plugins/remove', { workspace, directory: row.directory });
+      message.success('已卸载 ' + row.id);
+      await loadPlugins();
+    } catch (e) { message.error('卸载失败：' + e.message); }
   };
 
   if (!draft) return h('div', { style: { padding: 30, textAlign: 'center' } }, h(Muted, null, '正在读取设置…'));
@@ -1051,6 +1085,50 @@ function SettingsPanel({ caps, onClose }) {
     h(SettingHint, { key: 'note' }, '项目技能停用/启用走账本（由 I 收敛）；全局技能只改本机开关。.opencode/skills 里的技能由 opencode 管理，这里只能看。')
   ];
 
+  const pluginRows = plugins.rows || [];
+  const pluginsPage = [
+    h(SettingRow, { key: 'roots', label: '存放位置' },
+      h('div', { style: { minWidth: 0 } },
+        h(Muted, { style: { display: 'block', wordBreak: 'break-all' } },
+          '工作区 ' + (plugins.workspaceRoot || '（还没打开工作区，只看全局）')),
+        h(Muted, { style: { display: 'block', wordBreak: 'break-all' } },
+          '全局 ' + (plugins.globalRoot || '')))),
+    h(SettingRow, { key: 'actions', label: '' },
+      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+        h(Button, { onClick: () => setPluginDraft(blankPlugin()) }, '添加'),
+        h(Button, { onClick: loadPlugins }, '刷新'))),
+    h('div', {
+      className: 'ol-scroll',
+      style: { height: 320, border: '1px solid #f0f0f0', borderRadius: 8, padding: 6 }
+    },
+      plugins.error ? h(Muted, { style: { display: 'block', padding: 8 } }, plugins.error)
+        : pluginRows.length === 0 ? h(Muted, { style: { display: 'block', padding: 8 } }, '还没有插件')
+          : pluginRows.map(row => h('div', {
+            key: row.directory,
+            style: { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderBottom: '1px solid #f5f5f5' }
+          },
+            h('div', { style: { minWidth: 0, flex: 1 } },
+              h('div', { style: { fontSize: 13 } }, row.name,
+                h(Muted, { style: { marginLeft: 8 } }, row.id),
+                h(Muted, { style: { marginLeft: 8 } }, row.from || '')),
+              h(Muted, { style: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                [row.kind, row.version, row.baseUrl].filter(Boolean).join(' · ') || row.directory)),
+            h(Button, {
+              size: 'small',
+              disabled: !row.providers,
+              onClick: () => setPluginDraft({
+                directory: row.directory, id: row.id, name: row.name,
+                baseUrl: row.baseUrl || '', modelsUrl: row.modelsUrl || '',
+                modelPrefix: row.modelPrefix || '', key: '', models: row.models || 0
+              })
+            }, '编辑'),
+            h(Button, { size: 'small', danger: true, onClick: () => removePlugin(row) }, '卸载')))),
+    h(SettingHint, { key: 'note' },
+      '存盘即生效，会话里的提供商下拉几秒内自己补上。「编辑」只改 provider 型插件的地址与密钥，'
+      + '工具/MCP 型插件的清单自己去目录里改；「卸载」把整个目录移进回收目录，可捞回。'
+      + '同名插件工作区优先，全局新插件点「添加」时写进当前工作区。')
+  ];
+
   return h('div', null,
     h(Tabs, {
       size: 'small', activeKey: tab, onChange: setTab,
@@ -1059,12 +1137,48 @@ function SettingsPanel({ caps, onClose }) {
         { key: 'opencode', label: 'OpenCode', children: h('div', { style: { paddingTop: 12 } }, openCode) },
         { key: 'tools', label: '工具', children: h('div', { style: { paddingTop: 12 } }, tools) },
         { key: 'models', label: '模型', children: h('div', { style: { paddingTop: 12 } }, models) },
-        { key: 'skills', label: '技能', children: h('div', { style: { paddingTop: 12 } }, skillsPage) }
+        { key: 'skills', label: '技能', children: h('div', { style: { paddingTop: 12 } }, skillsPage) },
+        { key: 'plugins', label: '插件', children: h('div', { style: { paddingTop: 12 } }, pluginsPage) }
       ]
     }),
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 } },
       h(Button, { onClick: onClose }, '取消'),
       h(Button, { type: 'primary', loading: busy, onClick: save }, '保存')),
+    h(Modal, {
+      open: pluginDraft != null, title: pluginDraft?.directory ? '编辑插件' : '添加插件',
+      okText: '保存', cancelText: '取消', width: 560,
+      onOk: savePlugin, onCancel: () => setPluginDraft(null)
+    },
+      pluginDraft ? h('div', { style: { display: 'grid', gap: 10, paddingTop: 8 } },
+        h(Muted, null, pluginDraft.directory || '会写进当前工作区的插件目录（没有工作区就写全局）'),
+        h(Input, {
+          value: pluginDraft.id, placeholder: '插件 id（也是目录名）',
+          onChange: e => setPluginDraft(d => ({ ...d, id: e.target.value }))
+        }),
+        h(Input, {
+          value: pluginDraft.name, placeholder: '下拉里显示的名字，留空用 id',
+          onChange: e => setPluginDraft(d => ({ ...d, name: e.target.value }))
+        }),
+        h(Input, {
+          value: pluginDraft.baseUrl, placeholder: 'OpenAI 兼容根地址，例如 http://127.0.0.1:3065/v1',
+          onChange: e => setPluginDraft(d => ({ ...d, baseUrl: e.target.value }))
+        }),
+        h(Input, {
+          value: pluginDraft.modelsUrl, placeholder: '可选：GET 这个地址取 data[].id 当模型清单',
+          onChange: e => setPluginDraft(d => ({ ...d, modelsUrl: e.target.value }))
+        }),
+        h(Input, {
+          value: pluginDraft.modelPrefix, placeholder: '可选：界面上的模型前缀，发上游前会去掉，例如 a2a/',
+          onChange: e => setPluginDraft(d => ({ ...d, modelPrefix: e.target.value }))
+        }),
+        h(Input.Password, {
+          value: pluginDraft.key,
+          placeholder: pluginDraft.directory ? '写入同目录 key.txt；留空表示不改' : '写入同目录 key.txt，可留空',
+          onChange: e => setPluginDraft(d => ({ ...d, key: e.target.value }))
+        }),
+        pluginDraft.directory
+          ? h(Muted, null, `清单声明了 ${pluginDraft.models || 0} 个模型，这里不改 models 与工具/MCP 字段。`)
+          : h(Muted, null, '只建 provider 贡献，模型清单靠 ModelsUrl 自动发现。')) : null),
     h(Modal, {
       open: propsModel != null, title: '模型属性', okText: '确定', cancelText: '取消',
       onOk: applyProps, onCancel: () => setPropsModel(null), width: 420

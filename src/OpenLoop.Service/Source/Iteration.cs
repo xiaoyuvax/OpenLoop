@@ -45,7 +45,8 @@ namespace OpenLoop.Service.Source
         /// 壳把 A/I 当建序引用（ReferenceOutputAssembly=false），单文件 + RID 会让它们
         /// 被算成自包含，框架依赖发布就撞 NETSDK1151；这个校验对建序引用没有意义，关掉。
         /// </summary>
-        internal static string[] PublishArgs(string publishMode, string output)
+        internal static string[] PublishArgs(
+            string publishMode, string output, IReadOnlyDictionary<string, string> properties = null)
         {
             var args = new List<string>
             {
@@ -58,6 +59,8 @@ namespace OpenLoop.Service.Source
                 "-p:DebugSymbols=false",
                 "-p:ValidateExecutableReferencesMatchSelfContained=false"
             };
+
+            args.AddRange(PropertyArgs(properties));
 
             if (string.Equals(publishMode, SelfContainedMode, StringComparison.OrdinalIgnoreCase))
             {
@@ -73,20 +76,22 @@ namespace OpenLoop.Service.Source
             return [.. args];
         }
 
-        public static async Task<Step> BuildAsync(CancellationToken ct = default)
+        public static async Task<Step> BuildAsync(
+            CancellationToken ct = default, IReadOnlyDictionary<string, string> properties = null)
         {
             string root = SourceSync.SourceRoot;
             if (!File.Exists(Path.Combine(root, Solution)))
                 return new("build", false, "找不到 " + Path.Combine(root, Solution));
 
             var (ok, output) = await ExecAsync("dotnet",
-                ["build", Solution, "-c", "Release", "--nologo", "-v", "q"], root, ct);
+                ["build", Solution, "-c", "Release", "--nologo", "-v", "q", .. PropertyArgs(properties)], root, ct);
             return new("build", ok, Tail(output, ok ? 3 : 12));
         }
 
         /// <summary>发布一个角色到 <c>versions/&lt;role&gt;/&lt;version&gt;-&lt;sha8&gt;/</c>，返回目录。</summary>
         public static async Task<Step> PublishAsync(
-            string role, string version, string publishMode = null, CancellationToken ct = default)
+            string role, string version, string publishMode = null, CancellationToken ct = default,
+            IReadOnlyDictionary<string, string> properties = null)
         {
             string root = SourceSync.SourceRoot;
             string temp = Path.Combine(Path.GetTempPath(), $"openloop-{role}-{Guid.NewGuid():N}");
@@ -94,7 +99,7 @@ namespace OpenLoop.Service.Source
             {
                 var (ok, output) = await ExecAsync("dotnet",
                     ["publish", Path.Combine("src", "OpenLoop." + role.ToUpperInvariant()),
-                        .. PublishArgs(publishMode, temp)], root, ct);
+                        .. PublishArgs(publishMode, temp, properties)], root, ct);
                 if (!ok) return new("publish " + role, false, Tail(output, 12));
 
                 string exe = VersionStore.ExePath(temp, role);
@@ -180,6 +185,12 @@ namespace OpenLoop.Service.Source
             string tail = (sha ?? "").Length >= 8 ? sha[..8] : (sha ?? "").PadRight(8, '0');
             return clean + "-" + tail;
         }
+
+        /// <summary>注入项（如降级的包版本）逐个变成 -p:key=value；build 与 publish 必须用同一份。</summary>
+        internal static string[] PropertyArgs(IReadOnlyDictionary<string, string> properties)
+            => [.. (properties ?? new Dictionary<string, string>())
+                .Where(p => !string.IsNullOrWhiteSpace(p.Key))
+                .Select(p => "-p:" + p.Key + "=" + p.Value)];
 
         /// <summary>只留最后几行非空输出，避免把整段构建日志贴进聊天。</summary>
         internal static string Tail(string text, int lines)

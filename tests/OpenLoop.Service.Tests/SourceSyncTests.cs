@@ -62,6 +62,25 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Missing_source_with_a_package_falls_back_instead_of_failing()
+        {
+            var spec = new ComponentSpec
+            {
+                Id = "fctb", Dir = "FastColoredTextBox", PackageId = "Vax-FCTB", PackageVersion = "2.19.0.233"
+            };
+
+            var degraded = SourceSync.Unavailable(spec, @"C:\x", "克隆失败：nope");
+            Assert.Equal(SourceState.Unknown, degraded.State);
+            Assert.Contains("Vax-FCTB", degraded.Detail);
+            Assert.Contains("2.19.0.233", degraded.Detail);
+
+            // 没有包兜底就是硬失败：编不过这件事留给用户决定怎么处理
+            var failed = SourceSync.Unavailable(spec with { PackageId = "" }, @"C:\x", "克隆失败：nope");
+            Assert.Equal(SourceState.Failed, failed.State);
+            Assert.DoesNotContain("NuGet", failed.Detail);
+        }
+
+        [Fact]
         public void SiblingOf_places_component_next_to_the_source_root()
         {
             string dev = Path.Combine(Path.GetTempPath(), "ol-dev", "OpenLoop");

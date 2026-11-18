@@ -150,5 +150,16 @@ namespace OpenLoop.Core.Tests
             Assert.False(AgentToolCallParser.LooksLikeToolCallText("先看一下现状。\ntool-call: {\"tool\":\"x\"}"));
             Assert.False(AgentToolCallParser.LooksLikeToolCallText(""));
         }
+
+        [Fact]
+        public void CutToolCallTextHidesProtocolTail()
+        {
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText(
+                "先看一下现状。\n<|DSML| invoke name=\"Shell\"><|DSML| parameter name=\"command\">ls</|DSML| parameter>"));
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText(
+                "先看一下现状。\n</｜｜DSML｜｜ invoke>"));
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("tool-call: {\"tool\":\"x\"}"));
+            Assert.Equal("普通回答，含 <code> 标签。", AgentToolCallParser.CutToolCallText("普通回答，含 <code> 标签。"));
+        }
     }
 }

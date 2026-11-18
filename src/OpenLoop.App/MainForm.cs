@@ -85,9 +85,9 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ActiveRunStatus => Active?.View?.RunStatus ?? "";
 
-        /// <summary>已配置的提供商摘要（A 面自检用）。</summary>
-        public string ProviderSummary => string.Join("; ",
-            _settings.Providers.Select(p => $"{p.Name}|{p.Kind}|{p.BaseUrl}"));
+        /// <summary>已配置的提供商摘要（A 面自检用）：与下拉同源，插件贡献的也在里面。</summary>
+        public string ProviderSummary => string.Join("; ", ProviderList.All(_settings)
+            .Select(p => $"{p.Name}|{(string.IsNullOrWhiteSpace(p.Tag?.Kind) ? "插件" : p.Tag.Kind)}|{p.Tag?.BaseUrl}"));
 
         /// <summary>AntdUI 实际使用的字体（A 面自检用）。</summary>
         public string UiFont => $"{AntdUI.Config.Font?.Name}|{AntdUI.Config.Font?.SizeInPoints}|{Font.Name}|{Font.SizeInPoints}";

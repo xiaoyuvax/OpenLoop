@@ -30,6 +30,7 @@ namespace OpenLoop.App
         private AntdUI.Button _btnSkillInstall;
         private AntdUI.Button _btnSkillUninstall;
         private AntdUI.TabPage _pageSkills;
+        private AntdUI.TabPage _pagePlugins;
 
         private TableLayoutPanel _general;
         private AntdUI.Label _lblLanguage;
@@ -120,6 +121,7 @@ namespace OpenLoop.App
             _pageOpenCode = new AntdUI.TabPage();
             _pageTools = new AntdUI.TabPage();
             _pageSkills = new AntdUI.TabPage();
+            _pagePlugins = new AntdUI.TabPage();
 
             _skills = new TableLayoutPanel();
             _skillHeader = new TableLayoutPanel();
@@ -245,6 +247,10 @@ namespace OpenLoop.App
             _pageSkills.Text = "技能";
             _pageSkills.ReadOnly = true;
             _pageSkills.Dock = DockStyle.Fill;
+
+            _pagePlugins.Text = "插件";
+            _pagePlugins.ReadOnly = true;
+            _pagePlugins.Dock = DockStyle.Fill;
 
             // 普通
             _general.Dock = DockStyle.Fill;
@@ -784,6 +790,8 @@ namespace OpenLoop.App
             _tabs.Pages.Add(_pageTools);
             _tabs.Pages.Add(_pageModels);
             _tabs.Pages.Add(_pageSkills);
+            _tabs.Pages.Add(_pagePlugins);
+            InitPluginsPage(_pagePlugins);
 
             _buttons.Dock = DockStyle.Fill;
             _buttons.FlowDirection = FlowDirection.RightToLeft;

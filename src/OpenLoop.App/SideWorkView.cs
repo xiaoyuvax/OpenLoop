@@ -203,8 +203,9 @@ namespace OpenLoop.App
                 Interlocked.Exchange(ref lastDeltaUi, now);
                 string snapshot;
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
-                if (AgentToolCallParser.LooksLikeToolCallText(snapshot)) return;
-                RunOnUi(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(snapshot)));
+                string visible = AgentToolCallParser.CutToolCallText(snapshot);
+                if (visible.Length == 0) return;
+                RunOnUi(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(visible)));
             };
 
             var reasoningBuffer = new StringBuilder();

@@ -328,6 +328,22 @@ namespace OpenLoop.Core.Agent
             => !string.IsNullOrWhiteSpace(modelOutput)
                && modelOutput.TrimStart().StartsWith("tool-call", StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// 流式显示用：截掉从第一个工具协议片段起的尾巴。模型在正文后面接着吐调用原文时，
+        /// 只在整段以 marker 开头才屏蔽会让协议原文先显示、收尾再被清掉（用户看到闪现）。
+        /// </summary>
+        public static string CutToolCallText(string modelOutput)
+        {
+            if (string.IsNullOrWhiteSpace(modelOutput)) return "";
+            var match = ProtocolFragmentRegex.Match(modelOutput);
+            return match.Success ? modelOutput[..match.Index].TrimEnd() : modelOutput;
+        }
+
+        /// <summary>协议片段起始：marker，或带装饰的标签头（<c>&lt;|DSML| invoke</c>、<c>&lt;tool_call&gt;</c> 等）。</summary>
+        private static readonly Regex ProtocolFragmentRegex = new(
+            @"<\s*/?\s*[|｜]{0,3}\s*(?:DSML|tool_call|invoke|parameter|function)\b|\btool-call\s*[:：]",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         /// <summary>全角引号/竖线归一化成 ASCII，供协议判定使用（不改动原文本）。</summary>
         private static string NormalizeDelimiters(string text) => text
             .Replace('｜', '"').Replace('＂', '"')

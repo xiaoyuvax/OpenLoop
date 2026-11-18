@@ -11,6 +11,8 @@ using OpenLoop.Core.Tools;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Trace;
 using OpenLoop.Service.Pending;
+using OpenLoop.Service.Shell;
+using OpenLoop.Service.Source;
 using OpenLoop.Service.Worker;
 
 namespace OpenLoop.App
@@ -41,6 +43,9 @@ namespace OpenLoop.App
         private bool _filling;
         private bool _fillingProviders;
         private bool _iterating;
+        private bool _repoBusy;
+        private bool _hasChanges;
+        private bool _hasRollback;
         private bool _layoutReady;
 
         /// <summary>「文件」页在侧栏标签里的下标；第一次点文件路径时才加出来（-1 = 还没有）。</summary>
@@ -208,6 +213,10 @@ namespace OpenLoop.App
             SelectEffort(_effort);
             SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort);
             _tips.SetToolTip(_btnIterate, "先出计划（谁升版、改了什么），确认后编译并换 A/I，最后重启壳（界面会短暂退出）");
+            _tips.SetToolTip(_btnCommit, "提交托管仓库里的改动（工作树干净时不可用）");
+            _tips.SetToolTip(_btnPush, "提交并推送到远端（工作树干净时不可用）");
+            _tips.SetToolTip(_btnRollback, "把 A/I 退回上一版本，壳保持当前版本（没有上一版本时不可用）");
+            SyncRepoButtons();
             _pending.Bind(_queue);
             _pending.EditRequested += BeginEdit;
             _pending.ImmediateRequested += OnImmediateRequested;
@@ -244,6 +253,7 @@ namespace OpenLoop.App
             _sideBtw.Initialize(_workspace, settings);
             ApplyDetail();
             UpdateSendButton();
+            _ = RefreshRepoActionsAsync();
 
             ModelCatalog.Changed += OnCatalogChanged;
             Disposed += (_, _) =>
@@ -542,9 +552,10 @@ namespace OpenLoop.App
                 Interlocked.Exchange(ref lastDeltaUi, now);
                 string snapshot;
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
-                if (AgentToolCallParser.LooksLikeToolCallText(snapshot)) return;
+                string visible = AgentToolCallParser.CutToolCallText(snapshot);
+                if (visible.Length == 0) return;
                 // 正文先进数据：标签页关掉（句柄失效）时界面更新会被跳过，重开后按数据重建
-                turn.AssistantText = LlmTextSanitizer.StripSafetyLines(snapshot);
+                turn.AssistantText = LlmTextSanitizer.StripSafetyLines(visible);
                 RunOnUi(() =>
                 {
                     _contextTokens = _promptTokens + _liveTokens;
@@ -719,6 +730,8 @@ namespace OpenLoop.App
                 SetRunning(false);
                 RefreshChat();
                 SaveLoopChat();
+                // 这一轮可能改过源码/配置：仓库按钮跟着刷新
+                _ = RefreshRepoActionsAsync();
                 // 首轮结束后自动总结一次标题（已有标题就不再覆盖），和 Worker 一致
                 if (!IsDisposed && IsHandleCreated && _book.Turns.Count == 1
                     && string.IsNullOrWhiteSpace(LoopIndex.Title(_workspace, _sessionId)))
@@ -885,6 +898,7 @@ namespace OpenLoop.App
             _btnPanel.IconSvg = UiIcons.Of(
                 _upperSplit.Panel2Collapsed ? UiIcons.PanelOpen : UiIcons.PanelClose, UiStyle.Text);
             if (!_upperSplit.Panel2Collapsed) ApplyLayout();
+            if (!_upperSplit.Panel2Collapsed) _ = RefreshRepoActionsAsync();
         }
 
         /// <summary>工具条纵向居中：FlowLayoutPanel 不会替子控件做垂直对齐，按当前行高等分上下留白。</summary>
@@ -919,7 +933,11 @@ namespace OpenLoop.App
                 if (index == BrowserPage) _browser.EnsureLoaded();
             }
             _fileView.Visible = index >= 0 && index == _filePage;
-            if (index == 0) ApplyDetail();
+            if (index == 0)
+            {
+                ApplyDetail();
+                _ = RefreshRepoActionsAsync();
+            }
         }
 
         /// <summary>聊天区里点链接：网址进右侧「网页」页，本地路径进「文件」页（文件夹直接用资源管理器打开）。</summary>
@@ -1352,11 +1370,155 @@ namespace OpenLoop.App
 
         internal string IterateEntry => _btnIterate.Text;
 
+        /// <summary>按钮可用性只有一处口径：有改动才能提交，有上一版本才能退回，跑迭代时整组灰掉。</summary>
+        private void SyncRepoButtons()
+        {
+            bool idle = !_iterating && !_repoBusy;
+            _btnCommit.Enabled = _btnPush.Enabled = idle && _hasChanges;
+            _btnRollback.Enabled = idle && _hasRollback;
+        }
+
+        /// <summary>问 I 一次工作树与版本表：I 不可达时保持禁用（提交本来也得走 I）。</summary>
+        private async Task RefreshRepoActionsAsync()
+        {
+            bool hasChanges = false;
+            try
+            {
+                using var client = new OpenLoop.Service.Web.LoopApiClient();
+                var status = await client.GitStatusAsync();
+                hasChanges = (status?.Repos ?? []).Any(r => r.Files.Count > 0);
+            }
+            catch
+            {
+            }
+            if (IsDisposed) return;
+            _hasChanges = hasChanges;
+            _hasRollback = RollbackTargets().Count > 0;
+            SyncRepoButtons();
+        }
+
+        /// <summary>可退回的上一版本：previous.json 里有登记、目录还在，且与当前跑的不是同一份。</summary>
+        private static Dictionary<string, VersionEntry> RollbackTargets()
+        {
+            var store = new VersionStore();
+            var map = new Dictionary<string, VersionEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (string role in new[] { "a", "i" })
+            {
+                var entry = store.Previous(role);
+                if (string.IsNullOrWhiteSpace(entry?.Dir) || !Directory.Exists(entry.Dir)) continue;
+                if (string.Equals(store.Current(role)?.Dir, entry.Dir, StringComparison.OrdinalIgnoreCase)) continue;
+                map[role] = entry;
+            }
+            return map;
+        }
+
+        private async void OnCommitClick(object sender, EventArgs e) => await CommitReposAsync(push: false);
+
+        private async void OnPushClick(object sender, EventArgs e) => await CommitReposAsync(push: true);
+
+        /// <summary>先取预览（每个仓库的文件清单 + token），原样带回再提交；点按钮本身就是显式确认。</summary>
+        private async Task CommitReposAsync(bool push)
+        {
+            if (_repoBusy || _iterating) return;
+            _repoBusy = true;
+            SyncRepoButtons();
+            _lblStatus.Text = push ? "状态: 正在提交并推送…" : "状态: 正在提交…";
+            try
+            {
+                using var client = new OpenLoop.Service.Web.LoopApiClient(timeout: TimeSpan.FromMinutes(5));
+                var status = await client.GitStatusAsync();
+                var repos = (status?.Repos ?? []).Where(r => r.Files.Count > 0).ToList();
+                string skipped = string.Join("；", (status?.Repos ?? [])
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Error))
+                    .Select(r => $"{r.Id}: {r.Error}"));
+                if (repos.Count == 0)
+                {
+                    _lblStatus.Text = "状态: 没有改动";
+                    Notify("提交", "工作树是干净的，没有可提交的改动。");
+                    return;
+                }
+
+                var tokens = repos.ToDictionary(r => r.Id, r => r.Token, StringComparer.OrdinalIgnoreCase);
+                var result = await client.GitCommitAsync(
+                    repos.Select(r => r.Id), null, push, tokens, force: true);
+                var failed = (result?.Repos ?? []).Where(r => !r.Ok).ToList();
+                string summary = failed.Count == 0
+                    ? (push ? "已提交并推送" : "已提交")
+                    : "提交未全部成功：" + string.Join("；", failed.Select(r => $"{r.Id}: {r.Error}"));
+                _lblStatus.Text = "状态: " + summary;
+                Notify(failed.Count == 0 ? "提交" : "提交失败",
+                    summary + (skipped.Length == 0 ? "" : "\n跳过 " + skipped), failed.Count > 0);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("提交失败", ex);
+                _lblStatus.Text = "状态: 提交失败";
+                Notify("提交失败", ex.Message, error: true);
+            }
+            finally
+            {
+                _repoBusy = false;
+                SyncRepoButtons();
+                _ = RefreshRepoActionsAsync();
+            }
+        }
+
+        /// <summary>手动退回：把 A/I 换回上一版本并重启（壳不动），之后这些角色当「未发布」重编。</summary>
+        private async void OnRollbackClick(object sender, EventArgs e)
+        {
+            if (_repoBusy || _iterating) return;
+            var targets = RollbackTargets();
+            if (targets.Count == 0)
+            {
+                _hasRollback = false;
+                SyncRepoButtons();
+                _lblStatus.Text = "状态: 当前已经是上一轮之前的版本";
+                return;
+            }
+
+            string where = string.Join("、", targets.Select(t => $"{t.Key.ToUpperInvariant()} {t.Value.Version}"));
+            if (MessageBox.Show(this, $"退回上一版本？\n{where}\n壳保持当前版本。", "退回上一版本",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+
+            _repoBusy = true;
+            SyncRepoButtons();
+            _lblStatus.Text = "状态: 正在退回…";
+            try
+            {
+                var steps = await IterationRunner.RollbackAsync(targets, _ => { });
+                if (steps.Count > 0 && steps.All(s => s.Ok))
+                {
+                    VersionState.Forget(targets.Keys);
+                    _lblStatus.Text = "状态: 已退回上一版本（壳未变）";
+                    Notify("已退回上一版本", where + "（壳未变）");
+                }
+                else
+                {
+                    _lblStatus.Text = "状态: 退回未全部成功";
+                    Notify("退回失败", "worker 忙就等这一轮跑完再试。", error: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("退回失败", ex);
+                _lblStatus.Text = "状态: 退回失败";
+                Notify("退回失败", ex.Message, error: true);
+            }
+            finally
+            {
+                _repoBusy = false;
+                SyncRepoButtons();
+                _ = RefreshRepoActionsAsync();
+            }
+        }
+
         private async void OnIterateClick(object sender, EventArgs e)
         {
             if (_iterating || Iterate == null) return;
             _iterating = true;
             _btnIterate.Enabled = false;
+            SyncRepoButtons();
             _lblStatus.Text = "状态: 迭代中…";
             try
             {
@@ -1373,6 +1535,9 @@ namespace OpenLoop.App
             {
                 _iterating = false;
                 _btnIterate.Enabled = true;
+                SyncRepoButtons();
+                // 迭代会改版本号与工作树：两个判断都要重问
+                _ = RefreshRepoActionsAsync();
             }
         }
 

@@ -38,6 +38,7 @@ namespace OpenLoop.App
             try { _selSkillScope.SelectedValue = string.IsNullOrWhiteSpace(_workspace) ? SkillScopeGlobal : SkillScopeProject; }
             finally { _filling = false; }
             _ = LoadSkillsAsync();
+            _ = LoadPluginsAsync();
 
             foreach (var provider in _source.Providers ?? [])
                 _providers.Add(Clone(provider));
