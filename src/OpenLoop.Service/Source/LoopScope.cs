@@ -38,10 +38,7 @@ namespace OpenLoop.Service.Source
         }
 
         private static IEnumerable<string> ComponentFolders()
-        {
-            yield return "PuppetCore";
-            if (OperatingSystem.IsWindows()) yield return "ChatFlow";
-        }
+            => ComponentCatalog.Iterable().Select(s => s.Dir);
 
         /// <param name="ask">越界写入的审批通道（模型位/工具位的用户确认）；为 null 时直接拒绝。</param>
         /// <param name="writableComponents">额外可写的组件仓库；不传时按 <see cref="IterableComponents"/> 判定。</param>

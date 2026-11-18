@@ -83,6 +83,8 @@ ChatFlow   ──▶ App（desktop shell chat control）
 - The development layout compiles the sibling checkouts directly and copies nothing into the install directory; component repos (`PuppetCore`, `ChatFlow`) that are already checked out only report their commit, with no network call.
 - The install layout shallow-clones `OpenLoop`, `PuppetCore` and `ChatFlow` (compiled on Windows only) into `<install root>/src/` (`src\openloop`, `src\PuppetCore`, `src\ChatFlow`).
 - An existing clone is only `fetch --depth 1`-ed, never `reset` / `checkout`-ed over the worktree — that tree is what the Loop edits.
+- The components that take part in iteration live in `components.json` at the repo root (url, checkout dir, assembly, version file, who references it); a missing file, or a missing built-in entry, falls back to the built-in `PuppetCore` / `ChatFlow` defaults (official URLs). Adding a third-party fork means adding one entry and naming its consumer.
+- A component whose origin differs from its catalog URL has been switched to a fork: pushes go to the fork, and the Loop updates that component's `url` in `components.json` to match.
 - After syncing, the source version is compared with the running one: newer source → "ready to iterate"; newer upstream (origin) → asks you to update the source first, without blocking iteration on the local code.
 
 ## Build and test

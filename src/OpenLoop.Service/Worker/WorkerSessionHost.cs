@@ -247,8 +247,8 @@ namespace OpenLoop.Service.Worker
             return true;
         }
 
-        /// <summary>空闲时立即开跑；运行中则排队，等当前轮结束按顺序执行。</summary>
-        public bool Send(string id, string tag, string text)
+        /// <summary>空闲时立即开跑；运行中则排队，等当前轮结束按顺序执行。immediate=运行中插到队首并软打断本轮。</summary>
+        public bool Send(string id, string tag, string text, bool immediate = false)
         {
             if (string.IsNullOrWhiteSpace(text)) return false;
 
@@ -259,7 +259,13 @@ namespace OpenLoop.Service.Worker
                 session.UserEpoch++;
                 if (session.State == Running)
                 {
-                    session.Pending.Add(text);
+                    if (immediate)
+                    {
+                        session.Pending.Insert(0, text);
+                        session.Paused = false;
+                        session.Interrupt = true;
+                    }
+                    else session.Pending.Add(text);
                     session.Revision++;
                 }
                 else

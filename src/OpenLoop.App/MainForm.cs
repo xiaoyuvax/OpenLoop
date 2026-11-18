@@ -202,11 +202,11 @@ namespace OpenLoop.App
             => OnActive(v => v.SendAllPending(), "已恢复排队并开始发送");
 
         /// <summary>Puppet 用：只入队不发送，验证队列控件与两种插入模式。</summary>
-        [PuppetAction(Desc = "加入排队但不发送（等本轮结束后发）")]
-        public OperationResult EnqueuePending(string text)
+        [PuppetAction(Desc = "加入排队但不发送；immediate=false（默认，等同 Ctrl+Enter）=本轮结束后发，true（等同 Enter）=立即（软打断本轮，收尾后先发）")]
+        public OperationResult EnqueuePending(string text, bool immediate = false)
             => string.IsNullOrWhiteSpace(text)
                 ? OperationResult.Failure("排队内容不能为空")
-                : OnActive(v => v.EnqueueText(text), "已加入排队");
+                : OnActive(v => v.EnqueueText(text, immediate), immediate ? "已加入排队（立即）" : "已加入排队（等本轮）");
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ComposerSendText => Active?.View?.SendText ?? "";
@@ -287,12 +287,12 @@ namespace OpenLoop.App
                 ? OnActive(v => v.SelectMode(mode), $"模式 → {mode}")
                 : OperationResult.Failure("模式只能是 task / criterion / correction");
 
-        [PuppetAction(Desc = "发送当前输入框内容：空闲=发送；运行中=排队；运行中且输入框为空=停止当前轮；非空且运行中=排队+打断")]
-        public OperationResult Send(string mode = "task")
+        [PuppetAction(Desc = "发送输入框内容：空闲=发送；运行中 immediate=true（默认，等同 Enter）=软打断本轮，收尾后先发这一条；immediate=false（等同 Ctrl+Enter）=等本轮返回后再发；运行中且输入框为空=停止当前轮")]
+        public OperationResult Send(string mode = "task", bool immediate = true)
         {
             var view = Active?.View;
             if (view == null) return OperationResult.Failure("没有打开的会话");
-            var (ok, message) = view.SendMode(mode);
+            var (ok, message) = view.SendMode(mode, immediate);
             return ok ? OperationResult.Success(message) : OperationResult.Failure(message);
         }
 
@@ -469,11 +469,11 @@ namespace OpenLoop.App
 
         public string LoopModel => _loopView?.Model ?? "";
 
-        public OperationResult SendLoop(string text)
+        [PuppetAction(Desc = "发送到 Loop：空闲=立即开跑；运行中 immediate=true（默认，等同 Enter）=软打断本轮，收尾后先发；false（等同 Ctrl+Enter）=等本轮返回后再发")]
+        public OperationResult SendLoop(string text, bool immediate = true)
         {
             if (_loopView == null) return OperationResult.Failure("没有打开的 Loop 页，先调用 OpenLoop");
-            _loopView.Send(text);
-            return OperationResult.Success("已发送到 Loop");
+            return OperationResult.Success(_loopView.Send(text, immediate));
         }
 
         [PuppetAction(Desc = "停止 Loop 当前轮")]
@@ -637,6 +637,7 @@ namespace OpenLoop.App
             view.TransferToWorker = turns => TransferToWorker(target, turns);
             view.ForkRequested += ForkLoop;
             view.NewSessionRequested += NewLoopSession;
+            view.ComplaintRequested += text => PostComplaint(target, text);
             view.Initialize(target, () => _settings, id);
             var page = new AntdUI.TabPage
             {
@@ -900,11 +901,16 @@ namespace OpenLoop.App
                         "更新源码、放弃迭代，或用 Puppet 自愈。",
                         AntdUI.TAlignFrom.TR, null, 6);
 
-                var puppet = await global::OpenLoop.Service.Source.SourceSync.CheckPuppetCoreAsync();
-                AppLog.Info("PuppetCore 同步：" + puppet);
-
-                var chatflow = await global::OpenLoop.Service.Source.SourceSync.CheckChatFlowAsync();
-                AppLog.Info("ChatFlow 同步：" + chatflow);
+                foreach (var (spec, sync) in await global::OpenLoop.Service.Source.SourceSync.CheckComponentsAsync())
+                {
+                    AppLog.Info(spec.Label + " 同步：" + sync);
+                    if (sync.State == global::OpenLoop.Service.Source.SourceState.Failed)
+                        AntdUI.Notification.warn(this, spec.Label + " 同步失败", sync.Detail,
+                            AntdUI.TAlignFrom.TR, null, 8);
+                    else if (sync.Forked)
+                        AntdUI.Notification.info(this, spec.Label + " 已换 fork", sync.Detail,
+                            AntdUI.TAlignFrom.TR, null, 8);
+                }
             }
             catch (Exception ex)
             {
@@ -2066,7 +2072,12 @@ namespace OpenLoop.App
 
             using (dialog)
             {
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    if (!string.IsNullOrWhiteSpace(dialog.AiConfigPage))
+                        OpenSettingsAssistant(dialog.AiConfigPage);
+                    return;
+                }
 
                 _settings = dialog.Result;
                 ChatFlow.ChatFlowControl.MarkdownMaxChars = _settings.MarkdownMaxChars;
@@ -2082,6 +2093,154 @@ namespace OpenLoop.App
                     AppLog.Error("保存设置失败", ex);
                     AntdUI.Notification.error(this, "保存失败", ex.Message, AntdUI.TAlignFrom.TR, null, 4);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 设置页「让 AI 帮我配置」：另起一个 Loop 会话，按当前配置页引导用户补参数，
+        /// 再由 Loop 用 Puppet 动作（SetSetting / ConfigureProvider）写回并复核。
+        /// </summary>
+        private void OpenSettingsAssistant(string page)
+        {
+            // 首次配置时往往还没有任何项目：用配置目录当工作区（Loop 的读边界本来就包含它）
+            string workspace = Current?.Workspace ?? _lastSession?.Workspace
+                ?? _settings.Projects.FirstOrDefault()
+                ?? global::OpenLoop.Service.Runtime.AppPaths.DataRoot;
+            var view = EnsureLoop(workspace, select: true, sessionId: "",
+                title: "配置 " + DateTime.Now.ToString("HH:mm"));
+            view?.Post(SettingsPrompt(page));
+        }
+
+        private static string SettingsPrompt(string page) => $"""
+            用户点了设置页的「让 AI 帮我配置」，现在停在「{page}」页。
+
+            做法：
+            1. 先读现状：Puppet(target=self, action=get, instance=MainForm, path=SettingsSummary)，用两三行说明本页现状与缺什么，不要复述整份配置。
+            2. 一次只问一个必要参数，给出候选与默认值。用户没说的不要编造，尤其密钥、接口地址、模型 id。
+            3. 用户答复后自己动手改，不要直接改 settings.json（运行中的壳不会重新读取）：
+               - 开关与下拉：Puppet(target=self, action=invoke, instance=MainForm, method=SetSetting, args=["字段名","新值"])，字段名用 SettingsSummary 里的名字。
+               - 提供商与模型：method=ConfigureProvider，args=["名称","接口地址","kind","模型1,模型2","密钥"]；密钥只在用户明确给出时填，没有就传空字符串（表示沿用已保存的）。
+               - 「完全许可」「自动审批」会放宽安全边界，必须逐项拿到用户明确同意才改。
+            4. 改完再读一次 SettingsSummary，把实际生效的值告诉用户。主题与语言要重启 OpenLoop 才生效；模型要用户点设置页的「测试连接」或发一条消息验证。
+            5. 技能页的启用/停用/安装只能由用户点按钮，你负责说清该动哪个（技能名与来源），用户改完请他确认。
+            拿不准就问，不要猜。
+            """;
+
+        /// <summary>B 面：当前设置摘要（密钥只报是否已设置），AI 配置页先读它。</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string SettingsSummary
+        {
+            get
+            {
+                var lines = new List<string>
+                {
+                    "Language=" + (_settings.Language ?? ""),
+                    "Theme=" + (_settings.Theme ?? ""),
+                    "FullAccess=" + _settings.FullAccess,
+                    "AutoApprove=" + _settings.AutoApprove,
+                    "OpenCodeAskPermissions=" + _settings.OpenCodeAskPermissions,
+                    "WebFetchMode=" + (_settings.WebFetchMode ?? ""),
+                    "UseAgentsMd=" + _settings.UseAgentsMd,
+                    "ThinkingExpandedByDefault=" + _settings.ThinkingExpandedByDefault,
+                    "AutoEvolve=" + _settings.AutoEvolve,
+                    "AutoIterate=" + _settings.AutoIterate
+                };
+                foreach (var provider in _settings.Providers ?? [])
+                    lines.Add($"Provider={provider.Name} kind={provider.Kind} url={provider.BaseUrl} " +
+                        $"key={(string.IsNullOrEmpty(provider.KeyProtected) ? "未设置" : "已设置")} " +
+                        $"models=[{string.Join(", ", provider.Models ?? [])}]");
+                lines.Add($"当前生效模型={_settings.Model} 接口={_settings.BaseUrl}");
+                return string.Join("\n", lines);
+            }
+        }
+
+        [PuppetAction(Desc = "改一个设置项：key 取 SettingsSummary 里的字段名，value 为新值")]
+        public OperationResult SetSetting(string key, string value)
+        {
+            string k = (key ?? "").Trim();
+            string v = (value ?? "").Trim();
+            bool flag = string.Equals(v, "true", StringComparison.OrdinalIgnoreCase) || v == "1";
+            switch (k)
+            {
+                case "Language":
+                    if (v is not ("" or "zh" or "en")) return OperationResult.Failure("Language 只能是空（跟随系统）、zh 或 en");
+                    _settings.Language = v;
+                    break;
+                case "Theme":
+                    if (v is not ("light" or "dark" or "grayblue")) return OperationResult.Failure("Theme 只能是 light / dark / grayblue");
+                    _settings.Theme = v;
+                    break;
+                case "WebFetchMode":
+                    if (v is not ("allow" or "ask" or "off")) return OperationResult.Failure("WebFetchMode 只能是 allow / ask / off");
+                    _settings.WebFetchMode = v;
+                    break;
+                case "FullAccess": _settings.FullAccess = flag; break;
+                case "AutoApprove": _settings.AutoApprove = flag; break;
+                case "OpenCodeAskPermissions": _settings.OpenCodeAskPermissions = flag; break;
+                case "UseAgentsMd": _settings.UseAgentsMd = flag; break;
+                case "ThinkingExpandedByDefault": _settings.ThinkingExpandedByDefault = flag; break;
+                case "AutoEvolve": _settings.AutoEvolve = flag; break;
+                case "AutoIterate": _settings.AutoIterate = flag; break;
+                default:
+                    return OperationResult.Failure($"不支持的设置项：{k}（可用 Language/Theme/FullAccess/AutoApprove/" +
+                        "OpenCodeAskPermissions/WebFetchMode/UseAgentsMd/ThinkingExpandedByDefault/AutoEvolve/AutoIterate）");
+            }
+            return SaveSettings("已保存 " + k + "=" + value);
+        }
+
+        [PuppetAction(Desc = "新增或覆盖一个提供商并设为默认：name、baseUrl、kind、models（逗号分隔）、apiKey（明文，空=沿用已保存的）")]
+        public OperationResult ConfigureProvider(string name, string baseUrl, string kind, string models, string apiKey)
+        {
+            string n = (name ?? "").Trim();
+            if (n.Length == 0) return OperationResult.Failure("name 不能为空");
+
+            _settings.Providers ??= [];
+            var provider = _settings.Providers.FirstOrDefault(p =>
+                string.Equals(p.Name, n, StringComparison.OrdinalIgnoreCase));
+            if (provider == null)
+            {
+                provider = new ProviderConfig { Name = n, Kind = "custom", BaseUrl = "" };
+                _settings.Providers.Add(provider);
+            }
+            if (!string.IsNullOrWhiteSpace(kind)) provider.Kind = kind.Trim();
+            if (!string.IsNullOrWhiteSpace(baseUrl)) provider.BaseUrl = baseUrl.Trim();
+            if (!string.IsNullOrWhiteSpace(apiKey)) provider.KeyProtected = AppSettings.Protect(apiKey.Trim());
+            if (!string.IsNullOrWhiteSpace(models))
+            {
+                provider.Models ??= [];
+                foreach (string id in models.Split([',', '，', ';', '\n', '\r', '\t', ' '],
+                             StringSplitOptions.RemoveEmptyEntries))
+                    if (!provider.Models.Contains(id.Trim(), StringComparer.OrdinalIgnoreCase))
+                        provider.Models.Add(id.Trim());
+            }
+
+            // 与设置页保存一致：旧的单地址/单模型回退字段跟随第一个有模型的提供商
+            var first = _settings.Providers.FirstOrDefault(p => p.Models.Count > 0)
+                ?? _settings.Providers.FirstOrDefault();
+            if (first != null)
+            {
+                _settings.BaseUrl = first.BaseUrl;
+                _settings.Model = first.Models.FirstOrDefault() ?? _settings.Model;
+                _settings.KeyProtected = first.KeyProtected;
+            }
+            var result = SaveSettings($"已保存提供商「{provider.Name}」，当前生效模型 {_settings.Model}");
+            return result.Ok ? OperationResult.Success(result.Message) : result;
+        }
+
+        /// <summary>AI 配置动作的落盘点：与设置页保存后做同样的运行时同步。</summary>
+        private OperationResult SaveSettings(string message)
+        {
+            try
+            {
+                _settings.Save();
+                ChatFlow.ChatFlowControl.MarkdownMaxChars = _settings.MarkdownMaxChars;
+                ModelCatalog.Set(ModelCatalog.All.ToList());
+                return OperationResult.Success(message);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("保存设置失败", ex);
+                return OperationResult.Failure("保存设置失败：" + ex.Message);
             }
         }
 

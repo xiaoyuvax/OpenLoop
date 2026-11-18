@@ -89,7 +89,7 @@ namespace OpenLoop.Service.Web
                 {
                     var body = ReadBody<MessageRequest>(req);
                     if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
-                    return _host.Send(id, body.Tag, body.Text)
+                    return _host.Send(id, body.Tag, body.Text, body.Immediate)
                         ? Json(req, _host.Get(id))
                         : NotFound(req);
                 }
@@ -181,6 +181,9 @@ namespace OpenLoop.Service.Web
         {
             public string Text { get; set; }
             public string Tag { get; set; }
+
+            /// <summary>运行中为 true：打断本轮，收尾后先发这一条（Enter 的语义）。</summary>
+            public bool Immediate { get; set; }
         }
 
         private sealed class PendingRequest

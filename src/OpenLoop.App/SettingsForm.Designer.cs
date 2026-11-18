@@ -98,6 +98,7 @@ namespace OpenLoop.App
         private FlowLayoutPanel _buttons;
         private AntdUI.Button _btnCancel;
         private AntdUI.Button _btnSave;
+        private AntdUI.Button _btnAiConfig;
         private ToolTip _tips;
 
         protected override void Dispose(bool disposing)
@@ -207,6 +208,7 @@ namespace OpenLoop.App
             _buttons = new FlowLayoutPanel();
             _btnCancel = new AntdUI.Button();
             _btnSave = new AntdUI.Button();
+            _btnAiConfig = new AntdUI.Button();
 
             SuspendLayout();
 
@@ -801,8 +803,16 @@ namespace OpenLoop.App
             _btnCancel.Margin = new Padding(8, 6, 0, 6);
             _btnCancel.Click += OnCancel;
 
+            //「让 AI 帮我配置」：关了设置页，把当前页交给 Loop 会话逐项问、逐项改
+            _btnAiConfig.Text = "让 AI 帮我配置";
+            _btnAiConfig.Radius = 8;
+            _btnAiConfig.Size = new Size(148, 34);
+            _btnAiConfig.Margin = new Padding(0, 6, 8, 6);
+            _btnAiConfig.Click += OnAiConfig;
+
             _buttons.Controls.Add(_btnSave);
             _buttons.Controls.Add(_btnCancel);
+            _buttons.Controls.Add(_btnAiConfig);
 
             _root.Controls.Add(_tabs, 0, 0);
             _root.Controls.Add(_buttons, 0, 1);

@@ -126,6 +126,7 @@ namespace OpenLoop.Service.Source
                 node => RunningBinaryVersion(node.Id, shellExe));
 
             VersionState.SavePending(pending);
+            await AnnotateForksAsync(plans, ct);
 
             // I 要更新就必须重启一次 A（A 才能接手），A 本身不一定重编
             if (plans.FirstOrDefault(p => p.Role == BusRoles.I)?.Update == true)
@@ -214,6 +215,22 @@ namespace OpenLoop.Service.Source
             }
 
             return plans;
+        }
+
+        /// <summary>
+        /// 组件的 origin 与清单地址不一致时，在计划里标明「已经换成 fork」：
+        /// 推送会走 fork，components.json 需要同步成同一地址（由 Loop 改）。
+        /// </summary>
+        private static async Task AnnotateForksAsync(List<RolePlan> plans, CancellationToken ct)
+        {
+            for (int i = 0; i < plans.Count; i++)
+            {
+                var spec = ComponentCatalog.Find(plans[i].Role);
+                if (spec == null) continue;
+                string origin = await SourceSync.OriginAsync(SourceSync.ComponentRoot(spec.Dir), ct);
+                if (origin.Length == 0 || ComponentCatalog.SameUrl(origin, spec.Url)) continue;
+                plans[i] = plans[i] with { Note = $"origin 是 fork（{origin}）：推送走该地址，清单里仍是 {spec.Url}" };
+            }
         }
 
         /// <summary>节点声明的版本（版本文件里那一行）；读不到返回空串。</summary>

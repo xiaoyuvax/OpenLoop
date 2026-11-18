@@ -21,6 +21,12 @@ namespace OpenLoop.Service.Source
         /// <summary>上游（origin）比本地工作树更新：只提示先更新源码，不阻止继续用本地代码迭代。</summary>
         public bool UpstreamNewer { get; init; }
 
+        /// <summary>这个仓库的 origin 地址（fork 检测用）。</summary>
+        public string Remote { get; init; } = "";
+
+        /// <summary>origin 与清单里的地址不一致：用户已经把组件换成了自己的 fork。</summary>
+        public bool Forked { get; init; }
+
         public override string ToString() =>
             $"{(UpstreamNewer ? "UpstreamNewer " : "")}{State} source={SourceVersion} running={RunningVersion} {Detail}".Trim();
     }
@@ -86,14 +92,6 @@ namespace OpenLoop.Service.Source
         public static string ComponentRoot(string folder)
             => SiblingOf(SourceRoot, folder) ?? Path.Combine(InstallRoot, "src", folder);
 
-        public static string PuppetRoot => ComponentRoot("PuppetCore");
-
-        /// <summary>
-        /// ChatFlow 与本仓库并列参与编译（App 的 ProjectReference 是 ../../../ChatFlow/ChatFlow）。
-        /// 只有 Windows 版本编译它。
-        /// </summary>
-        public static string ChatFlowRoot => ComponentRoot("ChatFlow");
-
         /// <summary>
         /// 安装根：可执行文件所在目录（可用 <c>OPENLOOP_HOME</c> 覆盖）。
         /// 源码跟二进制放在一起，权限随安装位置——装在私有目录源码就是私有的，
@@ -129,49 +127,58 @@ namespace OpenLoop.Service.Source
             => CheckRepoAsync(OpenLoopUrl, SourceRoot, OpenLoopVersionFile, ct);
 
         /// <summary>
-        /// PuppetCore 已切源码引用：这里负责同步仓库并报提交号；版本号由节点模型统一维护
-        /// （`Puppet.Common.targets` 的 &lt;Version&gt;）。
+        /// 清单里的组件逐个同步：同级已有检出就只报提交号（不联网），没有才 clone。
+        /// 清单缺条目时由 <see cref="ComponentCatalog"/> 补回内置默认项，所以老安装也能跑。
         /// </summary>
-        public static Task<SourceCheck> CheckPuppetCoreAsync(CancellationToken ct = default)
-            => CheckComponentAsync(PuppetCoreUrl, "PuppetCore",
-                Path.Combine("Puppet.Core", "Puppet.Core.csproj"), ct);
-
-        /// <summary>
-        /// ChatFlow 同样没有版本号约束：同步 + 报提交号，Loop 可以像 PuppetCore 一样迭代它。
-        /// 只有 Windows 版本编译它，其它平台既不克隆也不报告。
-        /// </summary>
-        public static Task<SourceCheck> CheckChatFlowAsync(CancellationToken ct = default)
-            => !OperatingSystem.IsWindows()
-                ? Task.FromResult(new SourceCheck(SourceState.Unknown, ChatFlowRoot, "", "",
-                    "非 Windows 版本：ChatFlow 不参与编译"))
-                : CheckComponentAsync(ChatFlowUrl, "ChatFlow",
-                    Path.Combine("ChatFlow", "ChatFlow.csproj"), ct);
+        public static async Task<IReadOnlyList<(ComponentSpec Spec, SourceCheck Check)>> CheckComponentsAsync(
+            CancellationToken ct = default)
+        {
+            var result = new List<(ComponentSpec, SourceCheck)>();
+            foreach (var spec in ComponentCatalog.Iterable())
+                result.Add((spec, await CheckComponentAsync(spec, ct)));
+            return result;
+        }
 
         /// <summary>
         /// 组件仓库：同级位置已有检出（开发布局的同级仓库，或安装布局的 src\ 克隆）就直接用，
         /// 不 fetch，避免把 Loop 的改动冲掉；没有才克隆到同级位置。
+        /// 清单里的地址拉不下来（写错的 fork）时退回内置官方地址再试一次。
         /// </summary>
-        private static Task<SourceCheck> CheckComponentAsync(
-            string url, string folder, string marker, CancellationToken ct)
+        private static async Task<SourceCheck> CheckComponentAsync(ComponentSpec spec, CancellationToken ct)
         {
-            string root = ComponentRoot(folder);
-            if (File.Exists(Path.Combine(root, marker)))
-                return ReportHeadAsync(root, "提交 ", ct);
-            return CheckCommitAsync(url, root, ct);
+            string root = ComponentRoot(spec.Dir);
+            if (File.Exists(Path.Combine(root, spec.Marker)))
+                return await ReportHeadAsync(spec, root, ct);
+
+            // 新加的 fork 条目只留了目录名：没地址就别去 clone，直接说清楚缺什么
+            if (string.IsNullOrWhiteSpace(spec.Url))
+                return new(SourceState.Unknown, root, "", "",
+                    "清单没有仓库地址：把 fork 地址写进 components.json 的 url 再重试");
+
+            var check = await CheckCommitAsync(spec, root, ct);
+            string official = ComponentCatalog.DefaultUrl(spec.Id);
+            if (check.State != SourceState.Failed || official.Length == 0
+                || ComponentCatalog.SameUrl(official, spec.Url))
+                return check;
+
+            var fallback = await CheckCommitAsync(spec with { Url = official }, root, ct);
+            return fallback.State == SourceState.Failed
+                ? fallback with { Detail = $"清单地址 {spec.Url} 与官方地址 {official} 都拉不下来：{fallback.Detail}" }
+                : fallback with { Detail = $"清单地址 {spec.Url} 不可用，已按官方地址克隆：{fallback.Detail}" };
         }
 
-        /// <summary>可迭代组件仓库（无版本号）：只同步 + 报提交号。</summary>
-        private static async Task<SourceCheck> CheckCommitAsync(string url, string root, CancellationToken ct)
+        /// <summary>可迭代组件仓库：只同步 + 报提交号。</summary>
+        private static async Task<SourceCheck> CheckCommitAsync(ComponentSpec spec, string root, CancellationToken ct)
         {
             if (!await GitOkAsync(ct))
                 return new(SourceState.NoGit, root, "", "", "找不到 git");
 
             try
             {
-                var sync = await SyncAsync(url, root, ct);
+                var sync = await SyncAsync(spec.Url, root, ct);
                 if (sync != null) return sync;
 
-                return await ReportHeadAsync(root, "已同步到 ", ct);
+                return await ReportHeadAsync(spec, root, ct);
             }
             catch (OperationCanceledException)
             {
@@ -183,7 +190,8 @@ namespace OpenLoop.Service.Source
             }
         }
 
-        private static async Task<SourceCheck> ReportHeadAsync(string root, string label, CancellationToken ct)
+        /// <summary>报 HEAD 提交号；origin 与清单地址不一致时一并说明（用户已经把组件换成 fork）。</summary>
+        private static async Task<SourceCheck> ReportHeadAsync(ComponentSpec spec, string root, CancellationToken ct)
         {
             if (!await GitOkAsync(ct))
                 return new(SourceState.NoGit, root, "", "", "找不到 git");
@@ -191,8 +199,13 @@ namespace OpenLoop.Service.Source
             try
             {
                 string head = (await GitTextAsync(["-C", root, "rev-parse", "--short", "HEAD"], ct)).Trim();
-                return new(SourceState.UpToDate, root, head, "",
-                    head.Length == 0 ? "读不到提交号" : label + head);
+                string origin = await OriginAsync(root, ct);
+                bool forked = spec.Url.Length > 0 && origin.Length > 0 && !ComponentCatalog.SameUrl(origin, spec.Url);
+                string detail = head.Length == 0 ? "读不到提交号" : "提交 " + head;
+                if (forked)
+                    detail += $"；origin 指向 {origin}（清单里是 {spec.Url}）：改动会提交到你的 fork，" +
+                              "把 fork 地址交给 Loop 更新 components.json";
+                return new(SourceState.UpToDate, root, head, "", detail) { Remote = origin, Forked = forked };
             }
             catch (OperationCanceledException)
             {
@@ -202,6 +215,14 @@ namespace OpenLoop.Service.Source
             {
                 return new(SourceState.Failed, root, "", "", ex.Message);
             }
+        }
+
+        /// <summary>仓库的 origin 地址；读不到返回空串。</summary>
+        public static async Task<string> OriginAsync(string root, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(root)) return "";
+            try { return (await GitTextAsync(["-C", root, "remote", "get-url", "origin"], ct)).Trim(); }
+            catch { return ""; }
         }
 
         /// <summary>克隆或 fetch 一个仓库；失败时返回具体的失败状态，成功返回 null。</summary>

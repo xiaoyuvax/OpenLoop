@@ -9,19 +9,25 @@ namespace OpenLoop.Service.Source
     /// </summary>
     public static class VersionBump
     {
-        /// <summary>节点 id → 该节点承载 &lt;Version&gt; 的文件；外部组件返回绝对路径。</summary>
-        public static string FileFor(string role) => (role ?? "").Trim().ToLowerInvariant() switch
+        /// <summary>节点 id → 该节点承载 &lt;Version&gt; 的文件；外部组件按清单里的 versionFile 拼绝对路径。</summary>
+        public static string FileFor(string role)
         {
-            "core" => "src/OpenLoop.Core/OpenLoop.Core.csproj",
-            "service" => "src/OpenLoop.Service/OpenLoop.Service.csproj",
-            "a" => "src/OpenLoop.A/OpenLoop.A.csproj",
-            "i" => "src/OpenLoop.I/OpenLoop.I.csproj",
-            // 壳的两种产物共用一个号，只写这一处
-            "shell" => "ShellVersion.props",
-            "puppetcore" => Path.Combine(SourceSync.PuppetRoot, "Puppet.Common.targets"),
-            "chatflow" => Path.Combine(SourceSync.ChatFlowRoot, "ChatFlow", "ChatFlow.csproj"),
-            _ => null
-        };
+            string key = (role ?? "").Trim().ToLowerInvariant();
+            string builtin = key switch
+            {
+                "core" => "src/OpenLoop.Core/OpenLoop.Core.csproj",
+                "service" => "src/OpenLoop.Service/OpenLoop.Service.csproj",
+                "a" => "src/OpenLoop.A/OpenLoop.A.csproj",
+                "i" => "src/OpenLoop.I/OpenLoop.I.csproj",
+                // 壳的两种产物共用一个号，只写这一处
+                "shell" => "ShellVersion.props",
+                _ => null
+            };
+            if (builtin != null) return builtin;
+
+            var spec = ComponentCatalog.Find(key);
+            return spec == null ? null : Path.Combine(SourceSync.ComponentRoot(spec.Dir), spec.VersionFile);
+        }
 
         /// <summary>算出下一版本：源码版本可解析且高于运行版本就用源码版本，否则在运行版本上 patch+1；都无法解析返回 null。</summary>
         public static string NextVersion(string sourceVersion, string runningVersion)

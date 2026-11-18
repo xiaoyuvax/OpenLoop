@@ -238,11 +238,12 @@ namespace OpenLoop.App
             BeginEdit(_queue.Items[index]);
         }
 
-        /// <summary>A 面驱动：把第 index 个排队请求切换为「立即」。</summary>
+        /// <summary>A 面驱动：把第 index 个排队请求设为「立即」（已经是「立即」就不变）。</summary>
         public void SendPendingNow(int index)
         {
             if (index < 0 || index >= _queue.Count) return;
-            OnImmediateRequested(_queue.Toggle(_queue.Items[index]));
+            var item = _queue.Items[index];
+            OnImmediateRequested(item.Immediate ? item : _queue.Toggle(item));
         }
 
         /// <summary>A 面驱动：恢复被 Stop 暂停的队列并按序发送。</summary>
@@ -252,12 +253,14 @@ namespace OpenLoop.App
             DrainQueue();
         }
 
-        /// <summary>Puppet 用：只入队不发送（验证队列控件与两种模式）。</summary>
-        public void EnqueueText(string text)
+        /// <summary>Puppet 用：只入队不发送（验证队列控件与两种模式）；immediate=进来就是「立即」。</summary>
+        public void EnqueueText(string text, bool immediate = false)
         {
-            if (_queue.Add(text, _mode) == null) return;
+            var item = _queue.Add(text, _mode, immediate ? PendingMode.NextStep : PendingMode.AfterTurn);
+            if (item == null) return;
             _queue.Paused = false;
             _pending.Sync();
+            if (item.Immediate) OnImmediateRequested(item);
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -409,11 +412,11 @@ namespace OpenLoop.App
             if (mode is "task" or "criterion" or "correction") SetMode(mode);
         }
 
-        /// <summary>发送（mode 决定语义）；返回是否成功 + 一句给用户看的结果说明。</summary>
-        public (bool Ok, string Message) SendMode(string mode = "task")
+        /// <summary>发送（mode 决定语义）；immediate=运行中软打断本轮、收尾后先发（Enter），false=等本轮返回（Ctrl+Enter）。返回是否成功 + 一句给用户看的结果说明。</summary>
+        public (bool Ok, string Message) SendMode(string mode = "task", bool immediate = true)
         {
             SelectMode(mode);
-            var result = Submit();
+            var result = Submit(immediate);
             SetMode("task");
             return result;
         }
@@ -555,18 +558,20 @@ namespace OpenLoop.App
 
         /// <summary>
         /// Enter 在 AntdUI 的 WM_KEYDOWN 里先被消化成换行（早于 KeyDown 事件），
-        /// 所以只能在这里拦：Enter / Ctrl+Enter 发送（运行中=等本轮返回，不打断），Shift+Enter 换行。
+        /// 所以只能在这里拦：Enter 发送（运行中=打断本轮，收尾后立刻发），
+        /// Ctrl+Enter 发送（运行中=等本轮返回），Shift+Enter 换行。
         /// </summary>
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
             bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
-            if (!shift && e.KeyData != Keys.Enter && e.KeyData != (Keys.Control | Keys.Enter)) return;
+            bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
+            if (!shift && e.KeyData != Keys.Enter && !ctrl) return;
 
             e.Result = false;
             if (shift) { ComposerKeys.InsertSoftNewline(_txtInput); UpdateSendButton(); return; }
             if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
             if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
-            Submit();
+            Submit(immediate: !ctrl);
         }
 
         private void OnInputTextChanged(object sender, EventArgs e)
@@ -735,7 +740,7 @@ namespace OpenLoop.App
             return line.Length <= 20 ? line : line[..20];
         }
 
-        /// <summary>运行中：输入框有内容 = 发送（排队），清空 = 停止；编辑排队项时按钮是「保存」。</summary>
+        /// <summary>运行中：输入框有内容 = 立即发送（打断本轮），清空 = 停止；编辑排队项时按钮是「保存」。</summary>
         private void UpdateSendButton()
         {
             bool editing = _editing != null;
@@ -759,7 +764,8 @@ namespace OpenLoop.App
             }
         }
 
-        private (bool Ok, string Message) Submit()
+        /// <summary>提交输入框。immediate=true 时运行中会打断本轮，收尾后立刻发这一条（Enter 的语义）。</summary>
+        private (bool Ok, string Message) Submit(bool immediate = false)
         {
             string text = _txtInput.Text.Trim();
 
@@ -807,10 +813,11 @@ namespace OpenLoop.App
                     StopRun();
                     return (true, "已停止当前轮");
                 }
-                Enqueue(text, _mode);
+                var item = Enqueue(text, _mode, immediate ? PendingMode.NextStep : PendingMode.AfterTurn);
                 _txtInput.Clear();
                 SetMode("task");
-                return (true, "已入队，本轮结束后发送");
+                if (item != null && item.Immediate) OnImmediateRequested(item);
+                return (true, immediate ? "已插队，本轮收尾后立刻发送" : "已入队，本轮结束后发送");
             }
 
             if (text.Length == 0) return (false, "输入框为空");
@@ -829,8 +836,8 @@ namespace OpenLoop.App
                 SetMode("task");
                 return;
             }
-            // 运行中点发送 = 排队等本轮返回；要打断当前轮就点队列行的「立即」
-            Submit();
+            // 运行中点发送与 Enter 一致：打断本轮、收尾后立刻发；要等本轮返回用 Ctrl+Enter
+            Submit(immediate: true);
         }
 
         /// <summary>识别 /btw、/fork；返回 true 表示这条输入已被命令消费。</summary>
@@ -889,10 +896,15 @@ namespace OpenLoop.App
 
         /// <summary>转给 Loop 的用户反馈：带上最近一轮，Loop 才知道指的是哪次运行。</summary>
         private string ComplaintText(string complaint)
+            => ComposeComplaint("Worker", Session.Title, Session.Book.Turns, complaint);
+
+        /// <summary>Worker 与 Loop 的 /complain 共用同一段反馈格式，只有申诉对象不同。</summary>
+        internal static string ComposeComplaint(string role, string title,
+            IReadOnlyList<ChatTurn> turns, string complaint)
         {
             var sb = new StringBuilder();
-            sb.Append("[用户反馈] 对 Worker 表现不满（会话「").Append(Session.Title).Append("」）：").AppendLine(complaint);
-            var turns = Session.Book.Turns;
+            sb.Append("[用户反馈] 对 ").Append(role).Append(" 表现不满（会话「")
+                .Append(title).Append("」）：").AppendLine(complaint);
             if (turns.Count == 0) return sb.ToString().TrimEnd();
             var last = turns[^1];
             sb.Append("最近任务：").AppendLine(Trim(last.UserText, 300));
@@ -903,11 +915,12 @@ namespace OpenLoop.App
         private static string Trim(string text, int max)
             => string.IsNullOrEmpty(text) || text.Length <= max ? text ?? "" : text[..max] + "…";
 
-        private void Enqueue(string text, string mode, PendingMode pending = PendingMode.AfterTurn)
+        private PendingItem Enqueue(string text, string mode, PendingMode pending = PendingMode.AfterTurn)
         {
-            _queue.Add(text, mode, pending);
+            var item = _queue.Add(text, mode, pending);
             _queue.Paused = false;
             _pending.Sync();
+            return item;
         }
 
         /// <summary>「立即」：先让当前轮在下一个 step 前停下，停下后 DrainQueue 会先发这一条。</summary>

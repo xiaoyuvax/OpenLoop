@@ -63,15 +63,11 @@ namespace OpenLoop.Service.Source
     /// </summary>
     public static class GitService
     {
-        /// <summary>白名单：OpenLoop 源码根 + 托管组件仓库；不在表里的一律不认。</summary>
+        /// <summary>白名单：OpenLoop 源码根 + 清单里的组件仓库；不在表里的一律不认。</summary>
         public static IReadOnlyList<(string Id, string Root)> Repos()
         {
-            var all = new (string Id, string Root)[]
-            {
-                ("openloop", SourceSync.SourceRoot),
-                ("puppetcore", SourceSync.PuppetRoot),
-                ("chatflow", SourceSync.ChatFlowRoot)
-            };
+            var all = new List<(string Id, string Root)> { ("openloop", SourceSync.SourceRoot) };
+            all.AddRange(ComponentCatalog.Iterable().Select(s => (s.Id, SourceSync.ComponentRoot(s.Dir))));
             return all.Where(r => !string.IsNullOrWhiteSpace(r.Root)
                                   && Directory.Exists(Path.Combine(r.Root, ".git"))).ToList();
         }
@@ -143,8 +139,31 @@ namespace OpenLoop.Service.Source
 
             var push = Git(root, ["push"], TimeSpan.FromMinutes(2));
             outcome.Pushed = push.Ok;
-            if (!push.Ok) outcome.Error = "本地已提交，推送失败：" + push.Error;
+            if (!push.Ok) outcome.Error = "本地已提交，推送失败：" + push.Error + ForkHint(id, root);
             return outcome;
+        }
+
+        /// <summary>
+        /// 推到官方地址失败时附带 fork 的操作说明：非作者没有官方仓库的写权限，
+        /// 只能推自己的 fork，再让 Loop 把 components.json 里该组件的 url 换成 fork 地址。
+        /// </summary>
+        private static string ForkHint(string id, string root)
+        {
+            try
+            {
+                string origin = Git(root, ["remote", "get-url", "origin"]).Output.Trim();
+                string official = string.Equals(id, "openloop", StringComparison.OrdinalIgnoreCase)
+                    ? SourceSync.OpenLoopUrl
+                    : ComponentCatalog.DefaultUrl(id);
+                if (official.Length == 0 || origin.Length == 0 || !ComponentCatalog.SameUrl(origin, official))
+                    return "";
+                return "。官方仓库只接受作者推送：先在你的账号下 fork，把 origin 指到 fork 再推送，" +
+                       "然后把 fork 地址交给 Loop 写进 components.json";
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         internal static GitRepoStatus ReadRepo(string id, string root)

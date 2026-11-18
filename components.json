@@ -1,0 +1,43 @@
+{
+  "components": [
+    {
+      "id": "puppetcore",
+      "label": "PuppetCore",
+      "url": "https://github.com/xiaoyuvax/PuppetCore.git",
+      "dir": "PuppetCore",
+      "marker": "Puppet.Core/Puppet.Core.csproj",
+      "versionFile": "Puppet.Common.targets",
+      "assembly": "Puppet.Core",
+      "consumers": [
+        { "repo": "openloop", "project": "src/OpenLoop.Service" }
+      ]
+    },
+    {
+      "id": "chatflow",
+      "label": "ChatFlow",
+      "url": "https://github.com/xiaoyuvax/ChatFlow.git",
+      "dir": "ChatFlow",
+      "marker": "ChatFlow/ChatFlow.csproj",
+      "versionFile": "ChatFlow/ChatFlow.csproj",
+      "assembly": "ChatFlow",
+      "platforms": [ "windows" ],
+      "consumers": [
+        { "repo": "openloop", "project": "src/OpenLoop.App" }
+      ]
+    },
+    {
+      "id": "fctb",
+      "label": "FastColoredTextBox",
+      "url": "",
+      "dir": "FastColoredTextBox",
+      "marker": "FastColoredTextBox/FastColoredTextBox.csproj",
+      "versionFile": "FastColoredTextBox/FastColoredTextBox.csproj",
+      "assembly": "FastColoredTextBox",
+      "platforms": [ "windows" ],
+      "consumers": [
+        { "repo": "ChatFlow", "project": "ChatFlow" }
+      ],
+      "retired": true
+    }
+  ]
+}

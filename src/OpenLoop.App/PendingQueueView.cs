@@ -92,7 +92,7 @@ namespace OpenLoop.App
             };
             _tips.SetToolTip(mode, item.Immediate
                 ? "立即：插到下一步（当前轮在下一个 step 前收尾）"
-                : "等本轮：等这一轮返回（Enter / Ctrl+Enter 发送）");
+                : "等本轮：等这一轮返回（Ctrl+Enter 发送）");
 
             var text = new AntdUI.Label
             {

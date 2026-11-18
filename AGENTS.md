@@ -26,7 +26,7 @@
 
 - **A 面（`/agent/*`）**：开发期全反射调试，key 见下；**B 面（`/appagent/*`）**：用户 Agent 的具名 Action 通道，凭证在框架写的发现档案 `%LOCALAPPDATA%\Puppet.AppAgents\OpenLoop.<pid>.json`（`probe`/`help` 免凭证，其余带 `Authorization: Bearer <key>`）。两面调的是同一批公开方法，结果同源；区别只在 A 用位置参数、B 用按名参数（未知/缺必填直接 400）。
 - **壳的操作面按 Action 范式写**：`public` 实例方法返回 `OperationResult`/`bool`（= 成败可观察）即自动进 B 的 manifest；`string`/`string[]` 查询方法只属于 A/内部，不要为了 B 去改它们的返回形状。新增操作时同步考虑两面，别写两份。
-- 常用 B 动作：`OpenSession` → `SetComposerText` → `Send`（空闲=发送 / 运行中=排队 / 运行中且输入框为空=停止）；`StopSession` 硬停当前轮、`InterruptSession` 软打断（下一 step 前收尾）；`EnqueuePending`/`SendPendingNow`/`RetractPending`/`RemovePending` 管排队；`OpenLoop`/`SendLoop`/`StopLoop` 管后台观察者；`DeleteSessions`/`RemoveProject` 是不可恢复的 High 风险动作。
+- 常用 B 动作：`OpenSession` → `SetComposerText` → `Send`（空闲=发送 / 运行中=立即发送（软打断本轮，收尾后先发；`immediate:false` 等本轮返回）/ 运行中且输入框为空=停止）；`StopSession` 硬停当前轮、`InterruptSession` 软打断（下一 step 前收尾）；`EnqueuePending`/`SendPendingNow`/`RetractPending`/`RemovePending` 管排队；`OpenLoop`/`SendLoop`（同样收 `immediate`）/`StopLoop` 管后台观察者；`DeleteSessions`/`RemoveProject` 是不可恢复的 High 风险动作。
 - **右侧栏「网页」页是内嵌 WebView2 浏览器**（`BrowserView`，页序 3）：默认锁定，只有 Agent 能操作；`OpenBrowser(url)`/`NavigateBrowser(url)`/`EvalBrowserScript(js)`/`BrowserScreenshot()` 驱动它，`SetBrowserInteract(true)` 解锁给用户点按，`UndockBrowser`/`DockBrowser` 在独立窗口与侧栏之间搬。状态看 `BrowserState`/`BrowserUrl`。`EvalBrowserScript` 返回 WebView2 的 JSON 结果（字符串结果带引号）。**`BrowserScreenshot` 需要「网页」页已激活**（先 `OpenBrowser` 不带 url），否则 `CapturePreviewAsync` 失败且只报「截图超时」；`NavigateBrowser` 异步返回（`data` 是导航前的旧 URL），取页面内容前先轮询 `EvalBrowserScript("document.readyState")`，并检查 `location.href` 不是 `chrome-error://`（DNS/网络失败时 `NavigateBrowser` 仍回成功）；`BrowserScreenshot` 的 PNG 走 `asset` 链接（`/appagent/assets/<id>`）下载。
 - **B 面按实例强制串行**（并发 409 `instance-busy`），读类端点（manifest/state）不加锁；B 也认 `agentId`/`site` 协商参数。
 - **窗口几何两套动作，单位不同**：`MoveAction`/`ResizeAction`/`SetBoundsAction` 收**物理像素**（WinForms `Bounds`）；DIP 版本由 Puppet 框架统一提供（`MoveDipAction`/`ResizeDipAction`/`SetBoundsDipAction`，x/y 相对目标屏工作区左上角，`screen` 选屏）。跨屏 DPI 不同时必须用 DIP 版本；各屏缩放比看 `Screens` 状态里的 `scale=`。窗体最小尺寸会钳制宽高（返回里会说明），核对用 `WindowBounds`（物理矩形 + 屏 + dpi）。
@@ -91,6 +91,7 @@
 - 请求体构建抽成 `internal` 纯函数并单测，不在 async 方法里内联拼字典；可空字段条件写入（`JsonIgnoreCondition.WhenWritingNull` 不作用于 `Dictionary` 的值）。
 - WinForms 菜单不要在 `Closed` 里同步 `Dispose`：`ModalMenuFilter` 关闭流程还会访问句柄，会抛 `ObjectDisposedException` 崩进程；用 `BeginInvoke` 延后销毁。
 - A/I 的二进制一律从安装目录 `backends\` 启动（与壳同处安装目录）；`%APPDATA%\OpenLoop\versions\<role>\<ver>-<sha>\` 只是版本存档与回退源，每角色**只留当前 + 上一版**（壳启动时清一次，换版后清一次）。换版 = 存档 → 覆盖 `backends\`（旧文件先备份）→ 从 `backends\` 重启；起不来就用备份还原。
+- 参与迭代的外部组件在仓库根 `components.json`（url / 检出目录 / 程序集 / 版本号文件 / `consumers`）；清单缺失或漏项按内置官方组件兜底。换 fork 只改该组件的 `url`，由 Loop 代改；`consumers` 没写对，组件会判成「走包」而不参与迭代。
 
 ## 设计器兼容（强制）
 

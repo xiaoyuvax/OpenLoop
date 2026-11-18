@@ -379,9 +379,9 @@ public sealed class AgentPolicy
 
 ### 6.3.2 运行中的请求队列
 
-- 运行期间输入框保持可用；`Enter` / `Ctrl+Enter` / 发送按钮提交的请求等当前轮返回后再发（不打断），要插到下一步（当前轮在下一个 step 前收尾）点队列行的「立即」。
+- 运行期间输入框保持可用；`Enter` / 发送按钮 = 立即发送（打断本轮：当前轮在下一个 step 前收尾，收尾后先发这一条），`Ctrl+Enter` = 等当前轮返回后再发（不打断）；队列行的「立即」可在两者间切换。
 - 队列以抽屉形式出现在聊天区下方、输入框上方（高度封顶约 150 DIP），每行「模式图标 + 文本 + 编辑 / 删除 / 立即」：⚡=立即、🕐=等本轮。
-- 发送按钮只有一个：输入框有文字 = 发送（排队），清空 = 停止。停止会暂停自动续跑，抽屉里的「全部发送」恢复。
+- 发送按钮只有一个：输入框有文字 = 立即发送，清空 = 停止。停止会暂停自动续跑，抽屉里的「全部发送」恢复。
 - 当前轮结束后按队列顺序自动发送下一条；打断项优先于队列顺序。队列只在内存，关闭进程即丢弃。
 - A 面驱动：`MainForm.RemovePending/RetractPending/SendPendingNow(index)`、`SendAllPending()`，`PendingCount/PendingSummary` 只读。
 
@@ -473,6 +473,8 @@ key 落在 `%APPDATA%\OpenLoop\puppet.key`，见 `docs/PLAN-DUAL-PROCESS.md`。
 **规则优化**：`RuleAssistant` 用独立系统提示（只润色规则、不执行任务）把用户草稿压成单行祈使句；结果只回填输入框，由用户检查后登记，不自动写入账本或激活集。
 
 **设置（多栏）**：`SettingsForm` 分「普通」「模型」两栏。普通栏管理语言、主题、完全许可（Full Access）与 AGENTS.md 开关；模型栏管理多个 provider（名称、地址、密钥、模型列表），内置 provider 可拉取 `/models`，自定义 provider 手动添加。`AppSettings.EndpointFor(model)` 按模型找到 provider 的地址与密钥；会话模型下拉合并 provider 模型与 OpenRouter 目录。
+
+**让 AI 帮我配置**：设置页底部按钮，关掉对话框把当前栏名交给 `MainForm.OpenSettingsAssistant`：新建一个 Loop 会话（没有项目时用配置目录当工作区），先读 `SettingsSummary`，再逐项问清缺的参数，用 Puppet 动作 `SetSetting(key, value)` / `ConfigureProvider(name, baseUrl, kind, models, apiKey)` 写回（`AppSettings.Protect` 落密钥，保存后与设置页同样同步 `MarkdownMaxChars` 与模型目录），最后回读 `SettingsSummary` 复核。主题/语言仍需重启；技能栏的启用、停用、安装只由用户点按钮，Loop 仅给建议。
 
 **完全许可**：关闭路径越界检查、`.openloop` 保护、风险命令审批与子进程环境隔离（格式化/关机等 Denied 命令仍拒绝），因此可直连网络；仅作用于交互 Worker，Loop 与门禁运行保持受限。开启需二次确认。
 

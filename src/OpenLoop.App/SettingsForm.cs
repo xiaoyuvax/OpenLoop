@@ -661,5 +661,15 @@ namespace OpenLoop.App
         }
 
         private void OnCancel(object sender, EventArgs e) => DialogResult = DialogResult.Cancel;
+
+        /// <summary>点了「让 AI 帮我配置」时记下当前页；非空表示关掉设置页后由 MainForm 起一个 Loop 会话。</summary>
+        public string AiConfigPage { get; private set; }
+
+        private void OnAiConfig(object sender, EventArgs e)
+        {
+            // 对话框是模态的，必须先关掉用户才能去 Loop 页答话；未保存的改动按「取消」处理
+            AiConfigPage = (_tabs.SelectedTab as AntdUI.TabPage)?.Text ?? "";
+            DialogResult = DialogResult.Cancel;
+        }
     }
 }

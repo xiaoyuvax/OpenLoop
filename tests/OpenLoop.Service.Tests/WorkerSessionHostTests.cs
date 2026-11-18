@@ -153,6 +153,35 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public async Task Immediate_message_jumps_the_queue()
+        {
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            int calls = 0;
+            var host = NewHost(async (request, ct) =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                    await gate.Task.WaitAsync(ct);
+                return new WorkerRunResult { Outcome = "ok", FinalAnswer = request.Text };
+            });
+            var session = NewSession(host);
+
+            host.Send(session.Id, "task", "first");
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Running);
+
+            host.Send(session.Id, "task", "later");
+            host.Send(session.Id, "task", "now", immediate: true);
+            Assert.Equal(new[] { "now", "later" }, host.Get(session.Id).Pending);
+
+            gate.SetResult();
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done && calls >= 3);
+
+            var snapshot = host.Get(session.Id);
+            Assert.Equal(3, snapshot.Turns.Count);
+            Assert.Equal("now", snapshot.Turns[1].Assistant);
+            Assert.Equal("later", snapshot.Turns[2].Assistant);
+        }
+
+        [Fact]
         public async Task Stop_cancels_the_run_and_keeps_the_queue()
         {
             int calls = 0;

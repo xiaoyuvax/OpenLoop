@@ -30,50 +30,90 @@ namespace OpenLoop.Service.Source
 
         private readonly Dictionary<string, string> _trees = new(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>七个版本节点；外部组件的号由 I 维护。</summary>
+        /// <summary>七个版本节点；外部组件来自 components.json（清单缺失时回退内置默认项）。</summary>
         public static IReadOnlyList<VersionNode> Nodes()
         {
             string root = SourceSync.SourceRoot;
             string shellDir = OperatingSystem.IsWindows() ? "src/OpenLoop.App" : "src/OpenLoop.Shell";
+            var specs = ComponentCatalog.Iterable();
+
             return
             [
+                // 组件先出（清单已按「被引用者在前」排好），下游的指纹才能取到上游的版本与指纹
+                .. specs.Select(s => new VersionNode(s.Id, s.Label, SourceSync.ComponentRoot(s.Dir),
+                    ProjectDirOf(s.Marker), s.VersionFile, UpstreamOf(specs, s), WholeRepo: true)),
                 new("core", "Core", root, "src/OpenLoop.Core",
                     "src/OpenLoop.Core/OpenLoop.Core.csproj", []),
                 new("service", "Service", root, "src/OpenLoop.Service",
-                    "src/OpenLoop.Service/OpenLoop.Service.csproj", ["core"]),
-                new("puppetcore", "PuppetCore", SourceSync.PuppetRoot, "Puppet.Core",
-                    "Puppet.Common.targets", [], WholeRepo: true),
-                new("chatflow", "ChatFlow", SourceSync.ChatFlowRoot, "ChatFlow",
-                    "ChatFlow/ChatFlow.csproj", [], WholeRepo: true),
+                    "src/OpenLoop.Service/OpenLoop.Service.csproj", Dependencies(specs, "src/OpenLoop.Service", "core")),
                 new("a", "Worker（A）", root, "src/OpenLoop.A",
-                    "src/OpenLoop.A/OpenLoop.A.csproj", ["service"]),
+                    "src/OpenLoop.A/OpenLoop.A.csproj", Dependencies(specs, "src/OpenLoop.A", "service")),
                 new("i", "Loop（I）", root, "src/OpenLoop.I",
-                    "src/OpenLoop.I/OpenLoop.I.csproj", ["service"]),
-                new("shell", "壳", root, shellDir, "ShellVersion.props", ["service", "chatflow"])
+                    "src/OpenLoop.I/OpenLoop.I.csproj", Dependencies(specs, "src/OpenLoop.I", "service")),
+                new("shell", "壳", root, shellDir, "ShellVersion.props", Dependencies(specs, shellDir, "service"))
             ];
         }
+
+        /// <summary>清单里「谁引用这个项目目录」：被引用的组件就是该节点的上游，不用另写上游表。</summary>
+        private static string[] Dependencies(
+            IReadOnlyList<ComponentSpec> specs, string projectDir, params string[] upstream)
+            => [.. upstream, .. specs
+                .Where(s => s.Consumers.Any(c => IsOpenLoop(c.Repo) && SamePath(c.Project, projectDir)))
+                .Select(s => s.Id)];
+
+        /// <summary>组件自己的上游：被它引用的组件（那些组件的 Consumers 记着它的目录）。</summary>
+        private static string[] UpstreamOf(IReadOnlyList<ComponentSpec> specs, ComponentSpec spec)
+            => [.. specs
+                .Where(u => !ReferenceEquals(u, spec)
+                            && u.Consumers.Any(c => string.Equals(c.Repo, spec.Dir, StringComparison.OrdinalIgnoreCase)))
+                .Select(u => u.Id)];
+
+        private static string ProjectDirOf(string marker)
+        {
+            int slash = (marker ?? "").LastIndexOf('/');
+            return slash > 0 ? marker[..slash] : "";
+        }
+
+        private static bool IsOpenLoop(string repo)
+            => string.Equals(repo, "openloop", StringComparison.OrdinalIgnoreCase);
+
+        private static bool SamePath(string left, string right)
+            => string.Equals(
+                (left ?? "").Replace('\\', '/').Trim('/'),
+                (right ?? "").Replace('\\', '/').Trim('/'),
+                StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// 只有以源码方式参与编译的外部组件才是版本节点；走包时它的包版本已经在消费者指纹里，
         /// 再单独给它升号只会让「包引用」和「源码版本」对不上。
+        /// 判定靠清单里的 consumers：任一引用方把程序集当 ProjectReference 就是源码引用。
         /// </summary>
         public static IReadOnlyList<VersionNode> ActiveNodes()
         {
             var all = Nodes();
-            string ProjectDir(string id) => Path.Combine(SourceSync.SourceRoot, all.First(n => n.Id == id).SourceDir);
+            var specs = ComponentCatalog.Iterable();
 
-            bool puppetSource = Libraries(ProjectDir("service")).Any(l => l.Type == "project" && l.Id == "Puppet.Core");
-            bool chatSource = Libraries(ProjectDir("shell")).Any(l => l.Type == "project" && l.Id == "ChatFlow");
-
-            var active = all.Where(n => n.Id switch
+            var active = new List<VersionNode>();
+            foreach (var node in all)
             {
-                "puppetcore" => puppetSource,
-                "chatflow" => chatSource,
-                _ => true
-            }).ToList();
+                var spec = specs.FirstOrDefault(s => string.Equals(s.Id, node.Id, StringComparison.OrdinalIgnoreCase));
+                if (spec == null || ReferencesProject(spec)) active.Add(node);
+            }
 
             var ids = active.Select(n => n.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
             return active.Select(n => n with { Upstream = n.Upstream.Where(ids.Contains).ToArray() }).ToList();
+        }
+
+        private static bool ReferencesProject(ComponentSpec spec)
+            => spec.Consumers.Any(c => Libraries(ProjectDir(c)).Any(l =>
+                l.Type == "project" && string.Equals(l.Id, spec.Assembly, StringComparison.OrdinalIgnoreCase)));
+
+        private static string ProjectDir(ComponentConsumer consumer)
+        {
+            string repo = IsOpenLoop(consumer.Repo)
+                ? SourceSync.SourceRoot
+                : SourceSync.ComponentRoot(consumer.Repo);
+            return Path.Combine(repo, consumer.Project.Replace('/', Path.DirectorySeparatorChar));
         }
 
         /// <summary>这个节点的指纹与直接依赖清单；上游的版本/指纹取「本轮升完之后」的值。</summary>

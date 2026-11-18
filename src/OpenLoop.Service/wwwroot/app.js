@@ -230,7 +230,7 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
   const pct = snapshot?.contextLimit > 0 && snapshot?.contextTokens != null
     ? Math.min(100, Math.round(snapshot.contextTokens / snapshot.contextLimit * 100)) : 0;
 
-  const send = async () => {
+  const send = async (immediate = true) => {
     if (!activeId) return;
     if (!value) {
       if (retry) {
@@ -244,8 +244,8 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
     }
     setText('');
     try {
-      await post(`/api/sessions/${activeId}/messages`, { text: value, tag: mode });
-      if (running) message.success(mode === 'task' ? '已入队，本轮结束后发送' : '已入队');
+      await post(`/api/sessions/${activeId}/messages`, { text: value, tag: mode, immediate });
+      if (running) message.success(immediate ? '已插队，本轮收尾后立刻发送' : '已入队，本轮结束后发送');
     } catch (e) { setText(value); message.error('发送失败：' + e.message); }
   };
 
@@ -361,18 +361,18 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
     }),
     h(Button, {
       type: 'primary', style: { width: 96 },
-      danger: running && !value, onClick: send
-    }, running ? (value ? '排队发送' : '停止') : retry ? '继续' : '发送'));
+      danger: running && !value, onClick: () => send(true)
+    }, running ? (value ? '发送' : '停止') : retry ? '继续' : '发送'));
 
   const composer = h('div', { style: { flex: 'none', padding: '4px 16px 8px', borderTop: pending ? '0' : '1px solid #f0f0f0' } },
     h(Input.TextArea, {
       value: text, onChange: e => setText(e.target.value), autoSize: { minRows: 3, maxRows: 10 },
-      placeholder: '描述任务，或声明判据 / 纠正（Enter 发送，Shift+Enter 换行）',
+      placeholder: '描述任务，或声明判据 / 纠正（Enter 发送，Ctrl+Enter 等本轮返回，Shift+Enter 换行）',
       onKeyDown: e => {
-        // 与 WinForms 一致：Enter 即时发送，Shift+Enter 软换行；输入法组字中的 Enter 不算
+        // 与 WinForms 一致：Enter 即时发送（运行中=打断本轮），Ctrl+Enter 排队等本轮返回，Shift+Enter 软换行；输入法组字中的 Enter 不算
         if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return;
         e.preventDefault();
-        send();
+        send(!e.ctrlKey);
       }
     }),
     toolbar);

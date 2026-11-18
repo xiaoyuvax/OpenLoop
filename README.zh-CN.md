@@ -83,6 +83,8 @@ ChatFlow   ──▶ App（桌面壳的对话控件）
 - 开发布局直接编译同级检出，不往安装目录复制源码；组件仓库（`PuppetCore`、`ChatFlow`）已检出时只报提交号，不再联网。
 - 安装布局会把 `OpenLoop`、`PuppetCore`、`ChatFlow`（只有 Windows 版本编译它）浅克隆到 `<安装根>/src/`（`src\openloop`、`src\PuppetCore`、`src\ChatFlow`）。
 - 已存在的克隆只 `fetch --depth 1`，绝不 `reset` / `checkout` 覆盖工作树——Loop 改的就是那份源码。
+- 参与迭代的组件清单在仓库根的 `components.json`（仓库地址、检出目录、程序集、版本号文件、谁引用它）；文件缺失或漏写内置项时回退内置的 `PuppetCore` / `ChatFlow`（官方地址）。加第三方 fork 只需加一条，并在 `consumers` 里写明引用它的项目。
+- 组件 origin 与清单地址不一致说明已经换成 fork：推送走 fork，让 Loop 把 `components.json` 里该组件的 `url` 改成 fork 地址。
 - 同步后比较源码版本与运行版本：源码更新 →「可以迭代」；上游（origin）更新 → 提示先更新源码，但不阻止继续用本地代码迭代。
 
 ## 构建与测试

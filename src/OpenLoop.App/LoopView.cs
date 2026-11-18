@@ -46,7 +46,7 @@ namespace OpenLoop.App
         /// <summary>「文件」页在侧栏标签里的下标；第一次点文件路径时才加出来（-1 = 还没有）。</summary>
         private int _filePage = -1;
 
-        /// <summary>运行中提交的文本排队（含 /complain 投递）：默认等本轮返回，可切「立即」插到下一步。</summary>
+        /// <summary>运行中提交的文本排队（含 /complain 投递）：Enter 走「立即」插到下一步，Ctrl+Enter 等本轮返回。</summary>
         private readonly OpenLoop.Service.Pending.PendingQueue _queue = new();
         private OpenLoop.Service.Pending.PendingItem _editing;
 
@@ -172,6 +172,9 @@ namespace OpenLoop.App
 
         /// <summary>/new：开一个新的空 Loop 会话（沿用当前模型与强度）。</summary>
         internal event Action<LoopView, string> NewSessionRequested;
+
+        /// <summary>/complain：把对 Loop 表现的不满交给壳新起一个 Loop 会话处理（与 Worker 同一条路径）。</summary>
+        internal event Action<string> ComplaintRequested;
 
         /// <summary>标题（重新总结后）变了：宿主用它刷新标签页文本。</summary>
         internal event Action<string> TitleChanged;
@@ -307,10 +310,24 @@ namespace OpenLoop.App
 
         public void SetEffort(string effort) => SelectEffort(effort);
 
-        public void Send(string text = null)
+        /// <summary>发到 Loop：空闲直接开跑；运行中 immediate=插到下一步（软打断本轮），否则等本轮返回；只取输入框内容时 text 传 null。</summary>
+        public string Send(string text = null, bool immediate = true)
         {
-            if (!string.IsNullOrWhiteSpace(text)) SendAsync(text);
-            else SendAsync(null);
+            if (!_running)
+            {
+                SendAsync(text);
+                return "已发送到 Loop";
+            }
+
+            bool fromInput = text == null;
+            string body = (fromInput ? _txtInput.Text : text).Trim();
+            if (body.Length == 0) return "输入框为空，没有发送";
+            var item = _queue.Add(body, "task", immediate ? PendingMode.NextStep : PendingMode.AfterTurn);
+            _queue.Paused = false;
+            if (fromInput) _txtInput.Clear();
+            _pending.Sync();
+            if (item != null && item.Immediate) OnImmediateRequested(item);
+            return immediate ? "已插队，本轮收尾后立刻发送" : "已入队，本轮结束后发送";
         }
 
         /// <summary>外部投递（/complain）：空闲就立即处理，忙就排队等当前轮结束后按顺序处理。</summary>
@@ -983,7 +1000,8 @@ namespace OpenLoop.App
             _layoutReady = true;
         }
 
-        private void Submit()
+        /// <summary>提交输入框。immediate=true 时运行中会打断本轮，收尾后立刻发这一条（Enter 的语义）。</summary>
+        private void Submit(bool immediate = false)
         {
             string text = _txtInput.Text.Trim();
 
@@ -1015,7 +1033,8 @@ namespace OpenLoop.App
                 return;
             }
             //命令写了但没写请求：只提示，不要把「/btw」本身当任务发出去
-            if (SessionView.IsCommand(text, "/btw") || SessionView.IsCommand(text, "/fork")) return;
+            if (SessionView.IsCommand(text, "/btw") || SessionView.IsCommand(text, "/complain")
+                || SessionView.IsCommand(text, "/fork")) return;
 
             //「/技能名 请求…」展开成让 Worker 先读技能再执行的任务，后面按普通输入发送/排队
             text = SlashCommands.SkillTask(text, _skillCommands) ?? text;
@@ -1027,9 +1046,12 @@ namespace OpenLoop.App
                     Stop();
                     return;
                 }
-                _queue.Add(text, "task", OpenLoop.Service.Pending.PendingMode.AfterTurn);
+                var item = _queue.Add(text, "task", immediate
+                    ? OpenLoop.Service.Pending.PendingMode.NextStep
+                    : OpenLoop.Service.Pending.PendingMode.AfterTurn);
                 _txtInput.Clear();
                 _pending.Sync();
+                if (item != null && item.Immediate) OnImmediateRequested(item);
                 return;
             }
 
@@ -1049,6 +1071,21 @@ namespace OpenLoop.App
                     return false;
                 }
                 RunSideWork(request);
+                return true;
+            }
+
+            if (SessionView.IsCommand(text, "/complain"))
+            {
+                string complaint = text[9..].Trim();
+                if (complaint.Length == 0)
+                {
+                    Notify("缺少内容", "/complain 后面要写具体不满，例如：/complain 它没看证据就下了结论。", error: true);
+                    return false;
+                }
+                string title = LoopIndex.Title(_workspace, _sessionId);
+                if (string.IsNullOrWhiteSpace(title)) title = _sessionId;
+                ComplaintRequested?.Invoke(
+                    SessionView.ComposeComplaint("Loop", title, _book.Turns, complaint));
                 return true;
             }
 
@@ -1081,6 +1118,7 @@ namespace OpenLoop.App
         private static readonly (string Command, string Description)[] Commands =
         {
             ("/btw", "在右侧栏用当前上下文跑一个只读旁路任务"),
+            ("/complain", "把对 Loop 表现的不满发给 Loop 立即处理"),
             ("/fork", "复制当前上下文开一个新的 Loop 会话（可继续对话）并跳转"),
             ("/new", "开一个新的 Loop 会话，沿用当前的模型与强度")
         };
@@ -1166,8 +1204,8 @@ namespace OpenLoop.App
                 SendAsync(Localization.T("ContinuePrompt"));
                 return;
             }
-            // 运行中点发送 = 排队等本轮返回；要打断当前轮就点队列行的「立即」
-            Submit();
+            // 运行中点发送与 Enter 一致：打断本轮、收尾后立刻发；要等本轮返回用 Ctrl+Enter
+            Submit(immediate: true);
         }
 
         private void OnChatCopy(object sender, ChatFlowActionEventArgs e)
@@ -1340,19 +1378,21 @@ namespace OpenLoop.App
 
         /// <summary>
         /// Enter 在 AntdUI 的 WM_KEYDOWN 里先被消化成换行（早于 KeyDown 事件），
-        /// 所以只能在这里拦：Enter / Ctrl+Enter 发送（运行中=等本轮返回，不打断），Shift+Enter 换行。
+        /// 所以只能在这里拦：Enter 发送（运行中=打断本轮，收尾后立刻发），
+        /// Ctrl+Enter 发送（运行中=等本轮返回），Shift+Enter 换行。
         /// </summary>
         private void InsertSoftNewline() => ComposerKeys.InsertSoftNewline(_txtInput);
 
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
             bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
-            if (!shift && e.KeyData != Keys.Enter && e.KeyData != (Keys.Control | Keys.Enter)) return;
+            bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
+            if (!shift && e.KeyData != Keys.Enter && !ctrl) return;
             e.Result = false;
             if (shift) { InsertSoftNewline(); return; }
             if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
             if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
-            Submit();
+            Submit(immediate: !ctrl);
         }
 
         private IReadOnlyList<SkillInfo> ActiveSkills(
@@ -1400,7 +1440,7 @@ namespace OpenLoop.App
             StateChanged?.Invoke(this);
         }
 
-        /// <summary>运行中且输入为空 = 停止；有内容 = 排队发送；编辑排队项时 = 保存。</summary>
+        /// <summary>运行中且输入为空 = 停止；有内容 = 立即发送（打断本轮）；编辑排队项时 = 保存。</summary>
         private void UpdateSendButton()
         {
             bool editing = _editing != null;
