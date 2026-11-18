@@ -71,6 +71,9 @@ namespace OpenLoop.Core.Agent
             // 4) 模型自创的 XML 式调用（实测 DeepSeek 系会写 <|DSML|invoke name="Shell"> … <|DSML|parameter name="command">…）
             if (TryParseInvoke(text, out call)) return true;
 
+            // 5) 特殊标记被翻成中文的调用（实测 <｜工具调用： Shell>{"argv":[…]}<｜工具调用结束｜>）
+            if (TryParseChineseMarker(text, out call)) return true;
+
             if (TryParseTaggedOrOpenAiStyle(text, out call)) return true;
 
             return false;
@@ -105,6 +108,35 @@ namespace OpenLoop.Core.Agent
         private static readonly Regex InvokeParamRegex = new(
             @"<[^<>]{0,16}parameter\b[^<>]*?\bname\s*=\s*[""'](?<name>[A-Za-z_][\w\-\.]*)[""'][^<>]*>(?<value>.*?)</[^<>]{0,16}parameter\s*>",
             RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        /// <summary>
+        /// 本地模型的特殊标记会被词表翻成中文：<c>&lt;｜工具调用： Shell&gt;{json}&lt;｜工具调用结束｜&gt;</c>。
+        /// 名称在标签里，参数是紧随其后的 JSON 对象本身（不是 {"tool","args"} 包装）——整条协议换个壳，语义不变。
+        /// </summary>
+        private static bool TryParseChineseMarker(string text, out AgentToolCall call)
+        {
+            call = null;
+            var head = ChineseMarkerToolRegex.Match(text);
+            if (!head.Success) return false;
+
+            int brace = text.IndexOf('{', head.Index + head.Length);
+            string json = brace >= 0 ? ExtractJsonObject(text, brace) : null;
+            if (json == null) return false;                    // 被截断：交给上层纠正重试
+
+            var args = new Dictionary<string, object>(StringComparer.Ordinal);
+            if (!TryFillArgs(json, args)) return false;
+            call = new AgentToolCall { Tool = head.Groups["name"].Value, Args = args };
+            return true;
+        }
+
+        private static readonly Regex ChineseMarkerToolRegex = new(
+            @"<\s*[|｜]\s*(?:工具调用|函数调用|tool[▁_\s]?call)\s*[:：]\s*(?<name>[A-Za-z_][\w\-\.]*)\s*[|｜]?\s*>",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        /// <summary>只认标记头（不带名称），供「这是不是在发起调用」判定用，含截断/只有开始标签的情形。</summary>
+        private static readonly Regex ChineseMarkerHeadRegex = new(
+            @"<\s*[|｜]\s*(?:工具调用|函数调用|tool[▁_\s]?call)",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         /// <summary>
         /// 解析全部工具调用（并行调用支持）：文本中按顺序出现的每个 tool-call marker 各还原一次调用。
@@ -314,6 +346,8 @@ namespace OpenLoop.Core.Agent
                 || modelOutput.Contains("<function", StringComparison.OrdinalIgnoreCase)) return true;
             // 模型自创的 XML 式调用（<|DSML|invoke …>）：认出来就走「格式错误 → 纠正重试」，别当最终答复
             if (InvokeToolRegex.IsMatch(modelOutput)) return true;
+            // 特殊标记被翻成中文（<｜工具调用： Shell> / <｜工具调用结束｜>）：哪怕名称/JSON 缺失也算尝试
+            if (ChineseMarkerHeadRegex.IsMatch(modelOutput)) return true;
             if (modelOutput.Contains("invoke", StringComparison.OrdinalIgnoreCase)
                 && modelOutput.Contains("parameter", StringComparison.OrdinalIgnoreCase)) return true;
             return modelOutput.Contains("\"name\"", StringComparison.Ordinal)
@@ -339,9 +373,9 @@ namespace OpenLoop.Core.Agent
             return match.Success ? modelOutput[..match.Index].TrimEnd() : modelOutput;
         }
 
-        /// <summary>协议片段起始：marker，或带装饰的标签头（<c>&lt;|DSML| invoke</c>、<c>&lt;tool_call&gt;</c> 等）。</summary>
+        /// <summary>协议片段起始：marker，或带装饰的标签头（<c>&lt;|DSML| invoke</c>、<c>&lt;tool_call&gt;</c>、<c>&lt;｜工具调用</c> 等）。</summary>
         private static readonly Regex ProtocolFragmentRegex = new(
-            @"<\s*/?\s*[|｜]{0,3}\s*(?:DSML|tool_call|invoke|parameter|function)\b|\btool-call\s*[:：]",
+            @"<\s*/?\s*[|｜]{0,3}\s*(?:DSML|tool_call|invoke|parameter|function|工具调用|函数调用)\b|\btool-call\s*[:：]",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         /// <summary>全角引号/竖线归一化成 ASCII，供协议判定使用（不改动原文本）。</summary>

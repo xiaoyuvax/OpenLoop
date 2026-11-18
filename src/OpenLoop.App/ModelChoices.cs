@@ -93,6 +93,78 @@ namespace OpenLoop.App
             };
         }
 
+        /// <summary>每个提供商在下拉顶部最多列几个最近用过的模型。</summary>
+        private const int RecentPerProvider = 3;
+
+        /// <summary>记住的最近用过的模型条数上限（够排满各提供商的前三个）。</summary>
+        private const int RecentLimit = 60;
+
+        private static readonly object Divider = new();
+
+        /// <summary>最近用过的置顶（每个提供商最多 3 个）、隔一条线，下面才是全量列表。</summary>
+        public static void Fill(AntdUI.Select select, IEnumerable<ModelInfo> models, AppSettings settings)
+        {
+            var all = models as IList<ModelInfo> ?? models.ToList();
+            var recent = Recent(all, settings);
+            var recentIds = recent.Select(m => m.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            select.DrawItem -= DrawDivider;
+            select.DrawItem += DrawDivider;
+            select.Items.Clear();
+            foreach (var model in recent) select.Items.Add(Item(model));
+            if (recent.Count > 0 && recent.Count < all.Count)
+                select.Items.Add(new AntdUI.SelectItem("") { Tag = Divider, Enable = false });
+            foreach (var model in all.Where(m => !recentIds.Contains(m.Id))) select.Items.Add(Item(model));
+        }
+
+        private static AntdUI.SelectItem Item(ModelInfo model) => new(model.Name)
+        {
+            Tag = model.Id,
+            IconSvg = model.IsFree ? UiIcons.Dot(UiStyle.Success) : null,
+            SubText = model.IsFree ? "免费" : null
+        };
+
+        /// <summary>分隔条不用文本行渲染，改画一条细线，占位保持一行高。</summary>
+        private static void DrawDivider(object sender, AntdUI.DrawItemEventArgs e)
+        {
+            if (!ReferenceEquals(e.Item?.Tag, Divider)) return;
+            int y = e.Rect.Y + e.Rect.Height / 2;
+            e.Canvas.DrawLine(UiStyle.Border, 1, e.Rect.Left + 8, y, e.Rect.Right - 8, y);
+        }
+
+        private static List<ModelInfo> Recent(IEnumerable<ModelInfo> models, AppSettings settings)
+        {
+            var result = new List<ModelInfo>();
+            var recent = settings?.RecentModels;
+            if (recent == null || recent.Count == 0) return result;
+
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (string id in recent)
+            {
+                var model = models.FirstOrDefault(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase));
+                if (model == null) continue;
+
+                string owner = settings.ProviderFor(id)?.Name
+                    ?? (OpenCodeHub.IsModel(id) ? "opencode" : "");
+                int used = counts.TryGetValue(owner, out int n) ? n : 0;
+                if (used >= RecentPerProvider) continue;
+                counts[owner] = used + 1;
+                result.Add(model);
+            }
+            return result;
+        }
+
+        /// <summary>记一次模型使用：挪到最前、去重、超上限截掉最早的。</summary>
+        public static void RecordUse(AppSettings settings, string modelId)
+        {
+            if (settings == null || string.IsNullOrWhiteSpace(modelId)) return;
+            string id = modelId.Trim();
+            var recent = settings.RecentModels ??= [];
+            recent.RemoveAll(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase));
+            recent.Insert(0, id);
+            if (recent.Count > RecentLimit) recent.RemoveRange(RecentLimit, recent.Count - RecentLimit);
+        }
+
         private static bool LooksFree(string id)
             => !string.IsNullOrWhiteSpace(id)
                 && id.Contains("free", StringComparison.OrdinalIgnoreCase);

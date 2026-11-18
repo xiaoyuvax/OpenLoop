@@ -109,6 +109,28 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void ParsesChineseSpecialMarker()
+        {
+            const string text =
+                "<｜工具调用： Shell>{\"argv\":[\"powershell\",\"-NoProfile\",\"-File\",\"x.ps1\"],\"cwd\":\".\"}<｜工具调用结束｜>";
+
+            Assert.True(AgentToolCallParser.TryParse(text, out var call));
+            Assert.Equal("Shell", call.Tool);
+            Assert.Contains("x.ps1", call.Args["argv"].ToString());
+            Assert.Equal(".", call.Args["cwd"]);
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt(text));
+            Assert.Equal("", AgentToolCallParser.CutToolCallText(text));
+        }
+
+        [Fact]
+        public void ChineseSpecialMarker_TruncatedJsonIsAttemptNotAnswer()
+        {
+            const string text = "<｜工具调用： ReadFile>{\"path\":\"a.txt";
+            Assert.False(AgentToolCallParser.TryParse(text, out _));
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt(text));
+        }
+
+        [Fact]
         public void ParsesInventedXmlInvoke()
         {
             const string text =

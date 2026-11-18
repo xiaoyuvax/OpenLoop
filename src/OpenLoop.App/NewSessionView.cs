@@ -99,18 +99,11 @@ namespace OpenLoop.App
             _filling = true;
             try
             {
-                _selModel.Items.Clear();
                 var provider = _selProvider.SelectedValue as ProviderConfig;
                 var models = ModelChoices.FilterByProvider(
                     ModelChoices.Build(_settings, onlyFree: _onlyFree), provider);
 
-                foreach (var model in models)
-                    _selModel.Items.Add(new AntdUI.SelectItem(model.Name)
-                    {
-                        Tag = model.Id,
-                        IconSvg = model.IsFree ? UiIcons.Dot(UiStyle.Success) : null,
-                        SubText = model.IsFree ? "免费" : null
-                    });
+                ModelChoices.Fill(_selModel, models, _settings);
 
                 if (provider == null && models.All(m => m.Id != _model))
                 {
@@ -283,6 +276,12 @@ namespace OpenLoop.App
 
             string model = _selModel.SelectedValue as string ?? _model;
             string effort = _selEffort.SelectedValue as string ?? "";
+            if (_settings != null)
+            {
+                ModelChoices.RecordUse(_settings, model);
+                try { _settings.Save(); }
+                catch (Exception ex) { AppLog.Warn("保存设置失败：" + ex.Message); }
+            }
             Submit?.Invoke(new NewSessionRequest(_project, text, model, effort));
         }
 

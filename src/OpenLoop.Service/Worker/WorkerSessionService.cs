@@ -49,6 +49,7 @@ namespace OpenLoop.Service.Worker
         public Action<string> Delta { get; set; }
         public Action<string> Reasoning { get; set; }
         public Action ResetStream { get; set; }
+        /// <summary>工具开始执行时的一行提示（与收尾后的工具行同形）：界面在正文为空时据此显示调用进度。</summary>
         public Action<string> ToolStarted { get; set; }
 
         /// <summary>即时状态通报（例如「等待审批：shell …」），null = 清除。界面拿它填状态行，避免一片空白。</summary>
@@ -200,7 +201,7 @@ namespace OpenLoop.Service.Worker
                     request.Step?.Invoke(step);
                     trace.Step(step);
                 },
-                onToolStart: (name, _) => request.ToolStarted?.Invoke(name),
+                onToolStart: (name, args) => request.ToolStarted?.Invoke(AgentStepRecord.InFlightLine(name, args)),
                 confirmContinue: request.ConfirmContinue,
                 skills: skills);
 

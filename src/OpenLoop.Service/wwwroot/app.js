@@ -188,7 +188,6 @@ function Turn({ turn }) {
 
 function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDelete }) {
   const [text, setText] = useState('');
-  const [mode, setMode] = useState('task');
   const [model, setModel] = useState('');
   const [effort, setEffort] = useState('');
   const [freeOnly, setFreeOnly] = useState(true);
@@ -244,7 +243,7 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
     }
     setText('');
     try {
-      await post(`/api/sessions/${activeId}/messages`, { text: value, tag: mode, immediate });
+      await post(`/api/sessions/${activeId}/messages`, { text: value, tag: 'task', immediate });
       if (running) message.success(immediate ? '已插队，本轮收尾后立刻发送' : '已入队，本轮结束后发送');
     } catch (e) { setText(value); message.error('发送失败：' + e.message); }
   };
@@ -332,10 +331,6 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
     : null;
 
   const toolbar = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'nowrap', minWidth: 0 } },
-    h(Segmented, {
-      size: 'small', value: mode, onChange: setMode,
-      options: [{ label: '任务', value: 'task' }, { label: '声明判据', value: 'criterion' }, { label: '这是纠正', value: 'correction' }]
-    }),
     h(Muted, { style: { flex: '0 1 auto', minWidth: 0, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
       '📁 ' + (snapshot?.workspace || '—')),
     h('div', { style: { flex: 1, minWidth: 8 } }),
@@ -367,7 +362,7 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
   const composer = h('div', { style: { flex: 'none', padding: '4px 16px 8px', borderTop: pending ? '0' : '1px solid #f0f0f0' } },
     h(Input.TextArea, {
       value: text, onChange: e => setText(e.target.value), autoSize: { minRows: 3, maxRows: 10 },
-      placeholder: '描述任务，或声明判据 / 纠正（Enter 发送，Ctrl+Enter 等本轮返回，Shift+Enter 换行）',
+      placeholder: '描述任务（Enter 发送，Ctrl+Enter 等本轮返回，Shift+Enter 换行）',
       onKeyDown: e => {
         // 与 WinForms 一致：Enter 即时发送（运行中=打断本轮），Ctrl+Enter 排队等本轮返回，Shift+Enter 软换行；输入法组字中的 Enter 不算
         if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return;

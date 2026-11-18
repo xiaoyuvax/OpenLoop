@@ -73,5 +73,14 @@ namespace OpenLoop.Core.Tests
 
             Assert.Equal(" >> > Read[{\"path\":] · 失败", step.DisplayLine);
         }
+
+        [Fact]
+        public void In_flight_line_matches_finished_line_without_duration()
+        {
+            string line = AgentStepRecord.InFlightLine("shell",
+                new Dictionary<string, object> { ["command"] = "git status --short" });
+
+            Assert.Equal(" >> Shell[command=git status --short]", line);
+        }
     }
 }

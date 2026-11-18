@@ -51,6 +51,11 @@ namespace OpenLoop.Core.Agent
             }
         }
 
+        /// <summary>执行中的工具行：还没耗时/成败，正文区先按同形提示「正在调用什么」，
+        /// 收尾后由真实工具行接替（同形，避免一次调用前后两种写法）。</summary>
+        public static string InFlightLine(string tool, Dictionary<string, object> args)
+            => new AgentStepRecord { Tool = tool, ArgsSummary = AgentLoop.SummarizeArgs(args), Ok = true }.DisplayLine;
+
         private static readonly string[] GenericKeys =
             ["path", "file", "filePath", "command", "pattern", "query", "url", "prompt", "description", "code", "args"];
 

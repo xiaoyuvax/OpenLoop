@@ -261,11 +261,11 @@ namespace OpenLoop.Service.Worker
                 {
                     if (immediate)
                     {
-                        session.Pending.Insert(0, text);
+                        session.Pending.Insert(0, new PendingSend { Text = text, Tag = tag ?? "task", Immediate = true });
                         session.Paused = false;
                         session.Interrupt = true;
                     }
-                    else session.Pending.Add(text);
+                    else session.Pending.Add(new PendingSend { Text = text, Tag = tag ?? "task" });
                     session.Revision++;
                 }
                 else
@@ -322,11 +322,11 @@ namespace OpenLoop.Service.Worker
                 session.UserEpoch++;
                 session.Revision++;
 
-                if (session.State != Running && session.Pending.Count > 0)
+                // 只在空闲时补发；判空后再取 batch[0]（TakeBatch 可能返回空）
+                if (session.State != Running)
                 {
-                    string next = session.Pending[0];
-                    session.Pending.RemoveAt(0);
-                    Start(session, "task", next);
+                    var batch = TakeBatch(session.Pending);
+                    if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch));
                 }
             }
 
@@ -380,9 +380,9 @@ namespace OpenLoop.Service.Worker
                 if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
                 if (index < 0 || index >= session.Pending.Count) return false;
 
-                string text = session.Pending[index];
+                var item = session.Pending[index];
                 session.Pending.RemoveAt(index);
-                session.Pending.Insert(0, text);
+                session.Pending.Insert(0, new PendingSend { Text = item.Text, Tag = item.Tag, Immediate = true });
                 session.Paused = false;
                 session.UserEpoch++;
                 session.Revision++;
@@ -394,8 +394,8 @@ namespace OpenLoop.Service.Worker
                     return true;
                 }
 
-                session.Pending.RemoveAt(0);
-                Start(session, "task", text);
+                var batch = TakeBatch(session.Pending);
+                if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch));
             }
 
             Changed?.Invoke(id);
@@ -499,6 +499,13 @@ namespace OpenLoop.Service.Worker
                 list.Add(new LlmMessage("assistant", turn.Assistant));
         }
 
+        /// <summary>正文区的执行中提示：并行批次逐行累积（同一行不重复叠加），Step 收尾时整批清空。</summary>
+        private static string AppendToolLine(string status, string line)
+            => string.IsNullOrEmpty(line) ? status
+            : string.IsNullOrEmpty(status) ? line
+            : status.Contains(line) ? status
+            : status + "\n" + line;
+
         private void Start(Session session, string tag, string text)
         {
             // 调用方持有 _lock
@@ -588,12 +595,13 @@ namespace OpenLoop.Service.Worker
                         session.Revision++;
                     }
                 },
-                ToolStarted = _ =>
+                ToolStarted = line =>
                 {
                     lock (_lock)
                     {
                         stream = "";
                         turn.Assistant = "";
+                        turn.Status = AppendToolLine(turn.Status, line);
                         session.Revision++;
                     }
                 },
@@ -624,6 +632,8 @@ namespace OpenLoop.Service.Worker
                         string line = step.DisplayLine;
                         turn.ToolLines = string.IsNullOrEmpty(turn.ToolLines) ? line : turn.ToolLines + "\n" + line;
                         (turn.TimelineRun ??= new RunTimeline()).Tool(line);
+                        // 一批工具收尾：正文区的执行中提示整批清除（并行批次也是一起清）
+                        turn.Status = "";
                         session.Revision++;
                     }
                     // 留言板进度：同工作区的其他会话据此看这一步改了什么、成没成
@@ -706,9 +716,8 @@ namespace OpenLoop.Service.Worker
 
                     if (!session.Paused && session.Pending.Count > 0)
                     {
-                        string next = session.Pending[0];
-                        session.Pending.RemoveAt(0);
-                        Start(session, "task", next);
+                        var batch = TakeBatch(session.Pending);
+                        if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch));
                     }
                 }
 
@@ -823,6 +832,18 @@ namespace OpenLoop.Service.Worker
             }
         }
 
+        private static List<PendingSend> TakeBatch(List<PendingSend> pending)
+        {
+            if (pending.Count == 0) return new List<PendingSend>();
+            bool immediate = pending[0].Immediate;
+            var batch = pending.Where(p => p.Immediate == immediate).ToList();
+            foreach (var item in batch) pending.Remove(item);
+            return batch;
+        }
+
+        private static string Merge(List<PendingSend> batch) =>
+            batch.Count == 1 ? batch[0].Text
+                : string.Join("\n\n", batch.Select((b, i) => $"{i + 1}. {b.Text}"));
         private static WorkerSessionSnapshot snapshot(Session session) => new()
         {
             Id = session.Id,
@@ -856,7 +877,7 @@ namespace OpenLoop.Service.Worker
                 Checkpoint = t.Checkpoint,
                 FinishReason = t.FinishReason
             }).ToList(),
-            Pending = session.Pending.ToList(),
+            Pending = session.Pending.Select(p => p.Text).ToList(),
             Prompts = session.Prompts.Select(p => new WorkerPromptView
             {
                 Id = p.Id,
@@ -869,6 +890,12 @@ namespace OpenLoop.Service.Worker
             }).ToList()
         };
 
+        private sealed class PendingSend
+        {
+            public string Text { get; init; }
+            public string Tag { get; init; }
+            public bool Immediate { get; set; }
+        }
         private sealed class Session
         {
             public string Id { get; init; }
@@ -878,7 +905,7 @@ namespace OpenLoop.Service.Worker
             public Func<AppSettings> Settings { get; init; }
             public DateTime CreatedAt { get; } = DateTime.UtcNow;
             public List<WorkerTurn> Turns { get; } = [];
-            public List<string> Pending { get; } = [];
+            public List<PendingSend> Pending { get; } = [];
             public List<Prompt> Prompts { get; } = [];
 
             public string State { get; set; } = Idle;

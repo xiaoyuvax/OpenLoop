@@ -122,6 +122,28 @@ namespace OpenLoop.Service.Pending
             return next;
         }
 
+        /// <summary>
+        /// 按类批次取下一批要发的：优先「立即」，其次按入队顺序；
+        /// 同一批里所有条目 Mode 相同（暂停或编辑中的条目跳过）。
+        /// 宿主把整批合并成一条发送，避免逐条开轮。
+        /// </summary>
+        public IReadOnlyList<PendingItem> TakeBatch()
+        {
+            if (Paused || _items.Count == 0) return new List<PendingItem>();
+            var first = _items.FirstOrDefault(i => i.Immediate && !_held.Contains(i))
+                        ?? _items.FirstOrDefault(i => !_held.Contains(i));
+            if (first == null) return new List<PendingItem>();
+            var mode = first.Mode;
+            var batch = _items.Where(i => i.Mode == mode && !_held.Contains(i)).ToList();
+            foreach (var item in batch)
+            {
+                _items.Remove(item);
+                _held.Remove(item);
+            }
+            Changed?.Invoke();
+            return batch;
+        }
+
         public void Clear()
         {
             if (_items.Count == 0) return;

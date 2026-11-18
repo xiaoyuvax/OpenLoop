@@ -353,10 +353,14 @@ namespace OpenLoop.App
         private void DrainQueue()
         {
             if (IsDisposed || _running) return;
-            var next = _queue.TakeNext();
-            if (next == null) return;
+
+            var batch = _queue.TakeBatch();
+            if (batch.Count == 0) return;
             _pending.Sync();
-            Send(next.Text);
+            string merged = batch.Count == 1
+                ? batch[0].Text
+                : string.Join("\n\n", batch.Select((b, i) => $"{i + 1}. {b.Text}"));
+            Send(merged);
         }
 
         public void Stop()
@@ -618,7 +622,7 @@ namespace OpenLoop.App
                         turn.ToolTraceText = turn.ToolCallLines;
                         lock (timeline) timeline.Tool(line);
                         lock (timeline) turn.TimelineText = timeline.Render();
-                        turn.ToolStatusText = null;
+                        turn.ToolsFinished();
                         RefreshChat();
                     });
                     trace.Step(step);
@@ -626,13 +630,14 @@ namespace OpenLoop.App
                     if (!string.IsNullOrEmpty(step.Summary)) note += " → " + step.Summary;
                     OpenLoop.Service.Web.SessionBoard.Working(BoardId(), note, remote: true);
                 },
-                onToolStart: (name, _) =>
+                onToolStart: (name, args) =>
                 {
                     lock (_streamBuffer) _streamBuffer.Clear();
+                    string hint = AgentStepRecord.InFlightLine(name, args);
                     RunOnUi(() =>
                     {
                         turn.AssistantText = "";
-                        turn.ToolStatusText = $"正在调用 {name}…";
+                        turn.ToolStarted(hint);
                         _chat.UpdateStreamingMessage(turn, "", true);
                         RefreshChat();
                     });

@@ -256,18 +256,19 @@ namespace OpenLoop.App
                         turn.ToolTraceText = turn.ToolCallLines;
                         lock (timeline) timeline.Tool(line);
                         lock (timeline) turn.TimelineText = timeline.Render();
-                        turn.ToolStatusText = null;
+                        turn.ToolsFinished();
                         RefreshChat();
                     });
                     trace.Step(step);
                 },
-                onToolStart: (name, _) =>
+                onToolStart: (name, args) =>
                 {
                     lock (_streamBuffer) _streamBuffer.Clear();
+                    string hint = AgentStepRecord.InFlightLine(name, args);
                     RunOnUi(() =>
                     {
                         turn.AssistantText = "";
-                        turn.ToolStatusText = $"正在调用 {name}…";
+                        turn.ToolStarted(hint);
                         _chat.UpdateStreamingMessage(turn, "", true);
                         RefreshChat();
                     });

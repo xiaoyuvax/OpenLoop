@@ -975,10 +975,13 @@ namespace OpenLoop.App
         {
             if (IsDisposed || _running) return;
 
-            var next = _queue.TakeNext();
-            if (next == null) return;
+            var batch = _queue.TakeBatch();
+            if (batch.Count == 0) return;
             _pending.Sync();
-            SendTask(next.Tag, next.Text);
+            string merged = batch.Count == 1
+                ? batch[0].Text
+                : string.Join("\n\n", batch.Select((b, i) => $"{i + 1}. {b.Text}"));
+            SendTask(batch[0].Tag, merged);
         }
 
         private void OnModeChanged(object sender, AntdUI.IntEventArgs e)
@@ -1004,7 +1007,11 @@ namespace OpenLoop.App
             if (_selModel.SelectedValue is not string id || string.IsNullOrWhiteSpace(id)) return;
             _model = id;
             UpdateContext(_ctxTokens);   // 换了模型上下文上限也变了，标签要跟着刷新
-            Persist(s => s.Model = id);
+            Persist(s =>
+            {
+                s.Model = id;
+                ModelChoices.RecordUse(s, id);
+            });
             UpdateEvolveButtonEnabled();
         }
 
@@ -1129,18 +1136,11 @@ namespace OpenLoop.App
             _fillingModels = true;
             try
             {
-                _selModel.Items.Clear();
                 var provider = _selProvider.SelectedValue as ProviderConfig;
                 var visible = ModelChoices.FilterByProvider(
                     ModelChoices.Build(_settings(), _onlyFree), provider);
 
-                foreach (var model in visible)
-                    _selModel.Items.Add(new AntdUI.SelectItem(model.Name)
-                    {
-                        Tag = model.Id,
-                        IconSvg = model.IsFree ? UiIcons.Dot(UiStyle.Success) : null,
-                        SubText = model.IsFree ? "免费" : null
-                    });
+                ModelChoices.Fill(_selModel, visible, _settings());
 
                 if (provider == null && !string.IsNullOrWhiteSpace(_model) && visible.All(m => m.Id != _model))
                 {

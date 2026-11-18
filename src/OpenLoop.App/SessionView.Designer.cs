@@ -488,13 +488,9 @@ namespace OpenLoop.App
             _modeControl.Height = 30;
             _modeControl.Width = 300;
             _modeControl.Margin = new Padding(0, 0, 8, 0);
-            _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("ModeTask") });
-            _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("ModeCriterion") });
-            _modeControl.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("ModeCorrection") });
             _modeControl.SelectIndex = 0;
             _modeControl.SelectIndexChanged += OnModeChanged;
-
-            _toolbarLeft.Controls.Add(_modeControl);
+            // 模式按钮已下线，控件保留以兼容 Puppet 的 SelectMode/SendMode（不再挂到任何父控件上）
 
             _lblPath.Name = "lblPath";
             _lblPath.AutoSize = false;

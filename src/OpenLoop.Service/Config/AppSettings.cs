@@ -70,6 +70,9 @@ namespace OpenLoop.Service.Config
         /// <summary>按模型 id 的用户覆盖：显示名称、上下文上限（服务商接口不报这些值时用）。</summary>
         public Dictionary<string, ModelProps> ModelProps { get; set; } = [];
 
+        /// <summary>最近用过的模型 id，最近在前（下拉置顶用）。</summary>
+        public List<string> RecentModels { get; set; } = [];
+
         /// <summary>取一个模型的覆盖项（id 不区分大小写）；没有则返回 null。</summary>
         public ModelProps PropsFor(string id)
         {
@@ -166,6 +169,7 @@ namespace OpenLoop.Service.Config
             settings.Providers ??= [];
             foreach (var provider in settings.Providers) provider.Models ??= [];
             settings.ModelProps ??= [];
+            settings.RecentModels ??= [];
 
             if (settings.Providers.Count == 0 && !string.IsNullOrWhiteSpace(settings.BaseUrl))
             {
