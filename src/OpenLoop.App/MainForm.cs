@@ -585,16 +585,21 @@ namespace OpenLoop.App
             return (canRead ? "read=ok" : "read=denied") + " " + (canWrite ? "write=ok" : "write=denied");
         }
 
-        /// <summary>Worker 的 /complain：投到该项目自己的 Loop 会话；忙则排队，且不抢当前标签页。</summary>
+        /// <summary>/complain：每条反馈独立起一个 Loop 会话，不并到最近的会话里；不抢当前标签页。</summary>
         private void OnComplaint(Session session, string text)
-            => EnsureLoop(session.Workspace, select: false)?.Post(text);
+            => PostComplaint(session.Workspace, text);
+
+        private void PostComplaint(string workspace, string text)
+            => EnsureLoop(workspace, select: false, sessionId: "",
+                title: "反馈 " + DateTime.Now.ToString("HH:mm"))?.Post(text);
 
         /// <summary>
         /// 取（必要时创建）某个项目的 Loop 会话。历史按「项目 + 会话 id」分开存，
         /// 改进产物（修订提案、源码修改）仍落在全局。
         /// </summary>
         /// <param name="sessionId">null = 该项目最近的 Loop 会话（没有就新建）；"" = 总是新建。</param>
-        private LoopView EnsureLoop(string workspace, bool select, string sessionId = null)
+        /// <param name="title">新建时的标题；null = 用索引里已有的标题。</param>
+        private LoopView EnsureLoop(string workspace, bool select, string sessionId = null, string title = null)
         {
             string target = workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _lastSession?.Workspace;
@@ -623,6 +628,8 @@ namespace OpenLoop.App
                 _loopPage = existing.Page;
                 return existing.View;
             }
+
+            if (title != null) LoopIndex.Rename(target, id, title);
 
             var view = new LoopView { Dock = DockStyle.Fill };
             view.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
@@ -690,7 +697,7 @@ namespace OpenLoop.App
 
             var view = new PuppetView { Dock = DockStyle.Fill };
             view.ComplaintRequested += text =>
-                EnsureLoop(_lastSession?.Workspace ?? SourceSync.InstallRoot, select: false)?.Post(text);
+                PostComplaint(_lastSession?.Workspace ?? SourceSync.InstallRoot, text);
             var page = new AntdUI.TabPage
             {
                 Text = "Puppet · " + (string.IsNullOrWhiteSpace(agentId) ? host : agentId),
