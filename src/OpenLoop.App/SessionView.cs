@@ -95,7 +95,7 @@ namespace OpenLoop.App
             _lblTitle.Text = session.Title;
             _tips.SetToolTip(_btnSummary, "用当前模型重新总结会话标题");
             _lblPath.Text = UiStyle.ShortPath(session.Workspace);
-            _tips.SetToolTip(_lblPath, session.Workspace);
+            _tips.SetToolTip(_lblPath, session.Workspace + "（点击在资源管理器中打开）");
             _chat.PlaceholderText = Localization.T("NoMessages");
             //每轮都落过盘，但要在这里读回来，否则重启后会话是空的
             var saved = ChatStore.Load(session.Workspace, session.Id);
@@ -984,22 +984,7 @@ namespace OpenLoop.App
             SendTask(batch[0].Tag, merged);
         }
 
-        private void OnModeChanged(object sender, AntdUI.IntEventArgs e)
-        {
-            _mode = e.Value switch
-            {
-                1 => "criterion",
-                2 => "correction",
-                _ => "task"
-            };
-        }
-
-        private void SetMode(string tag)
-        {
-            _mode = tag;
-            int index = tag switch { "criterion" => 1, "correction" => 2, _ => 0 };
-            if (_modeControl.SelectIndex != index) _modeControl.SelectIndex = index;
-        }
+        private void SetMode(string tag) => _mode = string.IsNullOrWhiteSpace(tag) ? "task" : tag;
 
         private void OnModelChanged(object sender, AntdUI.ObjectNEventArgs e)
         {
@@ -1463,6 +1448,9 @@ namespace OpenLoop.App
                 turn.ToolCallLines = remote.ToolLines ?? "";
                 turn.ToolTraceText = remote.ToolLines ?? "";
                 turn.TimelineText = remote.Timeline ?? "";
+                turn.Phases.Clear();
+                foreach (var phase in remote.Phases ?? [])
+                    turn.Phases.Add((phase?.Thinking ?? "", LlmTextSanitizer.StripSafetyLines(phase?.Answer ?? "")));
                 turn.ToolStepCount = remote.Steps;
                 turn.ToolTotalMs = remote.Ms;
                 turn.Streaming = remote.Streaming;
@@ -1649,6 +1637,30 @@ namespace OpenLoop.App
             _lblTrace.Text = "trace: " + RelativeToWorkspace(workspace, _tracePath);
             _tips.SetToolTip(_lblTrace, _tracePath);
             FitLoopLabels();
+        }
+
+        /// <summary>点左下角路径标签：用资源管理器打开当前会话的工作区。</summary>
+        private void OnOpenWorkspace(object sender, EventArgs e)
+        {
+            string workspace = Session?.Workspace?.Trim() ?? "";
+            if (!Directory.Exists(workspace))
+            {
+                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                return;
+            }
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = "\"" + workspace + "\"",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("打开工作区失败：" + ex.Message);
+            }
         }
 
         private void OnOpenTrace(object sender, EventArgs e)
@@ -2089,7 +2101,6 @@ namespace OpenLoop.App
             _btnRule.Enabled = !running;
             _btnDrafts.Enabled = !running;
             _btnReport.Enabled = !running;
-            _modeControl.Enabled = !running;
             _selProvider.Enabled = !running;
             _selModel.Enabled = !running;
             _selEffort.Enabled = !running;

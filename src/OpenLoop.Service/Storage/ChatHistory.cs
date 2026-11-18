@@ -14,6 +14,9 @@ namespace OpenLoop.Service.Storage
 
         /// <summary>思维与工具调用按时间顺序穿插后的文本；旧文件没有该字段，读出来为 null。</summary>
         public string Timeline { get; set; }
+
+        /// <summary>分段：（本段思维，本段正文）；旧文件没有该字段，读出来为 null（界面退回整轮一个折叠区）。</summary>
+        public List<ChatPhaseEntry> Phases { get; set; }
         public int Steps { get; set; }
         public long Ms { get; set; }
 
@@ -29,6 +32,13 @@ namespace OpenLoop.Service.Storage
     {
         public string Role { get; set; }
         public string Content { get; set; }
+    }
+
+    /// <summary>一轮里的一段：（本段思维与工具过程，本段正文）。</summary>
+    public sealed class ChatPhaseEntry
+    {
+        public string Thinking { get; set; }
+        public string Answer { get; set; }
     }
 
     /// <summary>

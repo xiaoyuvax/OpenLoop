@@ -151,14 +151,8 @@
   <data name="ModeTask" xml:space="preserve">
     <value>任务</value>
   </data>
-  <data name="ModeCriterion" xml:space="preserve">
-    <value>声明判据</value>
-  </data>
-  <data name="ModeCorrection" xml:space="preserve">
-    <value>这是纠正</value>
-  </data>
   <data name="ComposerHint" xml:space="preserve">
-    <value>描述任务，或声明判据 / 纠正（Enter 发送，Shift+Enter 换行）</value>
+    <value>描述任务（Enter 发送，Shift+Enter 换行）</value>
   </data>
   <data name="TabLoop" xml:space="preserve">
     <value>Loop</value>

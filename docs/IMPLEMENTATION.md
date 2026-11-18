@@ -1,4 +1,4 @@
-# OpenLoop 实施方案
+﻿# OpenLoop 实施方案
 
 > 对应 `CHARTER.md` charter/5。本文是实现计划，不是规范。
 > 范围：M1（可工作的通用 WinForms agent，含共用对话控件抽取）。M2/M3 只列形状。
@@ -328,7 +328,8 @@ public sealed class AgentPolicy
 
 - 对话区用 `ChatFlowControl`，数据源 `ChatTurnBook`
 - 步骤不另开列表：工具行直接进 `ChatTurn.ToolCallLines`，思考区显示 `ToolTraceText`（复用控件已有能力，不新造视图）
-- 三个按钮把消息标签（`task` / `criterion` / `correction`）写进 trace；M1 不消费这些标签
+- 正文出现即分段：`ChatTurn.Phases`（每段 = 该段思维与工具 + 该段正文），ChatFlow 按段各出一条助手条与折叠区；旧数据分段为空时退回整轮一条
+- 每段的折叠状态各自独立：`ChatTurn.PhaseExpanded`（键 = 分段下标），`ChatFlowItem.ThinkingExpanded` 按段取值；`ChatTurn.ThinkingExpanded` 只服务不分段的旧数据
 
 ### 6.2 配置与密钥
 

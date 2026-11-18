@@ -49,6 +49,9 @@ namespace OpenLoop.App
                     ToolStepCount = entry.Steps,
                     ToolTotalMs = entry.Ms
                 };
+                if (entry.Phases is { Count: > 0 })
+                    foreach (var phase in entry.Phases)
+                        turn.Phases.Add((phase?.Thinking ?? "", phase?.Answer ?? ""));
                 if (entry.Messages is { Count: > 0 })
                     AttachTranscript(turn, entry.Messages
                         .Where(m => !string.IsNullOrEmpty(m?.Content))
@@ -70,6 +73,7 @@ namespace OpenLoop.App
                 Reasoning = t.ReasoningText,
                 ToolLines = t.ToolCallLines,
                 Timeline = t.TimelineText,
+                Phases = t.Phases.Select(p => new ChatPhaseEntry { Thinking = p.Thinking, Answer = p.Answer }).ToList(),
                 Steps = t.ToolStepCount,
                 Ms = t.ToolTotalMs,
                 Model = model,

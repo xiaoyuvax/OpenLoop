@@ -174,6 +174,32 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void ParsesArgsEncodedAsJsonString()
+        {
+            Assert.True(AgentToolCallParser.TryParse(
+                "tool-call: {\"tool\":\"ReadFile\",\"args\":\"{\\\"path\\\":\\\"a.txt\\\",\\\"limit\\\":20}\"}", out var call));
+            Assert.Equal("ReadFile", call.Tool);
+            Assert.Equal("a.txt", call.Args["path"]);
+            Assert.Equal(20L, call.Args["limit"]);
+        }
+
+        [Fact]
+        public void UnwrapsNestedToolCallWrapper()
+        {
+            Assert.True(AgentToolCallParser.TryParse(
+                "tool-call: {\"tool\":\"Tool_call\",\"args\":{\"tool\":\"OpenCodeTask\",\"args\":{\"task\":\"x\"}}}", out var call));
+            Assert.Equal("OpenCodeTask", call.Tool);
+            Assert.Equal("x", call.Args["task"]);
+        }
+
+        [Fact]
+        public void UnparseableArgsStringIsFormatDamage()
+        {
+            Assert.False(AgentToolCallParser.TryParse(
+                "tool-call: {\"tool\":\"ReadFile\",\"args\":\"path=a.txt\"}", out _));
+        }
+
+        [Fact]
         public void CutToolCallTextHidesProtocolTail()
         {
             Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText(

@@ -545,6 +545,8 @@ namespace OpenLoop.App
             _promptTokens = 0;
             _liveTokens = 0;
             var timeline = new RunTimeline();
+            // 正文喂进时间线的进度：正文出现即分段，正文之后的思维另起一段折叠区
+            int answerLen = 0;
             long lastDeltaUi = 0;
             Action<string> onDelta = piece =>
             {
@@ -558,10 +560,16 @@ namespace OpenLoop.App
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
                 string visible = AgentToolCallParser.CutToolCallText(snapshot);
                 if (visible.Length == 0) return;
+                if (visible.Length > answerLen)
+                {
+                    lock (timeline) timeline.Answer(visible[answerLen..]);
+                    answerLen = visible.Length;
+                }
                 // 正文先进数据：标签页关掉（句柄失效）时界面更新会被跳过，重开后按数据重建
                 turn.AssistantText = LlmTextSanitizer.StripSafetyLines(visible);
                 RunOnUi(() =>
                 {
+                    lock (timeline) SyncPhases(turn, timeline);
                     _contextTokens = _promptTokens + _liveTokens;
                     ApplyDetail();
                     _chat.UpdateStreamingMessage(turn, null);
@@ -585,6 +593,7 @@ namespace OpenLoop.App
                 {
                     turn.ReasoningText = snapshot;
                     lock (timeline) turn.TimelineText = timeline.Render();
+                    lock (timeline) SyncPhases(turn, timeline);
                     _contextTokens = _promptTokens + _liveTokens;
                     ApplyDetail();
                     // 与 Worker 一致：正文只由 onDelta 写（已过滤协议原文），推理增量只刷新思考区
@@ -598,11 +607,13 @@ namespace OpenLoop.App
                 lock (_streamBuffer) _streamBuffer.Clear();
                 lock (reasoningBuffer) reasoningBuffer.Clear();
                 _liveTokens = 0;
+                answerLen = 0;
                 lock (timeline) timeline.DropThinking();
                 RunOnUi(() =>
                 {
                     turn.ReasoningText = "";
                     lock (timeline) turn.TimelineText = timeline.Render();
+                    lock (timeline) SyncPhases(turn, timeline);
                     _chat.UpdateStreamingMessage(turn, "", true);
                     RefreshChat();
                 });
@@ -622,6 +633,7 @@ namespace OpenLoop.App
                         turn.ToolTraceText = turn.ToolCallLines;
                         lock (timeline) timeline.Tool(line);
                         lock (timeline) turn.TimelineText = timeline.Render();
+                        lock (timeline) SyncPhases(turn, timeline);
                         turn.ToolsFinished();
                         RefreshChat();
                     });
@@ -633,6 +645,7 @@ namespace OpenLoop.App
                 onToolStart: (name, args) =>
                 {
                     lock (_streamBuffer) _streamBuffer.Clear();
+                    answerLen = 0;
                     string hint = AgentStepRecord.InFlightLine(name, args);
                     RunOnUi(() =>
                     {
@@ -681,6 +694,8 @@ namespace OpenLoop.App
                 turn.AssistantText = result.StoppedByUser && string.IsNullOrWhiteSpace(result.FinalAnswer)
                     ? "（已停止）"
                     : CleanAnswer(result.FinalAnswer, result.FinishReason);
+                lock (timeline) timeline.FeedAnswerTail(turn.AssistantText);
+                lock (timeline) SyncPhases(turn, timeline);
                 ChatStore.AttachTranscript(turn, result.Transcript);
                 trace.Message("assistant", turn.AssistantText);
 
@@ -744,6 +759,14 @@ namespace OpenLoop.App
                 // 排队文本：当前轮收尾后再发，避免重入
                 if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
             }
+        }
+
+        /// <summary>把时间线的分段同步进回话数据；分段正文过一遍安全行清洗，与正文区一致。</summary>
+        private static void SyncPhases(ChatTurn turn, RunTimeline timeline)
+        {
+            turn.Phases.Clear();
+            foreach (var (thinking, answer) in timeline.RenderPhases())
+                turn.Phases.Add((thinking, LlmTextSanitizer.StripSafetyLines(answer ?? "")));
         }
 
         private static string CleanAnswer(string text, string finishReason = null)

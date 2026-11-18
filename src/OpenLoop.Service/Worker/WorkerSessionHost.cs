@@ -19,6 +19,9 @@ namespace OpenLoop.Service.Worker
 
         /// <summary>采集中的顺序块，只在本进程内用，投影出去的是 <see cref="Timeline"/>。</summary>
         internal RunTimeline TimelineRun { get; set; }
+
+        /// <summary>分段投影：正文出现前的思维/工具一段，正文之后又出现思维另起一段（空 = 旧行为）。</summary>
+        public List<WorkerPhase> Phases { get; set; } = [];
         public int Steps { get; set; }
         public long Ms { get; set; }
         public bool Streaming { get; set; }
@@ -35,6 +38,13 @@ namespace OpenLoop.Service.Worker
 
         /// <summary>这一轮结束时的完整消息（含工具调用/结果），用于下一轮的上下文。</summary>
         public List<LlmMessage> Transcript { get; set; }
+    }
+
+    /// <summary>一轮里的一段：（本段思维与工具过程，本段正文）。</summary>
+    public sealed class WorkerPhase
+    {
+        public string Thinking { get; set; }
+        public string Answer { get; set; }
     }
 
     /// <summary>给界面/总线用的只读投影。</summary>
@@ -144,6 +154,11 @@ namespace OpenLoop.Service.Worker
                     Reasoning = entry.Reasoning ?? "",
                     ToolLines = entry.ToolLines ?? "",
                     Timeline = entry.Timeline ?? "",
+                    Phases = entry.Phases?.Select(p => new WorkerPhase
+                    {
+                        Thinking = p?.Thinking ?? "",
+                        Answer = p?.Answer ?? ""
+                    }).ToList() ?? [],
                     Steps = entry.Steps,
                     Ms = entry.Ms,
                     Transcript = entry.Messages?
@@ -533,6 +548,8 @@ namespace OpenLoop.Service.Worker
             // 流式正文只写截掉协议片段后的部分（CutToolCallText），与 LoopView/SideWorkView 的
             // streamBuffer 过滤保持一致；协议原文不能出现在正文里。
             string stream = "";
+            // 正文喂进时间线的进度：正文出现即分段，正文之后的思维另起一段折叠区
+            int answerLen = 0;
             // 上下文占比：本轮 prompt 估算 + 已生成内容（按增量累加，避免每次 delta 重扫整段）
             int promptTokens = 0, liveTokens = 0;
             var request = new WorkerRunRequest
@@ -568,6 +585,11 @@ namespace OpenLoop.Service.Worker
                         liveTokens += AgentContext.EstimateTokens(piece);
                         // 正文只放截掉协议片段后的部分：模型边写正文边吐调用原文时，别让协议原文先闪现
                         turn.Assistant = AgentToolCallParser.CutToolCallText(stream);
+                        if (turn.Assistant.Length > answerLen)
+                        {
+                            (turn.TimelineRun ??= new RunTimeline()).Answer(turn.Assistant[answerLen..]);
+                            answerLen = turn.Assistant.Length;
+                        }
                         session.ContextTokens = promptTokens + liveTokens;
                         session.Revision++;
                     }
@@ -591,6 +613,7 @@ namespace OpenLoop.Service.Worker
                         liveTokens = 0;
                         turn.Assistant = "";
                         turn.Reasoning = "";
+                        answerLen = 0;
                         turn.TimelineRun?.DropThinking();
                         session.Revision++;
                     }
@@ -601,6 +624,7 @@ namespace OpenLoop.Service.Worker
                     {
                         stream = "";
                         turn.Assistant = "";
+                        answerLen = 0;
                         turn.Status = AppendToolLine(turn.Status, line);
                         session.Revision++;
                     }
@@ -705,6 +729,8 @@ namespace OpenLoop.Service.Worker
                     turn.FinishReason = result.FinishReason;
                     turn.Transcript = result.Transcript as List<LlmMessage> ?? result.Transcript?.ToList();
                     turn.Timeline = turn.TimelineRun?.Render() ?? turn.Timeline;
+                    if (turn.TimelineRun != null) turn.TimelineRun.FeedAnswerTail(turn.Assistant);
+                    turn.Phases = PhasesOf(turn);
 
                     session.Steps = result.Steps;
                     session.Outcome = result.Outcome;
@@ -739,6 +765,18 @@ namespace OpenLoop.Service.Worker
             lock (_lock) return _sessions.TryGetValue(id ?? "", out var session) ? session.UserEpoch : null;
         }
 
+        /// <summary>按时间线切段投影；没有采集数据（旧会话）时沿用已有分段，别把落盘的分段抹掉。</summary>
+        private static List<WorkerPhase> PhasesOf(WorkerTurn turn)
+        {
+            var phases = turn.TimelineRun?.RenderPhases()
+                .Select(p => new WorkerPhase { Thinking = p.Thinking, Answer = p.Answer }).ToList()
+                ?? turn.Phases ?? [];
+            // 失败/停止轮的正文是接口提示而不是模型说过的话：挂到末段，否则被分段的正文顶掉、用户看不到报错
+            if (phases.Count > 0 && !turn.Streaming && ServerNotice.IsNotice(turn.Assistant))
+                phases[^1].Answer = turn.Assistant;
+            return phases;
+        }
+
         /// <summary>把会话的轮次写到 chats/（与旧版 App 同一个文件格式）。</summary>
         private void Persist(Session session)
         {
@@ -757,6 +795,8 @@ namespace OpenLoop.Service.Worker
                     Reasoning = t.Reasoning,
                     ToolLines = t.ToolLines,
                     Timeline = t.TimelineRun?.Render() ?? t.Timeline,
+                    Phases = PhasesOf(t)
+                        .Select(p => new ChatPhaseEntry { Thinking = p.Thinking, Answer = p.Answer }).ToList(),
                     Steps = t.Steps,
                     Ms = t.Ms,
                     Model = session.Model,
@@ -869,6 +909,7 @@ namespace OpenLoop.Service.Worker
                 Reasoning = t.Reasoning,
                 ToolLines = t.ToolLines,
                 Timeline = t.TimelineRun?.Render() ?? t.Timeline,
+                Phases = PhasesOf(t),
                 Steps = t.Steps,
                 Ms = t.Ms,
                 Streaming = t.Streaming,

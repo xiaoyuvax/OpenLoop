@@ -46,5 +46,55 @@ namespace OpenLoop.Core.Tests
         {
             Assert.Equal("", new RunTimeline().Render());
         }
+
+        [Fact]
+        public void RenderPhasesSplitsAfterAnswer()
+        {
+            var timeline = new RunTimeline();
+            timeline.Thinking("想");
+            timeline.Answer("正文一");
+            timeline.Thinking("再想");
+            timeline.Answer("正文二");
+
+            // 整轮时间线仍只含思维与工具（正文由分段渲染，避免折叠区重复正文）
+            Assert.Equal("想\n\n再想", timeline.Render());
+
+            var phases = timeline.RenderPhases();
+            Assert.Equal(2, phases.Count);
+            Assert.Equal(("想", "正文一"), phases[0]);
+            Assert.Equal(("再想", "正文二"), phases[1]);
+        }
+
+        [Fact]
+        public void RenderPhasesWithoutAnswerIsOneOpenPhase()
+        {
+            var timeline = new RunTimeline();
+            timeline.Thinking("想");
+            timeline.Answer("正文一");
+            timeline.Thinking("还在流");
+
+            var phases = timeline.RenderPhases();
+            Assert.Equal(2, phases.Count);
+            Assert.Equal(("想", "正文一"), phases[0]);
+            Assert.Equal(("还在流", ""), phases[1]);
+
+            Assert.Equal(("", ""), new RunTimeline().RenderPhases()[0]);
+        }
+
+        [Fact]
+        public void FeedAnswerTailAppendsThrottledTailOnly()
+        {
+            var timeline = new RunTimeline();
+            timeline.Thinking("思考");
+            timeline.Answer("前半");
+            timeline.FeedAnswerTail("前半后半");
+
+            var phases = timeline.RenderPhases();
+            Assert.Single(phases);
+            Assert.Equal(("思考", "前半后半"), phases[0]);
+
+            timeline.FeedAnswerTail("完全对不上的文本");
+            Assert.Equal("前半后半", timeline.RenderPhases()[0].Answer);
+        }
     }
 }

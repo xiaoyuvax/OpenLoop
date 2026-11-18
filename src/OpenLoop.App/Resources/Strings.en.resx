@@ -151,14 +151,8 @@
   <data name="ModeTask" xml:space="preserve">
     <value>Task</value>
   </data>
-  <data name="ModeCriterion" xml:space="preserve">
-    <value>State criteria</value>
-  </data>
-  <data name="ModeCorrection" xml:space="preserve">
-    <value>Correction</value>
-  </data>
   <data name="ComposerHint" xml:space="preserve">
-    <value>Describe a task, or state criteria / corrections (Enter to send, Shift+Enter for a new line)</value>
+    <value>Describe a task (Enter to send, Shift+Enter for a new line)</value>
   </data>
   <data name="TabLoop" xml:space="preserve">
     <value>Loop</value>

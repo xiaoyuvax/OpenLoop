@@ -452,7 +452,7 @@ namespace OpenLoop.App
             _toolbarLeft.Controls.Add(_freeSwitch);
             _toolbarLeft.Controls.Add(_lblFree);
             _toolbarLeft.Controls.Add(_selEffort);
-                        _toolbarLeft.Controls.Add(_lblStatus);
+            // 状态标签已从底栏移除（控件保留：LoopView.Status 与右侧详情仍读它的文本）
 
             _btnSend.Name = "btnSend";
             _btnSend.Text = Localization.T("Send");

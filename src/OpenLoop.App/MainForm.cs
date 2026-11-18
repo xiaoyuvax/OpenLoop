@@ -1636,17 +1636,22 @@ namespace OpenLoop.App
             return EnsureLoop(workspace, true, id) != null;
         }
 
-        private static ChatTurn CloneTurn(ChatTurn t) => new()
+        private static ChatTurn CloneTurn(ChatTurn t)
         {
-            User = new ChatMessage("user", t.UserText),
-            Assistant = new ChatMessage("assistant", t.AssistantText),
-            ReasoningText = t.ReasoningText,
-            ToolTraceText = t.ToolTraceText,
-            ToolCallLines = t.ToolCallLines,
-            TimelineText = t.TimelineText,
-            ToolStepCount = t.ToolStepCount,
-            ToolTotalMs = t.ToolTotalMs
-        };
+            var clone = new ChatTurn
+            {
+                User = new ChatMessage("user", t.UserText),
+                Assistant = new ChatMessage("assistant", t.AssistantText),
+                ReasoningText = t.ReasoningText,
+                ToolTraceText = t.ToolTraceText,
+                ToolCallLines = t.ToolCallLines,
+                TimelineText = t.TimelineText,
+                ToolStepCount = t.ToolStepCount,
+                ToolTotalMs = t.ToolTotalMs
+            };
+            clone.Phases.AddRange(t.Phases);
+            return clone;
+        }
 
         /// <summary>界面上删除会话：先确认再执行。Worker 会话与 [Loop] 会话都走这里。</summary>
         private void OnDeleteRequested(IReadOnlyList<Session> sessions)

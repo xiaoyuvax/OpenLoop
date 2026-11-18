@@ -97,7 +97,71 @@ namespace OpenLoop.Core.Agent
                 args[key] = ConvertValue(p.Groups["value"].Value.Trim());
             }
 
+            if (!NormalizeWrappedArgs(args)) return false;
             call = new AgentToolCall { Tool = head.Groups["name"].Value, Args = args };
+            return true;
+        }
+
+        /// <summary>模型抄原生工具格式，把整段参数包在单个 args/arguments/parameters/input 参数里。</summary>
+        private static readonly string[] ArgsAliases = ["args", "arguments", "parameters", "input"];
+
+        /// <summary>
+        /// 单个 args 参数摊平成真正的参数表；摊不平说明模型只写了参数名（如 {path, offset, limit}），
+        /// 当作格式损坏返回 false，让上层给出格式纠正，别拿空参数去执行一次。
+        /// </summary>
+        private static bool NormalizeWrappedArgs(Dictionary<string, object> args)
+        {
+            if (args.Count != 1) return true;
+            string key = args.Keys.First();
+            if (!ArgsAliases.Contains(key, StringComparer.OrdinalIgnoreCase)) return true;
+            string payload = args[key] is JsonElement el ? el.GetRawText() : args[key] as string;
+            if (payload == null) return false;
+
+            var unwrapped = new Dictionary<string, object>(StringComparer.Ordinal);
+            if (!TryFillArgs(payload, unwrapped)) return false;
+            args.Clear();
+            foreach (var pair in unwrapped) args[pair.Key] = pair.Value;
+            return true;
+        }
+
+        /// <summary>包装型工具名：模型把真实调用塞进 args 里、再用 tool_call/function_call 当工具名。</summary>
+        private static bool IsWrapperToolName(string tool)
+        {
+            if (string.IsNullOrEmpty(tool)) return false;
+            string normalized = tool.Replace("_", "").Replace("-", "").Trim();
+            return normalized.Equals("toolcall", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("functioncall", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("call", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>拆包装：内层要有工具名（tool/name/function）与参数（args/arguments/…）；拆不出按格式损坏处理。</summary>
+        private static bool TryUnwrapNestedCall(Dictionary<string, object> args, out string tool)
+        {
+            tool = null;
+            foreach (string key in new[] { "tool", "name", "function" })
+                if (args.TryGetValue(key, out var value) && value is string name && name.Trim().Length > 0)
+                {
+                    tool = name.Trim();
+                    break;
+                }
+            if (tool == null) return false;
+
+            var inner = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (string key in ArgsAliases)
+            {
+                if (!args.TryGetValue(key, out var value)) continue;
+                string payload = value switch
+                {
+                    JsonElement el when el.ValueKind == JsonValueKind.Object => el.GetRawText(),
+                    JsonElement el when el.ValueKind == JsonValueKind.String => el.GetString(),
+                    string text => text,
+                    _ => null
+                };
+                if (payload == null || !TryFillArgs(payload, inner)) return false;
+                break;
+            }
+            args.Clear();
+            foreach (var pair in inner) args[pair.Key] = pair.Value;
             return true;
         }
 
@@ -287,6 +351,7 @@ namespace OpenLoop.Core.Agent
                 string argsJson = brace >= 0 ? ExtractJsonObject(text, brace) : null;
                 if (argsJson == null) return false;          // 有名字没参数（或被截断）：交给上层纠正重试
                 if (!TryFillArgs(argsJson, args)) return false;
+                if (!NormalizeWrappedArgs(args)) return false;
             }
             call = new AgentToolCall { Tool = toolName.Trim(), Args = args };
             return true;
@@ -511,7 +576,14 @@ namespace OpenLoop.Core.Agent
                     return false;
 
                 var args = new Dictionary<string, object>();
-                if (root.TryGetProperty("args", out var argsEl) && argsEl.ValueKind == JsonValueKind.Object)
+                if (root.TryGetProperty("args", out var argsEl) && argsEl.ValueKind == JsonValueKind.String)
+                {
+                    // 模型把整段参数再 JSON 编码成字符串（args:"{\"path\":…}"）：解不开就按格式损坏处理，
+                    // 交给上层纠正，别拿空参数去执行一次
+                    string payload = argsEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(payload) && !TryFillArgs(payload, args)) return false;
+                }
+                else if (root.TryGetProperty("args", out argsEl) && argsEl.ValueKind == JsonValueKind.Object)
                 {
                     foreach (var p in argsEl.EnumerateObject())
                     {
@@ -531,7 +603,13 @@ namespace OpenLoop.Core.Agent
                         }
                     }
                 }
-                call = new AgentToolCall { Tool = toolEl.GetString(), Args = args, Poll = ReadPoll(root) };
+                string tool = toolEl.GetString();
+                if (IsWrapperToolName(tool))
+                {
+                    // 整条调用被再包一层（{"tool":"Tool_call","args":{"tool":"ReadFile","args":{…}}}）：拆出内层
+                    if (!TryUnwrapNestedCall(args, out tool)) return false;
+                }
+                call = new AgentToolCall { Tool = tool, Args = args, Poll = ReadPoll(root) };
                 return true;
             }
             catch (JsonException)

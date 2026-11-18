@@ -72,16 +72,21 @@ namespace OpenLoop.App
 
         /// <summary>当前旁路的历史快照（供挤走时转成普通会话；克隆一份，旁路清空后仍可用）。</summary>
         public IReadOnlyList<ChatTurn> Snapshot() =>
-            _book.Turns.Select(t => new ChatTurn
+            _book.Turns.Select(t =>
             {
-                User = new ChatMessage("user", t.UserText),
-                Assistant = new ChatMessage("assistant", t.AssistantText),
-                ReasoningText = t.ReasoningText,
-                ToolTraceText = t.ToolTraceText,
-                ToolCallLines = t.ToolCallLines,
-                TimelineText = t.TimelineText,
-                ToolStepCount = t.ToolStepCount,
-                ToolTotalMs = t.ToolTotalMs
+                var copy = new ChatTurn
+                {
+                    User = new ChatMessage("user", t.UserText),
+                    Assistant = new ChatMessage("assistant", t.AssistantText),
+                    ReasoningText = t.ReasoningText,
+                    ToolTraceText = t.ToolTraceText,
+                    ToolCallLines = t.ToolCallLines,
+                    TimelineText = t.TimelineText,
+                    ToolStepCount = t.ToolStepCount,
+                    ToolTotalMs = t.ToolTotalMs
+                };
+                copy.Phases.AddRange(t.Phases);
+                return copy;
             }).ToList();
 
         /// <summary>清空当前旁路，给新旁路让位。</summary>
@@ -193,6 +198,8 @@ namespace OpenLoop.App
 
             _streamBuffer.Clear();
             var timeline = new RunTimeline();
+            // 正文喂进时间线的进度：正文出现即分段，正文之后的思维另起一段折叠区
+            int answerLen = 0;
             long lastDeltaUi = 0;
             Action<string> onDelta = piece =>
             {
@@ -205,7 +212,16 @@ namespace OpenLoop.App
                 lock (_streamBuffer) snapshot = _streamBuffer.ToString();
                 string visible = AgentToolCallParser.CutToolCallText(snapshot);
                 if (visible.Length == 0) return;
-                RunOnUi(() => _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(visible)));
+                if (visible.Length > answerLen)
+                {
+                    lock (timeline) timeline.Answer(visible[answerLen..]);
+                    answerLen = visible.Length;
+                }
+                RunOnUi(() =>
+                {
+                    lock (timeline) SyncPhases(turn, timeline);
+                    _chat.UpdateStreamingMessage(turn, LlmTextSanitizer.StripSafetyLines(visible));
+                });
             };
 
             var reasoningBuffer = new StringBuilder();
@@ -223,6 +239,7 @@ namespace OpenLoop.App
                 {
                     turn.ReasoningText = snapshot;
                     lock (timeline) turn.TimelineText = timeline.Render();
+                    lock (timeline) SyncPhases(turn, timeline);
                     // 与 Worker 一致：正文只由 onDelta 写（已过滤协议原文），推理增量只刷新思考区
                     _chat.UpdateStreamingMessage(turn, null);
                 });
@@ -232,11 +249,13 @@ namespace OpenLoop.App
             {
                 lock (_streamBuffer) _streamBuffer.Clear();
                 lock (reasoningBuffer) reasoningBuffer.Clear();
+                answerLen = 0;
                 lock (timeline) timeline.DropThinking();
                 RunOnUi(() =>
                 {
                     turn.ReasoningText = "";
                     lock (timeline) turn.TimelineText = timeline.Render();
+                    lock (timeline) SyncPhases(turn, timeline);
                     _chat.UpdateStreamingMessage(turn, "", true);
                     RefreshChat();
                 });
@@ -256,6 +275,7 @@ namespace OpenLoop.App
                         turn.ToolTraceText = turn.ToolCallLines;
                         lock (timeline) timeline.Tool(line);
                         lock (timeline) turn.TimelineText = timeline.Render();
+                        lock (timeline) SyncPhases(turn, timeline);
                         turn.ToolsFinished();
                         RefreshChat();
                     });
@@ -264,6 +284,7 @@ namespace OpenLoop.App
                 onToolStart: (name, args) =>
                 {
                     lock (_streamBuffer) _streamBuffer.Clear();
+                    answerLen = 0;
                     string hint = AgentStepRecord.InFlightLine(name, args);
                     RunOnUi(() =>
                     {
@@ -301,6 +322,8 @@ namespace OpenLoop.App
                 lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
                 lock (timeline) turn.TimelineText = timeline.Render();
                 turn.AssistantText = CleanAnswer(result.FinalAnswer, result.FinishReason);
+                lock (timeline) timeline.FeedAnswerTail(turn.AssistantText);
+                lock (timeline) SyncPhases(turn, timeline);
                 trace.Message("assistant", turn.AssistantText);
 
                 outcome = result.BudgetExhausted ? "budget"
@@ -348,6 +371,14 @@ namespace OpenLoop.App
                 SetRunning(false);
                 RefreshChat();
             }
+        }
+
+        /// <summary>把时间线的分段同步进回话数据；分段正文过一遍安全行清洗，与正文区一致。</summary>
+        private static void SyncPhases(ChatTurn turn, RunTimeline timeline)
+        {
+            turn.Phases.Clear();
+            foreach (var (thinking, answer) in timeline.RenderPhases())
+                turn.Phases.Add((thinking, LlmTextSanitizer.StripSafetyLines(answer ?? "")));
         }
 
         private static string CleanAnswer(string text, string finishReason = null)

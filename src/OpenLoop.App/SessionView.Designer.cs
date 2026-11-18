@@ -45,7 +45,6 @@ namespace OpenLoop.App
         private AntdUI.Input _txtInput;
         private TableLayoutPanel _toolbar;
         private FlowLayoutPanel _toolbarLeft;
-        private AntdUI.Segmented _modeControl;
         private FlowLayoutPanel _toolbarRight;
         private AntdUI.Select _selProvider;
         private AntdUI.Select _selModel;
@@ -112,7 +111,6 @@ namespace OpenLoop.App
             _txtInput = new AntdUI.Input();
             _toolbar = new TableLayoutPanel();
             _toolbarLeft = new FlowLayoutPanel();
-            _modeControl = new AntdUI.Segmented();
             _toolbarRight = new FlowLayoutPanel();
             _selProvider = new AntdUI.Select();
             _selModel = new AntdUI.Select();
@@ -484,14 +482,6 @@ namespace OpenLoop.App
             _toolbarLeft.WrapContents = false;
             _toolbarLeft.Margin = new Padding(0);
 
-            _modeControl.Name = "mode";
-            _modeControl.Height = 30;
-            _modeControl.Width = 300;
-            _modeControl.Margin = new Padding(0, 0, 8, 0);
-            _modeControl.SelectIndex = 0;
-            _modeControl.SelectIndexChanged += OnModeChanged;
-            // 模式按钮已下线，控件保留以兼容 Puppet 的 SelectMode/SendMode（不再挂到任何父控件上）
-
             _lblPath.Name = "lblPath";
             _lblPath.AutoSize = false;
             _lblPath.Width = 220;
@@ -504,6 +494,8 @@ namespace OpenLoop.App
             _lblPath.AutoEllipsis = true;
             _lblPath.IconGap = 6;
             _lblPath.Margin = new Padding(6, 0, 0, 0);
+            _lblPath.Cursor = Cursors.Hand;
+            _lblPath.Click += OnOpenWorkspace;
             _toolbarLeft.Controls.Add(_lblPath);
 
             _toolbarRight.Dock = DockStyle.Fill;
