@@ -106,7 +106,12 @@ namespace OpenLoop.Service.Source
 
         private static bool ReferencesProject(ComponentSpec spec)
             => spec.Consumers.Any(c => Libraries(ProjectDir(c)).Any(l =>
-                l.Type == "project" && string.Equals(l.Id, spec.Assembly, StringComparison.OrdinalIgnoreCase)));
+                l.Type == "project" && IsProjectAssembly(spec, l.Id)));
+
+        /// <summary>项目引用的库名是 PackageId（设了的话），不是程序集名；两者都认。</summary>
+        internal static bool IsProjectAssembly(ComponentSpec spec, string libraryId)
+            => string.Equals(libraryId, spec.Assembly, StringComparison.OrdinalIgnoreCase)
+               || string.Equals(libraryId, spec.PackageId, StringComparison.OrdinalIgnoreCase);
 
         private static string ProjectDir(ComponentConsumer consumer)
         {

@@ -69,6 +69,20 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Project_reference_is_recognised_by_package_id_too()
+        {
+            // 项目引用的库名取 PackageId（Vax-FCTB），不是程序集名（FastColoredTextBox）
+            var fctb = new ComponentSpec
+            {
+                Id = "fctb", Assembly = "FastColoredTextBox", PackageId = "Vax-FCTB"
+            };
+
+            Assert.True(VersionScan.IsProjectAssembly(fctb, "FastColoredTextBox"));
+            Assert.True(VersionScan.IsProjectAssembly(fctb, "Vax-FCTB"));
+            Assert.False(VersionScan.IsProjectAssembly(fctb, "ChatFlow"));
+        }
+
+        [Fact]
         public void SameUrl_ignores_case_trailing_slash_and_git_suffix()
         {
             Assert.True(ComponentCatalog.SameUrl(

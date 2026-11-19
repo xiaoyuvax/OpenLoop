@@ -430,12 +430,27 @@ namespace OpenLoop.Core.Agent
         /// <summary>
         /// 流式显示用：截掉从第一个工具协议片段起的尾巴。模型在正文后面接着吐调用原文时，
         /// 只在整段以 marker 开头才屏蔽会让协议原文先显示、收尾再被清掉（用户看到闪现）。
+        /// [final] 也是协议：流式中它先进时间线，收尾时只从最终答案里去掉，正文里就会留下标记。
         /// </summary>
         public static string CutToolCallText(string modelOutput)
         {
             if (string.IsNullOrWhiteSpace(modelOutput)) return "";
             var match = ProtocolFragmentRegex.Match(modelOutput);
-            return match.Success ? modelOutput[..match.Index].TrimEnd() : modelOutput;
+            string text = match.Success ? modelOutput[..match.Index].TrimEnd() : modelOutput;
+            return CutFinalMarkerTail(text);
+        }
+
+        /// <summary>收尾标记只截末尾：正文中间提到 [final] 不算协议（模型正在吐时连半个前缀一起藏）。</summary>
+        private static string CutFinalMarkerTail(string text)
+        {
+            string trimmed = text.TrimEnd();
+            for (int len = Math.Min(AgentLoop.FinalMarker.Length, trimmed.Length); len > 0; len--)
+            {
+                if (trimmed.AsSpan(trimmed.Length - len).Equals(
+                        AgentLoop.FinalMarker.AsSpan(0, len), StringComparison.OrdinalIgnoreCase))
+                    return trimmed[..^len].TrimEnd();
+            }
+            return text;
         }
 
         /// <summary>协议片段起始：marker，或带装饰的标签头（<c>&lt;|DSML| invoke</c>、<c>&lt;tool_call&gt;</c>、<c>&lt;｜工具调用</c> 等）。</summary>

@@ -209,5 +209,15 @@ namespace OpenLoop.Core.Tests
             Assert.Equal("", AgentToolCallParser.CutToolCallText("tool-call: {\"tool\":\"x\"}"));
             Assert.Equal("普通回答，含 <code> 标签。", AgentToolCallParser.CutToolCallText("普通回答，含 <code> 标签。"));
         }
+
+        [Fact]
+        public void CutToolCallTextHidesFinalMarker()
+        {
+            Assert.Equal("结论：不需要改动。", AgentToolCallParser.CutToolCallText("结论：不需要改动。\n\n[final]"));
+            Assert.Equal("结论：不需要改动。", AgentToolCallParser.CutToolCallText("结论：不需要改动。\n\n[fina"));
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("[final]"));
+            Assert.Equal("正文里提到 [final] 这个词，但不是收尾标记。",
+                AgentToolCallParser.CutToolCallText("正文里提到 [final] 这个词，但不是收尾标记。"));
+        }
     }
 }
