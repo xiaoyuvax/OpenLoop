@@ -186,7 +186,7 @@ function Turn({ turn }) {
       (turn.timeline || turn.toolLines) ? h('pre', { className: 'ol-tools' }, turn.timeline || turn.toolLines) : null));
 }
 
-function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onModel, onDelete, reloadModels }) {
+function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot, onModel, onDelete, reloadModels }) {
   const [text, setText] = useState('');
   const [model, setModel] = useState('');
   const [effort, setEffort] = useState('');
@@ -195,7 +195,13 @@ function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onMode
   const [sideOpen, setSideOpen] = useState(true);
   const [sideTab, setSideTab] = useState('detail');
   const [selectMode, setSelectMode] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [imageModel, setImageModel] = useState('');
   const chatRef = useRef(null);
+
+  useEffect(() => {
+    if (images?.length && !imageModel) setImageModel(images[0].id);
+  }, [images]);
 
   useEffect(() => {
     setModel(snapshot?.model || '');
@@ -218,7 +224,9 @@ function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onMode
   }, [models]);
 
   const choices = useMemo(() => {
+    const imageIds = new Set((images || []).map(m => m.id));
     const list = models
+      .filter(m => !imageIds.has(m.id))
       .filter(m => (!freeOnly || m.free) && (!provider || m.id.startsWith(provider + '/')))
       .map(m => ({ value: m.id, label: m.name }));
     // 与 WinForms 一致：最近用过的置顶，用分组标题隔开（各自带一行文字，比纯色块更清楚）
@@ -230,7 +238,7 @@ function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onMode
       { label: '最近使用', options: head },
       ...(tail.length ? [{ label: '全部模型', options: tail }] : [])
     ];
-  }, [models, recent, freeOnly, provider]);
+  }, [models, recent, freeOnly, provider, images]);
 
   const running = snapshot?.state === 'running';
   const value = text.trim();
@@ -240,9 +248,26 @@ function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onMode
   const pct = snapshot?.contextLimit > 0 && snapshot?.contextTokens != null
     ? Math.min(100, Math.round(snapshot.contextTokens / snapshot.contextLimit * 100)) : 0;
 
+  const pickFiles = async (e) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    const next = [];
+    for (const file of picked) {
+      if (files.length + next.length >= 8) { message.warning('附件最多 8 个'); break; }
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      next.push({ name: file.name, data });
+    }
+    if (next.length) setFiles(list => [...list, ...next].slice(0, 8));
+  };
+
   const send = async (immediate = true) => {
     if (!activeId) return;
-    if (!value) {
+    if (!value && !files.length) {
       if (retry) {
         try { await post(`/api/sessions/${activeId}/messages`, { text: '继续', tag: 'task' }); }
         catch (e) { message.error('发送失败：' + e.message); }
@@ -252,11 +277,14 @@ function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onMode
       try { await post(`/api/sessions/${activeId}/stop`); } catch (e) { message.error('停止失败：' + e.message); }
       return;
     }
+    const attachments = files.map(f => ({ name: f.name, data: f.data }));
     setText('');
+    setFiles([]);
     try {
-      await post(`/api/sessions/${activeId}/messages`, { text: value, tag: 'task', immediate });
+      await post(`/api/sessions/${activeId}/messages`,
+        { text: value, tag: 'task', immediate, imageModel, attachments });
       if (running) message.success(immediate ? '已插队，本轮收尾后立刻发送' : '已入队，本轮结束后发送');
-    } catch (e) { setText(value); message.error('发送失败：' + e.message); }
+    } catch (e) { setText(value); setFiles(attachments); message.error('发送失败：' + e.message); }
   };
 
   const act = async (action, body, ok) => {
@@ -361,6 +389,12 @@ function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onMode
           options: choices.length ? choices : [{ value: model, label: model }].filter(o => o.value)
         })
       : h(Input, { value: model, onChange: e => setModel(e.target.value), onBlur: () => pickModel(model), placeholder: '模型', style: { width: 280 } }),
+    images?.length
+      ? h(Select, {
+          value: imageModel || undefined, onChange: setImageModel, style: { width: 200 },
+          showSearch: true, optionFilterProp: 'label', placeholder: '生图模型',
+          options: images.map(m => ({ value: m.id, label: m.name || m.id }))
+        }) : null,
     h(Select, {
       value: effort || '', onChange: v => pickModel(model, v), style: { width: 110 },
       options: [{ value: '', label: '努力 Auto' }, { value: 'low', label: 'Low' },
@@ -370,6 +404,21 @@ function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onMode
       type: 'primary', style: { width: 96 },
       danger: running && !value, onClick: () => send(true)
     }, running ? (value ? '发送' : '停止') : retry ? '继续' : '发送'));
+
+  const attachRow = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap', fontSize: 12 } },
+    h('label', {
+      style: { cursor: 'pointer', color: '#1677ff', flex: 'none' },
+      title: '上传文本或图片附件（最多 8 个）'
+    }, '📎 附件', h('input', {
+      type: 'file', multiple: true, style: { display: 'none' }, onChange: pickFiles
+    })),
+    h(Muted, { style: { flex: 'none' } }, files.length ? `已选 ${files.length}/8` : '可上传文本或图片'),
+    files.map((file, i) => h('span', {
+      key: i, style: {
+        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px',
+        border: '1px solid #e5e5e5', borderRadius: 10, background: '#fafafa'
+      }
+    }, file.name, h('a', { style: { color: '#999' }, onClick: () => setFiles(list => list.filter((_, j) => j !== i)) }, '×'))));
 
   const composer = h('div', { style: { flex: 'none', padding: '4px 16px 8px', borderTop: pending ? '0' : '1px solid #f0f0f0' } },
     h(Input.TextArea, {
@@ -382,6 +431,7 @@ function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onMode
         send(!e.ctrlKey);
       }
     }),
+    attachRow,
     toolbar);
 
   const loopSide = h('div', { style: { padding: 12, display: 'grid', gap: 8 } },
@@ -842,6 +892,10 @@ function SettingsPanel({ caps, onClose }) {
 
   const removeModel = id => {
     if (!provider) return;
+    if (provider.plugin && !(provider.declared || []).some(m => m.toLowerCase() === id.toLowerCase())) {
+      setDisabled(id, true);
+      return;
+    }
     setProvider(providerIndex, { models: (provider.models || []).filter(m => m !== id) });
   };
 
@@ -990,8 +1044,16 @@ function SettingsPanel({ caps, onClose }) {
     h(SettingHint, { key: 'note' }, '内网与环回地址一律拒绝；只抓文本/HTML/JSON/XML，单页最多 2MB，结果默认 6000 字符，一轮最多 8 次。Worker 与 Loop 同时生效。')
   ];
 
-  const providerOptions = providers.map((p, i) => ({ value: i, label: p.name || ('提供商 ' + (i + 1)) }));
+  const providerOptions = providers.map((p, i) => ({
+    value: i, label: p.plugin ? (p.label || (p.name + '（插件）')) : (p.name || ('提供商 ' + (i + 1)))
+  }));
   const modelProps = draft.modelProps || {};
+  const disabledModels = draft.disabledModels || [];
+  const isOff = id => disabledModels.some(m => m.toLowerCase() === id.toLowerCase());
+  const setDisabled = (id, off) => setDraft(d => {
+    const list = (d.disabledModels || []).filter(m => m.toLowerCase() !== id.toLowerCase());
+    return { ...d, disabledModels: off ? [...list, id] : list };
+  });
 
   const models = [
     h(SettingRow, { key: 'provider', label: '提供商' },
@@ -1002,28 +1064,32 @@ function SettingsPanel({ caps, onClose }) {
           onChange: v => { setProviderIndex(v); setProviderStatus(''); }
         }),
         h(Button, { onClick: addProvider }, '添加'),
-        h(Button, { danger: true, disabled: !provider, onClick: removeProvider }, '删除'))),
+        h(Button, { danger: true, disabled: !provider || provider.plugin, onClick: removeProvider }, '删除'))),
     h(SettingRow, { key: 'name', label: '名称' },
       h(Input, {
-        value: provider?.name || '', disabled: !provider, style: { maxWidth: 320 },
+        value: provider?.name || '', disabled: !provider || provider.plugin, style: { maxWidth: 320 },
         onChange: e => setProvider(providerIndex, { name: e.target.value })
       })),
     h(SettingRow, { key: 'url', label: '接口地址' },
       h(Input, {
-        value: provider?.baseUrl || '', disabled: !provider, style: { maxWidth: 420 },
+        value: provider?.baseUrl || '', disabled: !provider || provider.plugin, style: { maxWidth: 420 },
         onChange: e => setProvider(providerIndex, { baseUrl: e.target.value })
       })),
     h(SettingRow, { key: 'key', label: '密钥' },
       h(Input.Password, {
-        value: provider?.key ?? '', disabled: !provider, style: { maxWidth: 420 },
-        placeholder: provider?.hasKey && provider?.key == null ? '已保存（留空表示不改）' : '粘贴 API Key',
+        value: provider?.key ?? '', disabled: !provider || provider.plugin, style: { maxWidth: 420 },
+        placeholder: provider?.plugin ? '由插件清单管理'
+          : provider?.hasKey && provider?.key == null ? '已保存（留空表示不改）' : '粘贴 API Key',
         onChange: e => setProvider(providerIndex, { key: e.target.value })
       })),
     h(SettingRow, { key: 'actions', label: '' },
       h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
-        h(Button, { disabled: !provider, onClick: fetchModels }, '拉取模型'),
-        h(Button, { disabled: !provider, onClick: testProvider }, '测试'),
-        h(Muted, null, providerStatus))),
+        provider?.plugin ? null : h(Button, { disabled: !provider, onClick: fetchModels }, '拉取模型'),
+        provider?.plugin ? null : h(Button, { disabled: !provider, onClick: testProvider }, '测试'),
+        h(Muted, null, provider?.plugin
+          ? (provider.ready ? '插件提供商：模型的增删写回它的 plugin.json'
+            : '插件提供商当前不可用（服务未就绪），可以先停用')
+          : providerStatus))),
     h(SettingRow, { key: 'models', label: '模型' },
       h('div', null,
         h('div', { style: { display: 'flex', gap: 8, marginBottom: 8 } },
@@ -1043,13 +1109,19 @@ function SettingsPanel({ caps, onClose }) {
               key: id,
               style: { display: 'flex', alignItems: 'center', gap: 8, padding: '3px 6px' }
             },
+              h('input', {
+                type: 'checkbox', checked: !isOff(id), title: '取消勾选=停用（不进出模型下拉）',
+                onChange: e => setDisabled(id, !e.target.checked)
+              }),
               h('span', { style: { flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' } }, id),
               modelProps[id]?.name || modelProps[id]?.contextLimit
                 ? h(Muted, null, `${modelProps[id]?.name || ''}${modelProps[id]?.contextLimit ? ' · ' + modelProps[id].contextLimit : ''}`)
                 : null,
               h(Button, { size: 'small', type: 'link', onClick: () => openProps(id) }, '属性'),
               h(Button, { size: 'small', type: 'link', danger: true, onClick: () => removeModel(id) }, '删除')))))),
-    h(SettingHint, { key: 'note' }, '「拉取模型」会请求提供商的 /models；「测试」会真的发一次最小补全。属性可设显示名称与上下文上限。')
+    h(SettingHint, { key: 'note' },
+      '「拉取模型」会请求提供商的 /models；「测试」会真的发一次最小补全。属性可设显示名称与上下文上限。'
+      + '插件贡献的提供商标着「（插件）」，模型增删写回插件清单，停用状态存在 settings.json。')
   ];
 
   const skillRows = skills.rows || [];
@@ -1205,6 +1277,7 @@ function SettingsPanel({ caps, onClose }) {
 function App() {
   const [caps, setCaps] = useState(null);
   const [models, setModels] = useState([]);
+  const [images, setImages] = useState([]);
   const [recent, setRecent] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [tabs, setTabs] = useState(() => {
@@ -1241,6 +1314,7 @@ function App() {
           try {
             const m = await api('/api/models');
             setModels(m?.models || []);
+            setImages(m?.images || []);
             setRecent(m?.recent || []);
           } catch { /* 模型目录可能未就绪 */ }
         }
@@ -1252,6 +1326,7 @@ function App() {
     try {
       const m = await api('/api/models');
       setModels(m?.models || []);
+      setImages(m?.images || []);
       setRecent(m?.recent || []);
     } catch { /* 目录重拉失败不挡操作 */ }
   };
@@ -1457,7 +1532,7 @@ function App() {
     page = h(LoopPage, { defaultWorkspace: caps?.workspace || '', shot, setShot });
   } else {
     page = h(SessionPage, {
-      snapshot, models, recent, activeId, shot, setShot, reloadModels,
+      snapshot, models, recent, images, activeId, shot, setShot, reloadModels,
       onModel: (m, e) => post(`/api/sessions/${activeId}/model`, { model: m, effort: e }),
       onDelete: deleteSession
     });

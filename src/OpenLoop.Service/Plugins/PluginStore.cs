@@ -53,6 +53,13 @@ namespace OpenLoop.Service.Plugins
             public string Key { get; set; }
             /// <summary>清单里声明了多少模型（只读，给对话框说明用）。</summary>
             public int Models { get; set; }
+
+            /// <summary>清单里声明的模型 id；null 表示不改 models（编辑对话框）。</summary>
+            public List<string> ModelList { get; set; }
+
+            /// <summary>contributions.providers 里的下标（默认第一个）。</summary>
+            public int ProviderIndex { get; set; }
+            public string ProviderId { get; set; }
         }
 
         public static List<Row> List(string workspace)
@@ -85,7 +92,8 @@ namespace OpenLoop.Service.Plugins
                     }
                     if (!seen.Add(manifest.Id)) continue;
 
-                    var item = ReadRaw(dir, out int models);
+                    var items = ReadProviders(dir);
+                    var item = items.FirstOrDefault() ?? new Item { Directory = dir };
                     int providers = manifest.Contributions?.Providers?.Count ?? 0;
                     rows.Add(new Row
                     {
@@ -96,7 +104,7 @@ namespace OpenLoop.Service.Plugins
                         From = from,
                         Directory = dir,
                         Providers = providers,
-                        Models = models,
+                        Models = items.Sum(i => i.Models),
                         BaseUrl = item.BaseUrl,
                         ModelsUrl = item.ModelsUrl,
                         ModelPrefix = item.ModelPrefix
@@ -108,32 +116,47 @@ namespace OpenLoop.Service.Plugins
         }
 
         /// <summary>读清单里 providers[0] 的原始字段（编辑对话框用）。</summary>
-        public static Item ReadRaw(string dir) => ReadRaw(dir, out _);
+        public static Item ReadRaw(string dir) => ReadProviders(dir).FirstOrDefault() ?? new Item { Directory = dir };
 
-        private static Item ReadRaw(string dir, out int models)
+        /// <summary>读清单里全部 provider 的原始字段（模型页按插件提供商逐项管理）。</summary>
+        public static List<Item> ReadProviders(string dir)
         {
-            models = 0;
-            var item = new Item { Directory = dir };
+            var items = new List<Item>();
             try
             {
                 var doc = Parse(File.ReadAllText(Path.Combine(dir, "plugin.json")));
-                var provider = FirstProvider(doc);
-                item.Id = doc?["id"]?.ToString() ?? "";
-                item.Name = provider?["name"]?.ToString() ?? "";
-                item.BaseUrl = provider?["baseUrl"]?.ToString() ?? "";
-                item.ModelsUrl = provider?["modelsUrl"]?.ToString() ?? "";
-                item.ModelPrefix = provider?["modelPrefix"]?.ToString() ?? "";
-                models = (provider?["models"] as JsonArray)?.Count ?? 0;
-                item.Models = models;
+                string pluginId = doc?["id"]?.ToString() ?? "";
+                if (doc?["contributions"]?["providers"] is not JsonArray providers) return items;
+
+                for (int i = 0; i < providers.Count; i++)
+                {
+                    if (providers[i] is not JsonObject provider) continue;
+                    items.Add(new Item
+                    {
+                        Directory = dir,
+                        Id = pluginId,
+                        ProviderIndex = i,
+                        ProviderId = provider["id"]?.ToString() ?? "",
+                        Name = provider["name"]?.ToString() ?? "",
+                        BaseUrl = provider["baseUrl"]?.ToString() ?? "",
+                        ModelsUrl = provider["modelsUrl"]?.ToString() ?? "",
+                        ModelPrefix = provider["modelPrefix"]?.ToString() ?? "",
+                        Models = (provider["models"] as JsonArray)?.Count ?? 0,
+                        ModelList = (provider["models"] as JsonArray)?
+                            .Select(node => node?.ToString())
+                            .Where(id => !string.IsNullOrWhiteSpace(id))
+                            .ToList() ?? []
+                    });
+                }
             }
             catch (Exception ex)
             {
                 AppLog.Warn($"插件清单读不了 {dir}：{ex.Message}");
             }
-            return item;
+            return items;
         }
 
-        /// <summary>新建或更新 provider 型插件清单（只动 providers[0]，别的字段原样写回）；返回写入的目录。</summary>
+        /// <summary>新建或更新 provider 型插件清单（按 ProviderIndex 只动那一个 provider，别的字段原样写回）；返回写入的目录。</summary>
         public static string Save(string workspace, Item item)
         {
             if (item == null) throw new InvalidOperationException("缺少插件内容");
@@ -158,14 +181,25 @@ namespace OpenLoop.Service.Plugins
 
             string file = Path.Combine(dir, "plugin.json");
             var doc = File.Exists(file) ? Parse(File.ReadAllText(file)) : Template();
-            var provider = FirstProvider(doc) ?? throw new InvalidOperationException("清单里没有 providers");
+            var provider = ProviderAt(doc, item.ProviderIndex) ?? throw new InvalidOperationException("清单里没有这个 provider");
 
             doc["id"] = id;
-            Set(provider, "id", id);
+            if (string.IsNullOrWhiteSpace(provider["id"]?.ToString())) provider["id"] = id;
             Set(provider, "name", item.Name);
             Set(provider, "baseUrl", item.BaseUrl);
             Set(provider, "modelsUrl", item.ModelsUrl);
             Set(provider, "modelPrefix", item.ModelPrefix);
+
+            if (item.ModelList != null)
+            {
+                var models = new JsonArray();
+                foreach (string modelId in item.ModelList
+                             .Where(m => !string.IsNullOrWhiteSpace(m))
+                             .Select(m => m.Trim())
+                             .Distinct(StringComparer.OrdinalIgnoreCase))
+                    models.Add(modelId);
+                provider["models"] = models;
+            }
 
             string key = (item.Key ?? "").Trim();
             if (key.Length > 0)
@@ -258,11 +292,12 @@ namespace OpenLoop.Service.Plugins
             => JsonNode.Parse(text, null, Read) as JsonObject
                ?? throw new InvalidOperationException("plugin.json 顶层不是对象");
 
-        private static JsonObject FirstProvider(JsonObject doc)
+        private static JsonObject ProviderAt(JsonObject doc, int index)
         {
             if (doc?["contributions"] is not JsonObject contributions) return null;
             if (contributions["providers"] is not JsonArray { Count: > 0 } providers) return null;
-            return providers[0] as JsonObject;
+            if (index <= 0) return providers[0] as JsonObject;
+            return index < providers.Count ? providers[index] as JsonObject : null;
         }
 
         private static JsonObject Template() => new()

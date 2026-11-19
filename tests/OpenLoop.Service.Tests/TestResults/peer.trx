@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="606e2659-56a4-4669-be68-dc0ac47daaca" name="Xiaoyu@XY 2026-11-19 16:39:59" runUser="XY\Xiaoyu" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-19T16:39:59.7920771+08:00" queuing="2026-11-19T16:39:59.7920777+08:00" start="2026-11-19T16:39:58.8941424+08:00" finish="2026-11-19T16:39:59.7992998+08:00" />
+  <TestSettings name="default" id="6647fd90-6b14-4055-90e4-c1cf225d69f4">
+    <Deployment runDeploymentRoot="Xiaoyu_XY_2026-11-19_16_39_59" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="4c7da999-af9e-406f-a65d-98413aad3526" testId="31cae346-a834-f02d-4067-ab7f77ff3bf2" testName="OpenLoop.Service.Tests.WorkerSessionHostTests.New_peer_in_the_same_workspace_queues_one_notice" computerName="XY" duration="00:00:00.0405425" startTime="2026-11-19T16:39:59.7020165+08:00" endTime="2026-11-19T16:39:59.7020429+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4c7da999-af9e-406f-a65d-98413aad3526">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Single() Failure: The collection did not contain any matching items&#xD;
+Expected:   (predicate expression)&#xD;
+Collection: ["再说一句"]</Message>
+          <StackTrace>   at OpenLoop.Service.Tests.WorkerSessionHostTests.New_peer_in_the_same_workspace_queues_one_notice() in D:\PUB\OpenLoop\src\openloop\tests\OpenLoop.Service.Tests\WorkerSessionHostTests.cs:line 63&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="OpenLoop.Service.Tests.WorkerSessionHostTests.New_peer_in_the_same_workspace_queues_one_notice" storage="d:\pub\openloop\src\openloop\tests\openloop.service.tests\bin\debug\net10.0\openloop.service.tests.dll" id="31cae346-a834-f02d-4067-ab7f77ff3bf2">
+      <Execution id="4c7da999-af9e-406f-a65d-98413aad3526" />
+      <TestMethod codeBase="D:\PUB\OpenLoop\src\openloop\tests\OpenLoop.Service.Tests\bin\Debug\net10.0\OpenLoop.Service.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="OpenLoop.Service.Tests.WorkerSessionHostTests" name="New_peer_in_the_same_workspace_queues_one_notice" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="31cae346-a834-f02d-4067-ab7f77ff3bf2" executionId="4c7da999-af9e-406f-a65d-98413aad3526" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 10.0.15)&#xD;
+[xUnit.net 00:00:00.10]   Discovering: OpenLoop.Service.Tests&#xD;
+[xUnit.net 00:00:00.19]   Discovered:  OpenLoop.Service.Tests&#xD;
+[xUnit.net 00:00:00.20]   Starting:    OpenLoop.Service.Tests&#xD;
+[xUnit.net 00:00:00.31]       Assert.Single() Failure: The collection did not contain any matching items&#xD;
+[xUnit.net 00:00:00.31]       Expected:   (predicate expression)&#xD;
+[xUnit.net 00:00:00.31]       Collection: ["再说一句"]&#xD;
+[xUnit.net 00:00:00.31]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.31]         D:\PUB\OpenLoop\src\openloop\tests\OpenLoop.Service.Tests\WorkerSessionHostTests.cs(63,0): at OpenLoop.Service.Tests.WorkerSessionHostTests.New_peer_in_the_same_workspace_queues_one_notice()&#xD;
+[xUnit.net 00:00:00.31]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:00.32]   Finished:    OpenLoop.Service.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="XY" outcome="Error" timestamp="2026-11-19T16:39:59.6990145+08:00">
+        <Text>[xUnit.net 00:00:00.31]     OpenLoop.Service.Tests.WorkerSessionHostTests.New_peer_in_the_same_workspace_queues_one_notice [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

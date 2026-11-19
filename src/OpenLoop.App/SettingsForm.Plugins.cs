@@ -302,5 +302,94 @@ namespace OpenLoop.App
 
         /// <summary>清单变了，会话/模型下拉得重填；服务型插件还可能要起进程，交给 PluginRefill 补拍。</summary>
         private void RefreshPluginPull() => PluginRefill.WhenReady(this, () => { });
+
+        /// <summary>
+        /// 「模型」页把插件的 provider 贡献也列为一行（名字后面标「（插件）」）：
+        /// 模型列表与停用状态在这里统一管理，改造写回 plugin.json / settings.json 各自的文件。
+        /// </summary>
+        private async Task LoadPluginProvidersAsync()
+        {
+            int load = ++_providerLoad;
+            List<PluginCatalog.PluginProviderEntry> entries;
+            try
+            {
+                entries = await Task.Run(() =>
+                {
+                    using var catalog = PluginCatalog.Load(_workspace);
+                    return catalog.ProviderEntries().ToList();
+                });
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("读取插件提供商失败：" + ex.Message);
+                return;
+            }
+            if (load != _providerLoad) return;
+
+            var select = _cboProvider.SelectedValue as ProviderConfig;
+            _pluginProviders.Clear();
+            foreach (var entry in entries)
+                _pluginProviders.Add(new ProviderConfig
+                {
+                    Name = entry.Name,
+                    Kind = "custom",
+                    BaseUrl = entry.ResolvedBaseUrl ?? "",
+                    Models = [.. entry.Models],
+                    PluginDirectory = entry.Directory,
+                    PluginProviderIndex = entry.Index,
+                    PluginId = entry.PluginId,
+                    PluginName = entry.PluginName,
+                    PluginRawBaseUrl = entry.BaseUrl,
+                    PluginRawModelsUrl = entry.ModelsUrl,
+                    PluginRawModelPrefix = entry.ModelPrefix,
+                    PluginDeclaredModels = [.. entry.Declared],
+                    PluginKnownModels = [.. entry.Models],
+                    PluginReady = entry.Ready,
+                    RuntimeKey = entry.Key
+                });
+
+            var next = select?.IsPlugin == true
+                ? _pluginProviders.FirstOrDefault(p => p.PluginDirectory == select.PluginDirectory
+                    && p.PluginProviderIndex == select.PluginProviderIndex)
+                : select;
+            next ??= _pluginProviders.FirstOrDefault() ?? _providers.FirstOrDefault();
+            RefreshProviderCombo(next);
+            _loaded = Current;
+            LoadProvider(_loaded);
+        }
+
+        /// <summary>把模型页里对插件 provider 的增删写回它自己的 plugin.json（发现的模型只增不删）。</summary>
+        private void SavePluginProviders()
+        {
+            foreach (var provider in _pluginProviders)
+            {
+                var known = new HashSet<string>(provider.PluginKnownModels ?? [], StringComparer.OrdinalIgnoreCase);
+                var declaredAtLoad = new HashSet<string>(provider.PluginDeclaredModels ?? [], StringComparer.OrdinalIgnoreCase);
+                var declared = provider.Models
+                    .Where(id => !known.Contains(id) || declaredAtLoad.Contains(id))
+                    .ToList();
+                // 没动模型列表就不碰清单，免得把用户手写的 plugin.json 重排一遍
+                if (declared.Count == declaredAtLoad.Count && declared.All(declaredAtLoad.Contains)) continue;
+                try
+                {
+                    PluginStore.Save(_workspace, new PluginStore.Item
+                    {
+                        Directory = provider.PluginDirectory,
+                        Id = provider.PluginId,
+                        ProviderIndex = provider.PluginProviderIndex,
+                        Name = provider.Name,
+                        BaseUrl = provider.PluginRawBaseUrl,
+                        ModelsUrl = provider.PluginRawModelsUrl,
+                        ModelPrefix = provider.PluginRawModelPrefix,
+                        ModelList = declared
+                    });
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warn($"写回插件清单失败：{provider.PluginDirectory} {ex.Message}");
+                    AntdUI.Notification.error(this, "插件清单", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                }
+            }
+        }
     }
 }

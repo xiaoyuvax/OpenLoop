@@ -28,6 +28,12 @@ namespace OpenLoop.Service.Worker
         public string Tag { get; set; } = "task";
         public string Text { get; set; }
 
+        /// <summary>用户选择的生图模型（工具栏）；为空时工具用可用清单里的第一个。</summary>
+        public string ImageModel { get; set; }
+
+        /// <summary>本轮消息的附件（已落盘的工作区路径）。</summary>
+        public IReadOnlyList<string> Attachments { get; set; } = [];
+
         /// <summary>会话 id：作为留言板身份（A-会话id）与跨会话协作的依据。</summary>
         public string SessionId { get; set; }
 
@@ -154,7 +160,8 @@ namespace OpenLoop.Service.Worker
                 OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions)
                     .Concat(DshTools.For(settings, workspace, approve))
                     .Concat(plugins.Tools())
-                    .Concat(OpenLoop.Service.Web.PuppetTools.For()),
+                    .Concat(OpenLoop.Service.Web.PuppetTools.For())
+                    .Concat(Media.ImageTools.For(workspace, settings, request.ImageModel, request.Attachments)),
                 settings.WebFetchMode);
 
             var trace = TraceWriter.Start(workspace, request.Tag, request.Text, request.Model);

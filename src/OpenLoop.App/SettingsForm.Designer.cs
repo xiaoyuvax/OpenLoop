@@ -94,7 +94,7 @@ namespace OpenLoop.App
         private AntdUI.Button _btnRemoveModel;
         private AntdUI.Button _btnModelProps;
         private FlowLayoutPanel _modelActions;
-        private ListBox _lstModels;
+        private CheckedListBox _lstModels;
 
         private FlowLayoutPanel _buttons;
         private AntdUI.Button _btnCancel;
@@ -205,7 +205,7 @@ namespace OpenLoop.App
             _btnRemoveModel = new AntdUI.Button();
             _btnModelProps = new AntdUI.Button();
             _modelActions = new FlowLayoutPanel();
-            _lstModels = new ListBox();
+            _lstModels = new CheckedListBox();
 
             _buttons = new FlowLayoutPanel();
             _btnCancel = new AntdUI.Button();
@@ -664,6 +664,8 @@ namespace OpenLoop.App
             _lstModels.BackColor = UiStyle.Surface;
             _lstModels.ForeColor = UiStyle.Text;
             _lstModels.Margin = new Padding(0, 2, 0, 0);
+            _lstModels.CheckOnClick = true;
+            _lstModels.ItemCheck += OnModelChecked;
             _lstModels.DoubleClick += OnModelProps;
 
             _models.Controls.Add(_lblProvider, 0, 0);

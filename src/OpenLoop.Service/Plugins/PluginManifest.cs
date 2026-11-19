@@ -10,6 +10,7 @@ namespace OpenLoop.Service.Plugins
     public sealed class PluginManifest
     {
         public string Id { get; set; }
+        public string Name { get; set; }
         public string Version { get; set; }
         public PluginEntry Entry { get; set; } = new();
         public PluginContributions Contributions { get; set; } = new();

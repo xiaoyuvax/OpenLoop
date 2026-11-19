@@ -12,8 +12,12 @@ namespace OpenLoop.App
     {
         private readonly AppSettings _source;
         private readonly List<ProviderConfig> _providers = [];
+        private readonly List<ProviderConfig> _pluginProviders = [];
+        private readonly HashSet<string> _disabled = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<SkillRow> _skillRows = [];
         private int _skillLoad;
+        private int _providerLoad;
+        private bool _listing;
         private readonly Dictionary<string, ModelProps> _modelProps = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _workspace;
         private ProviderConfig _loaded;
@@ -42,6 +46,8 @@ namespace OpenLoop.App
 
             foreach (var provider in _source.Providers ?? [])
                 _providers.Add(Clone(provider));
+            foreach (string id in _source.DisabledModels ?? [])
+                if (!string.IsNullOrWhiteSpace(id)) _disabled.Add(id.Trim());
             foreach (var pair in _source.ModelProps ?? [])
                 _modelProps[pair.Key] = new ModelProps { Name = pair.Value?.Name ?? "", ContextLimit = pair.Value?.ContextLimit ?? 0 };
 
@@ -61,6 +67,7 @@ namespace OpenLoop.App
             RefreshProviderCombo(_providers.FirstOrDefault());
             _loaded = _providers.FirstOrDefault();
             LoadProvider(_loaded);
+            _ = LoadPluginProvidersAsync();
         }
 
         public AppSettings Result { get; private set; }
@@ -73,8 +80,22 @@ namespace OpenLoop.App
             Kind = p.Kind,
             BaseUrl = p.BaseUrl,
             KeyProtected = p.KeyProtected,
-            Models = [.. (p.Models ?? [])]
+            Models = [.. (p.Models ?? [])],
+            PluginDirectory = p.PluginDirectory,
+            PluginProviderIndex = p.PluginProviderIndex,
+            PluginId = p.PluginId,
+            PluginName = p.PluginName,
+            PluginRawBaseUrl = p.PluginRawBaseUrl,
+            PluginRawModelsUrl = p.PluginRawModelsUrl,
+            PluginRawModelPrefix = p.PluginRawModelPrefix,
+            PluginDeclaredModels = [.. (p.PluginDeclaredModels ?? [])],
+            PluginKnownModels = [.. (p.PluginKnownModels ?? [])],
+            PluginReady = p.PluginReady,
+            RuntimeKey = p.RuntimeKey
         };
+
+        /// <summary>插件提供商只读地址与密钥，模型改动写回插件清单；会话下拉里的插件贡献不在这里。</summary>
+        private IEnumerable<ProviderConfig> AllProviders => _providers.Concat(_pluginProviders);
 
         private void RefreshProviderCombo(ProviderConfig select)
         {
@@ -82,7 +103,7 @@ namespace OpenLoop.App
             try
             {
                 _cboProvider.Items.Clear();
-                foreach (var provider in _providers)
+                foreach (var provider in AllProviders)
                     _cboProvider.Items.Add(new AntdUI.SelectItem(DisplayName(provider)) { Tag = provider });
                 if (select != null) _cboProvider.SelectedValue = select;
             }
@@ -93,7 +114,16 @@ namespace OpenLoop.App
         }
 
         private static string DisplayName(ProviderConfig p)
-            => string.IsNullOrWhiteSpace(p.Name) ? "未命名" : p.Name.Trim();
+        {
+            if (p == null) return "未命名";
+            if (!p.IsPlugin) return string.IsNullOrWhiteSpace(p.Name) ? "未命名" : p.Name.Trim();
+            string plugin = string.IsNullOrWhiteSpace(p.PluginName) ? p.PluginId : p.PluginName.Trim();
+            string own = p.Name?.Trim() ?? "";
+            string label = string.IsNullOrWhiteSpace(plugin) ? own : plugin;
+            if (own.Length > 0 && plugin.Length > 0 && !string.Equals(own, plugin, StringComparison.OrdinalIgnoreCase))
+                label += " · " + own;
+            return (label.Length == 0 ? "未命名" : label) + "（插件）";
+        }
 
         private void OnProviderChanged(object sender, AntdUI.ObjectNEventArgs e)
         {
@@ -110,24 +140,32 @@ namespace OpenLoop.App
             try
             {
                 bool has = provider != null;
+                bool plugin = has && provider.IsPlugin;
                 _txtName.Text = has ? provider.Name : "";
-                _txtUrl.Text = has ? provider.BaseUrl : "";
-                _txtKey.Text = has ? AppSettings.Unprotect(provider.KeyProtected) : "";
+                _txtUrl.Text = plugin ? provider.PluginRawBaseUrl ?? provider.BaseUrl : has ? provider.BaseUrl : "";
+                _txtKey.Text = plugin || !has ? "" : AppSettings.Unprotect(provider.KeyProtected);
                 _txtModelId.Text = "";
                 ReloadModelList(provider);
 
-                _btnFetch.Visible = has && provider.AutoModels;
+                _txtName.Enabled = has && !plugin;
+                _txtUrl.Enabled = has && !plugin;
+                _txtKey.Enabled = has && !plugin;
+                _btnFetch.Visible = has && !plugin && provider.AutoModels;
                 _lblHint.Text = !has
                     ? "先添加一个提供商。"
-                    : provider.AutoModels
-                        ? "内置提供商：点「拉取模型」同步该提供商的模型列表。"
-                        : "自定义提供商：逐条添加模型 id（例如 gpt-4o-mini）。";
+                    : plugin
+                        ? (provider.PluginReady
+                            ? "插件提供商（" + provider.PluginName + "）：地址与密钥归插件清单管；模型的增删写回它的 plugin.json。勾选=启用，取消勾选=停用（不进出模型下拉）。"
+                            : "插件提供商（" + provider.PluginName + "）当前不可用：服务/地址没就绪，模型先按清单列出，也可以先停用。")
+                        : provider.AutoModels
+                            ? "内置提供商：点「拉取模型」同步该提供商的模型列表。勾选=启用，取消勾选=停用（不进出模型下拉）。"
+                            : "自定义提供商：逐条添加模型 id（例如 gpt-4o-mini）。勾选=启用，取消勾选=停用（不进出模型下拉）。";
                 _lblStatus.Text = "";
-                _btnRemoveProvider.Enabled = has;
+                _btnRemoveProvider.Enabled = has && !plugin;
                 _btnAddModel.Enabled = has;
                 _btnRemoveModel.Enabled = has;
                 _btnModelProps.Enabled = has;
-                _btnTest.Enabled = has;
+                _btnTest.Enabled = has && (!plugin || provider.PluginReady);
             }
             finally
             {
@@ -137,7 +175,7 @@ namespace OpenLoop.App
 
         private void CommitProvider(ProviderConfig provider)
         {
-            if (provider == null || _filling) return;
+            if (provider == null || _filling || provider.IsPlugin) return;
             string name = _txtName.Text.Trim();
             if (name.Length > 0) provider.Name = name;
             provider.BaseUrl = _txtUrl.Text.Trim();
@@ -183,6 +221,12 @@ namespace OpenLoop.App
         {
             var provider = Current;
             if (provider == null) return;
+            if (provider.IsPlugin)
+            {
+                AntdUI.Notification.warn(this, "插件提供商",
+                    "它来自插件清单，请到「插件」页卸载或改清单。", AntdUI.TAlignFrom.TR, null, 4);
+                return;
+            }
             if (MessageBox.Show(this, $"删除提供商「{DisplayName(provider)}」？", "设置",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
@@ -243,6 +287,7 @@ namespace OpenLoop.App
         private void ReloadModelList(ProviderConfig provider)
         {
             string filter = _txtModelId.Text.Trim();
+            _listing = true;
             _lstModels.BeginUpdate();
             try
             {
@@ -250,12 +295,25 @@ namespace OpenLoop.App
                 if (provider == null) return;
                 foreach (string id in provider.Models.OrderBy(m => m, StringComparer.OrdinalIgnoreCase))
                     if (filter.Length == 0 || id.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                        _lstModels.Items.Add(id);
+                        _lstModels.Items.Add(id, !_disabled.Contains(id));
             }
             finally
             {
                 _lstModels.EndUpdate();
+                _listing = false;
             }
+        }
+
+        /// <summary>勾选=进模型下拉；取消勾选只停用，不删配置（插件模型也一样）。</summary>
+        private void OnModelChecked(object sender, ItemCheckEventArgs e)
+        {
+            if (_listing) return;
+            string id = e.Index >= 0 && e.Index < _lstModels.Items.Count
+                ? _lstModels.Items[e.Index] as string
+                : null;
+            if (string.IsNullOrWhiteSpace(id)) return;
+            if (e.NewValue == CheckState.Checked) _disabled.Remove(id);
+            else _disabled.Add(id);
         }
 
         private void OnModelSearchChanged(object sender, EventArgs e)
@@ -294,6 +352,7 @@ namespace OpenLoop.App
                 return;
 
             provider.Models.Add(id);
+            _disabled.Remove(id);
             _filling = true;
             try { _txtModelId.Text = ""; }
             finally { _filling = false; }
@@ -307,7 +366,16 @@ namespace OpenLoop.App
             var provider = Current;
             string id = _lstModels.SelectedItem as string;
             if (provider == null || string.IsNullOrWhiteSpace(id)) return;
+            // 插件清单里没声明的（modelsUrl 发现来的）删不掉，停用即可
+            if (provider.IsPlugin && !(provider.PluginDeclaredModels ?? [])
+                    .Contains(id, StringComparer.OrdinalIgnoreCase))
+            {
+                _disabled.Add(id);
+                ReloadModelList(provider);
+                return;
+            }
             provider.Models.RemoveAll(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase));
+            _disabled.Remove(id);
             ReloadModelList(provider);
         }
 
@@ -342,6 +410,7 @@ namespace OpenLoop.App
                 int at = provider.Models.FindIndex(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase));
                 if (at >= 0) provider.Models[at] = newId;
                 _modelProps.Remove(id);
+                if (_disabled.Remove(id)) _disabled.Add(newId);
             }
 
             var props = new ModelProps { Name = form.DisplayName, ContextLimit = form.ContextLimit };
@@ -358,6 +427,7 @@ namespace OpenLoop.App
             if (provider == null) return;
             CommitProvider(provider);
             int count = provider.Models.Count;
+            foreach (string id in provider.Models) _disabled.Remove(id);
             provider.Models.Clear();
             _filling = true;
             try { _txtModelId.Text = ""; }
@@ -626,6 +696,7 @@ namespace OpenLoop.App
                 return;
 
             CommitProvider(_loaded);
+            SavePluginProviders();
             var first = _providers.FirstOrDefault(p => p.Models.Count > 0) ?? _providers.FirstOrDefault();
 
             Result = new AppSettings
@@ -656,6 +727,7 @@ namespace OpenLoop.App
                 ReasoningEffort = _source.ReasoningEffort,
                 LoopCommand = _source.LoopCommand,
                 ModelProps = new Dictionary<string, ModelProps>(_modelProps, StringComparer.OrdinalIgnoreCase),
+                DisabledModels = [.. _disabled],
                 Providers = _providers
             };
             DialogResult = DialogResult.OK;

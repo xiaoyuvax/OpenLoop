@@ -84,6 +84,7 @@
 - 新增 `ChatFlowControl` 必须在 `InitializeComponent()` 后、`Bind` 前显式设 `ChatFont`——它不是 `Control.Font`，字体遍历/`Font` 赋值不会自动覆盖。
 - 新控件的颜色统一从 `UiStyle` 取，不写死 `Color.X`；自绘控件跟随主题。
 - 聊天区链接分流（`ChatPathActions` + 各视图 `OnChatLinkClicked`，Worker 与 Loop 一致）：网址 → 右侧「网页」内置浏览器；目录 → 直接用资源管理器打开；文本 → 右侧「文件」页（同一个页换内容，不叠 tab）；其余文件（二进制/过大/解码失败）→ 问一句再用系统默认程序打开。
+- **附件与生图**：Worker/Loop 输入框都可挂附件（WinForms + Web 同一契约），落 `.openloop/tmp/attachments/<会话>/`，路径以「附件」段拼进用户消息；上限按模型类别给通用值（文本 8 / 生图 4，`MediaModels.AttachmentLimit`）。存在生图模型时工具栏显示「生图模型」，会话工具表注入 `image_generate`/`image_edit`（同系列按 id 前缀互指，有编辑变体就用它），结果存 `.openloop/tmp/images` 并写 EXIF（提示词 + 模型）。
 
 ## 工程规则
 

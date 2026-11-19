@@ -453,5 +453,23 @@ namespace OpenLoop.Service.Tests
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
             Assert.Equal(1001, host.Get(session.Id).ContextTokens);
         }
+        [Fact]
+        public async Task Send_carries_attachments_and_image_model()
+        {
+            WorkerRunRequest seen = null;
+            var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var host = NewHost((request, ct) => { seen = request; return gate.Task; });
+            var session = NewSession(host);
+
+            host.Send(session.Id, "task", "画一张", false, "gemini-3-pro-image", ["C:/work/a.png"]);
+            await WaitAsync(() => seen != null);
+
+            Assert.Equal("gemini-3-pro-image", seen.ImageModel);
+            Assert.Equal("C:/work/a.png", Assert.Single(seen.Attachments));
+            Assert.Contains("附件", seen.Text);
+
+            gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+        }
     }
 }

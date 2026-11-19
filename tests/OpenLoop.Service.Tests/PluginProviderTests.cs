@@ -128,6 +128,31 @@ namespace OpenLoop.Service.Tests
             Assert.True(catalog.TryProvider("m", out _));
         }
 
+        /// <summary>设置页对插件 provider 的模型增删要写回 plugin.json 的 models，而不是 settings.json。</summary>
+        [Fact]
+        public void Saving_provider_models_writes_the_plugin_manifest()
+        {
+            string dir = Path.Combine(_workspace, ".openloop", "plugins", "stub");
+            PluginStore.Save(_workspace, new PluginStore.Item
+            {
+                Directory = dir,
+                Id = "stub",
+                ProviderIndex = 0,
+                Name = "stub",
+                BaseUrl = _stub.BaseUrl,
+                ModelList = ["stub-model", "extra-model"]
+            });
+
+            var item = Assert.Single(PluginStore.ReadProviders(dir));
+            Assert.Equal(["stub-model", "extra-model"], item.ModelList);
+            Assert.Equal(2, item.Models);
+
+            using var catalog = PluginCatalog.Load(_workspace, _global);
+            var entry = Assert.Single(catalog.ProviderEntries());
+            Assert.EndsWith("（插件）", entry.DisplayName);
+            Assert.Equal(["stub-model", "extra-model"], entry.Declared);
+        }
+
         /// <summary>只认一次请求的最小 OpenAI 兼容端点（HTTP/1.1 + Content-Length）。</summary>
         private sealed class StubOpenAi : IDisposable
         {

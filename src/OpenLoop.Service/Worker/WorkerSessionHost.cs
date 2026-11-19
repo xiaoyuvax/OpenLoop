@@ -3,6 +3,7 @@ using OpenLoop.Core.Messages;
 using OpenLoop.Core.Safety;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Logging;
+using OpenLoop.Service.Media;
 using OpenLoop.Service.Storage;
 
 namespace OpenLoop.Service.Worker
@@ -64,6 +65,9 @@ namespace OpenLoop.Service.Worker
 
         /// <summary>会话标题（chats/index.json 里的自定义标题；空则界面回退到模型名）</summary>
         public string Title { get; set; }
+
+        /// <summary>工具栏选中的生图模型；空表示用可用清单第一个。</summary>
+        public string ImageModel { get; set; }
 
         /// <summary>true=本进程内存里已有（可直接 GET）；false=只在 chats/ 索引里（要带 id POST 建会话）</summary>
         public bool Live { get; set; }
@@ -232,6 +236,7 @@ namespace OpenLoop.Service.Worker
             Workspace = session.Workspace,
             Model = session.Model,
             Effort = session.Effort,
+            ImageModel = session.ImageModel,
             State = session.State,
             Revision = session.Revision,
             Paused = session.Paused,
@@ -263,29 +268,43 @@ namespace OpenLoop.Service.Worker
         }
 
         /// <summary>空闲时立即开跑；运行中则排队，等当前轮结束按顺序执行。immediate=运行中插到队首并软打断本轮。</summary>
-        public bool Send(string id, string tag, string text, bool immediate = false)
+        public bool Send(string id, string tag, string text, bool immediate = false,
+            string imageModel = null, IReadOnlyList<string> attachments = null)
         {
-            if (string.IsNullOrWhiteSpace(text)) return false;
+            if (string.IsNullOrWhiteSpace(text) && (attachments == null || attachments.Count == 0)) return false;
+
+            string described = Attachments.Describe(attachments);
+            if (described.Length > 0)
+                text = string.IsNullOrWhiteSpace(text) ? described : text.TrimEnd() + "\n\n" + described;
 
             Session session;
             lock (_lock)
             {
                 if (!_sessions.TryGetValue(id ?? "", out session)) return false;
                 session.UserEpoch++;
+                if (!string.IsNullOrWhiteSpace(imageModel)) session.ImageModel = imageModel;
                 if (session.State == Running)
                 {
                     if (immediate)
                     {
-                        session.Pending.Insert(0, new PendingSend { Text = text, Tag = tag ?? "task", Immediate = true });
+                        session.Pending.Insert(0, new PendingSend
+                        {
+                            Text = text, Tag = tag ?? "task", Immediate = true,
+                            ImageModel = imageModel, Attachments = attachments
+                        });
                         session.Paused = false;
                         session.Interrupt = true;
                     }
-                    else session.Pending.Add(new PendingSend { Text = text, Tag = tag ?? "task" });
+                    else session.Pending.Add(new PendingSend
+                    {
+                        Text = text, Tag = tag ?? "task",
+                        ImageModel = imageModel, Attachments = attachments
+                    });
                     session.Revision++;
                 }
                 else
                 {
-                    Start(session, tag ?? "task", text);
+                    Start(session, tag ?? "task", text, imageModel, attachments);
                 }
             }
 
@@ -341,7 +360,7 @@ namespace OpenLoop.Service.Worker
                 if (session.State != Running)
                 {
                     var batch = TakeBatch(session.Pending);
-                    if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch));
+                    if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch));
                 }
             }
 
@@ -410,7 +429,7 @@ namespace OpenLoop.Service.Worker
                 }
 
                 var batch = TakeBatch(session.Pending);
-                if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch));
+                if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch));
             }
 
             Changed?.Invoke(id);
@@ -521,7 +540,8 @@ namespace OpenLoop.Service.Worker
             : status.Contains(line) ? status
             : status + "\n" + line;
 
-        private void Start(Session session, string tag, string text)
+        private void Start(Session session, string tag, string text,
+            string imageModel = null, IReadOnlyList<string> attachments = null)
         {
             // 调用方持有 _lock
             if (!session.HistoryPruned)
@@ -529,6 +549,7 @@ namespace OpenLoop.Service.Worker
                 session.HistoryPruned = true;
                 MaybePruneHistory(session);
             }
+            if (!string.IsNullOrWhiteSpace(imageModel)) session.ImageModel = imageModel;
             List<LlmMessage> history = BuildHistory(session.Turns);
             var turn = new WorkerTurn { User = text, Streaming = true };
             session.Turns.Add(turn);
@@ -561,6 +582,8 @@ namespace OpenLoop.Service.Worker
                 SessionId = session.Id,
                 Tag = tag,
                 Text = text,
+                ImageModel = session.ImageModel,
+                Attachments = attachments ?? [],
                 History = history,
                 Approve = approval => Approve(session, approval, cts.Token),
                 ConfirmContinue = message => Ask(session, "continue", "", message, "", "", "", cts.Token) > 0,
@@ -743,7 +766,7 @@ namespace OpenLoop.Service.Worker
                     if (!session.Paused && session.Pending.Count > 0)
                     {
                         var batch = TakeBatch(session.Pending);
-                        if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch));
+                        if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch));
                     }
                 }
 
@@ -884,12 +907,16 @@ namespace OpenLoop.Service.Worker
         private static string Merge(List<PendingSend> batch) =>
             batch.Count == 1 ? batch[0].Text
                 : string.Join("\n\n", batch.Select((b, i) => $"{i + 1}. {b.Text}"));
+
+        private static List<string> MergeAttachments(List<PendingSend> batch)
+            => batch.SelectMany(b => b.Attachments ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         private static WorkerSessionSnapshot snapshot(Session session) => new()
         {
             Id = session.Id,
             Workspace = session.Workspace,
             Model = session.Model,
             Effort = session.Effort,
+            ImageModel = session.ImageModel,
             State = session.State,
             Revision = session.Revision,
             Paused = session.Paused,
@@ -936,6 +963,8 @@ namespace OpenLoop.Service.Worker
             public string Text { get; init; }
             public string Tag { get; init; }
             public bool Immediate { get; set; }
+            public string ImageModel { get; init; }
+            public IReadOnlyList<string> Attachments { get; init; }
         }
         private sealed class Session
         {
@@ -943,6 +972,7 @@ namespace OpenLoop.Service.Worker
             public string Workspace { get; init; }
             public string Model { get; set; }
             public string Effort { get; set; }
+            public string ImageModel { get; set; }
             public Func<AppSettings> Settings { get; init; }
             public DateTime CreatedAt { get; } = DateTime.UtcNow;
             public List<WorkerTurn> Turns { get; } = [];

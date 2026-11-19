@@ -40,13 +40,26 @@ namespace OpenLoop.Service.Web
             if (method == "GET" && parts.Length == 2 && parts[1] == "models")
             {
                 if (Models.OpenCodeHub.Models.Count == 0) Models.OpenCodeHub.EnsureFresh();
+                var settings = AppSettings.Load();
+                var catalog = new List<(string Id, string Name, bool Free, int Context)>();
+                foreach (var m in Models.OpenCodeHub.Models)
+                    if (!string.IsNullOrWhiteSpace(m?.Id) && !settings.ModelDisabled(m.Id))
+                        catalog.Add((m.Id, m.Name ?? m.Id, m.IsFree, m.ContextLength));
+                var seen = new HashSet<string>(catalog.Select(m => m.Id), StringComparer.OrdinalIgnoreCase);
+                // 插件贡献的模型与设置页「模型」同源：停用的不出现在下拉里
+                using (var plugins = Plugins.PluginCatalog.Load(settings?.Workspace ?? ""))
+                    foreach (string modelId in plugins.Models())
+                        if (!settings.ModelDisabled(modelId) && seen.Add(modelId))
+                            catalog.Add((modelId, modelId, true, 0));
                 return Json(req, new
                 {
-                    models = Models.OpenCodeHub.Models
-                        .Where(m => !string.IsNullOrWhiteSpace(m?.Id))
-                        .Select(m => new { id = m.Id, name = m.Name ?? m.Id, free = m.IsFree, context = m.ContextLength })
+                    models = catalog
+                        .Select(m => new { id = m.Id, name = m.Name, free = m.Free, context = m.Context })
                         .ToArray(),
-                    recent = AppSettings.Load()?.RecentModels ?? []
+                    images = Media.MediaModels.ImageModels(settings)
+                        .Select(m => new { id = m.Id, name = m.Name ?? m.Id, free = m.IsFree })
+                        .ToArray(),
+                    recent = settings?.RecentModels ?? []
                 });
             }
 
@@ -91,7 +104,12 @@ namespace OpenLoop.Service.Web
                 {
                     var body = ReadBody<MessageRequest>(req);
                     if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
-                    return _host.Send(id, body.Tag, body.Text, body.Immediate)
+                    var current = _host.Get(id);
+                    if (current == null) return NotFound(req);
+                    var saved = Media.Attachments.Save(current.Workspace, id, body.Attachments,
+                        Media.MediaModels.AttachmentLimit(current.Model), out string attachmentError);
+                    if (saved == null) return Json(req, new { ok = false, error = attachmentError }, 400);
+                    return _host.Send(id, body.Tag, body.Text, body.Immediate, body.ImageModel, saved)
                         ? Json(req, _host.Get(id))
                         : NotFound(req);
                 }
@@ -204,6 +222,9 @@ namespace OpenLoop.Service.Web
 
             /// <summary>运行中为 true：打断本轮，收尾后先发这一条（Enter 的语义）。</summary>
             public bool Immediate { get; set; }
+
+            public string ImageModel { get; set; }
+            public List<Media.AttachmentPayload> Attachments { get; set; }
         }
 
         private sealed class PendingRequest

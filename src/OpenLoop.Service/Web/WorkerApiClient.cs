@@ -82,8 +82,10 @@ namespace OpenLoop.Service.Web
                 new { id, workspace, model, effort }, ct);
 
         public async Task<WorkerSessionSnapshot> SendAsync(string id, string tag, string text,
-            CancellationToken ct = default)
-            => await PostAsync(Path(id) + "/messages", new { tag, text }, ct);
+            CancellationToken ct = default, string imageModel = null,
+            IReadOnlyList<Media.AttachmentPayload> attachments = null)
+            => await PostAsync(Path(id) + "/messages",
+                new { tag, text, imageModel, attachments = attachments ?? [] }, ct);
 
         public async Task<WorkerSessionSnapshot> StopAsync(string id, CancellationToken ct = default)
             => await PostAsync(Path(id) + "/stop", new { }, ct);

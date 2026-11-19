@@ -13,6 +13,7 @@ using OpenLoop.Core.Skills;
 using OpenLoop.Core.Trace;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Loop;
+using OpenLoop.Service.Media;
 using OpenLoop.Service.Pending;
 using OpenLoop.Service.Plugins;
 using OpenLoop.Service.Storage;
@@ -60,6 +61,12 @@ namespace OpenLoop.App
         /// <summary>访问 A 的 /api/sessions；界面不再自己跑 Agent。</summary>
         private WorkerApiClient _client;
         private readonly HashSet<string> _answeredPrompts = [];
+
+        /// <summary>待发送的附件（本地路径，发送时读成 base64 交给 A 落盘）。</summary>
+        private readonly List<string> _attachments = [];
+
+        /// <summary>工具栏选中的生图模型（仅选区画工具用，不改变聊天模型）。</summary>
+        private string _imageModel;
 
         /// <summary>访问 I 的 /api/loop/*；演进与回滚的写入口在 I。</summary>
         private LoopApiClient _loopClient;
@@ -744,8 +751,9 @@ namespace OpenLoop.App
         private void UpdateSendButton()
         {
             bool editing = _editing != null;
-            bool stop = !editing && _running && _txtInput.Text.Trim().Length == 0;
-            bool retry = !editing && !stop && _txtInput.Text.Trim().Length == 0 && QuotaOnLastTurn;
+            bool hasAttachments = _attachments.Count > 0;
+            bool stop = !editing && _running && !hasAttachments && _txtInput.Text.Trim().Length == 0;
+            bool retry = !editing && !stop && !hasAttachments && _txtInput.Text.Trim().Length == 0 && QuotaOnLastTurn;
             _btnSend.Text = editing
                 ? Localization.T("SettingsSave")
                 : Localization.T(retry ? "Continue" : stop ? "Stop" : "Send");
@@ -807,12 +815,14 @@ namespace OpenLoop.App
             {
                 // shortcut: 壳自己的队列（_queue）和 Worker 的队列（snapshot.Pending）是两套，
                 // 轮询还没发现「别人发起的轮」时提交的消息会落到 Worker 队列里看不到；要合并得让队列栏直接读 Pending。
-                if (text.Length == 0)
+                if (text.Length == 0 && _attachments.Count == 0)
                 {
                     _queue.Paused = true;
                     StopRun();
                     return (true, "已停止当前轮");
                 }
+                // shortcut: 排队项不携带附件；要排队附件得让 PendingItem 也存路径。
+                if (_attachments.Count > 0) return (false, "附件请等本轮结束后再发");
                 var item = Enqueue(text, _mode, immediate ? PendingMode.NextStep : PendingMode.AfterTurn);
                 _txtInput.Clear();
                 SetMode("task");
@@ -820,9 +830,10 @@ namespace OpenLoop.App
                 return (true, immediate ? "已插队，本轮收尾后立刻发送" : "已入队，本轮结束后发送");
             }
 
-            if (text.Length == 0) return (false, "输入框为空");
+            if (text.Length == 0 && _attachments.Count == 0) return (false, "输入框为空");
+            var files = _attachments.ToList();
             _txtInput.Clear();
-            SendTask(_mode, text);
+            SendTask(_mode, text, files);
             SetMode("task");
             return (true, "已发送");
         }
@@ -830,7 +841,7 @@ namespace OpenLoop.App
         private void OnSendClick(object sender, EventArgs e)
         {
             // 免费额度撞墙后按钮是「继续」：输入框为空时点它就把继续发出去
-            if (_txtInput.Text.Trim().Length == 0 && !_running && QuotaOnLastTurn)
+            if (_txtInput.Text.Trim().Length == 0 && _attachments.Count == 0 && !_running && QuotaOnLastTurn)
             {
                 SendTask("task", Localization.T("ContinuePrompt"));
                 SetMode("task");
@@ -992,6 +1003,7 @@ namespace OpenLoop.App
             if (_selModel.SelectedValue is not string id || string.IsNullOrWhiteSpace(id)) return;
             _model = id;
             UpdateContext(_ctxTokens);   // 换了模型上下文上限也变了，标签要跟着刷新
+            UpdateAttachments();         // 附件上限按模型类别算，换模型要跟着变
             Persist(s =>
             {
                 s.Model = id;
@@ -999,6 +1011,41 @@ namespace OpenLoop.App
             });
             UpdateEvolveButtonEnabled();
         }
+
+        private void OnImageModelChanged(object sender, AntdUI.ObjectNEventArgs e)
+        {
+            if (_fillingModels || _initializing) return;
+            if (_selImage.SelectedValue is string id) _imageModel = id;
+        }
+
+        private void OnAttachClick(object sender, EventArgs e)
+        {
+            int limit = MediaModels.AttachmentLimit(_model);
+            var picked = AttachmentsUi.Pick(FindForm(), _attachments, limit, out bool overflow);
+            if (picked == null) return;
+            _attachments.Clear();
+            _attachments.AddRange(picked);
+            if (overflow) Notify("附件太多", $"当前模型最多 {limit} 个附件", error: true);
+            UpdateAttachments();
+        }
+
+        private void OnClearAttachments(object sender, EventArgs e)
+        {
+            _attachments.Clear();
+            UpdateAttachments();
+        }
+
+        private void UpdateAttachments()
+        {
+            int limit = MediaModels.AttachmentLimit(_model);
+            _lblAttach.Text = AttachmentsUi.Label(_attachments, limit);
+            _lblAttach.Visible = _attachments.Count > 0;
+            if (_attachments.Count > 0) _tips.SetToolTip(_lblAttach, string.Join("\n", _attachments));
+            UpdateSendButton();
+        }
+
+        private List<AttachmentPayload> ReadAttachments(IReadOnlyList<string> paths, out string error)
+            => AttachmentsUi.Read(paths, out error);
 
         private void OnEffortChanged(object sender, AntdUI.ObjectNEventArgs e)
         {
@@ -1139,6 +1186,15 @@ namespace OpenLoop.App
                     _model = visible[0].Id;
 
                 _selModel.SelectedValue = _model;
+
+                var images = ModelChoices.Images(_settings());
+                _selImage.Items.Clear();
+                foreach (var image in images)
+                    _selImage.Items.Add(new AntdUI.SelectItem(image.Name ?? image.Id) { Tag = image.Id });
+                _selImage.Visible = images.Count > 0;
+                if (string.IsNullOrWhiteSpace(_imageModel) || images.All(m => m.Id != _imageModel))
+                    _imageModel = images.FirstOrDefault()?.Id ?? "";
+                _selImage.SelectedValue = _imageModel;
             }
             finally
             {
@@ -1221,17 +1277,24 @@ namespace OpenLoop.App
             return head + "\n\n" + Localization.T("RawResponse") + "\n```\n" + detail + "\n```";
         }
 
-        private async void SendTask(string tag, string text)
+        private async void SendTask(string tag, string text, List<string> attachments = null)
         {
             if (_running) return;
 
             var settings = _settings();
-            if (string.IsNullOrWhiteSpace(text)) return;
+            if (string.IsNullOrWhiteSpace(text) && (attachments == null || attachments.Count == 0)) return;
 
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
                 Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                return;
+            }
+
+            var payloads = ReadAttachments(attachments, out string attachmentError);
+            if (payloads == null)
+            {
+                Notify("附件不可用", attachmentError, error: true);
                 return;
             }
 
@@ -1267,8 +1330,13 @@ namespace OpenLoop.App
                     || !string.Equals(remote.Effort, _effort, StringComparison.Ordinal))
                     await client.SetModelAsync(Session.Id, model, _effort, ct);
 
-                snapshot = await client.SendAsync(Session.Id, tag, text, ct);
+                snapshot = await client.SendAsync(Session.Id, tag, text, ct, _imageModel, payloads);
                 if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
+                if (attachments is { Count: > 0 })
+                {
+                    _attachments.Clear();
+                    UpdateAttachments();
+                }
                 ApplySnapshot(snapshot);
                 //发出即落盘：进程被杀时最多丢流式中的半条回复，而不是整轮对话
                 ChatStore.Save(workspace, Session.Book.Turns, Session.Id, _model, _effort);

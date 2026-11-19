@@ -31,6 +31,41 @@ namespace OpenLoop.Service.Config
         /// <summary>内置支持的提供商可一键拉取模型；自定义提供商只手动添加。</summary>
         [JsonIgnore]
         public bool AutoModels => !string.Equals(Kind, "custom", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>插件贡献的提供商：清单目录与 providers 下标，不写进 settings.json。</summary>
+        [JsonIgnore]
+        public string PluginDirectory { get; set; }
+        [JsonIgnore]
+        public int PluginProviderIndex { get; set; }
+        [JsonIgnore]
+        public string PluginId { get; set; }
+        [JsonIgnore]
+        public string PluginName { get; set; }
+        [JsonIgnore]
+        public string PluginRawBaseUrl { get; set; }
+        [JsonIgnore]
+        public string PluginRawModelsUrl { get; set; }
+        [JsonIgnore]
+        public string PluginRawModelPrefix { get; set; }
+
+        /// <summary>插件清单里声明的模型；与下拉里看到的全量清单相减就得到 modelsUrl 发现的部分。</summary>
+        [JsonIgnore]
+        public List<string> PluginDeclaredModels { get; set; } = [];
+
+        /// <summary>打开设置页时插件贡献的全量模型（写回时据此区分声明/发现）。</summary>
+        [JsonIgnore]
+        public List<string> PluginKnownModels { get; set; } = [];
+
+        /// <summary>插件提供商当前是否可用（地址解析成功 / 服务已就绪）。</summary>
+        [JsonIgnore]
+        public bool PluginReady { get; set; }
+
+        /// <summary>插件密钥只在内存里给拉取/测试用，绝不落盘。</summary>
+        [JsonIgnore]
+        public string RuntimeKey { get; set; }
+
+        [JsonIgnore]
+        public bool IsPlugin => !string.IsNullOrWhiteSpace(PluginDirectory);
     }
 
     public sealed class AppSettings
@@ -69,6 +104,14 @@ namespace OpenLoop.Service.Config
 
         /// <summary>按模型 id 的用户覆盖：显示名称、上下文上限（服务商接口不报这些值时用）。</summary>
         public Dictionary<string, ModelProps> ModelProps { get; set; } = [];
+
+        /// <summary>用户在设置里停用的模型 id：仍保留配置，但不进模型下拉。</summary>
+        public List<string> DisabledModels { get; set; } = [];
+
+        /// <summary>该模型是否被用户停用（id 不区分大小写）。</summary>
+        public bool ModelDisabled(string id)
+            => !string.IsNullOrWhiteSpace(id) && (DisabledModels ?? []).Any(m =>
+                string.Equals(m?.Trim(), id.Trim(), StringComparison.OrdinalIgnoreCase));
 
         /// <summary>最近用过的模型 id，最近在前（下拉置顶用）。</summary>
         public List<string> RecentModels { get; set; } = [];
@@ -184,6 +227,7 @@ namespace OpenLoop.Service.Config
             foreach (var provider in settings.Providers) provider.Models ??= [];
             settings.ModelProps ??= [];
             settings.RecentModels ??= [];
+            settings.DisabledModels ??= [];
 
             if (settings.Providers.Count == 0 && !string.IsNullOrWhiteSpace(settings.BaseUrl))
             {
@@ -222,6 +266,7 @@ namespace OpenLoop.Service.Config
 
         public static string ResolveKey(ProviderConfig provider)
         {
+            if (!string.IsNullOrWhiteSpace(provider?.RuntimeKey)) return provider.RuntimeKey;
             string key = Unprotect(provider?.KeyProtected);
             if (!string.IsNullOrWhiteSpace(key)) return key;
             return (provider?.Kind ?? "").Trim().ToLowerInvariant() switch

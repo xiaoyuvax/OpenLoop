@@ -10,6 +10,7 @@ using OpenLoop.Core.Store;
 using OpenLoop.Core.Tools;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Trace;
+using OpenLoop.Service.Media;
 using OpenLoop.Service.Pending;
 using OpenLoop.Service.Shell;
 using OpenLoop.Service.Source;
@@ -34,6 +35,8 @@ namespace OpenLoop.App
         private string _sessionId = LoopRef.LegacyId;
         private string _model = "";
         private string _effort = "";
+        private string _imageModel = "";
+        private readonly List<string> _attachments = [];
         private bool _onlyFree = true;
         private string _lastCost = "—";
         private int? _contextTokens;
@@ -430,11 +433,33 @@ namespace OpenLoop.App
             var settings = _settings();
             bool fromInput = text == null;
             text = (fromInput ? _txtInput.Text : text).Trim();
-            if (text.Length == 0) return;
+            var pendingFiles = _attachments.ToList();
+            if (text.Length == 0 && pendingFiles.Count == 0) return;
             if (!Directory.Exists(_workspace))
             {
                 Notify("项目不可用", "工作区目录不存在：" + _workspace, error: true);
                 return;
+            }
+
+            var payloads = AttachmentsUi.Read(pendingFiles, out string attachmentError);
+            if (payloads == null)
+            {
+                Notify("附件不可用", attachmentError, error: true);
+                return;
+            }
+            var saved = Attachments.Save(_workspace, _sessionId, payloads,
+                MediaModels.AttachmentLimit(_model), out attachmentError);
+            if (saved == null)
+            {
+                Notify("附件不可用", attachmentError, error: true);
+                return;
+            }
+            if (saved.Count > 0)
+            {
+                string block = Attachments.Describe(saved);
+                text = text.Length == 0 ? block : text + "\n\n" + block;
+                _attachments.Clear();
+                UpdateAttachments();
             }
 
             string model = _model?.Trim() ?? "";
@@ -510,7 +535,8 @@ namespace OpenLoop.App
                     var loopTools = ToolRegistry.Loop(readScope, writeScope, _workspace, approve, activeSkills,
                         OpenCodeTools.For(writeScope.Root, approve, settings.OpenCodeAskPermissions)
                             .Concat(DshTools.For(settings, writeScope.Root, approve))
-                            .Concat(OpenLoop.Service.Web.PuppetTools.For()),
+                            .Concat(OpenLoop.Service.Web.PuppetTools.For())
+                            .Concat(ImageTools.For(_workspace, settings, _imageModel, saved)),
                         settings.WebFetchMode);
                     var registry = new ToolRegistry(loopTools.Tools.Concat(
                         [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
@@ -864,6 +890,15 @@ namespace OpenLoop.App
                     _model = models.FirstOrDefault()?.Id ?? _model;
 
                 _selModel.SelectedValue = _model;
+
+                var images = ModelChoices.Images(_settings());
+                _selImage.Items.Clear();
+                foreach (var image in images)
+                    _selImage.Items.Add(new AntdUI.SelectItem(image.Name ?? image.Id) { Tag = image.Id });
+                _selImage.Visible = images.Count > 0;
+                if (string.IsNullOrWhiteSpace(_imageModel) || images.All(m => m.Id != _imageModel))
+                    _imageModel = images.FirstOrDefault()?.Id ?? "";
+                _selImage.SelectedValue = _imageModel;
             }
             finally
             {
@@ -907,6 +942,37 @@ namespace OpenLoop.App
             _effort = _selEffort.SelectedValue as string ?? "";
             Persist(s => s.ReasoningEffort = _effort);
             ApplyDetail();
+        }
+
+        private void OnImageModelChanged(object sender, EventArgs e)
+        {
+            if (_filling) return;
+            if (_selImage.SelectedValue is string id) _imageModel = id;
+        }
+
+        private void OnAttachClick(object sender, EventArgs e)
+        {
+            int limit = MediaModels.AttachmentLimit(_model);
+            var picked = AttachmentsUi.Pick(FindForm(), _attachments, limit, out bool overflow);
+            if (picked == null) return;
+            _attachments.Clear();
+            _attachments.AddRange(picked);
+            if (overflow) Notify("附件太多", $"当前模型最多 {limit} 个附件", error: true);
+            UpdateAttachments();
+        }
+
+        private void OnClearAttachments(object sender, EventArgs e)
+        {
+            _attachments.Clear();
+            UpdateAttachments();
+        }
+
+        private void UpdateAttachments()
+        {
+            _lblAttach.Text = AttachmentsUi.Label(_attachments, MediaModels.AttachmentLimit(_model));
+            _lblAttach.Visible = _attachments.Count > 0;
+            if (_attachments.Count > 0) _tips.SetToolTip(_lblAttach, string.Join("\n", _attachments));
+            UpdateSendButton();
         }
 
         private void OnFreeToggle(object sender, AntdUI.BoolEventArgs e)
@@ -1084,9 +1150,15 @@ namespace OpenLoop.App
 
             if (_running)
             {
-                if (text.Length == 0)
+                if (text.Length == 0 && _attachments.Count == 0)
                 {
                     Stop();
+                    return;
+                }
+                // shortcut: 排队项不携带附件；要排队附件得让 PendingItem 也存路径。
+                if (_attachments.Count > 0)
+                {
+                    Notify("附件请等本轮结束后再发", "运行中不支持给排队消息加附件。", error: true);
                     return;
                 }
                 var item = _queue.Add(text, "task", immediate
@@ -1098,7 +1170,7 @@ namespace OpenLoop.App
                 return;
             }
 
-            if (text.Length == 0) return;
+            if (text.Length == 0 && _attachments.Count == 0) return;
             SendAsync(null);
         }
 
@@ -1242,7 +1314,7 @@ namespace OpenLoop.App
         private void OnSendClick(object sender, EventArgs e)
         {
             // 免费额度撞墙后按钮是「继续」：输入框为空时点它就把继续发出去
-            if (_txtInput.Text.Trim().Length == 0 && !_running && QuotaOnLastTurn)
+            if (_txtInput.Text.Trim().Length == 0 && _attachments.Count == 0 && !_running && QuotaOnLastTurn)
             {
                 SendAsync(Localization.T("ContinuePrompt"));
                 return;
@@ -1634,8 +1706,9 @@ namespace OpenLoop.App
         private void UpdateSendButton()
         {
             bool editing = _editing != null;
-            bool stop = !editing && _running && _txtInput.Text.Trim().Length == 0;
-            bool retry = !editing && !stop && _txtInput.Text.Trim().Length == 0 && QuotaOnLastTurn;
+            bool hasAttachments = _attachments.Count > 0;
+            bool stop = !editing && _running && !hasAttachments && _txtInput.Text.Trim().Length == 0;
+            bool retry = !editing && !stop && !hasAttachments && _txtInput.Text.Trim().Length == 0 && QuotaOnLastTurn;
             _btnSend.Text = editing
                 ? Localization.T("SettingsSave")
                 : Localization.T(retry ? "Continue" : stop ? "Stop" : "Send");

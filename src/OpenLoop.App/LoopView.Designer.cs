@@ -35,6 +35,9 @@ namespace OpenLoop.App
         private AntdUI.Select _selModel;
         private AntdUI.Select _selProvider;
         private AntdUI.Select _selEffort;
+        private AntdUI.Button _btnAttach;
+        private AntdUI.Label _lblAttach;
+        private AntdUI.Select _selImage;
         private AntdUI.Progress _ctx;
         private AntdUI.Checkbox _chkSelect;
         private AntdUI.Dropdown _selMenu;
@@ -90,6 +93,9 @@ namespace OpenLoop.App
             _selModel = new AntdUI.Select();
             _selProvider = new AntdUI.Select();
             _selEffort = new AntdUI.Select();
+            _btnAttach = new AntdUI.Button();
+            _lblAttach = new AntdUI.Label();
+            _selImage = new AntdUI.Select();
             _ctx = new AntdUI.Progress();
             _chkSelect = new AntdUI.Checkbox();
             _selMenu = new AntdUI.Dropdown();
@@ -335,6 +341,40 @@ namespace OpenLoop.App
             _selModel.Margin = new Padding(0, 0, 8, 0);
             _selModel.SelectedValueChanged += OnModelChanged;
 
+            _selImage.Name = "selImage";
+            _selImage.Width = 190;
+            _selImage.Height = 30;
+            _selImage.Radius = 8;
+            _selImage.ListAutoWidth = true;
+            _selImage.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
+            _selImage.PlaceholderText = "生图模型";
+            _selImage.Margin = new Padding(0, 0, 8, 0);
+            _selImage.Visible = false;
+            _selImage.SelectedValueChanged += OnImageModelChanged;
+
+            _btnAttach.Name = "btnAttach";
+            _btnAttach.Width = 30;
+            _btnAttach.Height = 30;
+            _btnAttach.Ghost = true;
+            _btnAttach.Radius = 8;
+            _btnAttach.IconSvg = UiIcons.Of(UiIcons.Attach, UiStyle.Muted);
+            _btnAttach.Margin = new Padding(4, 0, 4, 0);
+            _btnAttach.Click += OnAttachClick;
+
+            _lblAttach.Name = "lblAttach";
+            _lblAttach.AutoSize = false;
+            _lblAttach.Width = 280;
+            _lblAttach.Height = 30;
+            _lblAttach.Text = "";
+            _lblAttach.Font = new Font("Segoe UI", 8.5F);
+            _lblAttach.ForeColor = UiStyle.Muted;
+            _lblAttach.TextAlign = ContentAlignment.MiddleLeft;
+            _lblAttach.AutoEllipsis = true;
+            _lblAttach.Visible = false;
+            _lblAttach.Cursor = Cursors.Hand;
+            _lblAttach.Margin = new Padding(0);
+            _lblAttach.Click += OnClearAttachments;
+
             _selEffort.Name = "selEffort";
             _selEffort.Width = 128;
             _selEffort.Height = 30;
@@ -449,9 +489,12 @@ namespace OpenLoop.App
 
             _toolbarLeft.Controls.Add(_selProvider);
             _toolbarLeft.Controls.Add(_selModel);
+            _toolbarLeft.Controls.Add(_selImage);
             _toolbarLeft.Controls.Add(_freeSwitch);
             _toolbarLeft.Controls.Add(_lblFree);
             _toolbarLeft.Controls.Add(_selEffort);
+            _toolbarLeft.Controls.Add(_btnAttach);
+            _toolbarLeft.Controls.Add(_lblAttach);
             // 状态标签已从底栏移除（控件保留：LoopView.Status 与右侧详情仍读它的文本）
 
             _btnSend.Name = "btnSend";

@@ -195,6 +195,71 @@ namespace OpenLoop.Service.Plugins
             return groups;
         }
 
+        /// <summary>
+        /// 设置页「模型」用的一行：插件名 + 贡献的 provider，带上原始清单字段（回写用）与解析后的地址/模型。
+        /// Key 只在内存里给拉取/测试用，界面不要回传。
+        /// </summary>
+        public sealed class PluginProviderEntry
+        {
+            public string PluginId { get; set; }
+            public string PluginName { get; set; }
+            public string DisplayName { get; set; }
+            public string Directory { get; set; }
+            public int Index { get; set; }
+            public string ProviderId { get; set; }
+            public string Name { get; set; }
+            public string BaseUrl { get; set; }
+            public string ModelsUrl { get; set; }
+            public string ModelPrefix { get; set; }
+            public string ResolvedBaseUrl { get; set; }
+            public bool Ready { get; set; }
+            public string Key { get; set; }
+            /// <summary>清单里声明的模型（不含 modelsUrl 发现）；写回 plugin.json 时用它区分。</summary>
+            public List<string> Declared { get; set; } = [];
+            public List<string> Models { get; set; } = [];
+        }
+
+        public IReadOnlyList<PluginProviderEntry> ProviderEntries()
+        {
+            var entries = new List<PluginProviderEntry>();
+            foreach (var plugin in _plugins)
+            {
+                var raw = PluginStore.ReadProviders(plugin.Root);
+                var providers = plugin.Contributions?.Providers ?? [];
+                for (int i = 0; i < providers.Count; i++)
+                {
+                    var provider = providers[i];
+                    var item = raw.FirstOrDefault(r => r.ProviderIndex == i);
+                    string resolved = Endpoint(plugin, provider, null) ?? "";
+                    string pluginName = string.IsNullOrWhiteSpace(plugin.Name) ? plugin.Id : plugin.Name.Trim();
+                    string providerName = string.IsNullOrWhiteSpace(item?.Name) ? provider.Name : item.Name;
+                    string label = string.IsNullOrWhiteSpace(providerName)
+                                    || string.Equals(providerName, pluginName, StringComparison.OrdinalIgnoreCase)
+                        ? pluginName
+                        : pluginName + " · " + providerName;
+                    entries.Add(new PluginProviderEntry
+                    {
+                        PluginId = plugin.Id,
+                        PluginName = pluginName,
+                        DisplayName = label + "（插件）",
+                        Directory = plugin.Root,
+                        Index = i,
+                        ProviderId = item?.ProviderId ?? provider.Id,
+                        Name = providerName,
+                        BaseUrl = item?.BaseUrl ?? provider.BaseUrl,
+                        ModelsUrl = item?.ModelsUrl ?? provider.ModelsUrl,
+                        ModelPrefix = item?.ModelPrefix ?? provider.ModelPrefix,
+                        ResolvedBaseUrl = resolved,
+                        Ready = !string.IsNullOrWhiteSpace(resolved),
+                        Key = provider.ResolveKey(),
+                        Declared = (item?.ModelList ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                        Models = All(plugin, provider).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                    });
+                }
+            }
+            return entries;
+        }
+
         private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
         private static readonly object DiscoveryLock = new();
         private static readonly Dictionary<string, (DateTimeOffset At, List<string> Ids)> Discovered =

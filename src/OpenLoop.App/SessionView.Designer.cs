@@ -46,6 +46,9 @@ namespace OpenLoop.App
         private TableLayoutPanel _toolbar;
         private FlowLayoutPanel _toolbarLeft;
         private FlowLayoutPanel _toolbarRight;
+        private AntdUI.Button _btnAttach;
+        private AntdUI.Label _lblAttach;
+        private AntdUI.Select _selImage;
         private AntdUI.Select _selProvider;
         private AntdUI.Select _selModel;
         private AntdUI.Select _selEffort;
@@ -114,6 +117,9 @@ namespace OpenLoop.App
             _toolbarRight = new FlowLayoutPanel();
             _selProvider = new AntdUI.Select();
             _selModel = new AntdUI.Select();
+            _btnAttach = new AntdUI.Button();
+            _lblAttach = new AntdUI.Label();
+            _selImage = new AntdUI.Select();
             _freeSwitch = new AntdUI.Switch();
             _lblFree = new AntdUI.Label();
             _selEffort = new AntdUI.Select();
@@ -498,6 +504,31 @@ namespace OpenLoop.App
             _lblPath.Click += OnOpenWorkspace;
             _toolbarLeft.Controls.Add(_lblPath);
 
+            _btnAttach.Name = "btnAttach";
+            _btnAttach.Width = 30;
+            _btnAttach.Height = 30;
+            _btnAttach.Ghost = true;
+            _btnAttach.Radius = 8;
+            _btnAttach.IconSvg = UiIcons.Of(UiIcons.Attach, UiStyle.Muted);
+            _btnAttach.Margin = new Padding(4, 0, 4, 0);
+            _btnAttach.Click += OnAttachClick;
+            _toolbarLeft.Controls.Add(_btnAttach);
+
+            _lblAttach.Name = "lblAttach";
+            _lblAttach.AutoSize = false;
+            _lblAttach.Width = 300;
+            _lblAttach.Height = 30;
+            _lblAttach.Text = "";
+            _lblAttach.Font = new Font("Segoe UI", 8.5F);
+            _lblAttach.ForeColor = UiStyle.Muted;
+            _lblAttach.TextAlign = ContentAlignment.MiddleLeft;
+            _lblAttach.AutoEllipsis = true;
+            _lblAttach.Visible = false;
+            _lblAttach.Cursor = Cursors.Hand;
+            _lblAttach.Margin = new Padding(0);
+            _lblAttach.Click += OnClearAttachments;
+            _toolbarLeft.Controls.Add(_lblAttach);
+
             _toolbarRight.Dock = DockStyle.Fill;
             _toolbarRight.FlowDirection = FlowDirection.RightToLeft;
             _toolbarRight.WrapContents = false;
@@ -522,6 +553,17 @@ namespace OpenLoop.App
             _selModel.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
             _selModel.Margin = new Padding(6, 0, 0, 0);
             _selModel.SelectedValueChanged += OnModelChanged;
+
+            _selImage.Name = "selImage";
+            _selImage.Width = 200;
+            _selImage.Height = 30;
+            _selImage.Radius = 8;
+            _selImage.ListAutoWidth = true;
+            _selImage.PlaceholderText = "生图模型";
+            _selImage.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
+            _selImage.Margin = new Padding(6, 0, 0, 0);
+            _selImage.Visible = false;
+            _selImage.SelectedValueChanged += OnImageModelChanged;
 
             _freeSwitch.Name = "freeSwitch";
             _freeSwitch.Width = 40;
@@ -582,6 +624,7 @@ namespace OpenLoop.App
             _toolbarRight.Controls.Add(_btnSend);
             _toolbarRight.Controls.Add(_selEffort);
             _toolbarRight.Controls.Add(_selModel);
+            _toolbarRight.Controls.Add(_selImage);
             _toolbarRight.Controls.Add(_selProvider);
             _toolbarRight.Controls.Add(_freeSwitch);
             _toolbarRight.Controls.Add(_lblFree);

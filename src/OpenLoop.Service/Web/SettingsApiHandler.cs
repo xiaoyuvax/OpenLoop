@@ -79,16 +79,59 @@ namespace OpenLoop.Service.Web
                 autoEvolveCooldownMinutes = settings.AutoEvolveCooldownMinutes,
                 autoEvolvePerDay = settings.AutoEvolvePerDay,
                 autoIterate = settings.AutoIterate,
-                providers = (settings.Providers ?? []).Select(p => new
+                providers = ProviderRows(settings),
+                disabledModels = settings.DisabledModels ?? [],
+                modelProps = settings.ModelProps ?? new Dictionary<string, ModelProps>()
+            };
+        }
+
+        /// <summary>
+        /// 两种来源同列：settings.json 里的提供商，加插件清单贡献的（name 带「（插件）」、plugin=true）。
+        /// 插件行的增删改由 Save 写回各自的 plugin.json。
+        /// </summary>
+        private static object[] ProviderRows(AppSettings settings)
+        {
+            var rows = new List<object>();
+            foreach (var p in settings.Providers ?? [])
+                rows.Add(new
                 {
                     name = p.Name,
                     kind = p.Kind,
                     baseUrl = p.BaseUrl,
                     hasKey = !string.IsNullOrEmpty(p.KeyProtected),
-                    models = p.Models ?? []
-                }).ToArray(),
-                modelProps = settings.ModelProps ?? new Dictionary<string, ModelProps>()
-            };
+                    models = p.Models ?? [],
+                    plugin = false
+                });
+
+            try
+            {
+                using var catalog = PluginCatalog.Load(settings.Workspace ?? "");
+                foreach (var entry in catalog.ProviderEntries())
+                    rows.Add(new
+                    {
+                        name = entry.Name,
+                        label = entry.DisplayName,
+                        kind = "custom",
+                        baseUrl = entry.ResolvedBaseUrl ?? "",
+                        hasKey = !string.IsNullOrEmpty(entry.Key),
+                        models = entry.Models,
+                        declared = entry.Declared,
+                        plugin = true,
+                        ready = entry.Ready,
+                        directory = entry.Directory,
+                        index = entry.Index,
+                        pluginId = entry.PluginId,
+                        pluginName = entry.PluginName,
+                        rawBaseUrl = entry.BaseUrl,
+                        modelsUrl = entry.ModelsUrl,
+                        modelPrefix = entry.ModelPrefix
+                    });
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("读取插件提供商失败：" + ex.Message);
+            }
+            return rows.ToArray();
         }
 
         private static bool Save(WebRequest req)
@@ -119,13 +162,71 @@ namespace OpenLoop.Service.Web
                     .ToDictionary(pair => pair.Key.Trim(), pair => pair.Value ?? new ModelProps(),
                         StringComparer.OrdinalIgnoreCase);
 
+            if (body.DisabledModels != null)
+                settings.DisabledModels = body.DisabledModels
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Select(id => id.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
             if (body.Providers != null)
             {
                 var old = settings.Providers ?? [];
                 var list = new List<ProviderConfig>();
+                List<PluginCatalog.PluginProviderEntry> pluginEntries = [];
+                if (body.Providers.Any(p => p?.Plugin == true))
+                {
+                    try
+                    {
+                        using var catalog = PluginCatalog.Load(settings.Workspace ?? "");
+                        pluginEntries = catalog.ProviderEntries().ToList();
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLog.Warn("读取插件提供商失败：" + ex.Message);
+                    }
+                }
+
                 foreach (var item in body.Providers)
                 {
-                    if (string.IsNullOrWhiteSpace(item?.Name)) continue;
+                    // 插件 provider 的 name 可以缺省（显示名由插件名兜底），内置的必须有名字
+                    if (string.IsNullOrWhiteSpace(item?.Name) && item?.Plugin != true) continue;
+
+                    if (item.Plugin)
+                    {
+                        // 插件贡献：写回它自己的 plugin.json；清单里声明的才写，发现来的不落盘
+                        var entry = pluginEntries.FirstOrDefault(e =>
+                            string.Equals(e.Directory, item.Directory, StringComparison.OrdinalIgnoreCase)
+                            && e.Index == item.Index);
+                        var known = new HashSet<string>(entry?.Models ?? [], StringComparer.OrdinalIgnoreCase);
+                        var declaredAtLoad = new HashSet<string>(entry?.Declared ?? [], StringComparer.OrdinalIgnoreCase);
+                        var declared = (item.Models ?? [])
+                            .Where(id => !known.Contains(id) || declaredAtLoad.Contains(id))
+                            .ToList();
+                        // 没动模型列表就不碰清单，免得把用户手写的 plugin.json 重排一遍
+                        if (declared.Count == declaredAtLoad.Count && declared.All(declaredAtLoad.Contains))
+                            continue;
+                        try
+                        {
+                            PluginStore.Save(settings.Workspace ?? "", new PluginStore.Item
+                            {
+                                Directory = item.Directory,
+                                Id = item.PluginId ?? entry?.PluginId,
+                                ProviderIndex = item.Index,
+                                Name = item.Name,
+                                BaseUrl = item.RawBaseUrl ?? entry?.BaseUrl,
+                                ModelsUrl = item.ModelsUrl ?? entry?.ModelsUrl,
+                                ModelPrefix = item.ModelPrefix ?? entry?.ModelPrefix,
+                                ModelList = declared
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            AppLog.Warn($"写回插件清单失败：{item.Directory} {ex.Message}");
+                        }
+                        continue;
+                    }
+
                     string keep = item.Key == null
                         ? old.FirstOrDefault(p =>
                             string.Equals(p.Name, item.Name, StringComparison.OrdinalIgnoreCase))?.KeyProtected ?? ""
@@ -486,6 +587,7 @@ namespace OpenLoop.Service.Web
             public bool? AutoIterate { get; set; }
             public List<ProviderRequest> Providers { get; set; }
             public Dictionary<string, ModelProps> ModelProps { get; set; }
+            public List<string> DisabledModels { get; set; }
         }
 
         private sealed class ProviderRequest
@@ -496,6 +598,16 @@ namespace OpenLoop.Service.Web
             public string Key { get; set; }
             public string Model { get; set; }
             public List<string> Models { get; set; }
+
+            /// <summary>插件贡献的 provider：带回原始清单字段，保存时写回 plugin.json。</summary>
+            public bool Plugin { get; set; }
+            public bool Ready { get; set; }
+            public string Directory { get; set; }
+            public int Index { get; set; }
+            public string PluginId { get; set; }
+            public string RawBaseUrl { get; set; }
+            public string ModelsUrl { get; set; }
+            public string ModelPrefix { get; set; }
         }
 
         private sealed class SkillRequest

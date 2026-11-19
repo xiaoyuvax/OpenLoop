@@ -103,6 +103,10 @@ namespace OpenLoop.App
         public const string Clock =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 3a9 9 0 110 18 9 9 0 010-18zm0 2a7 7 0 100 14 7 7 0 000-14zm-1 2h2v5.6l4 2.4-1 1.7-5-3z'/></svg>";
 
+        /// <summary>上传附件（回形针）。</summary>
+        public const string Attach =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M16.5 6.5l-7.8 7.8a2.5 2.5 0 003.5 3.5l8-8a4.5 4.5 0 00-6.4-6.4l-8.3 8.3a6.5 6.5 0 009.2 9.2l6.6-6.6-1.4-1.4-6.6 6.6a4.5 4.5 0 01-6.4-6.4l8.3-8.3a2.5 2.5 0 013.5 3.5l-8 8a.5.5 0 01-.7-.7l7.8-7.8-1.3-1.3z'/></svg>";
+
         public static string Dot(Color color)
             => $"<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='7' fill='{Hex(color)}'/></svg>";
 
