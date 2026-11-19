@@ -852,17 +852,10 @@ namespace OpenLoop.App
             _filling = true;
             try
             {
-                _selModel.Items.Clear();
                 var provider = _selProvider.SelectedValue as ProviderConfig;
                 var models = ModelChoices.FilterByProvider(ModelChoices.Build(_settings(), _onlyFree), provider);
 
-                foreach (var model in models)
-                    _selModel.Items.Add(new AntdUI.SelectItem(model.Name)
-                    {
-                        Tag = model.Id,
-                        IconSvg = model.IsFree ? UiIcons.Dot(UiStyle.Success) : null,
-                        SubText = model.IsFree ? "免费" : null
-                    });
+                ModelChoices.Fill(_selModel, models, _settings());
 
                 if (provider == null && !string.IsNullOrWhiteSpace(_model) && models.All(m => m.Id != _model))
                     _selModel.Items.Add(new AntdUI.SelectItem(_model) { Tag = _model });
@@ -900,7 +893,11 @@ namespace OpenLoop.App
         {
             if (_filling) return;
             _model = _selModel.SelectedValue as string ?? _model;
-            Persist(s => s.Model = _model);
+            Persist(s =>
+            {
+                s.Model = _model;
+                ModelChoices.RecordUse(s, _model);
+            });
             ApplyDetail();
         }
 

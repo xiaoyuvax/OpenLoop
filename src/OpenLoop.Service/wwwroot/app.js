@@ -1392,20 +1392,54 @@ function App() {
     }
   };
 
+  // 标签栏右键（与 WinForms 壳同一组动作）：活动 = 正在跑的会话
+  const isRunningTab = id => {
+    const row = sessions.find(s => s.id === id);
+    return (snapshot && snapshot.id === id ? snapshot.state : row?.state) === 'running';
+  };
+  const onTabMenu = key => {
+    if (key === 'openactive') {
+      const running = sessions.filter(s => s.state === 'running').map(s => s.id);
+      if (running.length === 0) return message.info('没有运行中的会话');
+      setTabs(prev => {
+        const next = [...prev];
+        running.forEach(id => { if (!next.includes(id)) next.push(id); });
+        return next;
+      });
+    } else if (key === 'closenactive') {
+      if (sessions.length === 0) return message.warning('会话列表还没加载完');
+      const keep = tabs.filter(isRunningTab);
+      setTabs(keep);
+      if (!keep.includes(activeKey) && activeKey !== 'overview' && activeKey !== 'loop') setActiveKey('overview');
+    } else if (key === 'closeworker') {
+      setTabs([]);
+      if (activeKey !== 'overview' && activeKey !== 'loop') setActiveKey('overview');
+    }
+  };
+  const tabMenu = {
+    items: [
+      { key: 'openactive', label: '打开所有活动会话' },
+      { key: 'closenactive', label: '关闭所有非活动会话' },
+      { key: 'closeworker', label: '关闭所有 Worker 会话' }
+    ],
+    onClick: ({ key }) => onTabMenu(key)
+  };
+  const tabLabel = label => h(Dropdown, { trigger: ['contextMenu'], menu: tabMenu }, label);
+
   const sessionTab = id => {
     const row = sessions.find(s => s.id === id);
     const state = (snapshot && snapshot.id === id ? snapshot.state : row?.state) || 'idle';
     return {
       key: id,
-      label: h('span', { style: { display: 'inline-flex', alignItems: 'center', maxWidth: 200 } },
+      label: tabLabel(h('span', { style: { display: 'inline-flex', alignItems: 'center', maxWidth: 200 } },
         h(Dot, { state }),
         h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
-          snapshot && snapshot.id === id ? (snapshot.title || id) : (row?.title || row?.model || id)))
+          snapshot && snapshot.id === id ? (snapshot.title || id) : (row?.title || row?.model || id))))
     };
   };
 
   const tabItems = caps?.worker
-    ? [{ key: 'overview', label: '会话', closable: false }, ...tabs.map(sessionTab)]
+    ? [{ key: 'overview', label: tabLabel('会话'), closable: false }, ...tabs.map(sessionTab)]
     : [];
   if (caps?.loop) tabItems.push({ key: 'loop', label: 'Loop', closable: false });
 

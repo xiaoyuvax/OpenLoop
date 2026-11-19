@@ -1783,26 +1783,32 @@ namespace OpenLoop.App
         private void OnTabMouseUp(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Right) return;
-            var page = _tabs.ContainsTabPage(e.X, e.Y);
-            if (page == null || page == _overviewPage) return;
+            var page = _tabs.ContainsTabPage(e.X, e.Y) ?? _tabs.SelectedTab as AntdUI.TabPage;
+            if (page == null) return;
 
-            var items = new AntdUI.IContextMenuStripItem[]
+            //「会话」页标签没有「自己」可重命名/可相对关闭，只给全局动作
+            bool global = page == _overviewPage;
+            var items = new System.Collections.Generic.List<AntdUI.IContextMenuStripItem>();
+            if (!global)
             {
-                new AntdUI.ContextMenuStripItem("重命名") { ID = "rename" },
-                new AntdUI.ContextMenuStripItemDivider(),
-                new AntdUI.ContextMenuStripItem("打开所有活动会话") { ID = "openactive" },
-                new AntdUI.ContextMenuStripItem("关闭所有非活动会话") { ID = "closenactive" },
-                new AntdUI.ContextMenuStripItemDivider(),
-                new AntdUI.ContextMenuStripItem("关闭右侧所有页面") { ID = "right" },
-                new AntdUI.ContextMenuStripItem("关闭左侧所有页面") { ID = "left" },
-                new AntdUI.ContextMenuStripItem("关闭所有 Worker 会话") { ID = "closeworker" },
-                new AntdUI.ContextMenuStripItem("关闭所有 Loop 会话") { ID = "closeloop" },
-                new AntdUI.ContextMenuStripItemDivider(),
-                new AntdUI.ContextMenuStripItem("关闭其他页面") { ID = "others" },
-                new AntdUI.ContextMenuStripItem("关闭全部页面") { ID = "all" }
-            };
+                items.Add(new AntdUI.ContextMenuStripItem("重命名") { ID = "rename" });
+                items.Add(new AntdUI.ContextMenuStripItemDivider());
+            }
+            items.Add(new AntdUI.ContextMenuStripItem("打开所有活动会话") { ID = "openactive" });
+            items.Add(new AntdUI.ContextMenuStripItem("关闭所有非活动会话") { ID = "closenactive" });
+            items.Add(new AntdUI.ContextMenuStripItemDivider());
+            if (!global)
+            {
+                items.Add(new AntdUI.ContextMenuStripItem("关闭右侧所有页面") { ID = "right" });
+                items.Add(new AntdUI.ContextMenuStripItem("关闭左侧所有页面") { ID = "left" });
+            }
+            items.Add(new AntdUI.ContextMenuStripItem("关闭所有 Worker 会话") { ID = "closeworker" });
+            items.Add(new AntdUI.ContextMenuStripItem("关闭所有 Loop 会话") { ID = "closeloop" });
+            items.Add(new AntdUI.ContextMenuStripItemDivider());
+            if (!global) items.Add(new AntdUI.ContextMenuStripItem("关闭其他页面") { ID = "others" });
+            items.Add(new AntdUI.ContextMenuStripItem("关闭全部页面") { ID = "all" });
 
-            AntdUI.ContextMenuStrip.open(_tabs, selected => OnTabMenu(page, selected?.ID), items);
+            AntdUI.ContextMenuStrip.open(_tabs, selected => OnTabMenu(page, selected?.ID), items.ToArray());
         }
 
         private void OnTabMenu(AntdUI.TabPage target, string id)
