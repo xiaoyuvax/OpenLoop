@@ -200,6 +200,39 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void ProtocolFragmentMarkers_AreAttemptsNotAnswers()
+        {
+            // 实泄露形态：<｜tool_calls｜> + 裸参数标签，凑不出合法 JSON，但绝不能当最终答复
+            const string text =
+                "<｜tool_calls｜><｜parameter name=\"path\" string=\"true\">loop/findings.jsonl</｜parameter>";
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt(text));
+            Assert.False(AgentToolCallParser.TryParse(text, out _));
+            Assert.Equal("", AgentToolCallParser.CutToolCallText(text));
+
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt("</|DSML| invoke>"));
+
+            Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt("这是普通回答。"));
+            Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt("工具调用会返回 tool-result。"));
+            // 只吐出半截协议（实测 qwen4-max 整条正文就是 tool）：是坏调用，不是答案
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt("tool"));
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt("<｜｜tool"));
+            Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt("toolbox 用来装工具。"));
+        }
+
+        [Fact]
+        public void QuotedProtocolInAnswer_IsNotAttempt()
+        {
+            // 回答里用反引号/代码块讲解协议时不算尝试，否则说明性回答会被 ResponseGuard 当成坏调用吞掉
+            Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt(
+                "修复说明：只认单行 `tool-call: {\"tool\":\"x\"}`，不要再吐 `<｜tool_calls｜>` 这类片段。"));
+            Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt(
+                "泄漏形态长这样：\n```\n<｜tool_calls｜>\n```\n就是它。"));
+            // 脱离引用的裸片段仍然算尝试
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt(
+                "泄漏形态长这样：\n<｜tool_calls｜>"));
+        }
+
+        [Fact]
         public void CutToolCallTextHidesProtocolTail()
         {
             Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText(
@@ -208,6 +241,20 @@ namespace OpenLoop.Core.Tests
                 "先看一下现状。\n</｜｜DSML｜｜ invoke>"));
             Assert.Equal("", AgentToolCallParser.CutToolCallText("tool-call: {\"tool\":\"x\"}"));
             Assert.Equal("普通回答，含 <code> 标签。", AgentToolCallParser.CutToolCallText("普通回答，含 <code> 标签。"));
+            // 只吐到一半的协议片段也不能当正文显示（qwen4-max 正文里反复出现 "tool"）
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("tool"));
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("tool-ca"));
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\ntool-call"));
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\n<｜｜tool"));
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\n</｜｜param"));
+            // 正文后面紧跟半截协议（没有换行）同样要截，否则用户会看到正文末尾挂着 tool
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。tool"));
+            Assert.Equal("先看一下现状", AgentToolCallParser.CutToolCallText("先看一下现状tool"));
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。tool-ca"));
+            // 英文词里的 tool 与句中的 tool 是普通单词，不截
+            Assert.Equal("改这句要用 tool", AgentToolCallParser.CutToolCallText("改这句要用 tool"));
+            Assert.Equal("keytool 是签名工具", AgentToolCallParser.CutToolCallText("keytool 是签名工具"));
+            Assert.Equal("toolbox 好用", AgentToolCallParser.CutToolCallText("toolbox 好用"));
         }
 
         [Fact]

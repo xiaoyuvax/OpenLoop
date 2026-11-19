@@ -166,9 +166,10 @@ namespace OpenLoop.App
         /// <summary>模型上下文上限：设置覆盖 → 目录/OpenCode → 内置表 → 保守默认。</summary>
         public static int ContextLimit(string model, AppSettings settings) => ModelCatalog.ContextLimit(model, settings);
 
-        /// <summary>工具栏的「生图模型」下拉：只在存在生图模型时显示。</summary>
-        public static List<ModelInfo> Images(AppSettings settings)
-            => OpenLoop.Service.Media.MediaModels.ImageModels(settings);
+        /// <summary>工具栏的「生图模型」下拉：只在存在生图模型时显示，「只看免费」同样生效。</summary>
+        public static List<ModelInfo> Images(AppSettings settings, bool onlyFree)
+            => OpenLoop.Service.Media.MediaModels.ImageModels(settings)
+                .Where(m => !onlyFree || m.IsFree).ToList();
 
         /// <summary>按提供商筛选模型；provider 为 null 表示全部。</summary>
         public static List<ModelInfo> FilterByProvider(List<ModelInfo> models, ProviderConfig provider)

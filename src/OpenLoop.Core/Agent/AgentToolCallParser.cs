@@ -394,30 +394,51 @@ namespace OpenLoop.Core.Agent
         public static bool LooksLikeToolCallAttempt(string modelOutput)
         {
             if (string.IsNullOrWhiteSpace(modelOutput)) return false;
-            if (modelOutput.Contains(Marker, StringComparison.OrdinalIgnoreCase)) return true;
+            // 反引号/代码块里的标记是「引用」（讲解、文档），不是调用尝试；否则解释协议的回答会被当成坏调用吞掉。
+            string probe = StripCodeSpans(modelOutput);
+            if (probe.Contains(Marker, StringComparison.OrdinalIgnoreCase)) return true;
+            // 与流式截断（CutToolCallText）共用同一判据：协议片段一旦出现就说明这是坏调用，
+            // 哪怕凑不出合法 JSON（如 <｜tool_calls｜>、</|DSML| invoke>），也不能当最终答复。
+            if (ProtocolFragmentRegex.IsMatch(probe)) return true;
 
             // 模型会把协议分隔符写成全角（实测 deepseek：<｜tool":"ReadEvidence","args":{…}），
             // 归一化后再判定，否则这段坏调用会被当成最终答复原样显示。
-            string normalized = NormalizeDelimiters(modelOutput);
+            string normalized = NormalizeDelimiters(probe);
             if (normalized.Contains("\"tool\":", StringComparison.Ordinal)) return true;
             if (normalized.Contains("\"tool\"", StringComparison.Ordinal)
                 && normalized.Contains("\"args\"", StringComparison.Ordinal)) return true;
             if (normalized.Contains("\"args\":", StringComparison.Ordinal)
                 && normalized.Contains("\"tool\"", StringComparison.Ordinal)) return true;
             // 其它协议的等价形态（实测模型会自发用这些）：标签式 / OpenAI 函数调用 JSON
-            if (modelOutput.Contains("<|tool_call_start|>", StringComparison.OrdinalIgnoreCase)
-                || modelOutput.Contains("<tool_call", StringComparison.OrdinalIgnoreCase)
-                || modelOutput.Contains("<parameter", StringComparison.OrdinalIgnoreCase)
-                || modelOutput.Contains("<function", StringComparison.OrdinalIgnoreCase)) return true;
+            if (probe.Contains("<|tool_call_start|>", StringComparison.OrdinalIgnoreCase)
+                || probe.Contains("<tool_call", StringComparison.OrdinalIgnoreCase)
+                || probe.Contains("<parameter", StringComparison.OrdinalIgnoreCase)
+                || probe.Contains("<function", StringComparison.OrdinalIgnoreCase)) return true;
             // 模型自创的 XML 式调用（<|DSML|invoke …>）：认出来就走「格式错误 → 纠正重试」，别当最终答复
-            if (InvokeToolRegex.IsMatch(modelOutput)) return true;
+            if (InvokeToolRegex.IsMatch(probe)) return true;
             // 特殊标记被翻成中文（<｜工具调用： Shell> / <｜工具调用结束｜>）：哪怕名称/JSON 缺失也算尝试
-            if (ChineseMarkerHeadRegex.IsMatch(modelOutput)) return true;
-            if (modelOutput.Contains("invoke", StringComparison.OrdinalIgnoreCase)
-                && modelOutput.Contains("parameter", StringComparison.OrdinalIgnoreCase)) return true;
-            return modelOutput.Contains("\"name\"", StringComparison.Ordinal)
-                && modelOutput.Contains("\"arguments\"", StringComparison.Ordinal);
+            if (ChineseMarkerHeadRegex.IsMatch(probe)) return true;
+            if (probe.Contains("invoke", StringComparison.OrdinalIgnoreCase)
+                && probe.Contains("parameter", StringComparison.OrdinalIgnoreCase)) return true;
+            if (probe.Contains("\"name\"", StringComparison.Ordinal)
+                && probe.Contains("\"arguments\"", StringComparison.Ordinal)) return true;
+            // 只吐出协议片段的一半（实测 qwen4-max：整条输出就是 "tool"）：不是正文，按坏调用处理
+            string bare = probe.Trim();
+            return bare.Length is > 0 and <= 16 && IsProtocolPrefix(bare, 0);
         }
+
+        /// <summary>摘掉代码块与行内代码（只用于判定，不改原文本）。</summary>
+        private static string StripCodeSpans(string text)
+        {
+            if (!text.Contains('`')) return text;
+            return InlineCodeRegex.Replace(FencedCodeRegex.Replace(text, " "), " ");
+        }
+
+        private static readonly Regex FencedCodeRegex = new(
+            @"```.*?(```|$)", RegexOptions.Compiled | RegexOptions.Singleline);
+
+        private static readonly Regex InlineCodeRegex = new(
+            @"`[^`\r\n]*`", RegexOptions.Compiled);
 
         /// <summary>
         /// 正文是否就是工具调用协议（以 marker 开头）：这种内容只能当调用显示，不能当回答显示。
@@ -431,14 +452,57 @@ namespace OpenLoop.Core.Agent
         /// 流式显示用：截掉从第一个工具协议片段起的尾巴。模型在正文后面接着吐调用原文时，
         /// 只在整段以 marker 开头才屏蔽会让协议原文先显示、收尾再被清掉（用户看到闪现）。
         /// [final] 也是协议：流式中它先进时间线，收尾时只从最终答案里去掉，正文里就会留下标记。
+        /// shortcut: 这里不做 <see cref="StripCodeSpans"/> 豁免，正文里用代码块引用协议时流式会被截短；
+        /// 最终答案由 ResponseGuardStep 走 LooksLikeToolCallAttempt（已豁免代码块）覆盖，显示层可忍。
         /// </summary>
         public static string CutToolCallText(string modelOutput)
         {
             if (string.IsNullOrWhiteSpace(modelOutput)) return "";
             var match = ProtocolFragmentRegex.Match(modelOutput);
             string text = match.Success ? modelOutput[..match.Index].TrimEnd() : modelOutput;
-            return CutFinalMarkerTail(text);
+            return CutProtocolPrefix(CutFinalMarkerTail(text));
         }
+
+        /// <summary>
+        /// 流式中途只吐出协议片段的一半（实测 qwen4-max：整条正文就是 <c>tool</c>、<c>&lt;｜｜tool</c>）：
+        /// 半截比完整片段常见得多，等整段匹配再截会让这类残片一直留在正文里。
+        /// 每次 delta 都从整段重算，多藏一两个字符不会落到最终答案。
+        /// </summary>
+        private static string CutProtocolPrefix(string text)
+        {
+            for (int i = Math.Max(0, text.Length - 32); i < text.Length; i++)
+                if (IsProtocolPrefix(text, i)) return text[..i].TrimEnd();
+            return text;
+        }
+
+        /// <summary>从 i 起到末尾是不是某个协议片段的开头一截（带装饰的标签，或末尾的 tool-call 半截）。</summary>
+        private static bool IsProtocolPrefix(string text, int i)
+        {
+            int p = i;
+            if (text[p] == '<')
+            {
+                p++;
+                if (p < text.Length && text[p] == '/') p++;
+                while (p < text.Length && (text[p] is '|' or '｜' || char.IsWhiteSpace(text[p]))) p++;
+                return p < text.Length
+                       && ProtocolHeads.Any(h => h.StartsWith(text[p..], StringComparison.OrdinalIgnoreCase));
+            }
+
+            // 裸形态只在词边界且是末尾一截时才算："keytool"、"要用 tool" 这类正文不截
+            if (i > 0 && (char.IsAsciiLetterOrDigit(text[i - 1]) || text[i - 1] == ' ')) return false;
+            string rest = text[i..];
+            if (rest.Length > 16 || !rest.StartsWith("tool", StringComparison.OrdinalIgnoreCase)) return false;
+            string tail = rest[4..].TrimStart('_', '-', ' ');
+            return "call".StartsWith(tail, StringComparison.OrdinalIgnoreCase)
+                   || "calls".StartsWith(tail, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>协议片段在标签装饰之后可能出现的开头（大小写与后缀都有可能被模型改）。</summary>
+        private static readonly string[] ProtocolHeads =
+        [
+            "dsml", "tool", "tool_call", "tool_calls", "tool-call", "tool call",
+            "invoke", "parameter", "function", "工具调用", "函数调用"
+        ];
 
         /// <summary>收尾标记只截末尾：正文中间提到 [final] 不算协议（模型正在吐时连半个前缀一起藏）。</summary>
         private static string CutFinalMarkerTail(string text)
@@ -455,7 +519,7 @@ namespace OpenLoop.Core.Agent
 
         /// <summary>协议片段起始：marker，或带装饰的标签头（<c>&lt;|DSML| invoke</c>、<c>&lt;tool_call&gt;</c>、<c>&lt;｜工具调用</c> 等）。</summary>
         private static readonly Regex ProtocolFragmentRegex = new(
-            @"<\s*/?\s*[|｜]{0,3}\s*(?:DSML|tool_call|invoke|parameter|function|工具调用|函数调用)\b|\btool-call\s*[:：]",
+            @"<\s*/?\s*[|｜]{0,3}\s*(?:DSML|tool_calls?|invoke|parameter|function|工具调用|函数调用)\b|\btool-call\s*[:：]",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         /// <summary>全角引号/竖线归一化成 ASCII，供协议判定使用（不改动原文本）。</summary>

@@ -106,8 +106,11 @@ namespace OpenLoop.Service.Web
                     if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
                     var current = _host.Get(id);
                     if (current == null) return NotFound(req);
-                    var saved = Media.Attachments.Save(current.Workspace, id, body.Attachments,
-                        Media.MediaModels.AttachmentLimit(current.Model), out string attachmentError);
+                    int limit = Media.MediaModels.AttachmentLimit(current.Model);
+                    // 本机壳直接把文件复制进工作区再报路径（绕开 HTTP 请求体上限）；Web 页面仍按 base64 传
+                    var saved = body.Paths is { Count: > 0 }
+                        ? Media.Attachments.SaveFiles(current.Workspace, id, body.Paths, limit, out string attachmentError)
+                        : Media.Attachments.Save(current.Workspace, id, body.Attachments, limit, out attachmentError);
                     if (saved == null) return Json(req, new { ok = false, error = attachmentError }, 400);
                     return _host.Send(id, body.Tag, body.Text, body.Immediate, body.ImageModel, saved)
                         ? Json(req, _host.Get(id))
@@ -125,7 +128,10 @@ namespace OpenLoop.Service.Web
                 case "stop":
                     return _host.Stop(id) ? Json(req, _host.Get(id)) : NotFound(req);
                 case "interrupt":
-                    return _host.Interrupt(id) ? Json(req, _host.Get(id)) : NotFound(req);
+                {
+                    var body = ReadBody<InterruptRequest>(req);
+                    return _host.Interrupt(id, body?.On ?? true) ? Json(req, _host.Get(id)) : NotFound(req);
+                }
                 case "resume":
                     return _host.Resume(id) ? Json(req, _host.Get(id)) : NotFound(req);
                 case "truncate":
@@ -225,12 +231,21 @@ namespace OpenLoop.Service.Web
 
             public string ImageModel { get; set; }
             public List<Media.AttachmentPayload> Attachments { get; set; }
+
+            /// <summary>壳已复制进工作区的附件路径（本机壳走这条，省掉 base64 与请求体上限）。</summary>
+            public List<string> Paths { get; set; }
         }
 
         private sealed class PendingRequest
         {
             public int Index { get; set; }
             public string Action { get; set; }
+        }
+
+        private sealed class InterruptRequest
+        {
+            /// <summary>false = 收回软打断（排队项改回「等本轮」）；缺省 true。</summary>
+            public bool On { get; set; } = true;
         }
 
         private sealed class TruncateRequest

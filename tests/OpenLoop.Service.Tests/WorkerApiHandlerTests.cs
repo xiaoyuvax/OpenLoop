@@ -131,6 +131,30 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public async Task Interrupt_can_be_retracted_through_the_api()
+        {
+            WorkerRunRequest seen = null;
+            var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var host = new WorkerSessionHost((request, ct) => { seen = request; return gate.Task; });
+            var handler = Handler(host);
+            host.Create("C:/work", "m", "", () => new AppSettings(), "sess0002");
+
+            Call(handler, "POST", "/api/sessions/sess0002/messages", """{"tag":"task","text":"hi"}""");
+            for (int i = 0; i < 100 && seen == null; i++) await Task.Delay(20);
+            Assert.NotNull(seen);
+
+            Call(handler, "POST", "/api/sessions/sess0002/interrupt", "{}");
+            Assert.True(seen.ShouldStop());
+            Call(handler, "POST", "/api/sessions/sess0002/interrupt", """{"on":false}""");
+            Assert.False(seen.ShouldStop());
+
+            gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
+            for (int i = 0; i < 100 && host.Get("sess0002").State == WorkerSessionHost.Running; i++)
+                await Task.Delay(20);
+            Assert.Equal(WorkerSessionHost.Done, host.Get("sess0002").State);
+        }
+
+        [Fact]
         public void Wrong_key_is_not_served()
         {
             var host = new WorkerSessionHost((_, _) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }));

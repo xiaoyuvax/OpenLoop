@@ -182,6 +182,32 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public async Task Removing_the_last_immediate_pending_item_retracts_the_soft_stop()
+        {
+            WorkerRunRequest seen = null;
+            var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var host = NewHost((request, ct) => { seen = request; return gate.Task; });
+            var session = NewSession(host);
+
+            host.Send(session.Id, "task", "first");
+            await WaitAsync(() => seen != null);
+
+            host.Send(session.Id, "task", "now", immediate: true);
+            Assert.True(seen.ShouldStop());
+
+            Assert.True(host.RemovePending(session.Id, 0));
+            Assert.False(seen.ShouldStop());
+
+            host.Interrupt(session.Id);
+            Assert.True(seen.ShouldStop());
+            host.Interrupt(session.Id, on: false);
+            Assert.False(seen.ShouldStop());
+
+            gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+        }
+
+        [Fact]
         public async Task Stop_cancels_the_run_and_keeps_the_queue()
         {
             int calls = 0;

@@ -293,7 +293,6 @@ namespace OpenLoop.Service.Worker
                             ImageModel = imageModel, Attachments = attachments
                         });
                         session.Paused = false;
-                        session.Interrupt = true;
                     }
                     else session.Pending.Add(new PendingSend
                     {
@@ -328,16 +327,23 @@ namespace OpenLoop.Service.Worker
             return true;
         }
 
+        /// <summary>当前轮该在下一个 step 前收尾吗：显式软停止，或队列里还有「立即」项。</summary>
+        private bool ShouldStopRun(Session session)
+        {
+            lock (_lock) return session.Interrupt || session.Pending.Exists(p => p.Immediate);
+        }
+
         /// <summary>
         /// 软停止：只标记，让当前轮在下一个 step 之前收尾（进行中的工具不打断），
         /// 用于「立即」插队 —— 轮次结束后由界面把排队文本当新的一轮发出去。
+        /// on=false 收回标记：排队项改回「等本轮」时这一轮不该再被截断。
         /// </summary>
-        public bool Interrupt(string id)
+        public bool Interrupt(string id, bool on = true)
         {
             lock (_lock)
             {
                 if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
-                session.Interrupt = true;
+                session.Interrupt = on;
                 session.UserEpoch++;
                 session.Revision++;
             }
@@ -423,7 +429,7 @@ namespace OpenLoop.Service.Worker
 
                 if (session.State == Running)
                 {
-                    session.Interrupt = true;
+                    // 打断由 Pending 里的即时项驱动（见 ShouldStop），撤回该项后自然不再截断
                     Changed?.Invoke(id);
                     return true;
                 }
@@ -587,7 +593,7 @@ namespace OpenLoop.Service.Worker
                 History = history,
                 Approve = approval => Approve(session, approval, cts.Token),
                 ConfirmContinue = message => Ask(session, "continue", "", message, "", "", "", cts.Token) > 0,
-                ShouldStop = () => session.Interrupt,
+                ShouldStop = () => ShouldStopRun(session),
                 Started = ctx =>
                 {
                     lock (_lock)

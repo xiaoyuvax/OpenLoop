@@ -25,34 +25,35 @@ namespace OpenLoop.App
             return result;
         }
 
-        public static List<AttachmentPayload> Read(IReadOnlyList<string> paths, out string error)
+        /// <summary>把拖放进来的路径追加到附件（去重、按上限截断）；返回是否有路径因超过上限被丢弃。</summary>
+        public static bool Add(List<string> current, IEnumerable<string> paths, int limit)
         {
-            error = null;
-            var list = new List<AttachmentPayload>();
+            bool overflow = false;
             foreach (string path in paths ?? [])
             {
-                try
-                {
-                    var info = new FileInfo(path);
-                    if (!info.Exists) { error = "附件不存在：" + path; return null; }
-                    if (info.Length > Attachments.MaxBytes)
-                    {
-                        error = $"附件过大（上限 {Attachments.MaxBytes / 1024 / 1024}MB）：{info.Name}";
-                        return null;
-                    }
-                    list.Add(new AttachmentPayload
-                    {
-                        Name = info.Name,
-                        Data = Convert.ToBase64String(File.ReadAllBytes(path))
-                    });
-                }
-                catch (Exception ex)
-                {
-                    error = "读取附件失败：" + ex.Message;
-                    return null;
-                }
+                if (current.Count >= limit) { overflow = true; break; }
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) continue;
+                if (!current.Contains(path, StringComparer.OrdinalIgnoreCase)) current.Add(path);
             }
-            return list;
+            return overflow;
+        }
+
+        /// <summary>
+        /// 让输入区整棵控件树接受文件拖放：WinForms 只把 DragDrop 发给 AllowDrop 的最深控件，
+        /// 所以子控件（含 AntdUI 内嵌文本框，以及之后才加进来的）都要挂。
+        /// </summary>
+        public static void EnableDrop(Control root, Action<string[]> onFiles)
+        {
+            if (root == null) return;
+            root.AllowDrop = true;
+            root.DragEnter += (_, e) => e.Effect = e.Data?.GetDataPresent(DataFormats.FileDrop) == true
+                ? DragDropEffects.Copy : DragDropEffects.None;
+            root.DragDrop += (_, e) =>
+            {
+                if (e.Data?.GetData(DataFormats.FileDrop) is string[] paths && paths.Length > 0) onFiles(paths);
+            };
+            root.ControlAdded += (_, e) => EnableDrop(e.Control, onFiles);
+            foreach (Control child in root.Controls) EnableDrop(child, onFiles);
         }
 
         public static string Label(IReadOnlyList<string> paths, int limit)

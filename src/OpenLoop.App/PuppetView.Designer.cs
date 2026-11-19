@@ -112,9 +112,10 @@ namespace OpenLoop.App
             _txtInput.PlaceholderText = "以用户身份在留言板上发言；输入 / 呼出工具";
 
             _toolbar.Dock = DockStyle.Fill;
-            _toolbar.ColumnCount = 1;
+            _toolbar.ColumnCount = 2;
             _toolbar.RowCount = 1;
             _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _toolbar.Margin = new Padding(0, 4, 0, 0);
 
@@ -123,10 +124,9 @@ namespace OpenLoop.App
             _btnSend.Type = AntdUI.TTypeMini.Primary;
             _btnSend.Radius = 8;
             _btnSend.Width = 96;
-            _btnSend.Dock = DockStyle.Right;
             _btnSend.IconSvg = UiIcons.Of(UiIcons.Send, Color.White);
             _btnSend.Margin = new Padding(0);
-            _toolbar.Controls.Add(_btnSend, 0, 0);
+            _toolbar.Controls.Add(_btnSend, 1, 0);
 
             _inputArea.Controls.Add(_txtInput, 0, 0);
             _inputArea.Controls.Add(_toolbar, 0, 1);

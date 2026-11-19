@@ -60,6 +60,21 @@ namespace OpenLoop.App
         public string SessionSummary => string.Join("\n",
             _sessions.Select(s => $"{s.Id}\t{s.State}\t{s.Title}\t{s.Workspace}"));
 
+        /// <summary>Puppet 用：读内存里某个会话最近的记录（Loop 的 ReadSession 工具走同一条实现）。</summary>
+        public string SessionTurns(string title, int count = 6)
+            => ReadSessions(title, 0, count);
+
+        /// <summary>按标题（再按 id 前缀）找会话；title 为空时列出打开的会话。</summary>
+        internal string ReadSessions(string title, int offset, int count)
+        {
+            if (string.IsNullOrWhiteSpace(title)) return SessionMemoryTool.Listing(_sessions);
+            var session = FindByTitle(title)
+                ?? _sessions.FirstOrDefault(s => s.Id.StartsWith(title, StringComparison.OrdinalIgnoreCase));
+            return session == null
+                ? $"没有找到会话：{title}\n" + SessionMemoryTool.Listing(_sessions)
+                : SessionMemoryTool.Describe(session, offset, count);
+        }
+
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string ActiveSession
         {
@@ -633,6 +648,7 @@ namespace OpenLoop.App
 
             var view = new LoopView { Dock = DockStyle.Fill };
             view.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
+            view.Sessions = () => _sessions;
             view.Iterate = () => ShowIterationAsync(target);
             view.TransferToWorker = turns => TransferToWorker(target, turns);
             view.ForkRequested += ForkLoop;

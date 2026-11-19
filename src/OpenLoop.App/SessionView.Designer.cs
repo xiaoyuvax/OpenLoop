@@ -44,11 +44,11 @@ namespace OpenLoop.App
         private TableLayoutPanel _inputArea;
         private AntdUI.Input _txtInput;
         private TableLayoutPanel _toolbar;
-        private FlowLayoutPanel _toolbarLeft;
         private FlowLayoutPanel _toolbarRight;
         private AntdUI.Button _btnAttach;
         private AntdUI.Label _lblAttach;
         private AntdUI.Select _selImage;
+        private AntdUI.Button _btnImage;
         private AntdUI.Select _selProvider;
         private AntdUI.Select _selModel;
         private AntdUI.Select _selEffort;
@@ -113,13 +113,13 @@ namespace OpenLoop.App
             _inputArea = new TableLayoutPanel();
             _txtInput = new AntdUI.Input();
             _toolbar = new TableLayoutPanel();
-            _toolbarLeft = new FlowLayoutPanel();
             _toolbarRight = new FlowLayoutPanel();
             _selProvider = new AntdUI.Select();
             _selModel = new AntdUI.Select();
             _btnAttach = new AntdUI.Button();
             _lblAttach = new AntdUI.Label();
             _selImage = new AntdUI.Select();
+            _btnImage = new AntdUI.Button();
             _freeSwitch = new AntdUI.Switch();
             _lblFree = new AntdUI.Label();
             _selEffort = new AntdUI.Select();
@@ -483,11 +483,6 @@ namespace OpenLoop.App
             _toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _toolbar.Margin = new Padding(0, 4, 0, 0);
 
-            _toolbarLeft.Dock = DockStyle.Fill;
-            _toolbarLeft.FlowDirection = FlowDirection.LeftToRight;
-            _toolbarLeft.WrapContents = false;
-            _toolbarLeft.Margin = new Padding(0);
-
             _lblPath.Name = "lblPath";
             _lblPath.AutoSize = false;
             _lblPath.Width = 220;
@@ -502,7 +497,6 @@ namespace OpenLoop.App
             _lblPath.Margin = new Padding(6, 0, 0, 0);
             _lblPath.Cursor = Cursors.Hand;
             _lblPath.Click += OnOpenWorkspace;
-            _toolbarLeft.Controls.Add(_lblPath);
 
             _btnAttach.Name = "btnAttach";
             _btnAttach.Width = 30;
@@ -512,7 +506,6 @@ namespace OpenLoop.App
             _btnAttach.IconSvg = UiIcons.Of(UiIcons.Attach, UiStyle.Muted);
             _btnAttach.Margin = new Padding(4, 0, 4, 0);
             _btnAttach.Click += OnAttachClick;
-            _toolbarLeft.Controls.Add(_btnAttach);
 
             _lblAttach.Name = "lblAttach";
             _lblAttach.AutoSize = false;
@@ -527,12 +520,10 @@ namespace OpenLoop.App
             _lblAttach.Cursor = Cursors.Hand;
             _lblAttach.Margin = new Padding(0);
             _lblAttach.Click += OnClearAttachments;
-            _toolbarLeft.Controls.Add(_lblAttach);
 
             _toolbarRight.Dock = DockStyle.Fill;
             _toolbarRight.FlowDirection = FlowDirection.RightToLeft;
             _toolbarRight.WrapContents = false;
-            _toolbarRight.AutoSize = true;
             _toolbarRight.Margin = new Padding(0);
 
             _selProvider.Name = "selProvider";
@@ -564,6 +555,16 @@ namespace OpenLoop.App
             _selImage.Margin = new Padding(6, 0, 0, 0);
             _selImage.Visible = false;
             _selImage.SelectedValueChanged += OnImageModelChanged;
+
+            _btnImage.Name = "btnImage";
+            _btnImage.Width = 30;
+            _btnImage.Height = 30;
+            _btnImage.Ghost = true;
+            _btnImage.Radius = 8;
+            _btnImage.IconSvg = UiIcons.Of(UiIcons.Image, UiStyle.Muted);
+            _btnImage.Margin = new Padding(6, 0, 0, 0);
+            _btnImage.Visible = false;
+            _btnImage.Click += OnToggleImagePicker;
 
             _freeSwitch.Name = "freeSwitch";
             _freeSwitch.Width = 40;
@@ -621,16 +622,20 @@ namespace OpenLoop.App
             // pending drawer：贴在聊天区下方、输入框上方，有排队文本时才出现
             _pending.Dock = DockStyle.Bottom;
 
-            _toolbarRight.Controls.Add(_btnSend);
+            // RightToLeft：先加的靠右。可见顺序（左→右）与 Loop 页一致，整条工具条贴右
+            _toolbarRight.Controls.Add(_lblAttach);
+            _toolbarRight.Controls.Add(_btnAttach);
             _toolbarRight.Controls.Add(_selEffort);
-            _toolbarRight.Controls.Add(_selModel);
-            _toolbarRight.Controls.Add(_selImage);
-            _toolbarRight.Controls.Add(_selProvider);
-            _toolbarRight.Controls.Add(_freeSwitch);
             _toolbarRight.Controls.Add(_lblFree);
+            _toolbarRight.Controls.Add(_freeSwitch);
+            _toolbarRight.Controls.Add(_selImage);
+            _toolbarRight.Controls.Add(_btnImage);
+            _toolbarRight.Controls.Add(_selModel);
+            _toolbarRight.Controls.Add(_selProvider);
+            _toolbarRight.Controls.Add(_lblPath);
 
-            _toolbar.Controls.Add(_toolbarLeft, 0, 0);
-            _toolbar.Controls.Add(_toolbarRight, 1, 0);
+            _toolbar.Controls.Add(_toolbarRight, 0, 0);
+            _toolbar.Controls.Add(_btnSend, 1, 0);
 
             _inputArea.Controls.Add(_txtInput, 0, 0);
             _inputArea.Controls.Add(_toolbar, 0, 1);

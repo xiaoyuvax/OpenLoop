@@ -197,11 +197,8 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   const [selectMode, setSelectMode] = useState(false);
   const [files, setFiles] = useState([]);
   const [imageModel, setImageModel] = useState('');
+  const [imageOpen, setImageOpen] = useState(false);
   const chatRef = useRef(null);
-
-  useEffect(() => {
-    if (images?.length && !imageModel) setImageModel(images[0].id);
-  }, [images]);
 
   useEffect(() => {
     setModel(snapshot?.model || '');
@@ -240,6 +237,15 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     ];
   }, [models, recent, freeOnly, provider, images]);
 
+  const imageChoices = useMemo(() => (images || [])
+    .filter(m => (!freeOnly || m.free) && (!provider || m.id.startsWith(provider + '/')))
+    .map(m => ({ value: m.id, label: m.name || m.id })), [images, freeOnly, provider]);
+
+  useEffect(() => {
+    if (imageChoices.some(m => m.value === imageModel)) return;
+    setImageModel(imageChoices[0]?.value || '');
+  }, [imageChoices]);
+
   const running = snapshot?.state === 'running';
   const value = text.trim();
   const lastTurn = (snapshot?.turns || [])[(snapshot?.turns || []).length - 1];
@@ -251,6 +257,10 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   const pickFiles = async (e) => {
     const picked = Array.from(e.target.files || []);
     e.target.value = '';
+    await acceptFiles(picked);
+  };
+
+  const acceptFiles = async (picked) => {
     const next = [];
     for (const file of picked) {
       if (files.length + next.length >= 8) { message.warning('附件最多 8 个'); break; }
@@ -371,12 +381,9 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     : null;
 
   const toolbar = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'nowrap', minWidth: 0 } },
+    h('div', { style: { flex: 1, minWidth: 8 } }),
     h(Muted, { style: { flex: '0 1 auto', minWidth: 0, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
       '📁 ' + (snapshot?.workspace || '—')),
-    h('div', { style: { flex: 1, minWidth: 8 } }),
-    h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
-      '只看免费',
-      h(Switch, { size: 'small', checked: freeOnly, onChange: setFreeOnly })),
     providers.length
       ? h(Select, {
           value: provider || '', onChange: setProvider, style: { width: 140 },
@@ -389,12 +396,21 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
           options: choices.length ? choices : [{ value: model, label: model }].filter(o => o.value)
         })
       : h(Input, { value: model, onChange: e => setModel(e.target.value), onBlur: () => pickModel(model), placeholder: '模型', style: { width: 280 } }),
-    images?.length
-      ? h(Select, {
-          value: imageModel || undefined, onChange: setImageModel, style: { width: 200 },
-          showSearch: true, optionFilterProp: 'label', placeholder: '生图模型',
-          options: images.map(m => ({ value: m.id, label: m.name || m.id }))
-        }) : null,
+    imageChoices.length
+      ? h('span', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+          h(Button, {
+            size: 'small', title: '生图模型', type: imageOpen ? 'primary' : 'default',
+            onClick: () => setImageOpen(v => !v)
+          }, '🖼'),
+          imageOpen ? h(Select, {
+            value: imageModel || undefined, onChange: setImageModel, style: { width: 200 },
+            showSearch: true, optionFilterProp: 'label', placeholder: '生图模型',
+            options: imageChoices
+          }) : null)
+      : null,
+    h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
+      '只看免费',
+      h(Switch, { size: 'small', checked: freeOnly, onChange: setFreeOnly })),
     h(Select, {
       value: effort || '', onChange: v => pickModel(model, v), style: { width: 110 },
       options: [{ value: '', label: '努力 Auto' }, { value: 'low', label: 'Low' },
@@ -420,7 +436,11 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
       }
     }, file.name, h('a', { style: { color: '#999' }, onClick: () => setFiles(list => list.filter((_, j) => j !== i)) }, '×'))));
 
-  const composer = h('div', { style: { flex: 'none', padding: '4px 16px 8px', borderTop: pending ? '0' : '1px solid #f0f0f0' } },
+  const composer = h('div', {
+    style: { flex: 'none', padding: '4px 16px 8px', borderTop: pending ? '0' : '1px solid #f0f0f0' },
+    onDragOver: e => e.preventDefault(),
+    onDrop: e => { e.preventDefault(); acceptFiles(e.dataTransfer?.files); }
+  },
     h(Input.TextArea, {
       value: text, onChange: e => setText(e.target.value), autoSize: { minRows: 3, maxRows: 10 },
       placeholder: '描述任务（Enter 发送，Ctrl+Enter 等本轮返回，Shift+Enter 换行）',

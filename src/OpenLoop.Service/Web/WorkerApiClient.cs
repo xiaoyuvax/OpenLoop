@@ -83,16 +83,16 @@ namespace OpenLoop.Service.Web
 
         public async Task<WorkerSessionSnapshot> SendAsync(string id, string tag, string text,
             CancellationToken ct = default, string imageModel = null,
-            IReadOnlyList<Media.AttachmentPayload> attachments = null)
+            IReadOnlyList<Media.AttachmentPayload> attachments = null, IReadOnlyList<string> paths = null)
             => await PostAsync(Path(id) + "/messages",
-                new { tag, text, imageModel, attachments = attachments ?? [] }, ct);
+                new { tag, text, imageModel, attachments = attachments ?? [], paths = paths ?? [] }, ct);
 
         public async Task<WorkerSessionSnapshot> StopAsync(string id, CancellationToken ct = default)
             => await PostAsync(Path(id) + "/stop", new { }, ct);
 
-        /// <summary>软停止：当前轮在下一个 step 前收尾，忙着的工具不打断。</summary>
-        public async Task<WorkerSessionSnapshot> InterruptAsync(string id, CancellationToken ct = default)
-            => await PostAsync(Path(id) + "/interrupt", new { }, ct);
+        /// <summary>软停止：当前轮在下一个 step 前收尾，忙着的工具不打断；on=false 收回。</summary>
+        public async Task<WorkerSessionSnapshot> InterruptAsync(string id, bool on = true, CancellationToken ct = default)
+            => await PostAsync(Path(id) + "/interrupt", new { on }, ct);
 
         /// <summary>撤回对话：让 A 也删掉第 keep 轮之后的历史，否则下一次发送会把撤回的轮次带回来。</summary>
         public async Task<WorkerSessionSnapshot> TruncateAsync(string id, int keep, CancellationToken ct = default)

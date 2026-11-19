@@ -68,6 +68,9 @@ namespace OpenLoop.App
         /// <summary>工具栏选中的生图模型（仅选区画工具用，不改变聊天模型）。</summary>
         private string _imageModel;
 
+        /// <summary>生图模型下拉是否展开（默认收起，与 Loop 页一致）。</summary>
+        private bool _imageOpen;
+
         /// <summary>访问 I 的 /api/loop/*；演进与回滚的写入口在 I。</summary>
         private LoopApiClient _loopClient;
 
@@ -132,6 +135,7 @@ namespace OpenLoop.App
             _freeSwitch.Checked = _onlyFree;
             FillModels();
             SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort);
+            AttachmentsUi.EnableDrop(_inputArea, AddDroppedFiles);
             _pending.Bind(_queue);
             _pending.EditRequested += BeginEdit;
             _pending.ImmediateRequested += OnImmediateRequested;
@@ -226,7 +230,8 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string PendingSummary => string.Join("\n",
-            _queue.Items.Select(i => (i.Immediate ? "[立即] " : "[等本轮] ") + i.Text));
+            _queue.Items.Select(i => (i.Immediate ? "[立即] " : "[等本轮] ")
+                + (i.Text.Length > 0 ? i.Text : "📎 附件")));
 
         /// <summary>A 面驱动：移除第 index 个排队请求。</summary>
         public void RemovePending(int index)
@@ -576,7 +581,8 @@ namespace OpenLoop.App
 
             e.Result = false;
             if (shift) { ComposerKeys.InsertSoftNewline(_txtInput); UpdateSendButton(); return; }
-            if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
+            // 只挂附件、不写字也是合法消息：这里必须和 Submit 的判据一致，否则回车被静默吞掉
+            if (_editing == null && _txtInput.Text.Trim().Length == 0 && _attachments.Count == 0) return;
             if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
             Submit(immediate: !ctrl);
         }
@@ -821,10 +827,15 @@ namespace OpenLoop.App
                     StopRun();
                     return (true, "已停止当前轮");
                 }
-                // shortcut: 排队项不携带附件；要排队附件得让 PendingItem 也存路径。
-                if (_attachments.Count > 0) return (false, "附件请等本轮结束后再发");
-                var item = Enqueue(text, _mode, immediate ? PendingMode.NextStep : PendingMode.AfterTurn);
+                // 排队项现在也能带附件（路径存在队列项里，发送时再读），运行中不再拒收
+                var pendingFiles = _attachments.ToList();
+                var item = Enqueue(text, _mode, immediate ? PendingMode.NextStep : PendingMode.AfterTurn, pendingFiles);
                 _txtInput.Clear();
+                if (pendingFiles.Count > 0)
+                {
+                    _attachments.Clear();
+                    UpdateAttachments();
+                }
                 SetMode("task");
                 if (item != null && item.Immediate) OnImmediateRequested(item);
                 return (true, immediate ? "已插队，本轮收尾后立刻发送" : "已入队，本轮结束后发送");
@@ -832,8 +843,7 @@ namespace OpenLoop.App
 
             if (text.Length == 0 && _attachments.Count == 0) return (false, "输入框为空");
             var files = _attachments.ToList();
-            _txtInput.Clear();
-            SendTask(_mode, text, files);
+            SendTask(_mode, text, files, fromComposer: true);
             SetMode("task");
             return (true, "已发送");
         }
@@ -905,30 +915,47 @@ namespace OpenLoop.App
                     && text.Length > command.Length
                     && char.IsWhiteSpace(text[command.Length]));
 
-        /// <summary>转给 Loop 的用户反馈：带上最近一轮，Loop 才知道指的是哪次运行。</summary>
+        /// <summary>转给 Loop 的用户反馈：带上最近一轮与源会话完整记录，Loop 才知道指的是哪次运行。</summary>
         private string ComplaintText(string complaint)
-            => ComposeComplaint("Worker", Session.Title, Session.Book.Turns, complaint);
+            => ComposeComplaint("Worker", Session.Title, Session.Book.Turns, complaint,
+                ChatHistory.PathFor(Session.Workspace, Session.Id));
+
+        /// <summary>反馈里附带的源会话轮数：Loop 在另一个会话里，只看最后一句判断不准。</summary>
+        private const int ComplaintTurns = 6;
 
         /// <summary>Worker 与 Loop 的 /complain 共用同一段反馈格式，只有申诉对象不同。</summary>
         internal static string ComposeComplaint(string role, string title,
-            IReadOnlyList<ChatTurn> turns, string complaint)
+            IReadOnlyList<ChatTurn> turns, string complaint, string historyPath = null)
         {
             var sb = new StringBuilder();
             sb.Append("[用户反馈] 对 ").Append(role).Append(" 表现不满（会话「")
                 .Append(title).Append("」）：").AppendLine(complaint);
-            if (turns.Count == 0) return sb.ToString().TrimEnd();
-            var last = turns[^1];
-            sb.Append("最近任务：").AppendLine(Trim(last.UserText, 300));
-            sb.Append("最近回复：").AppendLine(Trim(last.AssistantText, 500));
+            int from = Math.Max(0, turns.Count - ComplaintTurns);
+            if (turns.Count > 0)
+            {
+                sb.Append("来源会话最近 ").Append(turns.Count - from).AppendLine(" 轮：");
+                for (int i = from; i < turns.Count; i++)
+                {
+                    sb.Append("- 用户：").AppendLine(Trim(turns[i].UserText, 300));
+                    if (!string.IsNullOrWhiteSpace(turns[i].ToolCallLines))
+                        sb.Append("  工具：").AppendLine(Trim(turns[i].ToolCallLines, 600));
+                    sb.Append("  回复：").AppendLine(Trim(turns[i].AssistantText, 500));
+                }
+            }
+            sb.Append("更早的轮次与工具细节用 ReadSession 工具读内存会话（session=\"").Append(title)
+                .Append("\"，offset/count 可选）。");
+            if (!string.IsNullOrWhiteSpace(historyPath))
+                sb.Append("会话已关闭时再读文件：").AppendLine(historyPath);
             return sb.ToString().TrimEnd();
         }
 
         private static string Trim(string text, int max)
             => string.IsNullOrEmpty(text) || text.Length <= max ? text ?? "" : text[..max] + "…";
 
-        private PendingItem Enqueue(string text, string mode, PendingMode pending = PendingMode.AfterTurn)
+        private PendingItem Enqueue(string text, string mode, PendingMode pending = PendingMode.AfterTurn,
+            IReadOnlyList<string> attachments = null)
         {
-            var item = _queue.Add(text, mode, pending);
+            var item = _queue.Add(text, mode, pending, attachments);
             _queue.Paused = false;
             _pending.Sync();
             return item;
@@ -992,7 +1019,8 @@ namespace OpenLoop.App
             string merged = batch.Count == 1
                 ? batch[0].Text
                 : string.Join("\n\n", batch.Select((b, i) => $"{i + 1}. {b.Text}"));
-            SendTask(batch[0].Tag, merged);
+            var files = batch.SelectMany(b => b.Attachments ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            SendTask(batch[0].Tag, merged, files.Count > 0 ? files : null);
         }
 
         private void SetMode(string tag) => _mode = string.IsNullOrWhiteSpace(tag) ? "task" : tag;
@@ -1018,6 +1046,13 @@ namespace OpenLoop.App
             if (_selImage.SelectedValue is string id) _imageModel = id;
         }
 
+        private void OnToggleImagePicker(object sender, EventArgs e)
+        {
+            _imageOpen = !_imageOpen;
+            _btnImage.Toggle = _imageOpen;
+            _selImage.Visible = _imageOpen && _selImage.Items.Count > 0;
+        }
+
         private void OnAttachClick(object sender, EventArgs e)
         {
             int limit = MediaModels.AttachmentLimit(_model);
@@ -1026,6 +1061,15 @@ namespace OpenLoop.App
             _attachments.Clear();
             _attachments.AddRange(picked);
             if (overflow) Notify("附件太多", $"当前模型最多 {limit} 个附件", error: true);
+            UpdateAttachments();
+        }
+
+        /// <summary>拖放到输入区的文件追加成附件（和附件按钮同一套上限与去重）。</summary>
+        private void AddDroppedFiles(string[] paths)
+        {
+            int limit = MediaModels.AttachmentLimit(_model);
+            if (AttachmentsUi.Add(_attachments, paths, limit))
+                Notify("附件太多", $"当前模型最多 {limit} 个附件", error: true);
             UpdateAttachments();
         }
 
@@ -1043,9 +1087,6 @@ namespace OpenLoop.App
             if (_attachments.Count > 0) _tips.SetToolTip(_lblAttach, string.Join("\n", _attachments));
             UpdateSendButton();
         }
-
-        private List<AttachmentPayload> ReadAttachments(IReadOnlyList<string> paths, out string error)
-            => AttachmentsUi.Read(paths, out error);
 
         private void OnEffortChanged(object sender, AntdUI.ObjectNEventArgs e)
         {
@@ -1187,11 +1228,12 @@ namespace OpenLoop.App
 
                 _selModel.SelectedValue = _model;
 
-                var images = ModelChoices.Images(_settings());
+                var images = ModelChoices.Images(_settings(), _onlyFree);
                 _selImage.Items.Clear();
                 foreach (var image in images)
                     _selImage.Items.Add(new AntdUI.SelectItem(image.Name ?? image.Id) { Tag = image.Id });
-                _selImage.Visible = images.Count > 0;
+                _btnImage.Visible = images.Count > 0;
+                _selImage.Visible = images.Count > 0 && _imageOpen;
                 if (string.IsNullOrWhiteSpace(_imageModel) || images.All(m => m.Id != _imageModel))
                     _imageModel = images.FirstOrDefault()?.Id ?? "";
                 _selImage.SelectedValue = _imageModel;
@@ -1277,7 +1319,7 @@ namespace OpenLoop.App
             return head + "\n\n" + Localization.T("RawResponse") + "\n```\n" + detail + "\n```";
         }
 
-        private async void SendTask(string tag, string text, List<string> attachments = null)
+        private async void SendTask(string tag, string text, List<string> attachments = null, bool fromComposer = false)
         {
             if (_running) return;
 
@@ -1291,13 +1333,6 @@ namespace OpenLoop.App
                 return;
             }
 
-            var payloads = ReadAttachments(attachments, out string attachmentError);
-            if (payloads == null)
-            {
-                Notify("附件不可用", attachmentError, error: true);
-                return;
-            }
-
             string model = _model?.Trim() ?? "";
             var (baseUrl, _) = settings.EndpointFor(model);
             baseUrl = baseUrl?.Trim() ?? "";
@@ -1307,6 +1342,17 @@ namespace OpenLoop.App
                 Notify("缺少配置", "先在设置里填写接口地址与模型。", error: true);
                 return;
             }
+
+            // 附件在本机直接复制进工作区（只把路径发给 Worker）：不走 base64 与 HTTP 请求体上限，
+            // 也不用把整个文件读进内存。失败时输入框与附件都保留，改完再发。
+            var saved = Attachments.SaveFiles(workspace, Session.Id, attachments,
+                MediaModels.AttachmentLimit(model), out string attachmentError);
+            if (saved == null)
+            {
+                Notify("附件不可用", attachmentError, error: true);
+                return;
+            }
+            if (fromComposer) _txtInput.Clear();
 
             _cts?.Dispose();
             var cts = new CancellationTokenSource();
@@ -1330,7 +1376,7 @@ namespace OpenLoop.App
                     || !string.Equals(remote.Effort, _effort, StringComparison.Ordinal))
                     await client.SetModelAsync(Session.Id, model, _effort, ct);
 
-                snapshot = await client.SendAsync(Session.Id, tag, text, ct, _imageModel, payloads);
+                snapshot = await client.SendAsync(Session.Id, tag, text, ct, _imageModel, paths: saved);
                 if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
                 if (attachments is { Count: > 0 })
                 {
@@ -2164,18 +2210,16 @@ namespace OpenLoop.App
         {
             _running = running;
             UpdateSendButton();
-            _btnEvolve.Enabled = !running;
+            UpdateEvolveButtonEnabled();
             _btnRollback.Enabled = !running;
             _btnRule.Enabled = !running;
             _btnDrafts.Enabled = !running;
             _btnReport.Enabled = !running;
-            _selProvider.Enabled = !running;
-            _selModel.Enabled = !running;
-            _selEffort.Enabled = !running;
         }
 
         private void UpdateEvolveButtonEnabled()
         {
+            if (_running) { _btnEvolve.Enabled = false; return; }
             var ws = Session.Workspace.Trim();
             if (!Directory.Exists(ws)) { _btnEvolve.Enabled = false; return; }
             var model = (_model ?? "").Trim();

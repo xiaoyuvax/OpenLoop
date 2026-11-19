@@ -14,6 +14,7 @@ using OpenLoop.Service.Media;
 using OpenLoop.Service.Pending;
 using OpenLoop.Service.Shell;
 using OpenLoop.Service.Source;
+using OpenLoop.Service.Storage;
 using OpenLoop.Service.Worker;
 
 namespace OpenLoop.App
@@ -38,6 +39,8 @@ namespace OpenLoop.App
         private string _imageModel = "";
         private readonly List<string> _attachments = [];
         private bool _onlyFree = true;
+        // 生图模型下拉默认收起，点图标按钮才展开（省工具栏宽度）
+        private bool _imageOpen;
         private string _lastCost = "—";
         private int? _contextTokens;
         // 上下文占比的实时估算：本轮请求的 prompt + 已生成内容（按增量累加）
@@ -175,6 +178,27 @@ namespace OpenLoop.App
         /// <summary>会话语境（由宿主注入）：调查卡插到哪个会话、锚定第几轮。</summary>
         public Func<(string Id, int Turn)> SessionTarget { get; set; }
 
+        /// <summary>壳内存里打开的会话（由宿主注入）：ReadSession 工具的数据源。</summary>
+        internal Func<IReadOnlyList<Session>> Sessions { get; set; }
+
+        /// <summary>
+        /// ReadSession：只放开读范围内的会话（章程 §2 的读边界照样生效），
+        /// 别的项目的会话只给标题，不给内容。
+        /// </summary>
+        private string ReadSessions(string title, int offset, int count, WorkspaceScope read)
+        {
+            var sessions = Sessions?.Invoke() ?? [];
+            if (string.IsNullOrWhiteSpace(title)) return SessionMemoryTool.Listing(sessions);
+
+            var session = sessions.FirstOrDefault(s => string.Equals(s.Title, title, StringComparison.OrdinalIgnoreCase))
+                ?? sessions.FirstOrDefault(s => s.Id.StartsWith(title, StringComparison.OrdinalIgnoreCase));
+            if (session == null)
+                return $"没有找到会话：{title}\n" + SessionMemoryTool.Listing(sessions);
+            if (!read.TryResolve(session.Workspace, out _, out _))
+                return $"会话「{session.Title}」的工作区不在读范围，只给标题：{session.Workspace}";
+            return SessionMemoryTool.Describe(session, offset, count);
+        }
+
         /// <summary>/fork：把当前 Loop 对话复制进一个新 Loop 会话，并把新请求发出去。</summary>
         internal event Action<LoopView, string> ForkRequested;
 
@@ -215,6 +239,8 @@ namespace OpenLoop.App
             FillModels();
             SelectEffort(_effort);
             SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort);
+            _tips.SetToolTip(_btnImage, "生图模型");
+            AttachmentsUi.EnableDrop(_inputArea, AddDroppedFiles);
             _tips.SetToolTip(_btnIterate, "先出计划（谁升版、改了什么），确认后编译并换 A/I，最后重启壳（界面会短暂退出）");
             _tips.SetToolTip(_btnCommit, "提交托管仓库里的改动（工作树干净时不可用）");
             _tips.SetToolTip(_btnPush, "提交并推送到远端（工作树干净时不可用）");
@@ -223,7 +249,12 @@ namespace OpenLoop.App
             _pending.Bind(_queue);
             _pending.EditRequested += BeginEdit;
             _pending.ImmediateRequested += OnImmediateRequested;
-            _pending.Removed += DropEdit;
+            _pending.Removed += item =>
+            {
+                DropEdit(item);
+                // 撤回最后一条「立即」也要收回打断，否则这一轮仍会在 step 前收尾
+                if (_running) _interrupt = _queue.AnyImmediate;
+            };
             // 队列跟着会话落盘：进程被强杀也不丢已经排好的消息
             var savedQueue = PendingStore.Load(_workspace, _sessionId);
             _queue.Restore(savedQueue.Items, savedQueue.Paused);
@@ -363,7 +394,8 @@ namespace OpenLoop.App
             string merged = batch.Count == 1
                 ? batch[0].Text
                 : string.Join("\n\n", batch.Select((b, i) => $"{i + 1}. {b.Text}"));
-            Send(merged);
+            var files = batch.SelectMany(b => b.Attachments ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            SendAsync(merged, files.Count > 0 ? files : null);
         }
 
         public void Stop()
@@ -425,7 +457,7 @@ namespace OpenLoop.App
             if (_cmdPopup.IsOpen) _cmdPopup.PlaceAbove(_inputArea);
         }
 
-        private async void SendAsync(string text = null)
+        private async void SendAsync(string text = null, IReadOnlyList<string> files = null)
         {
             if (_running) return;
             _userEpoch++;
@@ -433,7 +465,8 @@ namespace OpenLoop.App
             var settings = _settings();
             bool fromInput = text == null;
             text = (fromInput ? _txtInput.Text : text).Trim();
-            var pendingFiles = _attachments.ToList();
+            bool fromComposer = files == null;
+            var pendingFiles = (files ?? _attachments).ToList();
             if (text.Length == 0 && pendingFiles.Count == 0) return;
             if (!Directory.Exists(_workspace))
             {
@@ -441,14 +474,9 @@ namespace OpenLoop.App
                 return;
             }
 
-            var payloads = AttachmentsUi.Read(pendingFiles, out string attachmentError);
-            if (payloads == null)
-            {
-                Notify("附件不可用", attachmentError, error: true);
-                return;
-            }
-            var saved = Attachments.Save(_workspace, _sessionId, payloads,
-                MediaModels.AttachmentLimit(_model), out attachmentError);
+            // 附件在本机直接复制进工作区：不走 base64，几十 MB 的录屏与 APK 也能发
+            var saved = Attachments.SaveFiles(_workspace, _sessionId, pendingFiles,
+                MediaModels.AttachmentLimit(_model), out string attachmentError);
             if (saved == null)
             {
                 Notify("附件不可用", attachmentError, error: true);
@@ -458,8 +486,11 @@ namespace OpenLoop.App
             {
                 string block = Attachments.Describe(saved);
                 text = text.Length == 0 ? block : text + "\n\n" + block;
-                _attachments.Clear();
-                UpdateAttachments();
+                if (fromComposer)
+                {
+                    _attachments.Clear();
+                    UpdateAttachments();
+                }
             }
 
             string model = _model?.Trim() ?? "";
@@ -536,7 +567,10 @@ namespace OpenLoop.App
                         OpenCodeTools.For(writeScope.Root, approve, settings.OpenCodeAskPermissions)
                             .Concat(DshTools.For(settings, writeScope.Root, approve))
                             .Concat(OpenLoop.Service.Web.PuppetTools.For())
-                            .Concat(ImageTools.For(_workspace, settings, _imageModel, saved)),
+                            .Concat(ImageTools.For(_workspace, settings, _imageModel, saved))
+                            // 内存会话优先：文件里的对话记录可能几十 MB，按轮读内存不受上限影响
+                            .Concat([new SessionMemoryTool((title, offset, count) =>
+                                ReadSessions(title, offset, count, readScope))]),
                         settings.WebFetchMode);
                     var registry = new ToolRegistry(loopTools.Tools.Concat(
                         [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
@@ -891,11 +925,12 @@ namespace OpenLoop.App
 
                 _selModel.SelectedValue = _model;
 
-                var images = ModelChoices.Images(_settings());
+                var images = ModelChoices.FilterByProvider(ModelChoices.Images(_settings(), _onlyFree), provider);
                 _selImage.Items.Clear();
                 foreach (var image in images)
                     _selImage.Items.Add(new AntdUI.SelectItem(image.Name ?? image.Id) { Tag = image.Id });
-                _selImage.Visible = images.Count > 0;
+                _btnImage.Visible = images.Count > 0;
+                _selImage.Visible = images.Count > 0 && _imageOpen;
                 if (string.IsNullOrWhiteSpace(_imageModel) || images.All(m => m.Id != _imageModel))
                     _imageModel = images.FirstOrDefault()?.Id ?? "";
                 _selImage.SelectedValue = _imageModel;
@@ -973,6 +1008,22 @@ namespace OpenLoop.App
             _lblAttach.Visible = _attachments.Count > 0;
             if (_attachments.Count > 0) _tips.SetToolTip(_lblAttach, string.Join("\n", _attachments));
             UpdateSendButton();
+        }
+
+        private void OnToggleImagePicker(object sender, EventArgs e)
+        {
+            _imageOpen = !_imageOpen;
+            _btnImage.Toggle = _imageOpen;
+            _selImage.Visible = _imageOpen && _selImage.Items.Count > 0;
+        }
+
+        /// <summary>拖放到输入区的文件追加成附件（和附件按钮同一套上限与去重）。</summary>
+        private void AddDroppedFiles(string[] paths)
+        {
+            int limit = MediaModels.AttachmentLimit(_model);
+            if (AttachmentsUi.Add(_attachments, paths, limit))
+                Notify("附件太多", $"当前模型最多 {limit} 个附件", error: true);
+            UpdateAttachments();
         }
 
         private void OnFreeToggle(object sender, AntdUI.BoolEventArgs e)
@@ -1129,6 +1180,7 @@ namespace OpenLoop.App
                 }
                 _txtInput.Clear();
                 _pending.Sync();
+                if (_running) _interrupt = _queue.AnyImmediate;
                 UpdateSendButton();
                 // 本轮可能早在编辑时就收尾了（队列因搁置取不到东西）：保存后补发
                 if (!removed && !_running) DrainQueue();
@@ -1155,16 +1207,17 @@ namespace OpenLoop.App
                     Stop();
                     return;
                 }
-                // shortcut: 排队项不携带附件；要排队附件得让 PendingItem 也存路径。
-                if (_attachments.Count > 0)
-                {
-                    Notify("附件请等本轮结束后再发", "运行中不支持给排队消息加附件。", error: true);
-                    return;
-                }
+                // shortcut: 排队项只存附件路径，发送时才读文件；源文件被删/改动会按当时的文件内容发送
+                var files = _attachments.ToList();
                 var item = _queue.Add(text, "task", immediate
                     ? OpenLoop.Service.Pending.PendingMode.NextStep
-                    : OpenLoop.Service.Pending.PendingMode.AfterTurn);
+                    : OpenLoop.Service.Pending.PendingMode.AfterTurn, files);
                 _txtInput.Clear();
+                if (files.Count > 0)
+                {
+                    _attachments.Clear();
+                    UpdateAttachments();
+                }
                 _pending.Sync();
                 if (item != null && item.Immediate) OnImmediateRequested(item);
                 return;
@@ -1200,7 +1253,8 @@ namespace OpenLoop.App
                 string title = LoopIndex.Title(_workspace, _sessionId);
                 if (string.IsNullOrWhiteSpace(title)) title = _sessionId;
                 ComplaintRequested?.Invoke(
-                    SessionView.ComposeComplaint("Loop", title, _book.Turns, complaint));
+                    SessionView.ComposeComplaint("Loop", title, _book.Turns, complaint,
+                        ChatHistory.PathFor(_workspace, _sessionId)));
                 return true;
             }
 
@@ -1652,7 +1706,8 @@ namespace OpenLoop.App
             if (!shift && e.KeyData != Keys.Enter && !ctrl) return;
             e.Result = false;
             if (shift) { InsertSoftNewline(); return; }
-            if (_editing == null && _txtInput.Text.Trim().Length == 0) return;
+            // 只挂附件、不写字也是合法消息：这里必须和 Submit 的判据一致，否则回车被静默吞掉
+            if (_editing == null && _txtInput.Text.Trim().Length == 0 && _attachments.Count == 0) return;
             if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
             Submit(immediate: !ctrl);
         }
@@ -1727,13 +1782,20 @@ namespace OpenLoop.App
             }
         }
 
-        /// <summary>「立即」：先让当前轮在下一个 step 前收尾，收尾后 DrainQueue 会先发这一条。</summary>
+        /// <summary>
+        /// 「立即」：先让当前轮在下一个 step 前收尾，收尾后 DrainQueue 会先发这一条；
+        /// 改回「等本轮」时收回打断，否则这一轮照样在 step 后收尾、排队项仍被提前发出去。
+        /// </summary>
         private void OnImmediateRequested(OpenLoop.Service.Pending.PendingItem item)
         {
-            if (item == null || !item.Immediate) return;
+            if (item == null) return;
             _pending.Sync();
-            if (_running) _interrupt = true;
-            else DrainQueue();
+            if (!_running)
+            {
+                if (item.Immediate) DrainQueue();
+                return;
+            }
+            _interrupt = _queue.AnyImmediate;
         }
 
         /// <summary>队列里的条目被删掉时退出编辑态，别让「保存」留在按钮上。</summary>

@@ -94,19 +94,20 @@ namespace OpenLoop.App
                 ? "立即：插到下一步（当前轮在下一个 step 前收尾）"
                 : "等本轮：等这一轮返回（Ctrl+Enter 发送）");
 
+            string line = item.Text.Length > 0 ? item.Text : "📎 附件";
             var text = new AntdUI.Label
             {
                 Dock = DockStyle.Fill,
                 AutoEllipsis = true,
                 TextMultiLine = false,
                 ShowTooltip = false,
-                Text = item.Text.Replace("\r", " ").Replace("\n", " "),
+                Text = line.Replace("\r", " ").Replace("\n", " "),
                 ForeColor = tone,
                 Font = new Font("Segoe UI", 9F),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Margin = new Padding(0)
             };
-            _tips.SetToolTip(text, item.Text);
+            _tips.SetToolTip(text, line);
 
             var actions = new FlowLayoutPanel
             {

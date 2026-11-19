@@ -14,6 +14,9 @@ namespace OpenLoop.Service.Pending
     {
         public string Text { get; set; } = "";
 
+        /// <summary>和这条消息一起排队的附件路径；发送时才读文件。</summary>
+        public List<string> Attachments { get; set; } = [];
+
         /// <summary>task / criterion / correction，沿用发送时的模式标签。</summary>
         public string Tag { get; set; } = "task";
 
@@ -56,10 +59,15 @@ namespace OpenLoop.Service.Pending
 
         public bool AnyImmediate => _items.Exists(i => i.Immediate);
 
-        public PendingItem Add(string text, string tag = "task", PendingMode mode = PendingMode.AfterTurn)
+        public PendingItem Add(string text, string tag = "task", PendingMode mode = PendingMode.AfterTurn,
+            IEnumerable<string> attachments = null)
         {
-            if (string.IsNullOrWhiteSpace(text)) return null;
-            var item = new PendingItem { Text = text.Trim(), Tag = tag ?? "task", Mode = mode };
+            var files = (attachments ?? [])
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (string.IsNullOrWhiteSpace(text) && files.Count == 0) return null;
+            var item = new PendingItem { Text = text?.Trim() ?? "", Tag = tag ?? "task", Mode = mode, Attachments = files };
             _items.Add(item);
             Changed?.Invoke();
             return item;
@@ -72,7 +80,7 @@ namespace OpenLoop.Service.Pending
             _held.Clear();
             foreach (var item in items ?? [])
             {
-                if (string.IsNullOrWhiteSpace(item?.Text)) continue;
+                if (string.IsNullOrWhiteSpace(item?.Text) && (item?.Attachments?.Count ?? 0) == 0) continue;
                 _items.Add(item);
             }
             _paused = paused;

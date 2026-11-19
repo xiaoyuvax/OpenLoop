@@ -38,6 +38,7 @@ namespace OpenLoop.App
         private AntdUI.Button _btnAttach;
         private AntdUI.Label _lblAttach;
         private AntdUI.Select _selImage;
+        private AntdUI.Button _btnImage;
         private AntdUI.Progress _ctx;
         private AntdUI.Checkbox _chkSelect;
         private AntdUI.Dropdown _selMenu;
@@ -96,6 +97,7 @@ namespace OpenLoop.App
             _btnAttach = new AntdUI.Button();
             _lblAttach = new AntdUI.Label();
             _selImage = new AntdUI.Select();
+            _btnImage = new AntdUI.Button();
             _ctx = new AntdUI.Progress();
             _chkSelect = new AntdUI.Checkbox();
             _selMenu = new AntdUI.Dropdown();
@@ -352,6 +354,16 @@ namespace OpenLoop.App
             _selImage.Visible = false;
             _selImage.SelectedValueChanged += OnImageModelChanged;
 
+            _btnImage.Name = "btnImage";
+            _btnImage.Width = 30;
+            _btnImage.Height = 30;
+            _btnImage.Ghost = true;
+            _btnImage.Radius = 8;
+            _btnImage.IconSvg = UiIcons.Of(UiIcons.Image, UiStyle.Muted);
+            _btnImage.Margin = new Padding(0, 0, 8, 0);
+            _btnImage.Visible = false;
+            _btnImage.Click += OnToggleImagePicker;
+
             _btnAttach.Name = "btnAttach";
             _btnAttach.Width = 30;
             _btnAttach.Height = 30;
@@ -489,6 +501,7 @@ namespace OpenLoop.App
 
             _toolbarLeft.Controls.Add(_selProvider);
             _toolbarLeft.Controls.Add(_selModel);
+            _toolbarLeft.Controls.Add(_btnImage);
             _toolbarLeft.Controls.Add(_selImage);
             _toolbarLeft.Controls.Add(_freeSwitch);
             _toolbarLeft.Controls.Add(_lblFree);

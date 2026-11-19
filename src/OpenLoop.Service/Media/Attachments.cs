@@ -15,17 +15,33 @@ namespace OpenLoop.Service.Media
     /// </summary>
     public static class Attachments
     {
-        // shortcut: 单文件上限 20MB；要传大模型文件时再改成按模型上下文限制。
-        public const int MaxBytes = 20 * 1024 * 1024;
+        // shortcut: 单文件 64MB、单条消息 128MB。本机壳直接复制文件（不走 HTTP 请求体），
+        // 只有 Web 页面还按 base64 传（约 27MB 封顶，再大要改成流式上传）。
+        public const long MaxBytes = 64L * 1024 * 1024;
+        public const long MaxTotalBytes = 128L * 1024 * 1024;
+
+        /// <summary>附件尺寸检查（壳挑文件与这里落盘用同一判据）：合格返回 null。</summary>
+        public static string CheckSize(IEnumerable<(string Name, long Size)> files)
+        {
+            long total = 0;
+            foreach (var file in files ?? [])
+            {
+                if (file.Size > MaxBytes)
+                    return $"附件过大（上限 {MaxBytes / 1024 / 1024}MB）：{file.Name}";
+                total += file.Size;
+                if (total > MaxTotalBytes)
+                    return $"附件总量过大（上限 {MaxTotalBytes / 1024 / 1024}MB）";
+            }
+            return null;
+        }
 
         /// <summary>保存附件并返回路径；超过数量/大小限制返回 null 并给出原因。</summary>
         public static List<string> Save(string workspace, string sessionId, IEnumerable<AttachmentPayload> files,
             int limit, out string error)
         {
             error = null;
-            var saved = new List<string>();
             var input = files?.Where(f => f != null && !string.IsNullOrWhiteSpace(f.Data)).ToList() ?? [];
-            if (input.Count == 0) return saved;
+            if (input.Count == 0) return [];
             if (string.IsNullOrWhiteSpace(workspace))
             {
                 error = "工作区为空，无法保存附件";
@@ -37,32 +53,88 @@ namespace OpenLoop.Service.Media
                 return null;
             }
 
-            string dir = Path.Combine(workspace, ".openloop", "tmp", "attachments",
-                Safe(sessionId, "session"));
-            Directory.CreateDirectory(dir);
-            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-
+            var decoded = new List<(string Name, byte[] Bytes)>();
             foreach (var file in input)
             {
-                byte[] bytes;
-                try { bytes = Convert.FromBase64String(file.Data); }
+                try { decoded.Add((Safe(Path.GetFileName(file.Name), "file"), Convert.FromBase64String(file.Data))); }
                 catch
                 {
                     error = "附件解码失败：" + file.Name;
                     return null;
                 }
-                if (bytes.Length > MaxBytes)
-                {
-                    error = $"附件过大（上限 {MaxBytes / 1024 / 1024}MB）：{file.Name}";
-                    return null;
-                }
+            }
+            error = CheckSize(decoded.Select(f => (f.Name, (long)f.Bytes.Length)));
+            if (error != null) return null;
 
-                string name = Safe(Path.GetFileName(file.Name), "file");
-                string path = Unique(Path.Combine(dir, stamp + "_" + name));
-                File.WriteAllBytes(path, bytes);
+            string dir = Prepare(workspace, sessionId, out string stamp);
+            var saved = new List<string>();
+            foreach (var file in decoded)
+            {
+                string path = Unique(Path.Combine(dir, stamp + "_" + file.Name));
+                File.WriteAllBytes(path, file.Bytes);
                 saved.Add(path);
             }
             return saved;
+        }
+
+        /// <summary>按路径保存（本机壳用）：直接复制文件，不受 HTTP 请求体大小限制。</summary>
+        public static List<string> SaveFiles(string workspace, string sessionId, IReadOnlyList<string> paths,
+            int limit, out string error)
+        {
+            error = null;
+            var input = paths?.Where(p => !string.IsNullOrWhiteSpace(p)).ToList() ?? [];
+            if (input.Count == 0) return [];
+            if (string.IsNullOrWhiteSpace(workspace))
+            {
+                error = "工作区为空，无法保存附件";
+                return null;
+            }
+            if (input.Count > limit)
+            {
+                error = $"附件最多 {limit} 个（当前模型）";
+                return null;
+            }
+
+            var infos = new List<FileInfo>();
+            foreach (string path in input)
+            {
+                var info = new FileInfo(path);
+                if (!info.Exists)
+                {
+                    error = "附件不存在：" + path;
+                    return null;
+                }
+                infos.Add(info);
+            }
+            error = CheckSize(infos.Select(i => (i.Name, i.Length)));
+            if (error != null) return null;
+
+            try
+            {
+                string dir = Prepare(workspace, sessionId, out string stamp);
+                var saved = new List<string>();
+                foreach (var info in infos)
+                {
+                    string path = Unique(Path.Combine(dir, stamp + "_" + Safe(info.Name, "file")));
+                    File.Copy(info.FullName, path);
+                    saved.Add(path);
+                }
+                return saved;
+            }
+            catch (Exception ex)
+            {
+                error = "保存附件失败：" + ex.Message;
+                return null;
+            }
+        }
+
+        private static string Prepare(string workspace, string sessionId, out string stamp)
+        {
+            string dir = Path.Combine(workspace, ".openloop", "tmp", "attachments",
+                Safe(sessionId, "session"));
+            Directory.CreateDirectory(dir);
+            stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            return dir;
         }
 
         /// <summary>拼在用户消息末尾的附件清单。</summary>

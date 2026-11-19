@@ -8,7 +8,7 @@
     <LangVersion>13</LangVersion>
     <AssemblyName>OpenLoop.A</AssemblyName>
     <RootNamespace>OpenLoop.A</RootNamespace>
-    <Version>0.1.33</Version>
+    <Version>0.1.34</Version>
   </PropertyGroup>
 
   <ItemGroup>

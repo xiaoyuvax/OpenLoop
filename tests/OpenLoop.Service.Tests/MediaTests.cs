@@ -49,6 +49,44 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void AttachmentFilesAreCopiedAndCapped()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "openloop-attach-" + Guid.NewGuid().ToString("N"));
+            string source = Path.Combine(root, "clip.mp4");
+            try
+            {
+                Directory.CreateDirectory(root);
+                File.WriteAllBytes(source, new byte[1024]);
+
+                var saved = Attachments.SaveFiles(Path.Combine(root, "ws"), "s1", [source], 1, out string error);
+                Assert.Null(error);
+                Assert.Equal(1024, new FileInfo(Assert.Single(saved)).Length);
+
+                Assert.Null(Attachments.SaveFiles(Path.Combine(root, "ws"), "s1", [source, source], 1, out error));
+                Assert.Contains("最多 1 个", error);
+
+                Assert.Null(Attachments.SaveFiles(Path.Combine(root, "ws"), "s1", [Path.Combine(root, "nope.mp4")], 1, out error));
+                Assert.Contains("附件不存在", error);
+            }
+            finally
+            {
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
+        [Fact]
+        public void AttachmentTotalsAreCapped()
+        {
+            Assert.Null(Attachments.CheckSize([("a.txt", 1024L), ("b.txt", 2048L)]));
+            Assert.Contains("附件过大", Attachments.CheckSize([("big.mp4", Attachments.MaxBytes + 1)]));
+            Assert.Contains("附件总量过大", Attachments.CheckSize(
+            [
+                ("a.mp4", 40L << 20), ("b.mp4", 40L << 20),
+                ("c.mp4", 40L << 20), ("d.mp4", 40L << 20)
+            ]));
+        }
+
+        [Fact]
         public void ImageToolsAreInjectedOnlyWhenAnImageModelExists()
         {
             var settings = new OpenLoop.Service.Config.AppSettings

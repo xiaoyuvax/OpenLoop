@@ -27,6 +27,17 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Add_keeps_attachments_even_without_text()
+        {
+            var queue = new PendingQueue();
+            var item = queue.Add("", "task", PendingMode.AfterTurn, [@"C:\a.png", @"C:\a.png"]);
+
+            Assert.NotNull(item);
+            Assert.Single(item.Attachments);
+            Assert.Equal(item, Assert.Single(queue.TakeBatch()));
+        }
+
+        [Fact]
         public void Toggle_switches_mode_both_ways()
         {
             var queue = new PendingQueue();

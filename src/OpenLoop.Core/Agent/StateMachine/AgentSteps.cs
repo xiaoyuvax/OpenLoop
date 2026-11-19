@@ -585,7 +585,7 @@ namespace OpenLoop.Core.Agent
 
                 return Task.FromResult(AgentStepResult.Complete(
                     new SetFinalAnswerEffect(
-                        "⚠ 模型多次输出无法解析的工具调用（JSON 格式错误），已停止本次执行。请重试或更换模型。"),
+                        "⚠ 模型多次输出无法解析的工具调用（JSON 格式错误，或泄漏原生 tool_calls / DSML 标记），已停止本次执行。请重试或更换模型。"),
                     new SetGuardedStopEffect()));
             }
 

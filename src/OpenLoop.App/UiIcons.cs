@@ -103,6 +103,10 @@ namespace OpenLoop.App
         public const string Clock =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 3a9 9 0 110 18 9 9 0 010-18zm0 2a7 7 0 100 14 7 7 0 000-14zm-1 2h2v5.6l4 2.4-1 1.7-5-3z'/></svg>";
 
+        /// <summary>生图模型（画框 + 山 + 太阳）。</summary>
+        public const string Image =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2zm0 2v9.6l4.2-4.2 3.3 3.3 3.1-4.1L19 14V6z'/><circle fill='{0}' cx='15.5' cy='9' r='1.5'/></svg>";
+
         /// <summary>上传附件（回形针）。</summary>
         public const string Attach =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M16.5 6.5l-7.8 7.8a2.5 2.5 0 003.5 3.5l8-8a4.5 4.5 0 00-6.4-6.4l-8.3 8.3a6.5 6.5 0 009.2 9.2l6.6-6.6-1.4-1.4-6.6 6.6a4.5 4.5 0 01-6.4-6.4l8.3-8.3a2.5 2.5 0 013.5 3.5l-8 8a.5.5 0 01-.7-.7l7.8-7.8-1.3-1.3z'/></svg>";
