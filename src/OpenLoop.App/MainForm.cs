@@ -1790,8 +1790,13 @@ namespace OpenLoop.App
             {
                 new AntdUI.ContextMenuStripItem("重命名") { ID = "rename" },
                 new AntdUI.ContextMenuStripItemDivider(),
+                new AntdUI.ContextMenuStripItem("打开所有活动会话") { ID = "openactive" },
+                new AntdUI.ContextMenuStripItem("关闭所有非活动会话") { ID = "closenactive" },
+                new AntdUI.ContextMenuStripItemDivider(),
                 new AntdUI.ContextMenuStripItem("关闭右侧所有页面") { ID = "right" },
                 new AntdUI.ContextMenuStripItem("关闭左侧所有页面") { ID = "left" },
+                new AntdUI.ContextMenuStripItem("关闭所有 Worker 会话") { ID = "closeworker" },
+                new AntdUI.ContextMenuStripItem("关闭所有 Loop 会话") { ID = "closeloop" },
                 new AntdUI.ContextMenuStripItemDivider(),
                 new AntdUI.ContextMenuStripItem("关闭其他页面") { ID = "others" },
                 new AntdUI.ContextMenuStripItem("关闭全部页面") { ID = "all" }
@@ -1805,11 +1810,43 @@ namespace OpenLoop.App
             switch (id)
             {
                 case "rename": RenameTab(target); break;
+                case "openactive": OpenActiveTabs(); break;
+                case "closenactive": CloseTabsWhere(page => IsSessionTab(page) && !IsActiveTab(page)); break;
                 case "right": CloseRange(target, 1); break;
                 case "left": CloseRange(target, -1); break;
+                case "closeworker": CloseTabsWhere(page => page.Tag is Session); break;
+                case "closeloop": CloseTabsWhere(page => page.Tag is LoopView); break;
                 case "others": CloseOthers(target); break;
                 case "all": CloseAll(); break;
             }
+        }
+
+        /// <summary>标签页上的会话是否正在跑：Worker 看会话状态/视图，Loop 看轮状态/旁路。</summary>
+        private static bool IsActiveTab(AntdUI.TabPage page) => page?.Tag switch
+        {
+            Session session => session.State == SessionState.Running || session.View?.Busy == true,
+            LoopView loop => loop.State == SessionState.Running || loop.Busy,
+            _ => false
+        };
+
+        private static bool IsSessionTab(AntdUI.TabPage page) => page.Tag is Session or LoopView;
+
+        /// <summary>把正在跑的会话（含已经关掉标签、仍在后台跑的）全部摆回标签栏，不抢当前选中页。</summary>
+        private void OpenActiveTabs()
+        {
+            var selected = _tabs.SelectedTab;
+            foreach (var session in _sessions.Where(s => IsActiveTab(s.Page)).ToList())
+                if (session.Page.Parent == null) ShowSession(session);
+            foreach (var (view, page) in _loops.Values.ToList())
+                if (page.Parent == null && IsActiveTab(page))
+                    EnsureLoop(view.Workspace, select: false, sessionId: view.SessionId);
+            if (selected != null && _tabs.Pages.Contains(selected)) _tabs.SelectTab(selected);
+        }
+
+        private void CloseTabsWhere(Func<AntdUI.TabPage, bool> match)
+        {
+            foreach (var page in _tabs.Pages.ToList())
+                if (match(page)) CloseTab(page);
         }
 
         private void RenameTab(AntdUI.TabPage page)

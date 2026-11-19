@@ -418,6 +418,20 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task DegenerateOutputIsRetriedInsteadOfFailingTheRun()
+        {
+            var history = new List<OpenLoop.Core.Messages.LlmMessage> { new("user", "hi") };
+            var reasoner = new DegenerateOnceReasoner();
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync(history, "hi");
+
+            Assert.Equal("完成", result.FinalAnswer);
+            Assert.Equal(2, reasoner.Calls.Count);
+            Assert.Contains(reasoner.Calls[1], m => (m.Content ?? "").Contains("退化成复读"));
+        }
+
+        [Fact]
         public async Task ContextTokens_Uses_Prompt_Estimate_Not_Channel_Bill()
         {
             var history = new List<OpenLoop.Core.Messages.LlmMessage> { new("user", "你好") };

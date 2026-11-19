@@ -96,9 +96,6 @@ namespace OpenLoop.App
         /// <summary>每个提供商在下拉顶部最多列几个最近用过的模型。</summary>
         private const int RecentPerProvider = 3;
 
-        /// <summary>记住的最近用过的模型条数上限（够排满各提供商的前三个）。</summary>
-        private const int RecentLimit = 60;
-
         private static readonly object Divider = new();
 
         /// <summary>最近用过的置顶（每个提供商最多 3 个）、隔一条线，下面才是全量列表。</summary>
@@ -128,6 +125,8 @@ namespace OpenLoop.App
         private static void DrawDivider(object sender, AntdUI.DrawItemEventArgs e)
         {
             if (!ReferenceEquals(e.Item?.Tag, Divider)) return;
+            // 不设 Handled，AntdUI 随后还会画一遍条目本身（底色）把线盖掉，所以必须自己接管。
+            e.Handled = true;
             int y = e.Rect.Y + e.Rect.Height / 2;
             e.Canvas.DrawLine(UiStyle.Border, 1, e.Rect.Left + 8, y, e.Rect.Right - 8, y);
         }
@@ -156,14 +155,7 @@ namespace OpenLoop.App
 
         /// <summary>记一次模型使用：挪到最前、去重、超上限截掉最早的。</summary>
         public static void RecordUse(AppSettings settings, string modelId)
-        {
-            if (settings == null || string.IsNullOrWhiteSpace(modelId)) return;
-            string id = modelId.Trim();
-            var recent = settings.RecentModels ??= [];
-            recent.RemoveAll(m => string.Equals(m, id, StringComparison.OrdinalIgnoreCase));
-            recent.Insert(0, id);
-            if (recent.Count > RecentLimit) recent.RemoveRange(RecentLimit, recent.Count - RecentLimit);
-        }
+            => settings?.RecordRecentModel(modelId);
 
         private static bool LooksFree(string id)
             => !string.IsNullOrWhiteSpace(id)

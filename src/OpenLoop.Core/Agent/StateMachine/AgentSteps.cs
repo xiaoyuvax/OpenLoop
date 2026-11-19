@@ -123,6 +123,16 @@ namespace OpenLoop.Core.Agent
                 state.Result.Guards.Compressions++;
                 return AgentStepResult.Continue(new ReplaceMessagesEffect(compressed));
             }
+            catch (DegenerateOutputException) when (state.DegenerateRetries < 2)
+            {
+                // 复读多是网关把模板标记泄进正文，换一次采样常常就正常了；
+                // 整轮作废（几十步的进度全丢）代价远大于重发一次。
+                state.DegenerateRetries++;
+                context.OnRestart?.Invoke();
+                return AgentStepResult.Continue(new AppendMessageEffect("user",
+                    "（系统提示）你上一条输出退化成复读（同一段标记反复出现），已丢弃。"
+                    + "请继续当前任务，直接给出下一步（工具调用或结论），不要重复刚才的内容。"));
+            }
 
             string content = completion?.Content;
             var calls = AgentToolCallParser.TryParseAll(content);

@@ -387,7 +387,7 @@ namespace OpenLoop.Core.Reasoning
                         reasoning.Append(piece);
                         onReasoning?.Invoke(piece);
                     }
-                    if (LooksDegenerate(reasoning)) throw new InvalidOperationException(DegenerateMessage);
+                    if (LooksDegenerate(reasoning)) throw new DegenerateOutputException(DegenerateMessage);
                 }
                 if (choice.TryGetProperty("delta", out delta)
                     && delta.TryGetProperty("content", out var pieceEl)
@@ -398,7 +398,7 @@ namespace OpenLoop.Core.Reasoning
                     {
                         content.Append(piece);
                         onDelta?.Invoke(piece);
-                        if (LooksDegenerate(content)) throw new InvalidOperationException(DegenerateMessage);
+                        if (LooksDegenerate(content)) throw new DegenerateOutputException(DegenerateMessage);
                     }
                 }
                 if (choice.TryGetProperty("finish_reason", out var f) && f.ValueKind == JsonValueKind.String)
@@ -565,6 +565,14 @@ namespace OpenLoop.Core.Reasoning
         private sealed class ReasoningOption
         {
             public string Effort { get; init; }
+        }
+    }
+
+    /// <summary>这一步的输出退化成复读：调用方可以丢掉这次输出重发一次，不必作废整轮。</summary>
+    internal sealed class DegenerateOutputException : InvalidOperationException
+    {
+        public DegenerateOutputException(string message) : base(message)
+        {
         }
     }
 }

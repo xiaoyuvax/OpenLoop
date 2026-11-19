@@ -74,6 +74,19 @@ namespace OpenLoop.Core.Tests
         }
     }
 
+    /// <summary>首次补全报「输出退化」，之后正常返回（验证丢掉一次复读、重发而不是作废整轮）。</summary>
+    internal sealed class DegenerateOnceReasoner : IReasoner
+    {
+        public List<List<LlmMessage>> Calls { get; } = [];
+
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+        {
+            Calls.Add(messages.Select(m => new LlmMessage(m.Role, m.Content)).ToList());
+            if (Calls.Count == 1) throw new DegenerateOutputException(OpenAiCompatibleReasoner.DegenerateMessage);
+            return Task.FromResult(new CompletionResult { Content = "完成" });
+        }
+    }
+
     /// <summary>账单式通道：TokensIn 报累计输入（远大于真实上下文），用于验证界面占比不采信道账单。</summary>
     internal sealed class BillingReasoner(int tokensIn) : IReasoner
     {

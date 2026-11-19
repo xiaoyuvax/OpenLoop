@@ -3,6 +3,7 @@ using System.Text.Json;
 using Wima.Web;
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Config;
+using OpenLoop.Service.Logging;
 using OpenLoop.Service.Runtime;
 using OpenLoop.Service.Storage;
 using OpenLoop.Service.Worker;
@@ -44,7 +45,8 @@ namespace OpenLoop.Service.Web
                     models = Models.OpenCodeHub.Models
                         .Where(m => !string.IsNullOrWhiteSpace(m?.Id))
                         .Select(m => new { id = m.Id, name = m.Name ?? m.Id, free = m.IsFree, context = m.ContextLength })
-                        .ToArray()
+                        .ToArray(),
+                    recent = AppSettings.Load()?.RecentModels ?? []
                 });
             }
 
@@ -120,7 +122,9 @@ namespace OpenLoop.Service.Web
                 {
                     var body = ReadBody<ModelRequest>(req);
                     if (body == null) return Json(req, new { ok = false, error = "invalid body" }, 400);
-                    return _host.SetModel(id, body.Model, body.Effort) ? Json(req, _host.Get(id)) : NotFound(req);
+                    if (!_host.SetModel(id, body.Model, body.Effort)) return NotFound(req);
+                    if (!string.IsNullOrWhiteSpace(body.Model)) RecordRecent(body.Model);
+                    return Json(req, _host.Get(id));
                 }
                 case "approval":
                 {
@@ -161,6 +165,22 @@ namespace OpenLoop.Service.Web
             req.Response.StatusCode = 404;
             req.Response.Buffer = Encoding.UTF8.GetBytes("not found");
             return true;
+        }
+
+        /// <summary>Web 壳选模型也算一次使用：与 WinForms 共用同一份 RecentModels。</summary>
+        private static void RecordRecent(string model)
+        {
+            try
+            {
+                var settings = AppSettings.Load();
+                if (settings == null) return;
+                settings.RecordRecentModel(model);
+                settings.Save();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("记最近模型失败：" + ex.Message);
+            }
         }
 
         private sealed class SessionsRequest

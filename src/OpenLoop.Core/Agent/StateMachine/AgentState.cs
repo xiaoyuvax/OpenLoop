@@ -64,6 +64,9 @@ namespace OpenLoop.Core.Agent
         /// <summary>服务端上下文超限后已强制压缩的次数（压缩无效时防止无限重试）。</summary>
         public int ContextOverflows { get; set; }
 
+        /// <summary>输出复读（退化）后重发同一请求的次数（重发无效时防止无限重试）。</summary>
+        public int DegenerateRetries { get; set; }
+
         public string PendingContent { get; set; }
         public string PendingReasoning { get; set; }
         public string PendingFinishReason { get; set; }

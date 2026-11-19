@@ -83,6 +83,20 @@ namespace OpenLoop.Service.Config
             return null;
         }
 
+        /// <summary>记住的最近用过的模型条数上限（够排满各提供商的前三个）。</summary>
+        private const int RecentLimit = 60;
+
+        /// <summary>记一次模型使用：挪到最前、去重、超上限截掉最早的。调用方负责 Save。</summary>
+        public void RecordRecentModel(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return;
+            string trimmed = id.Trim();
+            var recent = RecentModels ??= [];
+            recent.RemoveAll(m => string.Equals(m, trimmed, StringComparison.OrdinalIgnoreCase));
+            recent.Insert(0, trimmed);
+            if (recent.Count > RecentLimit) recent.RemoveRange(RecentLimit, recent.Count - RecentLimit);
+        }
+
         /// <summary>已使用的项目（工作区路径），用于启动时恢复项目列表。</summary>
         public List<string> Projects { get; set; } = [];
 

@@ -186,7 +186,7 @@ function Turn({ turn }) {
       (turn.timeline || turn.toolLines) ? h('pre', { className: 'ol-tools' }, turn.timeline || turn.toolLines) : null));
 }
 
-function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDelete }) {
+function SessionPage({ snapshot, models, recent, activeId, shot, setShot, onModel, onDelete, reloadModels }) {
   const [text, setText] = useState('');
   const [model, setModel] = useState('');
   const [effort, setEffort] = useState('');
@@ -217,9 +217,20 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
     return [...set].sort();
   }, [models]);
 
-  const choices = useMemo(() => models
-    .filter(m => (!freeOnly || m.free) && (!provider || m.id.startsWith(provider + '/')))
-    .map(m => ({ value: m.id, label: m.name })), [models, freeOnly, provider]);
+  const choices = useMemo(() => {
+    const list = models
+      .filter(m => (!freeOnly || m.free) && (!provider || m.id.startsWith(provider + '/')))
+      .map(m => ({ value: m.id, label: m.name }));
+    // 与 WinForms 一致：最近用过的置顶，用分组标题隔开（各自带一行文字，比纯色块更清楚）
+    const rank = new Map(recent.map((id, i) => [id, i]));
+    const head = list.filter(o => rank.has(o.value)).sort((a, b) => rank.get(a.value) - rank.get(b.value));
+    if (!head.length) return list;
+    const tail = list.filter(o => !rank.has(o.value));
+    return [
+      { label: '最近使用', options: head },
+      ...(tail.length ? [{ label: '全部模型', options: tail }] : [])
+    ];
+  }, [models, recent, freeOnly, provider]);
 
   const running = snapshot?.state === 'running';
   const value = text.trim();
@@ -261,6 +272,7 @@ function SessionPage({ snapshot, models, activeId, shot, setShot, onModel, onDel
     try {
       await post(`/api/sessions/${activeId}/model`, { model: id, effort: nextEffort !== undefined ? nextEffort : effort });
       message.success('已切换模型');
+      if (reloadModels) reloadModels();   // 重拉一次，让「最近使用」跟上
     } catch (e) { message.error('切换失败：' + e.message); }
   };
 
@@ -1193,6 +1205,7 @@ function SettingsPanel({ caps, onClose }) {
 function App() {
   const [caps, setCaps] = useState(null);
   const [models, setModels] = useState([]);
+  const [recent, setRecent] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [tabs, setTabs] = useState(() => {
     try { return JSON.parse(localStorage.getItem('openloop.tabs') || '[]'); } catch { return []; }
@@ -1228,11 +1241,20 @@ function App() {
           try {
             const m = await api('/api/models');
             setModels(m?.models || []);
+            setRecent(m?.recent || []);
           } catch { /* 模型目录可能未就绪 */ }
         }
       } catch (e) { setStatus('拿不到能力位：' + e.message); }
     })();
   }, []);
+
+  const reloadModels = async () => {
+    try {
+      const m = await api('/api/models');
+      setModels(m?.models || []);
+      setRecent(m?.recent || []);
+    } catch { /* 目录重拉失败不挡操作 */ }
+  };
 
   useEffect(() => {
     if (!caps?.worker) return;
@@ -1401,7 +1423,7 @@ function App() {
     page = h(LoopPage, { defaultWorkspace: caps?.workspace || '', shot, setShot });
   } else {
     page = h(SessionPage, {
-      snapshot, models, activeId, shot, setShot,
+      snapshot, models, recent, activeId, shot, setShot, reloadModels,
       onModel: (m, e) => post(`/api/sessions/${activeId}/model`, { model: m, effort: e }),
       onDelete: deleteSession
     });
