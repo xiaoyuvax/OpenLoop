@@ -25,9 +25,12 @@ namespace OpenLoop.Core.Tests
             Assert.True(OpenCodeReasoner.IsConnectFailure(
                 new HttpRequestException("由于目标计算机积极拒绝，无法连接。 (127.0.0.1:28894)",
                     new SocketException((int)SocketError.ConnectionRefused))));
+            Assert.True(OpenCodeReasoner.IsConnectFailure(new InvalidOperationException(
+                "provider.transport：ECONNRESET: The socket connection was closed unexpectedly.")));
             Assert.False(OpenCodeReasoner.IsConnectFailure(
                 new HttpRequestException("Response status code does not indicate success: 429")));
             Assert.False(OpenCodeReasoner.IsConnectFailure(new InvalidOperationException("provider.free-limit")));
+            Assert.False(OpenCodeReasoner.IsConnectFailure(new InvalidOperationException("OpenCode 没有返回会话 ID")));
             Assert.False(OpenCodeReasoner.IsConnectFailure(new TaskCanceledException()));
         }
     }

@@ -65,10 +65,11 @@ namespace OpenLoop.Core.OpenCode
         public Task<CompletionResult> StreamAsync(
             IReadOnlyList<LlmMessage> messages, Action<string> onDelta,
             CancellationToken ct = default, Action<string> onReasoning = null, Action onRestart = null)
-            => RunAsync(messages, onDelta, onReasoning, ct);
+            => RunAsync(messages, onDelta, onReasoning, ct, onRestart);
 
         private async Task<CompletionResult> RunAsync(
-            IReadOnlyList<LlmMessage> messages, Action<string> onDelta, Action<string> onReasoning, CancellationToken ct)
+            IReadOnlyList<LlmMessage> messages, Action<string> onDelta, Action<string> onReasoning, CancellationToken ct,
+            Action onRestart = null)
         {
             OnProgress?.Invoke(new OpenAiCompatibleReasoner.ReasonerProgress("等待 OpenCode 响应", 0, TimeSpan.Zero));
             string prompt = Flatten(messages);
@@ -82,13 +83,13 @@ namespace OpenLoop.Core.OpenCode
             };
             var turn = await RetryConnectAsync(() => _client.RunTurnAsync(prompt, _model, _workspace, onDelta, onReasoning,
                 decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct, onNotice: OnNotice,
-                shouldStop: ShouldStop), ct);
+                shouldStop: ShouldStop), ct, onRestart);
             // 只调了原生工具、没有正文是免费模型的常态：有原生结果就不要再整轮重发一次。
             if (string.IsNullOrWhiteSpace(turn.Text) && string.IsNullOrWhiteSpace(turn.Reasoning)
                 && native.Count == 0 && ShouldStop?.Invoke() != true)
                 turn = await RetryConnectAsync(() => _client.RunTurnAsync(prompt + RetryHint, _model, _workspace, onDelta, onReasoning,
                     decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct, onNotice: OnNotice,
-                    shouldStop: ShouldStop), ct);
+                    shouldStop: ShouldStop), ct, onRestart);
 
             return new CompletionResult
             {
@@ -110,10 +111,10 @@ namespace OpenLoop.Core.OpenCode
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
 
         /// <summary>
-        /// 连不上本地 opencode/代理（服务重启、代理没起来、DNS 还没通）不算这一轮失败：退避重试到连上为止。
-        /// 用户停止（ct）或软打断就按「已停止」收尾；HTTP 状态错误、上游报的失败照旧直接抛。
+        /// 连接层的失败（本地 opencode/代理没起来、DNS 没通、上游连接被重置）不算这一轮失败：退避重试到连上为止。
+        /// 用户停止（ct）或软打断就按「已停止」收尾；HTTP 状态错误、额度与模型报错照旧直接抛。
         /// </summary>
-        private async Task<OpenCodeTurn> RetryConnectAsync(Func<Task<OpenCodeTurn>> call, CancellationToken ct)
+        private async Task<OpenCodeTurn> RetryConnectAsync(Func<Task<OpenCodeTurn>> call, CancellationToken ct, Action onRestart)
         {
             bool retried = false;
             for (int attempt = 0; ; attempt++)
@@ -130,6 +131,8 @@ namespace OpenLoop.Core.OpenCode
                         throw new OperationCanceledException(ct);
 
                     retried = true;
+                    // 断在半截的正文要清掉，重发后才不会出现两遍
+                    onRestart?.Invoke();
                     TimeSpan delay = RetryBackoff.Next(attempt);
                     OnNotice?.Invoke($"连接失败，{delay.TotalSeconds:0} 秒后重试（第 {attempt + 1} 次）");
                     var deadline = DateTime.UtcNow + delay;
@@ -143,10 +146,20 @@ namespace OpenLoop.Core.OpenCode
             }
         }
 
-        /// <summary>连接层面的失败（拒绝连接、DNS 解析失败）才重试；能连上但对方报错的不算。</summary>
+        // OpenCode 把上游网络故障包成一段文本（如「provider.transport：ECONNRESET: ...」），
+        // 没有错误码可用，只能按信号判断；只收连接层的信号，429/额度/模型报错不在内。
+        private static readonly string[] ConnectSignals =
+        [
+            "provider.transport", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN", "EPIPE",
+            "socket connection was closed", "socket hang up", "UND_ERR_SOCKET", "fetch failed"
+        ];
+
+        /// <summary>连接层面的失败（拒绝连接、DNS 解析失败、连接被重置）才重试；能连上但对方报错的不算。</summary>
         internal static bool IsConnectFailure(Exception ex) =>
             ex is HttpRequestException { HttpRequestError: HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError }
-            || ex is HttpRequestException { InnerException: SocketException };
+            || ex is HttpRequestException { InnerException: SocketException }
+            || ex is InvalidOperationException
+               && ConnectSignals.Any(signal => ex.Message.Contains(signal, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// 把一次调用里的原生工具与中间正文还原成历史消息：每次原生调用补一行 tool-call 和一行

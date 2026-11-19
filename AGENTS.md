@@ -67,7 +67,7 @@
 
 ## 连接失败重试
 
-- 轮内连不上本地 opencode/代理（拒绝连接、DNS 失败，判据 `OpenCodeReasoner.IsConnectFailure`）不判这一轮失败：按 `RetryBackoff.Next`（前三次 5 秒，之后指数退避封顶 5 分钟）重试到连上为止，界面状态显示「连接失败，N 秒后重试」；`Stop`/软打断才收尾，HTTP 状态错误与上游报错照旧直接抛。
+- 轮内连接层失败（拒绝连接、DNS 失败、连接被重置；OpenCode 报的 `provider.transport`/`ECONNRESET` 文本也算，判据 `OpenCodeReasoner.IsConnectFailure`）不判这一轮失败：按 `RetryBackoff.Next`（前三次 5 秒，之后指数退避封顶 5 分钟）重试到连上为止，界面状态显示「连接失败，N 秒后重试」；`Stop`/软打断才收尾，HTTP 状态错误与上游报错照旧直接抛。
 
 ## UI 规则
 
