@@ -443,7 +443,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   },
     h(Input.TextArea, {
       value: text, onChange: e => setText(e.target.value), autoSize: { minRows: 3, maxRows: 10 },
-      placeholder: '描述任务（Enter 发送，Ctrl+Enter 等本轮返回，Shift+Enter 换行）',
+      placeholder: '描述任务（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）',
       onKeyDown: e => {
         // 与 WinForms 一致：Enter 即时发送（运行中=打断本轮），Ctrl+Enter 排队等本轮返回，Shift+Enter 软换行；输入法组字中的 Enter 不算
         if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return;

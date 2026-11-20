@@ -57,7 +57,11 @@ namespace OpenLoop.Service.Pending
 
         private bool _paused;
 
-        public bool AnyImmediate => _items.Exists(i => i.Immediate);
+        /// <summary>
+        /// 还有没有会被真正发出的「立即」项。正在编辑的那条被搁置、不会被取走，
+        /// 算进来会让当前轮白打断一次却什么也不发。
+        /// </summary>
+        public bool AnyImmediate => _items.Exists(i => i.Immediate && !_held.Contains(i));
 
         public PendingItem Add(string text, string tag = "task", PendingMode mode = PendingMode.AfterTurn,
             IEnumerable<string> attachments = null)

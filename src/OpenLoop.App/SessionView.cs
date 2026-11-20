@@ -139,7 +139,11 @@ namespace OpenLoop.App
             _pending.Bind(_queue);
             _pending.EditRequested += BeginEdit;
             _pending.ImmediateRequested += OnImmediateRequested;
-            _pending.Removed += DropEdit;
+            _pending.Removed += item =>
+            {
+                DropEdit(item);
+                SyncInterrupt();
+            };
             // 队列跟着会话落盘：进程被强杀也不丢已经排好的消息
             var savedQueue = PendingStore.Load(session.Workspace, session.Id);
             _queue.Restore(savedQueue.Items, savedQueue.Paused);
@@ -240,6 +244,7 @@ namespace OpenLoop.App
             var item = _queue.Items[index];
             _queue.Remove(item);
             DropEdit(item);
+            SyncInterrupt();
             _pending.Sync();
         }
 
@@ -799,6 +804,8 @@ namespace OpenLoop.App
                 _txtInput.Clear();
                 _pending.Sync();
                 UpdateSendButton();
+                // 编辑保存/删除也会改变「立即」项有无：打断状态跟着队列走
+                SyncInterrupt();
                 // 本轮可能早在编辑时就收尾了（队列因搁置取不到东西）：保存后补发
                 if (!removed && !_running) DrainQueue();
                 return (true, removed ? "已移除排队项" : "已更新排队项");
@@ -961,25 +968,56 @@ namespace OpenLoop.App
             return item;
         }
 
-        /// <summary>「立即」：先让当前轮在下一个 step 前停下，停下后 DrainQueue 会先发这一条。</summary>
+        /// <summary>
+        /// 「立即」：先让当前轮在下一个 step 前停下，停下后 DrainQueue 会先发这一条；
+        /// 改回「等本轮」时收回打断，否则这一轮照样在 step 后收尾、排队项仍被提前发出去。
+        /// </summary>
         private void OnImmediateRequested(PendingItem item)
         {
-            if (item == null || !item.Immediate) return;
+            if (item == null) return;
             _queue.Paused = false;
             _pending.Sync();
             if (!_running)
             {
-                DrainQueue();
+                if (item.Immediate) DrainQueue();
                 return;
             }
-            RequestInterrupt();
+            SyncInterrupt();
         }
 
-        private async void RequestInterrupt()
+        /// <summary>
+        /// 打断状态以队列为准：还有「立即」项就打断，全部改回「等本轮」（或删掉）就收回。
+        /// 只发变化的那一次，连点「立即→等本轮」不会产生两条反向请求。
+        /// </summary>
+        private void SyncInterrupt()
         {
+            bool on = _running && _queue.AnyImmediate;
+            if (on == _interruptOn) return;
+            _interruptOn = on;
+            RequestInterrupt(on);
+        }
+
+        /// <summary>壳这边以为的打断状态；A 每次开轮都会把标记清掉，轮结束也跟着复位。</summary>
+        private bool _interruptOn;
+
+        /// <summary>
+        /// 打断/收回按点击顺序串起来：连点「立即→等本轮」时两条请求不能反序到达，否则打断收不回来。
+        /// </summary>
+        private Task _interruptChain = Task.CompletedTask;
+
+        private void RequestInterrupt(bool on = true)
+        {
+            var client = Client;
+            string id = Session.Id;
+            _interruptChain = ChainInterruptAsync(_interruptChain, client, id, on);
+        }
+
+        private static async Task ChainInterruptAsync(Task previous, WorkerApiClient client, string id, bool on)
+        {
+            await previous;
             try
             {
-                await Client.InterruptAsync(Session.Id);
+                await client.InterruptAsync(id, on);
             }
             catch (Exception ex)
             {
@@ -2209,6 +2247,8 @@ namespace OpenLoop.App
         private void SetRunning(bool running)
         {
             _running = running;
+            if (!running) _interruptOn = false;   // A 侧开下一轮会自己清标记
+            else SyncInterrupt();
             UpdateSendButton();
             UpdateEvolveButtonEnabled();
             _btnRollback.Enabled = !running;

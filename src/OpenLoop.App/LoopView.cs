@@ -253,7 +253,7 @@ namespace OpenLoop.App
             {
                 DropEdit(item);
                 // 撤回最后一条「立即」也要收回打断，否则这一轮仍会在 step 前收尾
-                if (_running) _interrupt = _queue.AnyImmediate;
+                SyncInterrupt();
             };
             // 队列跟着会话落盘：进程被强杀也不丢已经排好的消息
             var savedQueue = PendingStore.Load(_workspace, _sessionId);
@@ -398,9 +398,11 @@ namespace OpenLoop.App
             SendAsync(merged, files.Count > 0 ? files : null);
         }
 
+        /// <summary>停止当前轮，并暂停自动续跑（队列保留），与 Worker 一致。</summary>
         public void Stop()
         {
             _userEpoch++;
+            _queue.Paused = true;
             _cts?.Cancel();
         }
 
@@ -1180,7 +1182,8 @@ namespace OpenLoop.App
                 }
                 _txtInput.Clear();
                 _pending.Sync();
-                if (_running) _interrupt = _queue.AnyImmediate;
+                // 编辑保存/删除也会改变「立即」项有无：打断状态跟着队列走
+                SyncInterrupt();
                 UpdateSendButton();
                 // 本轮可能早在编辑时就收尾了（队列因搁置取不到东西）：保存后补发
                 if (!removed && !_running) DrainQueue();
@@ -1212,6 +1215,8 @@ namespace OpenLoop.App
                 var item = _queue.Add(text, "task", immediate
                     ? OpenLoop.Service.Pending.PendingMode.NextStep
                     : OpenLoop.Service.Pending.PendingMode.AfterTurn, files);
+                // 和 Worker 一样：新排一条就恢复自动续发（Stop 暂停过队列）
+                _queue.Paused = false;
                 _txtInput.Clear();
                 if (files.Count > 0)
                 {
@@ -1789,14 +1794,18 @@ namespace OpenLoop.App
         private void OnImmediateRequested(OpenLoop.Service.Pending.PendingItem item)
         {
             if (item == null) return;
+            _queue.Paused = false;
             _pending.Sync();
             if (!_running)
             {
                 if (item.Immediate) DrainQueue();
                 return;
             }
-            _interrupt = _queue.AnyImmediate;
+            SyncInterrupt();
         }
+
+        /// <summary>打断状态以队列为准，与 Worker 的 SessionView.SyncInterrupt 同一语义。</summary>
+        private void SyncInterrupt() => _interrupt = _running && _queue.AnyImmediate;
 
         /// <summary>队列里的条目被删掉时退出编辑态，别让「保存」留在按钮上。</summary>
         private void DropEdit(OpenLoop.Service.Pending.PendingItem item)

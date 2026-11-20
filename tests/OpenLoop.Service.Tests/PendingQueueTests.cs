@@ -38,6 +38,25 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void AnyImmediate_ignores_item_being_edited()
+        {
+            var queue = new PendingQueue();
+            var item = queue.Add("x");
+            queue.Toggle(item);
+            Assert.True(queue.AnyImmediate);
+
+            // 编辑中的立即项不会被发出去，就不该继续打断当前轮
+            queue.Hold(item);
+            Assert.False(queue.AnyImmediate);
+            queue.Release(item);
+            Assert.True(queue.AnyImmediate);
+
+            // 改回「等本轮」后不再打断
+            queue.Toggle(item);
+            Assert.False(queue.AnyImmediate);
+        }
+
+        [Fact]
         public void Toggle_switches_mode_both_ways()
         {
             var queue = new PendingQueue();
