@@ -1386,6 +1386,8 @@ namespace OpenLoop.App
 
             var view = new SessionView { Dock = DockStyle.Fill };
             session.View = view;
+            // 没选中的会话页先暂停渲染：初始化读历史的那次全量构建也不要白做
+            view.SetActive(session.Page == _tabs.SelectedTab);
             view.Initialize(session, () => _settings);
             view.StateChanged += OnSessionStateChanged;
             view.OpenLoopRequested += workspace => OpenLoop(workspace);
@@ -1924,7 +1926,10 @@ namespace OpenLoop.App
 
         private void OnSelectedTabChanged(object sender, AntdUI.IntEventArgs e)
         {
-            if (_tabs.SelectedTab == _overviewPage) _overview.FocusProject(_lastSession?.Workspace);
+            var selected = _tabs.SelectedTab;
+            foreach (var session in _sessions)
+                session.View?.SetActive(session.Page == selected);
+            if (selected == _overviewPage) _overview.FocusProject(_lastSession?.Workspace);
             RefreshOverview();
         }
 

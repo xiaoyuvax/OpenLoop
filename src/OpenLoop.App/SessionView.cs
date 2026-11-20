@@ -314,6 +314,9 @@ namespace OpenLoop.App
             UpdateSideVisibility(index);
         }
 
+        /// <summary>只有选中的会话页持续渲染：切走暂停（A 的快照照常并进数据），切回滚到底再按最新数据重建。</summary>
+        internal void SetActive(bool active) => _chat.SuspendRendering = !active;
+
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public BrowserView Browser => _browser;
 
