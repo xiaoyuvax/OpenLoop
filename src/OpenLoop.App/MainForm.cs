@@ -799,6 +799,7 @@ namespace OpenLoop.App
             RestoreSessions();
             if (_settings.Projects.Count == 0 && _sessions.Count == 0) OpenNewSessionTab("");
             else RefreshOverview();
+            _ = BackfillStepsAsync();
 
             RestoreWindowBounds();
             _ = RefreshCatalogAsync();
@@ -1335,7 +1336,7 @@ namespace OpenLoop.App
         }
 
         private Session CreateSession(string workspace, string sessionId = null, string title = null,
-            DateTime? startedAt = null, DateTime? lastActiveAt = null)
+            DateTime? startedAt = null, DateTime? lastActiveAt = null, int steps = 0)
         {
             workspace = Paths.Normalize(workspace);
             //同一目录的不同写法（盘符大小写、斜杠、尾分隔符）算同一个项目：复用既有写法，不再新增一条
@@ -1361,7 +1362,8 @@ namespace OpenLoop.App
                 Workspace = workspace,
                 Id = string.IsNullOrWhiteSpace(sessionId) ? Guid.NewGuid().ToString("N")[..8] : sessionId,
                 StartedAt = startedAt ?? DateTime.Now,
-                LastActiveAt = lastActiveAt ?? startedAt ?? DateTime.Now
+                LastActiveAt = lastActiveAt ?? startedAt ?? DateTime.Now,
+                Steps = steps
             };
             session.CustomTitle = title;
             session.Page = new AntdUI.TabPage
@@ -1429,12 +1431,35 @@ namespace OpenLoop.App
                 {
                     if (_sessions.Any(s => s.Id == saved.Id)) continue;
                     if (!Directory.Exists(saved.Workspace)) continue;
-                    CreateSession(saved.Workspace, saved.Id, saved.Title, saved.StartedAt, saved.LastActiveAt);
+                    CreateSession(saved.Workspace, saved.Id, saved.Title, saved.StartedAt, saved.LastActiveAt,
+                        saved.Steps);
                 }
             }
             catch (Exception ex)
             {
                 AppLog.Error("恢复会话失败", ex);
+            }
+        }
+
+        /// <summary>
+        /// 旧索引没有「最后一轮步数」：后台把缺步数的会话各读一次对话文件补上，补完刷新列表。
+        /// 只对缺步数的条目做一次，之后冷启动不再读对话文件。
+        /// </summary>
+        private async Task BackfillStepsAsync()
+        {
+            try
+            {
+                var worker = await Task.Run(ChatStore.BackfillSteps);
+                int loops = await Task.Run(LoopIndex.BackfillSteps);
+                if (_closing || (worker.Count == 0 && loops == 0)) return;
+                foreach (var session in _sessions)
+                    if (session.Steps == 0 && worker.TryGetValue(session.Id, out int steps))
+                        session.Steps = steps;
+                RefreshOverview();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("补会话步数失败：" + ex.Message);
             }
         }
 
@@ -1449,6 +1474,7 @@ namespace OpenLoop.App
             try
             {
                 bool created = false;
+                bool stepsChanged = false;
                 string newestWorkspace = null;
                 // 索引是一整份 JSON + 每条 File.Exists：磁盘读放后台，别让每 3 秒一次的同步卡住界面
                 var saved = await Task.Run(ChatStore.SavedSessions);
@@ -1456,7 +1482,7 @@ namespace OpenLoop.App
                 foreach (var item in saved)
                 {
                     if (_sessions.Any(s => s.Id == item.Id) || !Directory.Exists(item.Workspace)) continue;
-                    CreateSession(item.Workspace, item.Id, item.Title, item.StartedAt, item.LastActiveAt);
+                    CreateSession(item.Workspace, item.Id, item.Title, item.StartedAt, item.LastActiveAt, item.Steps);
                     created = true;
                 }
 
@@ -1471,9 +1497,15 @@ namespace OpenLoop.App
                     if (session == null)
                     {
                         if (!Directory.Exists(brief.Workspace)) continue;
-                        session = CreateSession(brief.Workspace, brief.Id);
+                        session = CreateSession(brief.Workspace, brief.Id, steps: brief.Steps);
                         created = true;
                         newestWorkspace ??= brief.Workspace;
+                    }
+                    else if (brief.Steps > 0 && session.Steps != brief.Steps)
+                    {
+                        // 别的壳 / 网页 / agent 跑过的会话：列表步数别停在旧值
+                        session.Steps = brief.Steps;
+                        stepsChanged = true;
                     }
 
                     //跑着的时候每 3 秒并一次实时进度，刚跑完再补一次定稿
@@ -1498,7 +1530,7 @@ namespace OpenLoop.App
                     OnSessionStateChanged(stale);
                 }
 
-                if (created) RefreshOverview();
+                if (created || stepsChanged) RefreshOverview();
                 //新会话可能在别的项目下；列表是按项目过滤的，不跳过去就等于「看不见」
                 if (newestWorkspace != null) _overview.FocusProject(newestWorkspace);
             }
@@ -1954,18 +1986,19 @@ namespace OpenLoop.App
         private void OnSideWorkEvicted(string workspace, IReadOnlyList<ChatTurn> turns)
         {
             if (turns == null || turns.Count == 0) return;
+            int steps = turns[^1].ToolStepCount;
             if (_closing)
             {
                 // 关窗时只落盘，不建视图、不再请求模型
                 string id = Guid.NewGuid().ToString("N")[..8];
                 ChatStore.Save(workspace, turns, id);
-                ChatStore.Touch(workspace, id);
+                ChatStore.Touch(workspace, id, null, steps);
                 return;
             }
-            var session = CreateSession(workspace);
+            var session = CreateSession(workspace, steps: steps);
             session.Book.ReplaceAll(turns, null);
             ChatStore.Save(workspace, turns, session.Id);
-            ChatStore.Touch(workspace, session.Id);
+            ChatStore.Touch(workspace, session.Id, null, steps);
             EnsureView(session).RequestTitle();
             RefreshOverview();
         }

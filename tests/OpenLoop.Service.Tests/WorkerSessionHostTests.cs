@@ -76,7 +76,7 @@ namespace OpenLoop.Service.Tests
         public void List_includes_saved_sessions_after_restart()
         {
             ChatHistory.Write(_chats, "webonly",
-                [new ChatEntry { User = "hi", Assistant = "yo", Model = "m1", Effort = "low" }]);
+                [new ChatEntry { User = "hi", Assistant = "yo", Model = "m1", Effort = "low", Steps = 4 }]);
             ChatHistory.Touch(_chats, "webonly", "标题");
 
             var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult()));
@@ -85,6 +85,9 @@ namespace OpenLoop.Service.Tests
             Assert.Equal("webonly", row.Id);
             Assert.Equal(WorkerSessionHost.Idle, row.State);
             Assert.Equal(_chats, row.Workspace);
+            // 旧索引条目没有步数：回填后列表（摘要投影）也要带上
+            Assert.Equal(4, ChatHistory.BackfillSteps()["webonly"]);
+            Assert.Equal(4, Assert.Single(host.List(summary: true)).Steps);
         }
 
         [Fact]
@@ -150,6 +153,43 @@ namespace OpenLoop.Service.Tests
             Assert.Equal(2, snapshot.Turns.Count);
             Assert.Empty(snapshot.Pending);
             Assert.Equal("second", snapshot.Turns[1].Assistant);
+        }
+
+        [Fact]
+        public async Task Error_turn_holds_the_queue_until_new_input()
+        {
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var calls = new List<string>();
+            var host = NewHost(async (request, ct) =>
+            {
+                lock (calls) calls.Add(request.Text);
+                if (calls.Count == 1)
+                {
+                    await gate.Task.WaitAsync(ct);
+                    return new WorkerRunResult { Outcome = "error", ErrorMessage = "boom", FinalAnswer = "boom" };
+                }
+                return new WorkerRunResult { Outcome = "ok", FinalAnswer = request.Text };
+            });
+            var session = NewSession(host);
+
+            host.Send(session.Id, "task", "first");
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Running);
+            host.Send(session.Id, "task", "queued");
+
+            gate.SetResult();
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Interrupted);
+            // 失败轮不续发队列：队列留着，也没有自己开下一轮
+            Assert.Single(host.Get(session.Id).Pending);
+            await Task.Delay(100);
+            Assert.Equal(new[] { "first" }, calls.ToArray());
+
+            // 新输入激活会话：它自己开一轮，队列等它收尾后再按规则发
+            host.Send(session.Id, "task", "retry");
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done && calls.Count >= 3);
+
+            var snapshot = host.Get(session.Id);
+            Assert.Equal(new[] { "first", "retry", "queued" }, calls.ToArray());
+            Assert.Empty(snapshot.Pending);
         }
 
         [Fact]
@@ -235,6 +275,35 @@ namespace OpenLoop.Service.Tests
             var snapshot = host.Get(session.Id);
             Assert.Empty(snapshot.Pending);
             Assert.Equal("resumed", snapshot.Turns[1].Assistant);
+        }
+
+        [Fact]
+        public async Task New_input_after_stop_resumes_the_queue()
+        {
+            int calls = 0;
+            var host = NewHost(async (request, ct) =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                    await Task.Delay(Timeout.Infinite, ct);
+                return new WorkerRunResult { Outcome = "ok", FinalAnswer = request.Text };
+            });
+            var session = NewSession(host);
+
+            host.Send(session.Id, "task", "first");
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Running);
+            host.Send(session.Id, "task", "queued");
+            host.Stop(session.Id);
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Interrupted);
+            Assert.True(host.Get(session.Id).Paused);
+
+            // 用户又说了一句（不是点「立即」）：暂停到此为止，这一轮正常收尾就把队列发出去
+            host.Send(session.Id, "task", "again");
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done && calls >= 3);
+
+            var snapshot = host.Get(session.Id);
+            Assert.Empty(snapshot.Pending);
+            Assert.False(snapshot.Paused);
+            Assert.Equal("queued", snapshot.Turns[^1].Assistant);
         }
 
         [Fact]

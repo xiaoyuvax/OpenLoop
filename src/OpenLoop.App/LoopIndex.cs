@@ -6,7 +6,8 @@ namespace OpenLoop.App
     /// <summary>
     /// 一条 Loop 会话。Id 是对话文件的 kind：旧索引没有 Id，当时每个工作区只存一份（kind="loop"）。
     /// </summary>
-    internal sealed record LoopRef(string Workspace, DateTimeOffset UpdatedAt, string Id = null, string Title = null)
+    internal sealed record LoopRef(string Workspace, DateTimeOffset UpdatedAt, string Id = null, string Title = null,
+        int Steps = 0)
     {
         public const string LegacyId = "loop";
 
@@ -22,21 +23,41 @@ namespace OpenLoop.App
     {
         private static string FilePath => Path.Combine(AppPaths.DataRoot, "loops.json");
 
-        public static void Touch(string workspace, string sessionId)
+        public static void Touch(string workspace, string sessionId, int? steps = null)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return;
             string id = string.IsNullOrWhiteSpace(sessionId) ? LoopRef.LegacyId : sessionId;
             try
             {
                 var items = List();
-                string title = items.FirstOrDefault(i => Same(i, workspace, id))?.Title;
+                var existing = items.FirstOrDefault(i => Same(i, workspace, id));
                 items = items.Where(i => !Same(i, workspace, id)).ToList();
-                items.Add(new LoopRef(workspace, DateTimeOffset.Now, id, title));
+                items.Add(new LoopRef(workspace, DateTimeOffset.Now, id, existing?.Title,
+                    steps ?? existing?.Steps ?? 0));
                 Write(items);
             }
             catch
             {
             }
+        }
+
+        /// <summary>旧小账本没有步数：每份对话文件读一次取最后一轮步数写回（不动最后活动时间）。</summary>
+        public static int BackfillSteps()
+        {
+            var items = List();
+            int filled = 0;
+            for (int i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                if (item.Steps > 0 || string.IsNullOrWhiteSpace(item.Workspace)) continue;
+                int steps = OpenLoop.Service.Storage.ChatHistory.Read(item.Workspace, item.SessionId)
+                    .LastOrDefault()?.Steps ?? 0;
+                if (steps <= 0) continue;
+                items[i] = item with { Steps = steps };
+                filled++;
+            }
+            if (filled > 0) Write(items);
+            return filled;
         }
 
         /// <summary>总结出来的标题：存在小账本里，重开这个 Loop 会话时页头直接用它。</summary>

@@ -476,8 +476,9 @@ namespace OpenLoop.App
             _txtInput.TextChanged += OnInputTextChanged;
 
             _toolbar.Dock = DockStyle.Fill;
-            _toolbar.ColumnCount = 2;
+            _toolbar.ColumnCount = 3;
             _toolbar.RowCount = 1;
+            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
@@ -494,7 +495,8 @@ namespace OpenLoop.App
             _lblPath.TextAlign = ContentAlignment.MiddleLeft;
             _lblPath.AutoEllipsis = true;
             _lblPath.IconGap = 6;
-            _lblPath.Margin = new Padding(6, 0, 0, 0);
+            _lblPath.Anchor = AnchorStyles.Left;
+            _lblPath.Margin = new Padding(0, 0, 6, 0);
             _lblPath.Cursor = Cursors.Hand;
             _lblPath.Click += OnOpenWorkspace;
 
@@ -632,10 +634,10 @@ namespace OpenLoop.App
             _toolbarRight.Controls.Add(_btnImage);
             _toolbarRight.Controls.Add(_selModel);
             _toolbarRight.Controls.Add(_selProvider);
-            _toolbarRight.Controls.Add(_lblPath);
 
-            _toolbar.Controls.Add(_toolbarRight, 0, 0);
-            _toolbar.Controls.Add(_btnSend, 1, 0);
+            _toolbar.Controls.Add(_lblPath, 0, 0);
+            _toolbar.Controls.Add(_toolbarRight, 1, 0);
+            _toolbar.Controls.Add(_btnSend, 2, 0);
 
             _inputArea.Controls.Add(_txtInput, 0, 0);
             _inputArea.Controls.Add(_toolbar, 0, 1);

@@ -424,11 +424,11 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   const attachRow = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap', fontSize: 12 } },
     h('label', {
       style: { cursor: 'pointer', color: '#1677ff', flex: 'none' },
-      title: '上传文本或图片附件（最多 8 个）'
+      title: '上传或粘贴文本/图片附件（最多 8 个）'
     }, '📎 附件', h('input', {
       type: 'file', multiple: true, style: { display: 'none' }, onChange: pickFiles
     })),
-    h(Muted, { style: { flex: 'none' } }, files.length ? `已选 ${files.length}/8` : '可上传文本或图片'),
+    h(Muted, { style: { flex: 'none' } }, files.length ? `已选 ${files.length}/8` : '可上传或粘贴文本/图片'),
     files.map((file, i) => h('span', {
       key: i, style: {
         display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px',
@@ -449,6 +449,13 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
         if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return;
         e.preventDefault();
         send(!e.ctrlKey);
+      },
+      onPaste: e => {
+        // 与 WinForms 一致：剪贴板里是文件/图片就追加成附件，纯文本照常粘贴
+        const picked = Array.from(e.clipboardData?.files || []);
+        if (!picked.length) return;
+        e.preventDefault();
+        acceptFiles(picked);
       }
     }),
     attachRow,

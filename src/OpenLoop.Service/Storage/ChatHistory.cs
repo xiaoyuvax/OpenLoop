@@ -178,7 +178,7 @@ namespace OpenLoop.Service.Storage
             }
         }
 
-        public static void Touch(string workspace, string kind, string title = null)
+        public static void Touch(string workspace, string kind, string title = null, int? steps = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(kind)) return;
             string full = Path.GetFullPath(workspace.Trim());
@@ -192,6 +192,7 @@ namespace OpenLoop.Service.Storage
                         Id = kind,
                         Workspace = full,
                         Title = title ?? "",
+                        Steps = steps ?? 0,
                         CreatedAt = DateTime.UtcNow
                     });
                 }
@@ -202,6 +203,8 @@ namespace OpenLoop.Service.Storage
                     if (item.CreatedAt == default) item.CreatedAt = item.UpdatedAt;
                     item.UpdatedAt = DateTime.UtcNow;
                     if (title != null) item.Title = title;
+                    // 改名等调用不带步数：别把索引里的步数抹成 0
+                    if (steps.HasValue) item.Steps = steps.Value;
                 }
                 return all;
             });
@@ -211,6 +214,32 @@ namespace OpenLoop.Service.Storage
         {
             if (string.IsNullOrWhiteSpace(kind)) return;
             Mutate(all => all.Where(e => e.Id != kind).ToList());
+        }
+
+        /// <summary>
+        /// 旧索引没有步数：每份对话文件读一次，把最后一轮步数写回索引。不动「最后活动」时间，
+        /// 否则回填会把历史会话全推到列表顶部。返回补上的 id → 步数。
+        /// </summary>
+        public static Dictionary<string, int> BackfillSteps()
+        {
+            var filled = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var item in Index())
+            {
+                if (item == null || item.Steps > 0 || string.IsNullOrEmpty(item.Id)
+                    || string.IsNullOrEmpty(item.Workspace)) continue;
+                int steps = Read(item.Workspace, item.Id).LastOrDefault()?.Steps ?? 0;
+                if (steps > 0) filled[item.Id] = steps;
+            }
+
+            if (filled.Count == 0) return filled;
+            Mutate(all =>
+            {
+                foreach (var item in all)
+                    if (item?.Id != null && item.Steps <= 0 && filled.TryGetValue(item.Id, out int steps))
+                        item.Steps = steps;
+                return all;
+            });
+            return filled;
         }
 
         /// <summary>把「读 index.json → 改 → 写新文件替换」整段放进跨进程锁里。</summary>
@@ -294,6 +323,9 @@ namespace OpenLoop.Service.Storage
         public string Id { get; set; }
         public string Workspace { get; set; }
         public string Title { get; set; }
+
+        /// <summary>最后一轮的步数（与界面一致）：会话列表在冷启动时不读 30MB 的对话文件也能显示步数。</summary>
+        public int Steps { get; set; }
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         /// <summary>首次登记时间（UTC）。旧索引没有这一项，读出来是 default，调用方退回 UpdatedAt。</summary>

@@ -123,14 +123,16 @@ namespace OpenLoop.Core.Agent
                 state.Result.Guards.Compressions++;
                 return AgentStepResult.Continue(new ReplaceMessagesEffect(compressed));
             }
-            catch (DegenerateOutputException) when (state.DegenerateRetries < 2)
+            catch (DegenerateOutputException)
             {
+                // 退化输出整段丢弃：先清掉宿主界面上的思考与半截正文，重试用尽再报失败时也不会留着词沙拉。
+                context.OnRestart?.Invoke();
                 // 复读多是网关把模板标记泄进正文，换一次采样常常就正常了；
                 // 整轮作废（几十步的进度全丢）代价远大于重发一次。
+                if (state.DegenerateRetries >= 2) throw;
                 state.DegenerateRetries++;
-                context.OnRestart?.Invoke();
                 return AgentStepResult.Continue(new AppendMessageEffect("user",
-                    "（系统提示）你上一条输出退化成复读（同一段标记反复出现），已丢弃。"
+                    "（系统提示）你上一条输出退化（复读同一段标记，或思维链一路发散却没产出正文），已丢弃。"
                     + "请继续当前任务，直接给出下一步（工具调用或结论），不要重复刚才的内容。"));
             }
 

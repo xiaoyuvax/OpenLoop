@@ -87,6 +87,18 @@ namespace OpenLoop.Core.Tests
         }
     }
 
+    /// <summary>每次都报「输出退化」：验证重试用尽时仍会先清掉宿主界面上的退化输出。</summary>
+    internal sealed class DegenerateAlwaysReasoner : IReasoner
+    {
+        public int Calls { get; private set; }
+
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+        {
+            Calls++;
+            throw new DegenerateOutputException(OpenAiCompatibleReasoner.ReasoningRunawayMessage);
+        }
+    }
+
     /// <summary>账单式通道：TokensIn 报累计输入（远大于真实上下文），用于验证界面占比不采信道账单。</summary>
     internal sealed class BillingReasoner(int tokensIn) : IReasoner
     {

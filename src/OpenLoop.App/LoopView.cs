@@ -240,6 +240,7 @@ namespace OpenLoop.App
             SelectEffort(_effort);
             SelectTips.Bind(_tips, _selProvider, _selModel, _selEffort);
             _tips.SetToolTip(_btnImage, "生图模型");
+            _tips.SetToolTip(_btnAttach, "添加附件（也可拖放或粘贴文件/图片）");
             AttachmentsUi.EnableDrop(_inputArea, AddDroppedFiles);
             _tips.SetToolTip(_btnIterate, "先出计划（谁升版、改了什么），确认后编译并换 A/I，最后重启壳（界面会短暂退出）");
             _tips.SetToolTip(_btnCommit, "提交托管仓库里的改动（工作树干净时不可用）");
@@ -264,7 +265,7 @@ namespace OpenLoop.App
 
             _book.ReplaceAll(ChatStore.Load(_workspace, _sessionId), null);
             ChatStore.PruneCold(_workspace, _sessionId, _model, _book.Turns);
-            LoopIndex.Touch(_workspace, _sessionId);
+            LoopIndex.Touch(_workspace, _sessionId, _book.Turns.LastOrDefault()?.ToolStepCount);
             _chat.PlaceholderText = Localization.T("NoMessages");
             _chat.UndoRequested += OnChatUndo;
             _chat.CopyRequested += OnChatCopy;
@@ -443,7 +444,7 @@ namespace OpenLoop.App
         private void SaveLoopChat()
         {
             ChatStore.Save(_workspace, _book.Turns, _sessionId, _model);
-            LoopIndex.Touch(_workspace, _sessionId);
+            LoopIndex.Touch(_workspace, _sessionId, _book.Turns.LastOrDefault()?.ToolStepCount);
         }
 
         private void OnViewLoad(object sender, EventArgs e)
@@ -523,6 +524,7 @@ namespace OpenLoop.App
             };
             _book.AddTurn(turn);
             if (fromInput) _txtInput.Clear();
+            _queue.Paused = false;   // 用户又发了一条：停止留下的暂停到此为止，本轮收尾后队列照常续发
             SetRunning(true);
             _lblStatus.Text = "状态: 运行中";
             await Task.Yield();
@@ -818,8 +820,10 @@ namespace OpenLoop.App
                 if (!IsDisposed && IsHandleCreated && _book.Turns.Count == 1
                     && string.IsNullOrWhiteSpace(LoopIndex.Title(_workspace, _sessionId)))
                     _ = SummarizeTitleAsync(notify: false);
-                // 排队文本：当前轮收尾后再发，避免重入
-                if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
+                // 排队文本：当前轮收尾后再发，避免重入；失败轮不续发，等新的输入激活会话
+                // 正常收尾就是轮后：上一轮「停止」留下的暂停不该再挡住队列；失败轮照旧等新输入
+                if (outcome is "ok" or "budget") _queue.Paused = false;
+                if (outcome != "error" && !IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
             }
         }
 
@@ -1706,6 +1710,17 @@ namespace OpenLoop.App
 
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
+            if (e.KeyData == (Keys.Control | Keys.V))
+            {
+                int pasteLimit = MediaModels.AttachmentLimit(_model);
+                if (AttachmentsUi.TryPaste(_attachments, pasteLimit, out bool overflow))
+                {
+                    e.Result = false;
+                    if (overflow) Notify("附件太多", $"当前模型最多 {pasteLimit} 个附件", error: true);
+                    UpdateAttachments();
+                    return;
+                }
+            }
             bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
             bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
             if (!shift && e.KeyData != Keys.Enter && !ctrl) return;

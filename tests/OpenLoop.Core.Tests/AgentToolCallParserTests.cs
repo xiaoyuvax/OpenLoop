@@ -145,6 +145,53 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void ParsesDoublePipeDsmlWithMalformedParameterClose()
+        {
+            // 实测泄漏形态（deepseek v4.1-flash）：下一个参数被写进 </parameter name="offset"> 里，
+            // 旧实现会把整段标签残渣并进 path，用户就看到 "<｜｜DSML｜｜ …" 漏出
+            const string text =
+                "<｜｜DSML｜｜ calls>\n" +
+                "<｜｜DSML｜｜ invoke name=\"ReadFile\">\n" +
+                "<｜｜DSML｜｜ parameter name=\"path\" string=\"true\">.gitignore</｜｜DSML｜｜ parameter name=\"offset\" string=\"false\">266</｜｜DSML｜｜ parameter>\n" +
+                "</｜｜DSML｜｜ invoke>\n" +
+                "</｜｜DSML｜｜ calls>";
+
+            Assert.True(AgentToolCallParser.TryParse(text, out var call));
+            Assert.Equal("ReadFile", call.Tool);
+            Assert.Equal(".gitignore", call.Args["path"]);
+            Assert.Equal(266L, call.Args["offset"]);
+        }
+
+        [Fact]
+        public void ParsesMultipleInvokeBlocksWithoutMixingArgs()
+        {
+            const string text =
+                "<|DSML| calls>" +
+                "<|DSML| invoke name=\"ReadFile\"><|DSML| parameter name=\"path\">.gitignore</|DSML| parameter></|DSML| invoke>" +
+                "<|DSML| invoke name=\"Shell\"><|DSML| parameter name=\"argv\" string=\"false\">[\"git\",\"status\"]</|DSML| parameter></|DSML| invoke>";
+
+            var calls = AgentToolCallParser.TryParseAll(text);
+            Assert.Equal(2, calls.Count);
+            Assert.Equal("ReadFile", calls[0].Tool);
+            Assert.Equal(".gitignore", calls[0].Args["path"]);
+            Assert.False(calls[0].Args.ContainsKey("argv"));
+            Assert.Equal("Shell", calls[1].Tool);
+            Assert.Contains("status", calls[1].Args["argv"].ToString());
+        }
+
+        [Fact]
+        public void BracketStyleToolCallsTokenNeverReachesTheAnswer()
+        {
+            // Mistral 系没有尖括号，只有 [TOOL_CALLS] 前缀：同样算协议片段
+            const string text = "[TOOL_CALLS] [{\"name\":\"Shell\",\"arguments\":{\"command\":\"ls\"}}]";
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt(text));
+            Assert.Equal("", AgentToolCallParser.CutToolCallText(text));
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\n[TOOL_CALLS] [{\"name\":\"Shell\"}]"));
+            // 普通方括号不是协议
+            Assert.Equal("[tool] 只是个词", AgentToolCallParser.CutToolCallText("[tool] 只是个词"));
+        }
+
+        [Fact]
         public void LooksLikeAttemptDetectsBrokenProtocol()
         {
             Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt("tool-call: {\"tool\":"));
@@ -216,6 +263,7 @@ namespace OpenLoop.Core.Tests
             // 只吐出半截协议（实测 qwen4-max 整条正文就是 tool）：是坏调用，不是答案
             Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt("tool"));
             Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt("<｜｜tool"));
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt("<｜｜"));
             Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt("toolbox 用来装工具。"));
         }
 
@@ -246,6 +294,24 @@ namespace OpenLoop.Core.Tests
             Assert.Equal("", AgentToolCallParser.CutToolCallText("tool-ca"));
             Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\ntool-call"));
             Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\n<｜｜tool"));
+            // 只吐到装饰符的半截（实测 deepseek：流式正文里先冒出 "<｜"、"<｜｜"）也不能当正文显示
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("<"));
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("<｜"));
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("<｜｜"));
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\n<｜｜"));
+            // 命名空间式装饰（<antml:invoke>）
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("<antml:invoke name=\"Shell\">"));
+            // DeepSeek 原生分词标记（▁ 是词内分隔符）
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("<｜tool▁calls▁begin｜>"));
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\n<｜tool▁calls▁begin｜>"));
+            // 普通尖括号不是协议
+            Assert.Equal("a <", AgentToolCallParser.CutToolCallText("a <"));
+            // 其它家特殊 token（harmony 的 python_tag / eot_id）同样是协议：名字不枚举，按 <|…|> 形状认
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("<|python_tag|>"));
+            Assert.Equal("", AgentToolCallParser.CutToolCallText("<|python_ta"));
+            Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\n<|python_tag|>{\"a\":1}"));
+            Assert.Equal("对比 a", AgentToolCallParser.CutToolCallText("对比 a<|python_tag|> 就该截"));
+            Assert.True(AgentToolCallParser.LooksLikeToolCallAttempt("<|eot_id|>"));
             Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。\n</｜｜param"));
             // 正文后面紧跟半截协议（没有换行）同样要截，否则用户会看到正文末尾挂着 tool
             Assert.Equal("先看一下现状。", AgentToolCallParser.CutToolCallText("先看一下现状。tool"));

@@ -27,7 +27,7 @@ namespace OpenLoop.Core.Agent
     /// - 用括号配对扫描提取对象，而非假设 JSON 恰好占满一行；
     /// - 模型省略 marker 时，兜底扫描正文中的 {…} 对象（要求含 tool 键）。
     /// </summary>
-    public static class AgentToolCallParser
+    public static partial class AgentToolCallParser
     {
         private const string Marker = "tool-call:";
 
@@ -68,8 +68,13 @@ namespace OpenLoop.Core.Agent
             //    与 OpenAI 风格 {"name":…,"arguments":{…}}——尽量还原成同一次调用，别白费一次往返
             if (TryParseToolCallBlock(text, out call)) return true;
 
-            // 4) 模型自创的 XML 式调用（实测 DeepSeek 系会写 <|DSML|invoke name="Shell"> … <|DSML|parameter name="command">…）
-            if (TryParseInvoke(text, out call)) return true;
+            // 4) 模型自创的 XML 式调用（实测 DeepSeek 系会写 <｜｜DSML｜｜ invoke name="Shell"> … <｜｜DSML｜｜ parameter name="command">…）
+            //    装饰前缀（<|DSML|、<｜｜DSML｜｜、<antml:…）先归一化，再按标签结构解析，一次输出里几条调用就还原几条
+            if (ParseInvokeBlocks(NormalizeTags(text)).FirstOrDefault() is { } invokeCall)
+            {
+                call = invokeCall;
+                return true;
+            }
 
             // 5) 特殊标记被翻成中文的调用（实测 <｜工具调用： Shell>{"argv":[…]}<｜工具调用结束｜>）
             if (TryParseChineseMarker(text, out call)) return true;
@@ -77,29 +82,6 @@ namespace OpenLoop.Core.Agent
             if (TryParseTaggedOrOpenAiStyle(text, out call)) return true;
 
             return false;
-        }
-
-        /// <summary>
-        /// 模型自创的 XML 式调用：<c>&lt;[装饰]invoke name="Shell"&gt; &lt;[装饰]parameter name="path"&gt;v&lt;/[装饰]parameter&gt; &lt;/[装饰]invoke&gt;</c>。
-        /// 装饰字符（如 <c>|DSML|</c>、全角竖线）不固定，只要求标签名前面有一段短前缀，别把普通 XML 正文误判成调用。
-        /// </summary>
-        private static bool TryParseInvoke(string text, out AgentToolCall call)
-        {
-            call = null;
-            var head = InvokeToolRegex.Match(text);
-            if (!head.Success) return false;
-
-            var args = new Dictionary<string, object>(StringComparer.Ordinal);
-            foreach (Match p in InvokeParamRegex.Matches(text))
-            {
-                string key = p.Groups["name"].Value.Trim();
-                if (key.Length == 0) continue;
-                args[key] = ConvertValue(p.Groups["value"].Value.Trim());
-            }
-
-            if (!NormalizeWrappedArgs(args)) return false;
-            call = new AgentToolCall { Tool = head.Groups["name"].Value, Args = args };
-            return true;
         }
 
         /// <summary>模型抄原生工具格式，把整段参数包在单个 args/arguments/parameters/input 参数里。</summary>
@@ -169,10 +151,6 @@ namespace OpenLoop.Core.Agent
             @"<[^<>]{0,16}invoke\b[^<>]*?\bname\s*=\s*[""'](?<name>[A-Za-z_][\w\-\.]*)[""']",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        private static readonly Regex InvokeParamRegex = new(
-            @"<[^<>]{0,16}parameter\b[^<>]*?\bname\s*=\s*[""'](?<name>[A-Za-z_][\w\-\.]*)[""'][^<>]*>(?<value>.*?)</[^<>]{0,16}parameter\s*>",
-            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
         /// <summary>
         /// 本地模型的特殊标记会被词表翻成中文：<c>&lt;｜工具调用： Shell&gt;{json}&lt;｜工具调用结束｜&gt;</c>。
         /// 名称在标签里，参数是紧随其后的 JSON 对象本身（不是 {"tool","args"} 包装）——整条协议换个壳，语义不变。
@@ -229,7 +207,12 @@ namespace OpenLoop.Core.Agent
             }
 
             if (calls.Count == 0)
+            {
+                // 一次输出里多条 <[装饰]invoke> 块：按块还原，别只认第一条、也别把参数串到一起
+                var invokes = ParseInvokeBlocks(NormalizeTags(text));
+                if (invokes.Count > 0) return invokes;
                 return TryParse(text, out var single) ? [single] : [];
+            }
             return calls;
         }
 
@@ -481,18 +464,25 @@ namespace OpenLoop.Core.Agent
             int p = i;
             if (text[p] == '<')
             {
-                p++;
-                if (p < text.Length && text[p] == '/') p++;
-                while (p < text.Length && (text[p] is '|' or '｜' || char.IsWhiteSpace(text[p]))) p++;
-                return p < text.Length
-                       && ProtocolHeads.Any(h => h.StartsWith(text[p..], StringComparison.OrdinalIgnoreCase));
+                // 装饰前缀（<｜｜DSML｜｜、<|DSML|、<antml:）与 SkipDecorations 共用一套判据，
+                // 否则流式吐到 "<｜｜" 这种只有装饰符的半截时会被当成正文显示。
+                int nameStart = p + 1;
+                if (nameStart < text.Length && text[nameStart] == '/') nameStart++;
+                int tagStart = SkipDecorations(text, nameStart);
+                if (tagStart >= text.Length)
+                    // 只剩装饰符（"<｜｜"）或整条输出就是一个 "<"：都是协议刚吐了个开头
+                    return tagStart > nameStart || text.Length == 1;
+                string name = text[tagStart..];
+                if (ProtocolHeads.Any(h => h.StartsWith(name, StringComparison.OrdinalIgnoreCase))) return true;
+                // 带装饰（<|、<｜｜、<|DSML|）时任何 token 名都算特殊 token 的开头：python_tag / eot_id / im_start …
+                return tagStart > nameStart && (char.IsAsciiLetterOrDigit(name[0]) || name[0] == '_');
             }
 
             // 裸形态只在词边界且是末尾一截时才算："keytool"、"要用 tool" 这类正文不截
             if (i > 0 && (char.IsAsciiLetterOrDigit(text[i - 1]) || text[i - 1] == ' ')) return false;
             string rest = text[i..];
             if (rest.Length > 16 || !rest.StartsWith("tool", StringComparison.OrdinalIgnoreCase)) return false;
-            string tail = rest[4..].TrimStart('_', '-', ' ');
+            string tail = rest[4..].TrimStart('_', '-', ' ', '▁');
             return "call".StartsWith(tail, StringComparison.OrdinalIgnoreCase)
                    || "calls".StartsWith(tail, StringComparison.OrdinalIgnoreCase);
         }
@@ -501,6 +491,7 @@ namespace OpenLoop.Core.Agent
         private static readonly string[] ProtocolHeads =
         [
             "dsml", "tool", "tool_call", "tool_calls", "tool-call", "tool call",
+            "tool▁call", "tool▁calls",
             "invoke", "parameter", "function", "工具调用", "函数调用"
         ];
 
@@ -517,9 +508,16 @@ namespace OpenLoop.Core.Agent
             return text;
         }
 
-        /// <summary>协议片段起始：marker，或带装饰的标签头（<c>&lt;|DSML| invoke</c>、<c>&lt;tool_call&gt;</c>、<c>&lt;｜工具调用</c> 等）。</summary>
+        /// <summary>
+        /// 协议片段起始：marker，或带装饰的标签头（<c>&lt;|DSML| invoke</c>、<c>&lt;｜｜DSML｜｜ invoke</c>、
+        /// <c>&lt;antml:invoke</c>、<c>&lt;tool_call&gt;</c>、<c>&lt;｜工具调用</c> 等）。
+        /// 装饰可能是竖线、命名空间词（dsml/antml/anthropic/deepseek）或两者的组合，逐家列举追不上。
+        /// </summary>
         private static readonly Regex ProtocolFragmentRegex = new(
-            @"<\s*/?\s*[|｜]{0,3}\s*(?:DSML|tool_calls?|invoke|parameter|function|工具调用|函数调用)\b|\btool-call\s*[:：]",
+            @"<\s*/?\s*(?:[|｜▁:：\s]|dsml|antml|anthropic|deepseek)*(?:DSML|tool[▁_\s-]?calls?|invoke|parameter|function|工具调用|函数调用)\b" +
+            @"|<\s*/?\s*[|｜][^<>]{0,40}>" +   // 任意 <|token|>（python_tag / eot_id / im_start …）：名字不枚举
+            @"|\[\s*tool[_\s-]?calls?\s*\]" +  // Mistral 系 [TOOL_CALLS]：没有尖括号，同样不能当正文
+            @"|\btool-call\s*[:：]",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         /// <summary>全角引号/竖线归一化成 ASCII，供协议判定使用（不改动原文本）。</summary>

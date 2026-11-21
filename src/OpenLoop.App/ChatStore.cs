@@ -168,8 +168,11 @@ namespace OpenLoop.App
         /// 每轮落盘由 A 自己登记（<c>WorkerSessionHost.Persist</c>）；壳只在改名、
         /// 以及「A 不知道的会话」（关窗时被淘汰的侧线对话）落盘时写，别在存对话时顺手写。
         /// </summary>
-        public static void Touch(string workspace, string sessionId, string title = null)
-            => ChatHistory.Touch(workspace, sessionId, title);
+        public static void Touch(string workspace, string sessionId, string title = null, int? steps = null)
+            => ChatHistory.Touch(workspace, sessionId, title, steps);
+
+        /// <summary>旧索引没有步数：读一次对话文件补齐（不动最后活动时间），返回 id → 步数。</summary>
+        public static Dictionary<string, int> BackfillSteps() => ChatHistory.BackfillSteps();
 
         /// <summary>Loop 会话的 id：<c>loop-xxxxxxxx</c>，旧版是字面量 <c>loop</c>。</summary>
         internal static bool IsLoopSessionId(string id)
@@ -191,7 +194,7 @@ namespace OpenLoop.App
                     // 旧索引没有 CreatedAt：退回 UpdatedAt（至少不是重启时刻）
                     var created = item.CreatedAt == default ? item.UpdatedAt : item.CreatedAt;
                     result.Add(new SavedSession(item.Id, item.Workspace, item.Title ?? "",
-                        created.ToLocalTime(), item.UpdatedAt.ToLocalTime()));
+                        created.ToLocalTime(), item.UpdatedAt.ToLocalTime(), item.Steps));
                 }
             }
             catch
@@ -201,6 +204,6 @@ namespace OpenLoop.App
         }
 
         internal sealed record SavedSession(
-            string Id, string Workspace, string Title, DateTime StartedAt, DateTime LastActiveAt);
+            string Id, string Workspace, string Title, DateTime StartedAt, DateTime LastActiveAt, int Steps);
     }
 }

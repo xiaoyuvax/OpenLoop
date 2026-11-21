@@ -43,6 +43,16 @@ namespace OpenLoop.Core.Reasoning
             "模型输出退化：正文在反复输出同一段标记/片段（常见于网关把聊天模板标记泄进正文），已中止本轮。"
             + "换一个支持工具调用的文本模型再试。";
 
+        /// <summary>
+        /// 单步思维链上限：既没有正文也没有工具调用（工具调用写在正文里）却一路暴涨，就是模型发散，
+        /// 不能等它自己停下——免费模型能这样吐掉几十万字，界面思维链与上下文一起被灌满。
+        /// </summary>
+        internal const int ReasoningLimit = 24000;
+
+        internal const string ReasoningRunawayMessage =
+            "模型思维链发散：单步思考超过 24000 字仍没有产出正文或工具调用，已中止本轮。"
+            + "换一个模型再试，或把任务拆小。";
+
         /// <summary>进度回调（等待模型响应 / 第 N 次重试 / 放弃），供宿主给视觉反馈。</summary>
         public Action<ReasonerProgress> OnProgress { get; set; }
 
@@ -336,6 +346,13 @@ namespace OpenLoop.Core.Reasoning
             return true;
         }
 
+        /// <summary>
+        /// 思维链发散：字数超上限、还没有正文（= 也还没有工具调用）。复读检测抓不到这种输出——
+        /// 词沙拉每 6 字窗口都不一样，只能靠长度兜底。
+        /// </summary>
+        internal static bool ReasoningRunaway(int reasoningChars, int contentChars)
+            => reasoningChars > ReasoningLimit && contentChars == 0;
+
         internal static async Task<CompletionResult> ParseStreamAsync(
             TextReader reader, Action<string> onDelta, CancellationToken ct = default,
             Action<string> onReasoning = null, TimeSpan idleTimeout = default)
@@ -388,6 +405,8 @@ namespace OpenLoop.Core.Reasoning
                         onReasoning?.Invoke(piece);
                     }
                     if (LooksDegenerate(reasoning)) throw new DegenerateOutputException(DegenerateMessage);
+                    if (ReasoningRunaway(reasoning.Length, content.Length))
+                        throw new DegenerateOutputException(ReasoningRunawayMessage);
                 }
                 if (choice.TryGetProperty("delta", out delta)
                     && delta.TryGetProperty("content", out var pieceEl)

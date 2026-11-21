@@ -64,6 +64,25 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Backfill_steps_fills_index_without_touching_last_active()
+        {
+            ChatHistory.Write(@"C:\work", "old",
+            [
+                new ChatEntry { User = "a", Steps = 3 },
+                new ChatEntry { User = "b", Steps = 7 }
+            ]);
+            ChatHistory.Touch(@"C:\work", "old"); // 旧索引：有条目但没有步数
+            var before = ChatHistory.Index().Single(e => e.Id == "old").UpdatedAt;
+
+            var filled = ChatHistory.BackfillSteps();
+
+            var item = ChatHistory.Index().Single(e => e.Id == "old");
+            Assert.Equal(7, filled["old"]);
+            Assert.Equal(7, item.Steps);
+            Assert.Equal(before, item.UpdatedAt);
+        }
+
+        [Fact]
         public async Task Concurrent_touches_keep_every_entry()
         {
             var ids = Enumerable.Range(0, 40).Select(i => "s" + i).ToList();

@@ -191,7 +191,8 @@ namespace OpenLoop.App
                         CustomTitle = loop.Title,
                         StartedAt = loop.UpdatedAt.LocalDateTime,
                         LastActiveAt = loop.UpdatedAt.LocalDateTime,
-                        State = LoopState?.Invoke(loop.Workspace, loop.SessionId) ?? SessionState.Idle
+                        State = LoopState?.Invoke(loop.Workspace, loop.SessionId) ?? SessionState.Idle,
+                        Steps = loop.Steps
                     });
                 }
             }

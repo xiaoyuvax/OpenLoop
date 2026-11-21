@@ -80,6 +80,9 @@ namespace OpenLoop.Service.Worker
         /// <summary>当前模型的上下文窗口；和 ContextTokens 一起供界面算占比。</summary>
         public int ContextLimit { get; set; }
 
+        /// <summary>最后一轮的步数：会话列表靠它显示步数，不必拉全文。</summary>
+        public int Steps { get; set; }
+
         public List<WorkerTurn> Turns { get; set; } = [];
         public List<string> Pending { get; set; } = [];
         public List<WorkerPromptView> Prompts { get; set; } = [];
@@ -175,6 +178,7 @@ namespace OpenLoop.Service.Worker
             // 冷启动判定用：文件最后写入时间（缓存已冷）+ 是否换了模型（前缀对不上，缓存本来也没有）。
             string path = ChatHistory.PathFor(session.Workspace, session.Id);
             if (File.Exists(path)) session.LastSavedAt = File.GetLastWriteTimeUtc(path);
+            session.Steps = entries.LastOrDefault()?.Steps ?? 0;
 
             // 网页/API 冷启动时没带模型：沿用这段历史最后用过的（WinForms 由界面传进来）
             if (string.IsNullOrWhiteSpace(session.Model) || string.IsNullOrWhiteSpace(session.Effort))
@@ -218,7 +222,8 @@ namespace OpenLoop.Service.Worker
                         Id = entry.Id,
                         Workspace = entry.Workspace,
                         State = Idle,
-                        Title = entry.Title
+                        Title = entry.Title,
+                        Steps = entry.Steps
                     });
                 }
             }
@@ -243,6 +248,7 @@ namespace OpenLoop.Service.Worker
             Outcome = session.Outcome,
             Cost = session.Cost,
             ContextTokens = session.ContextTokens,
+            Steps = session.Steps,
             Live = true
         };
 
@@ -282,6 +288,8 @@ namespace OpenLoop.Service.Worker
             {
                 if (!_sessions.TryGetValue(id ?? "", out session)) return false;
                 session.UserEpoch++;
+                // 用户又说话了：上一轮「停止」留下的暂停到此为止，轮后队列照常续发
+                session.Paused = false;
                 if (!string.IsNullOrWhiteSpace(imageModel)) session.ImageModel = imageModel;
                 if (session.State == Running)
                 {
@@ -292,7 +300,6 @@ namespace OpenLoop.Service.Worker
                             Text = text, Tag = tag ?? "task", Immediate = true,
                             ImageModel = imageModel, Attachments = attachments
                         });
-                        session.Paused = false;
                     }
                     else session.Pending.Add(new PendingSend
                     {
@@ -769,7 +776,8 @@ namespace OpenLoop.Service.Worker
                     session.Revision++;
                     failedModel = session.Model;
 
-                    if (!session.Paused && session.Pending.Count > 0)
+                    // 失败轮（接口报错/额度耗尽）不收尾排队：等有新输入激活会话后队列才按规则继续
+                    if (result.Outcome != "error" && !session.Paused && session.Pending.Count > 0)
                     {
                         var batch = TakeBatch(session.Pending);
                         if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch));
@@ -812,11 +820,13 @@ namespace OpenLoop.Service.Worker
             List<ChatEntry> entries;
             string workspace;
             string id;
+            int steps;
 
             lock (_lock)
             {
                 workspace = session.Workspace;
                 id = session.Id;
+                steps = session.Steps;
                 entries = session.Turns.Select(t => new ChatEntry
                 {
                     User = t.User,
@@ -837,7 +847,7 @@ namespace OpenLoop.Service.Worker
             }
 
             ChatHistory.Write(workspace, id, entries);
-            ChatHistory.Touch(workspace, id);
+            ChatHistory.Touch(workspace, id, null, steps);
         }
 
         private ApprovalDecision Approve(Session session, ApprovalRequest request, CancellationToken ct)
@@ -931,6 +941,7 @@ namespace OpenLoop.Service.Worker
             Cost = session.Cost,
             ContextTokens = session.ContextTokens,
             ContextLimit = OpenLoop.Service.Models.ModelCatalog.ContextLimit(session.Model, session.Settings()),
+            Steps = session.Steps,
             ActivationVersion = session.ActivationVersion,
             FeatureCount = session.FeatureCount,
             RuleCount = session.RuleCount,

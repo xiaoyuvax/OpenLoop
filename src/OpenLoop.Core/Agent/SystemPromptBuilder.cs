@@ -78,6 +78,7 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("# 每轮如何收尾");
             sb.AppendLine("- 每轮只做两件事之一：输出 tool-call 行去执行，或给出面向用户的最终结论；不要只输出思考过程、计划或“让我继续看看”就结束。");
             sb.AppendLine("- 还没做完就不要收尾：拿到 tool-result 后继续推进，直到任务完成、确实被卡住、或接近步数上限（若设置了上限）。");
+            sb.AppendLine("- 工具调用报错（tool-result ok:false）不是收尾理由：换参数/换工具继续，或明确写出失败原因与卡点再结束；不要静默停在工具刚失败的地方。");
             sb.AppendLine("- 确实被卡住时（缺信息/缺权限/环境不支持），用最终回答说清楚缺什么、你已经试过什么，并给出可行的下一步；不要原地重复同样的调用。");
             sb.AppendLine("- 思考内容只服务于你自己：最终回答里不要粘贴推理过程，直接给结论与改动清单。");
             sb.AppendLine();

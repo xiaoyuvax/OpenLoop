@@ -104,6 +104,7 @@ namespace OpenLoop.App
 
             _lblTitle.Text = session.Title;
             _tips.SetToolTip(_btnSummary, "用当前模型重新总结会话标题");
+            _tips.SetToolTip(_btnAttach, "添加附件（也可拖放或粘贴文件/图片）");
             _lblPath.Text = UiStyle.ShortPath(session.Workspace);
             _tips.SetToolTip(_lblPath, session.Workspace + "（点击在资源管理器中打开）");
             _chat.PlaceholderText = Localization.T("NoMessages");
@@ -114,6 +115,8 @@ namespace OpenLoop.App
                 session.Book.ReplaceAll(saved, null);
                 // 列表的「步数」取最后一轮（与运行中的同步口径一致）
                 session.Steps = saved[^1].ToolStepCount;
+                // 旧索引没有步数：打开一次就补上，列表里不用再读整份对话文件
+                if (session.Steps > 0) ChatStore.Touch(session.Workspace, session.Id, null, session.Steps);
             }
             _chat.UndoRequested += OnChatUndo;
             _chat.CopyRequested += OnChatCopy;
@@ -583,6 +586,17 @@ namespace OpenLoop.App
         /// </summary>
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
+            if (e.KeyData == (Keys.Control | Keys.V))
+            {
+                int pasteLimit = MediaModels.AttachmentLimit(_model);
+                if (AttachmentsUi.TryPaste(_attachments, pasteLimit, out bool overflow))
+                {
+                    e.Result = false;
+                    if (overflow) Notify("附件太多", $"当前模型最多 {pasteLimit} 个附件", error: true);
+                    UpdateAttachments();
+                    return;
+                }
+            }
             bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
             bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
             if (!shift && e.KeyData != Keys.Enter && !ctrl) return;
@@ -1400,6 +1414,7 @@ namespace OpenLoop.App
             _cts = cts;
             var ct = cts.Token;
 
+            _queue.Paused = false;   // 用户又发了一条：停止留下的暂停到此为止，本轮收尾后队列照常续发
             SetRunning(true);
             SetState(SessionState.Running);
             _lblStatus.Text = Localization.T("Status") + ": 运行中…";
@@ -1531,7 +1546,10 @@ namespace OpenLoop.App
             // 首轮成功结束后由所选模型生成短标题（已有人工/历史标题就不再覆盖）
             if (outcome == "ok" && Session.Book.Turns.Count == 1)
                 _ = SummarizeTitleAsync(force: false);
-            if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
+            // 正常收尾就是轮后：上一轮「停止」留下的暂停不该再挡住队列
+            if (outcome is "ok" or "budget") _queue.Paused = false;
+            // 失败轮不续发队列：等新的输入（用户或自愈的「继续」）激活会话后，队列才按规则继续
+            if (outcome != "error" && !IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
         }
 
         /// <summary>

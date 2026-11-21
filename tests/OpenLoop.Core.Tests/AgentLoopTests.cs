@@ -1,4 +1,5 @@
 using OpenLoop.Core.Agent;
+using OpenLoop.Core.Reasoning;
 using Xunit;
 
 namespace OpenLoop.Core.Tests
@@ -428,7 +429,23 @@ namespace OpenLoop.Core.Tests
 
             Assert.Equal("完成", result.FinalAnswer);
             Assert.Equal(2, reasoner.Calls.Count);
-            Assert.Contains(reasoner.Calls[1], m => (m.Content ?? "").Contains("退化成复读"));
+            Assert.Contains(reasoner.Calls[1], m => (m.Content ?? "").Contains("输出退化"));
+        }
+
+        [Fact]
+        public async Task DegenerateOutputIsClearedFromHostBeforeFailing()
+        {
+            var history = new List<OpenLoop.Core.Messages.LlmMessage> { new("user", "hi") };
+            var reasoner = new DegenerateAlwaysReasoner();
+            var loop = Loops.Build(new FakeTool(), reasoner);
+            int restarts = 0;
+
+            var ex = await Record.ExceptionAsync(
+                () => loop.RunAsync(history, "hi", onRestart: () => restarts++));
+
+            Assert.Equal(OpenAiCompatibleReasoner.ReasoningRunawayMessage, ex?.Message);
+            Assert.Equal(3, reasoner.Calls);   // 两次重试 + 一次放弃
+            Assert.Equal(3, restarts);         // 每次退化都通知宿主清屏，失败那次也不例外
         }
 
         [Fact]

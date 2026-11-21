@@ -110,6 +110,15 @@ public sealed class ReasonerTimeoutTests
     }
 
     [Fact]
+    public void Reasoning_runaway_needs_no_output_and_a_limit_breach()
+    {
+        // 只有「一个字正文/工具调用都没有」时才按发散处理：正常的长思考后面会跟工具调用，不能误杀。
+        Assert.False(OpenAiCompatibleReasoner.ReasoningRunaway(OpenAiCompatibleReasoner.ReasoningLimit, 0));
+        Assert.False(OpenAiCompatibleReasoner.ReasoningRunaway(OpenAiCompatibleReasoner.ReasoningLimit * 10, 1));
+        Assert.True(OpenAiCompatibleReasoner.ReasoningRunaway(OpenAiCompatibleReasoner.ReasoningLimit + 1, 0));
+    }
+
+    [Fact]
     public async Task Degenerate_stream_fails_fast_instead_of_waiting_for_timeout()
     {
         using var server = DegenerateServer.Start();

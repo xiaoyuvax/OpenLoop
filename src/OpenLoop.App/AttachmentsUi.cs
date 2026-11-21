@@ -39,6 +39,39 @@ namespace OpenLoop.App
         }
 
         /// <summary>
+        /// 输入框里 Ctrl+V：剪贴板是文件或图片就追加成附件并拦掉这次粘贴（返回 true）。
+        /// 剪贴板带文字时按文字粘贴（Word/网页复制常同时带图，不能抢）。
+        /// </summary>
+        public static bool TryPaste(List<string> current, int limit, out bool overflow)
+        {
+            overflow = false;
+            try
+            {
+                if (Clipboard.ContainsFileDropList())
+                {
+                    overflow = Add(current, Clipboard.GetFileDropList().Cast<string>(), limit);
+                    return true;
+                }
+                if (Clipboard.ContainsText() || !Clipboard.ContainsImage()) return false;
+                using var image = Clipboard.GetImage();
+                if (image == null) return false;
+                if (current.Count >= limit) { overflow = true; return true; }
+                // shortcut: 粘贴的图片落在 %TEMP%\OpenLoop-paste，发送后不清理；需要回收时再加
+                string dir = Path.Combine(Path.GetTempPath(), "OpenLoop-paste");
+                Directory.CreateDirectory(dir);
+                string path = Path.Combine(dir, $"paste-{DateTime.Now:yyyyMMdd-HHmmssfff}.png");
+                image.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                Add(current, [path], limit);
+                return true;
+            }
+            catch (Exception)
+            {
+                // 剪贴板被别的进程占着等：退回普通文本粘贴
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 让输入区整棵控件树接受文件拖放：WinForms 只把 DragDrop 发给 AllowDrop 的最深控件，
         /// 所以子控件（含 AntdUI 内嵌文本框，以及之后才加进来的）都要挂。
         /// </summary>
