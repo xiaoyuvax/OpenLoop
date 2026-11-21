@@ -16,7 +16,8 @@ namespace OpenLoop.App
 
         public string Name => "ReadSession";
         public string Description =>
-            "读内存里打开的会话（/complain 定位问题先用它了解上下文）：不给 session 时列出打开的会话；" +
+            "读内存里打开的会话（/complain 定位问题先用它了解上下文；协作时也用它读协作会话）：" +
+            "不给 session 时列出打开的会话与各自当前状态（运行中 / 已正常结束 / 异常结束及错误信息）；" +
             "给了就按轮返回用户输入、工具调用与回复。会话已关闭时再用 ReadFile 读记录文件。";
         public string ParamsSchema =>
             "session: string 可选（会话标题或 id 前缀，省略=列出打开的会话）; " +
@@ -48,8 +49,13 @@ namespace OpenLoop.App
             {
                 sb.AppendLine();
                 sb.Append("- ").Append(session.Title).Append(" · ").Append(session.Id)
-                    .Append(" · ").Append(session.State).Append(" · ")
+                    .Append(" · ").Append(LoopCollabHost.StateText(session.State)).Append(" · ")
                     .Append(session.Book.Turns.Count).Append(" 轮 · ").Append(session.Workspace);
+                // 异常结束的会话在清单里就要能看到原因，不必再逐条读轮次
+                var last = session.Book.Turns.LastOrDefault();
+                if (session.State == SessionState.Interrupted
+                    && OpenLoop.Core.Messages.ServerNotice.IsNotice(last?.AssistantText))
+                    sb.Append(" · 错误：").Append(Cut(last.AssistantText, 160));
             }
             return sb.ToString();
         }
@@ -58,15 +64,16 @@ namespace OpenLoop.App
         internal static string Describe(Session session, int offset, int count)
         {
             var turns = session.Book.Turns;
-            if (turns.Count == 0) return $"会话「{session.Title}」还没有轮次。";
+            string state = LoopCollabHost.StateText(session.State);
+            if (turns.Count == 0) return $"会话「{session.Title}」（{state}）还没有轮次。";
 
             count = Math.Clamp(count, 1, 50);
-            if (offset > turns.Count) return $"会话「{session.Title}」共 {turns.Count} 轮，offset={offset} 超出范围。";
+            if (offset > turns.Count) return $"会话「{session.Title}」（{state}）共 {turns.Count} 轮，offset={offset} 超出范围。";
             int start = offset > 0 ? offset : Math.Max(1, turns.Count - count + 1);
             int end = Math.Min(turns.Count + 1, start + count);
 
             var sb = new StringBuilder();
-            sb.AppendLine($"会话「{session.Title}」第 {start}-{end - 1} 轮（共 {turns.Count} 轮，{session.State}）：");
+            sb.AppendLine($"会话「{session.Title}」第 {start}-{end - 1} 轮（共 {turns.Count} 轮，{state}）：");
             for (int i = start; i < end; i++)
             {
                 var turn = turns[i - 1];

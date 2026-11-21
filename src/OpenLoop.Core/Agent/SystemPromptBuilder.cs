@@ -57,6 +57,17 @@ namespace OpenLoop.Core.Agent
                 sb.AppendLine();
             }
 
+            if (tools.Any(t => string.Equals(t.Name, "CollabStart", StringComparison.OrdinalIgnoreCase)))
+            {
+                sb.AppendLine("# 协作（分解与主控）");
+                sb.AppendLine("- 任务足够大、能拆成互不依赖的几段时，用 CollabStart 分解并启动同工作区的协作会话；它们是平级会话，不是子 agent，没有父子调用栈。");
+                sb.AppendLine("- 每段可以沿用你已完成的上下文（同模型才复用前缀缓存），也可以用 context 另给一份更合适的背景；不共用你之后的对话。");
+                sb.AppendLine("- 一旦启动协作，你就不再自己动手：只做分解、监测与协调，通过 CollabMonitor 把会话 id 交给后台监测。");
+                sb.AppendLine("- 监测汇报会作为仿用户消息进入你的队列（界面上用特殊底色标出）；有异常就 ReadSession 读它的轮次，或用 Puppet 留言直接问它。");
+                sb.AppendLine("- 全部会话正常结束或不可恢复地异常中止后监测自动停止；你的最终答复要交代每段的结果与遗留问题。");
+                sb.AppendLine();
+            }
+
             var activeRules = rules?.Where(r => !string.IsNullOrWhiteSpace(r)).ToList();
             if (activeRules is { Count: > 0 })
             {

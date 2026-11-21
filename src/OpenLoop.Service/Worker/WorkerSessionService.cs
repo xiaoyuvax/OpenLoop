@@ -71,6 +71,9 @@ namespace OpenLoop.Service.Worker
 
         /// <summary>I 给的账本投影；为空表示拿不到，本轮按全部关闭运行。</summary>
         public Loop.ActivationPayload Activation { get; set; }
+
+        /// <summary>协作宿主：开了协作才非空，工具据此给本会话挂 CollabStart/CollabMonitor/ReadSession。</summary>
+        public ICollabHost Collab { get; set; }
     }
 
     public sealed class WorkerRunContext
@@ -161,6 +164,7 @@ namespace OpenLoop.Service.Worker
                     .Concat(DshTools.For(settings, workspace, approve))
                     .Concat(plugins.Tools())
                     .Concat(OpenLoop.Service.Web.PuppetTools.For())
+                    .Concat(CollabTools.For(request.Collab, request.SessionId))
                     .Concat(Media.ImageTools.For(workspace, settings, request.ImageModel, request.Attachments)),
                 settings.WebFetchMode);
 

@@ -96,6 +96,20 @@ namespace OpenLoop.App
         private FlowLayoutPanel _modelActions;
         private CheckedListBox _lstModels;
 
+        private AntdUI.TabPage _pageCollab;
+        private TableLayoutPanel _collab;
+        private AntdUI.Label _lblEnableCollab;
+        private FlowLayoutPanel _enableCollabFlow;
+        private AntdUI.Switch _switchEnableCollab;
+        private AntdUI.Label _lblEnableCollabHint;
+        private AntdUI.Label _lblCollabPoll;
+        private AntdUI.Select _cboCollabPoll;
+        private AntdUI.Label _lblCollabReuse;
+        private FlowLayoutPanel _collabReuseFlow;
+        private AntdUI.Switch _switchCollabReuse;
+        private AntdUI.Label _lblCollabReuseHint;
+        private AntdUI.Label _lblCollabNote;
+
         private FlowLayoutPanel _buttons;
         private AntdUI.Button _btnCancel;
         private AntdUI.Button _btnSave;
@@ -122,6 +136,7 @@ namespace OpenLoop.App
             _pageTools = new AntdUI.TabPage();
             _pageSkills = new AntdUI.TabPage();
             _pagePlugins = new AntdUI.TabPage();
+            _pageCollab = new AntdUI.TabPage();
 
             _skills = new TableLayoutPanel();
             _skillHeader = new TableLayoutPanel();
@@ -179,6 +194,19 @@ namespace OpenLoop.App
             _switchAutoIterate = new AntdUI.Switch();
             _lblAutoIterateHint = new AntdUI.Label();
             _lblGeneralNote = new AntdUI.Label();
+
+            _collab = new TableLayoutPanel();
+            _lblEnableCollab = new AntdUI.Label();
+            _enableCollabFlow = new FlowLayoutPanel();
+            _switchEnableCollab = new AntdUI.Switch();
+            _lblEnableCollabHint = new AntdUI.Label();
+            _lblCollabPoll = new AntdUI.Label();
+            _cboCollabPoll = new AntdUI.Select();
+            _lblCollabReuse = new AntdUI.Label();
+            _collabReuseFlow = new FlowLayoutPanel();
+            _switchCollabReuse = new AntdUI.Switch();
+            _lblCollabReuseHint = new AntdUI.Label();
+            _lblCollabNote = new AntdUI.Label();
 
             _models = new TableLayoutPanel();
             _lblProvider = new AntdUI.Label();
@@ -251,6 +279,10 @@ namespace OpenLoop.App
             _pagePlugins.Text = "插件";
             _pagePlugins.ReadOnly = true;
             _pagePlugins.Dock = DockStyle.Fill;
+
+            _pageCollab.Text = "协作";
+            _pageCollab.ReadOnly = true;
+            _pageCollab.Dock = DockStyle.Fill;
 
             // 普通
             _general.Dock = DockStyle.Fill;
@@ -787,12 +819,95 @@ namespace OpenLoop.App
             _skills.Controls.Add(_lblSkillsHint, 0, 3);
             _pageSkills.Controls.Add(_skills);
 
+            // 协作：发起方分解任务、起同工作区的平级会话，并把监测汇报插进它的队列
+            _collab.Dock = DockStyle.Fill;
+            _collab.ColumnCount = 2;
+            _collab.RowCount = 4;
+            _collab.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
+            _collab.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _collab.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _collab.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _collab.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _collab.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            _collab.Padding = new Padding(8, 16, 8, 8);
+
+            ConfigureLabel(_lblEnableCollab, "启用协作");
+            ConfigureLabel(_lblCollabPoll, "监测间隔");
+            ConfigureLabel(_lblCollabReuse, "沿用上下文");
+
+            _enableCollabFlow.Dock = DockStyle.Fill;
+            _enableCollabFlow.FlowDirection = FlowDirection.LeftToRight;
+            _enableCollabFlow.WrapContents = false;
+            _enableCollabFlow.Margin = new Padding(0);
+
+            _switchEnableCollab.Width = 44;
+            _switchEnableCollab.Height = 22;
+            _switchEnableCollab.Margin = new Padding(0, 9, 8, 0);
+
+            _lblEnableCollabHint.AutoSize = true;
+            _lblEnableCollabHint.Text = "给 Worker 与 Loop 会话挂 CollabStart / CollabMonitor / ReadSession";
+            _lblEnableCollabHint.Font = new Font("Segoe UI", 8.5F);
+            _lblEnableCollabHint.ForeColor = UiStyle.Muted;
+            _lblEnableCollabHint.Margin = new Padding(0, 11, 0, 0);
+
+            _enableCollabFlow.Controls.Add(_switchEnableCollab);
+            _enableCollabFlow.Controls.Add(_lblEnableCollabHint);
+
+            _cboCollabPoll.Dock = DockStyle.Fill;
+            _cboCollabPoll.Radius = 8;
+            _cboCollabPoll.Margin = new Padding(0, 6, 240, 6);
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("10 秒") { Tag = 10 });
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("30 秒") { Tag = 30 });
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("1 分钟") { Tag = 60 });
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("2 分钟") { Tag = 120 });
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("5 分钟") { Tag = 300 });
+
+            _collabReuseFlow.Dock = DockStyle.Fill;
+            _collabReuseFlow.FlowDirection = FlowDirection.LeftToRight;
+            _collabReuseFlow.WrapContents = false;
+            _collabReuseFlow.Margin = new Padding(0);
+
+            _switchCollabReuse.Width = 44;
+            _switchCollabReuse.Height = 22;
+            _switchCollabReuse.Checked = true;
+            _switchCollabReuse.Margin = new Padding(0, 9, 8, 0);
+
+            _lblCollabReuseHint.AutoSize = true;
+            _lblCollabReuseHint.Text = "协作会话带上发起方已完成的对话，复用前缀缓存（同模型才生效）";
+            _lblCollabReuseHint.Font = new Font("Segoe UI", 8.5F);
+            _lblCollabReuseHint.ForeColor = UiStyle.Muted;
+            _lblCollabReuseHint.Margin = new Padding(0, 11, 0, 0);
+
+            _collabReuseFlow.Controls.Add(_switchCollabReuse);
+            _collabReuseFlow.Controls.Add(_lblCollabReuseHint);
+
+            _lblCollabNote.AutoSize = false;
+            _lblCollabNote.Dock = DockStyle.Fill;
+            _lblCollabNote.Text = "协作会话是平级的独立会话，不是子 agent：它们不共享发起方的工具调用栈，只在同一工作区各干一段。" +
+                "发起方启动后不再自己动手，只做监测与协调；监测汇报以仿用户消息进入它的队列（队列里用特殊底色标出），" +
+                "全部会话结束或不可恢复地中止后自动停止。暂不支持跨工作区协作。";
+            _lblCollabNote.Font = new Font("Segoe UI", 8.5F);
+            _lblCollabNote.ForeColor = UiStyle.Muted;
+            _lblCollabNote.TextAlign = ContentAlignment.TopLeft;
+            _lblCollabNote.Margin = new Padding(0, 10, 0, 0);
+
+            _collab.Controls.Add(_lblEnableCollab, 0, 0);
+            _collab.Controls.Add(_enableCollabFlow, 1, 0);
+            _collab.Controls.Add(_lblCollabPoll, 0, 1);
+            _collab.Controls.Add(_cboCollabPoll, 1, 1);
+            _collab.Controls.Add(_lblCollabReuse, 0, 2);
+            _collab.Controls.Add(_collabReuseFlow, 1, 2);
+            _collab.Controls.Add(_lblCollabNote, 0, 3);
+            _collab.SetColumnSpan(_lblCollabNote, 2);
+            _pageCollab.Controls.Add(_collab);
+
             _tabs.Pages.Add(_pageGeneral);
             _tabs.Pages.Add(_pageOpenCode);
             _tabs.Pages.Add(_pageTools);
             _tabs.Pages.Add(_pageModels);
             _tabs.Pages.Add(_pageSkills);
             _tabs.Pages.Add(_pagePlugins);
+            _tabs.Pages.Add(_pageCollab);
             InitPluginsPage(_pagePlugins);
 
             _buttons.Dock = DockStyle.Fill;

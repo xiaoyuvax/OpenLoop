@@ -74,6 +74,15 @@ body ::-webkit-scrollbar-track { background: transparent; }
 }
 .ol-pending-row { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1; }
 
+/* agent 自动插入的排队消息（协作监测汇报）：特殊底色，与用户敲的区分 */
+.ol-pending-row.ol-pending-auto {
+  background: #f0f5ff; border: 1px solid #adc6ff; border-radius: 6px; padding: 0 6px;
+}
+.ol-pending-tag {
+  font-size: 11px; color: #2f54eb; background: #d6e4ff;
+  border-radius: 4px; padding: 0 4px; line-height: 16px;
+}
+
 .ol-section-title { font-size: 12px; color: #8c8c8c; margin: 12px 0 6px; }
 .ol-section-title:first-child { margin-top: 0; }
 

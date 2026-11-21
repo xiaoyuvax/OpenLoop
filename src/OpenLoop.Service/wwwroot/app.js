@@ -375,10 +375,15 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   const pending = (snapshot?.pending || []).length
     ? h('div', { className: 'ol-pending' },
         h(Muted, { style: { flex: 'none' } }, '排队'),
-        (snapshot.pending || []).map((item, i) => h('div', { key: i, className: 'ol-pending-row' },
-          h('span', { title: item, style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, item),
-          h(Button, { size: 'small', type: 'link', onClick: () => act('pending', { index: i, action: 'now' }) }, '立即'),
-          h(Button, { size: 'small', type: 'link', danger: true, onClick: () => act('pending', { index: i, action: 'remove' }) }, '撤回'))))
+        (snapshot.pending || []).map((item, i) => {
+          // agent 自动插入的（协作监测汇报）用特殊底色标出，用户敲的仍是普通底色
+          const auto = (snapshot.pendingAuto || [])[i] === true
+          return h('div', { key: i, className: 'ol-pending-row' + (auto ? ' ol-pending-auto' : '') },
+            auto ? h('span', { className: 'ol-pending-tag', style: { flex: 'none' } }, '自动') : null,
+            h('span', { title: item, style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, item),
+            h(Button, { size: 'small', type: 'link', onClick: () => act('pending', { index: i, action: 'now' }) }, '立即'),
+            h(Button, { size: 'small', type: 'link', danger: true, onClick: () => act('pending', { index: i, action: 'remove' }) }, '撤回'))
+        }))
     : null;
 
   const toolbar = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'nowrap', minWidth: 0 } },
@@ -1048,6 +1053,33 @@ function SettingsPanel({ caps, onClose }) {
     h(SettingHint, { key: 'note' }, '主题与语言在重启 OpenLoop 后生效；完全许可、自动审批、自动演进与自动迭代立即生效。')
   ];
 
+  const collab = [
+    h(SwitchRow, {
+      key: 'collab-on', label: '启用协作', checked: draft.enableCollab,
+      onChange: v => patch({ enableCollab: v }),
+      hint: '给 Worker 与 Loop 会话挂 CollabStart / CollabMonitor / ReadSession'
+    }),
+    h(SettingRow, { key: 'collab-poll', label: '监测间隔' },
+      h(Select, {
+        value: draft.collabPollSeconds || 30, style: { maxWidth: 240 },
+        onChange: v => patch({ collabPollSeconds: v }),
+        options: [
+          { value: 10, label: '10 秒' }, { value: 30, label: '30 秒' },
+          { value: 60, label: '1 分钟' }, { value: 120, label: '2 分钟' },
+          { value: 300, label: '5 分钟' }
+        ]
+      })),
+    h(SwitchRow, {
+      key: 'collab-reuse', label: '沿用上下文', checked: draft.collabReuseContext,
+      onChange: v => patch({ collabReuseContext: v }),
+      hint: '协作会话带上发起方已完成的对话，复用前缀缓存（同模型才生效）'
+    }),
+    h(SettingHint, { key: 'collab-note' },
+      '协作会话是平级的独立会话，不是子 agent：它们不共享发起方的工具调用栈，只在同一工作区各干一段。'
+      + '发起方启动后不再自己动手，只做监测与协调；监测汇报以仿用户消息进入它的队列（队列里用特殊底色标出），'
+      + '全部会话结束或不可恢复地中止后自动停止。暂不支持跨工作区协作。')
+  ];
+
   const openCode = [
     h(SwitchRow, {
       key: 'ask', label: '权限审批', checked: draft.openCodeAskPermissions,
@@ -1245,7 +1277,8 @@ function SettingsPanel({ caps, onClose }) {
         { key: 'tools', label: '工具', children: h('div', { style: { paddingTop: 12 } }, tools) },
         { key: 'models', label: '模型', children: h('div', { style: { paddingTop: 12 } }, models) },
         { key: 'skills', label: '技能', children: h('div', { style: { paddingTop: 12 } }, skillsPage) },
-        { key: 'plugins', label: '插件', children: h('div', { style: { paddingTop: 12 } }, pluginsPage) }
+        { key: 'plugins', label: '插件', children: h('div', { style: { paddingTop: 12 } }, pluginsPage) },
+        { key: 'collab', label: '协作', children: h('div', { style: { paddingTop: 12 } }, collab) }
       ]
     }),
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 } },

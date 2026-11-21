@@ -79,6 +79,9 @@ namespace OpenLoop.Service.Web
                 autoEvolveCooldownMinutes = settings.AutoEvolveCooldownMinutes,
                 autoEvolvePerDay = settings.AutoEvolvePerDay,
                 autoIterate = settings.AutoIterate,
+                enableCollab = settings.EnableCollab,
+                collabPollSeconds = settings.CollabPollSeconds,
+                collabReuseContext = settings.CollabReuseContext,
                 providers = ProviderRows(settings),
                 disabledModels = settings.DisabledModels ?? [],
                 modelProps = settings.ModelProps ?? new Dictionary<string, ModelProps>()
@@ -156,6 +159,11 @@ namespace OpenLoop.Service.Web
                 settings.AutoEvolveCooldownMinutes = body.AutoEvolveCooldownMinutes.Value;
             if (body.AutoEvolvePerDay is > 0) settings.AutoEvolvePerDay = body.AutoEvolvePerDay.Value;
             if (body.AutoIterate.HasValue) settings.AutoIterate = body.AutoIterate.Value;
+            if (body.EnableCollab.HasValue) settings.EnableCollab = body.EnableCollab.Value;
+            if (body.CollabPollSeconds is > 0)
+                settings.CollabPollSeconds = Math.Clamp(body.CollabPollSeconds.Value, 5, 3600);
+            if (body.CollabReuseContext.HasValue)
+                settings.CollabReuseContext = body.CollabReuseContext.Value;
             if (body.ModelProps != null)
                 settings.ModelProps = body.ModelProps
                     .Where(pair => !string.IsNullOrWhiteSpace(pair.Key))
@@ -585,6 +593,9 @@ namespace OpenLoop.Service.Web
             public int? AutoEvolveCooldownMinutes { get; set; }
             public int? AutoEvolvePerDay { get; set; }
             public bool? AutoIterate { get; set; }
+            public bool? EnableCollab { get; set; }
+            public int? CollabPollSeconds { get; set; }
+            public bool? CollabReuseContext { get; set; }
             public List<ProviderRequest> Providers { get; set; }
             public Dictionary<string, ModelProps> ModelProps { get; set; }
             public List<string> DisabledModels { get; set; }

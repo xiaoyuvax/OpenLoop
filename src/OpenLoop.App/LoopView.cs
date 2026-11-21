@@ -184,19 +184,34 @@ namespace OpenLoop.App
         /// <summary>
         /// ReadSession：只放开读范围内的会话（章程 §2 的读边界照样生效），
         /// 别的项目的会话只给标题，不给内容。
+        /// 协作打开时也覆盖同工作区的其他 Loop 会话（协作会话就是它们），与 Worker 的读法对齐。
         /// </summary>
         private string ReadSessions(string title, int offset, int count, WorkspaceScope read)
         {
             var sessions = Sessions?.Invoke() ?? [];
-            if (string.IsNullOrWhiteSpace(title)) return SessionMemoryTool.Listing(sessions);
+            var peers = _settings?.Invoke()?.EnableCollab == true
+                ? (CollabPeers?.Invoke() ?? []).Where(v => v != null && !ReferenceEquals(v, this)
+                    && Paths.Same(v.Workspace, _workspace)).ToList()
+                : [];
+
+            if (string.IsNullOrWhiteSpace(title))
+                return SessionMemoryTool.Listing(sessions)
+                       + (peers.Count > 0 ? "\n\n" + LoopCollabHost.Listing(peers) : "");
 
             var session = sessions.FirstOrDefault(s => string.Equals(s.Title, title, StringComparison.OrdinalIgnoreCase))
                 ?? sessions.FirstOrDefault(s => s.Id.StartsWith(title, StringComparison.OrdinalIgnoreCase));
-            if (session == null)
+            if (session != null)
+            {
+                if (!read.TryResolve(session.Workspace, out _, out _))
+                    return $"会话「{session.Title}」的工作区不在读范围，只给标题：{session.Workspace}";
+                return SessionMemoryTool.Describe(session, offset, count);
+            }
+
+            var peer = peers.FirstOrDefault(v => string.Equals(v.SessionId, title, StringComparison.OrdinalIgnoreCase))
+                       ?? peers.FirstOrDefault(v => v.SessionId.StartsWith(title, StringComparison.OrdinalIgnoreCase));
+            if (peer == null)
                 return $"没有找到会话：{title}\n" + SessionMemoryTool.Listing(sessions);
-            if (!read.TryResolve(session.Workspace, out _, out _))
-                return $"会话「{session.Title}」的工作区不在读范围，只给标题：{session.Workspace}";
-            return SessionMemoryTool.Describe(session, offset, count);
+            return LoopCollabHost.Describe(peer, offset, count);
         }
 
         /// <summary>/fork：把当前 Loop 对话复制进一个新 Loop 会话，并把新请求发出去。</summary>
@@ -218,6 +233,25 @@ namespace OpenLoop.App
         internal SessionState State { get; private set; }
 
         internal IReadOnlyList<ChatTurn> Turns => _book.Turns;
+
+        /// <summary>
+        /// 后台线程（协作监测）读轮次用：切回界面线程拍一份快照，避免与界面的增删撞车。
+        /// 视图已销毁或句柄还没建时返回空表，调用方按「没有轮次」处理即可。
+        /// </summary>
+        internal IReadOnlyList<ChatTurn> TurnSnapshot()
+        {
+            if (IsDisposed) return [];
+            if (!InvokeRequired) return _book.Turns.ToArray();
+            try
+            {
+                return (IReadOnlyList<ChatTurn>)Invoke(
+                    new Func<IReadOnlyList<ChatTurn>>(() => _book.Turns.ToArray()));
+            }
+            catch (Exception)
+            {
+                return [];
+            }
+        }
 
         internal void Initialize(string workspace, Func<AppSettings> settings,
             string sessionId = LoopRef.LegacyId)
@@ -376,11 +410,53 @@ namespace OpenLoop.App
             return immediate ? "已插队，本轮收尾后立刻发送" : "已入队，本轮结束后发送";
         }
 
-        /// <summary>外部投递（/complain）：空闲就立即处理，忙就排队等当前轮结束后按顺序处理。</summary>
+        /// <summary>
+        /// 外部投递（/complain、协作会话派活）：空闲就立即处理，忙就排队等当前轮结束后按顺序处理。
+        /// 可能在 agent 的工具线程上调用，这里负责切回界面线程。
+        /// </summary>
         internal void Post(string text)
         {
-            if (string.IsNullOrWhiteSpace(text)) return;
+            if (string.IsNullOrWhiteSpace(text) || IsDisposed) return;
+            if (InvokeRequired)
+            {
+                try { BeginInvoke(new Action(() => Post(text))); }
+                catch (InvalidOperationException) { }
+                return;
+            }
             _queue.Add(text);
+            _pending.Sync();
+            DrainQueue();
+        }
+
+        internal bool Running => _running;
+        internal string Title => LoopIndex.Title(_workspace, _sessionId);
+
+        /// <summary>协作会话的打开方式（宿主注入）：同工作区新起一个 Loop 会话并返回视图。</summary>
+        internal Func<CollabTask, LoopView> CollabOpen { get; set; }
+
+        /// <summary>同工作区的其他 Loop 会话（宿主注入）：协作监测与读取用。</summary>
+        internal Func<IReadOnlyList<LoopView>> CollabPeers { get; set; }
+
+        private LoopCollabHost _collab;
+
+        private LoopCollabHost Collab() => _collab ??= new LoopCollabHost(this, CollabOpen, CollabPeers);
+
+        /// <summary>
+        /// agent 自动插入一条消息（协作监测汇报）：与 Worker 侧 EnqueueAuto 同语义——
+        /// 进本会话队列并标 Auto，队列栏用特殊底色区分；已停止（暂停）时只排队，不自己动起来。
+        /// 监测循环在线程池线程上跑，这里负责切回界面线程。
+        /// </summary>
+        internal void EnqueueAuto(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text) || IsDisposed) return;
+            if (InvokeRequired)
+            {
+                try { BeginInvoke(new Action(() => EnqueueAuto(text))); }
+                catch (InvalidOperationException) { }
+                return;
+            }
+
+            _queue.Add(text, "collab", PendingMode.AfterTurn, auto: true);
             _pending.Sync();
             DrainQueue();
         }
@@ -413,6 +489,7 @@ namespace OpenLoop.App
             _userEpoch++;
             _closed = true;
             _cts?.Cancel();
+            _collab?.Stop();
             OpenLoop.Service.Web.SessionBoard.Leaving(BoardId(), LastWords(), remote: true);
             _sideBtw.Shutdown();
             CloseBrowserPage();
@@ -582,7 +659,11 @@ namespace OpenLoop.App
                             .Concat(ImageTools.For(_workspace, settings, _imageModel, saved))
                             // 内存会话优先：文件里的对话记录可能几十 MB，按轮读内存不受上限影响
                             .Concat([new SessionMemoryTool((title, offset, count) =>
-                                ReadSessions(title, offset, count, readScope))]),
+                                ReadSessions(title, offset, count, readScope))])
+                            // 协作：与 Worker 同一套工具，协作会话是同工作区的其他 Loop 会话。
+                            // Loop 自己已有 ReadSession（已扩到能读这些会话），不再重复注册同名工具。
+                            .Concat(CollabTools.For(settings.EnableCollab ? Collab() : null, _sessionId,
+                                includeReadSession: false)),
                         settings.WebFetchMode);
                     var registry = new ToolRegistry(loopTools.Tools.Concat(
                         [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));

@@ -84,7 +84,16 @@ namespace OpenLoop.Service.Worker
         public int Steps { get; set; }
 
         public List<WorkerTurn> Turns { get; set; } = [];
+
+        /// <summary>排队中的文本；与 <see cref="PendingAuto"/> 一一对应。</summary>
         public List<string> Pending { get; set; } = [];
+
+        /// <summary>true=这条是 agent 自动插入的（协作监测汇报），界面要用特殊底色与用户敲的区分。</summary>
+        public List<bool> PendingAuto { get; set; } = [];
+
+        /// <summary>发起方会话 id（协作会话才有）：它不隶属发起方，只记着是谁派的活。</summary>
+        public string Parent { get; set; }
+
         public List<WorkerPromptView> Prompts { get; set; } = [];
     }
 
@@ -106,7 +115,7 @@ namespace OpenLoop.Service.Worker
     /// Worker 会话宿主：拥有会话、队列与运行状态，不依赖界面。
     /// WinForms 与 Web 都只读取快照、调用方法；进程内用 <see cref="Changed"/>，跨进程用 revision 轮询。
     /// </summary>
-    public sealed class WorkerSessionHost
+    public sealed partial class WorkerSessionHost
     {
         public const string Idle = "idle";
         public const string Running = "running";
@@ -197,6 +206,8 @@ namespace OpenLoop.Service.Worker
                 && !string.Equals(e.Model, session.Model, StringComparison.OrdinalIgnoreCase));
 
             lock (_lock) _sessions[session.Id] = session;
+            // A 重启后会话是懒建的：上次登记的协作监测在这里接着跑
+            ResumeCollab(session.Id, session.Workspace);
             return snapshot(session);
         }
 
@@ -597,6 +608,8 @@ namespace OpenLoop.Service.Worker
                 Model = session.Model,
                 Effort = session.Effort,
                 SessionId = session.Id,
+                // 协作工具只在设置里打开时挂给会话：关掉后连工具名都看不见
+                Collab = session.Settings().EnableCollab ? this : null,
                 Tag = tag,
                 Text = text,
                 ImageModel = session.ImageModel,
@@ -937,7 +950,7 @@ namespace OpenLoop.Service.Worker
 
         private static List<string> MergeAttachments(List<PendingSend> batch)
             => batch.SelectMany(b => b.Attachments ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        private static WorkerSessionSnapshot snapshot(Session session) => new()
+        private WorkerSessionSnapshot snapshot(Session session) => new()
         {
             Id = session.Id,
             Workspace = session.Workspace,
@@ -974,6 +987,8 @@ namespace OpenLoop.Service.Worker
                 FinishReason = t.FinishReason
             }).ToList(),
             Pending = session.Pending.Select(p => p.Text).ToList(),
+            PendingAuto = session.Pending.Select(p => p.Auto).ToList(),
+            Parent = ParentOf(session.Id),
             Prompts = session.Prompts.Select(p => new WorkerPromptView
             {
                 Id = p.Id,
@@ -991,6 +1006,9 @@ namespace OpenLoop.Service.Worker
             public string Text { get; init; }
             public string Tag { get; init; }
             public bool Immediate { get; set; }
+
+            /// <summary>agent 自动插入（协作监测汇报等），不是用户敲的。</summary>
+            public bool Auto { get; init; }
             public string ImageModel { get; init; }
             public IReadOnlyList<string> Attachments { get; init; }
         }

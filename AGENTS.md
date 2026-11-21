@@ -60,6 +60,13 @@
 - **远程 API 测试须先经用户同意**：会调用真实模型/网关（产生费用）的操作，未经同意不得通过 UI、Puppet 或单测触发；纯本地测试（纯函数、控件状态、文件解析）不受限。
 - **测试会话要保留**：用 Puppet 造的会话、项目和临时工作区一律不删，留给用户自己查看；需要清理时先问。
 
+## 协作会话（发起方 / 协作）
+
+- 设置页「协作」打开后，Worker 与 Loop 会话都多三个工具：`CollabStart`（分解任务并起若干**同工作区、平级**的协作会话）、`CollabMonitor`（交出会话 id，开始后台轮询）、`ReadSession`（读协作会话的轮次与当前状态：进行中 / 已正常结束 / 异常结束及错误信息）。两侧语义一致：Worker 的协作会话是同工作区的其他 Worker 会话（A 侧落盘，A 重启后探活接管），Loop 的协作会话是同工作区的其他 Loop 会话（壳内视图，壳重启后由发起方重新 `CollabMonitor`）。
+- 发起方启动协作后不再自己动手，只做分解、监测与协调；协作会话不是子 agent，没有父子调用栈，只在同一工作区各干一段。
+- 监测汇报经 `WorkerSessionHost.EnqueueAuto` 作为仿用户消息插进发起方队列，`WorkerSessionSnapshot.PendingAuto` 标出哪几条是自动插入的；WinForms 队列栏与 Web 都用特殊底色 +「自动」标签区分。
+- 协作会话默认沿用发起方已完成的轮次（同模型才复用前缀缓存），也可由发起方用 `context` 另给上下文；轮询间隔见设置页「协作」（`CollabPollSeconds`）。全部会话结束或不可恢复地中止后监测自动停止，协作登记随 `.json` 落盘（A 重启后探活接管）。暂不支持跨工作区。
+
 ## 免费额度自愈（ConnMan）
 
 - 免费模型额度耗尽（`provider.free-limit` / 429 / 402，判据 `ServerNotice.IsQuotaFailure`）后，A 的失败轮收尾会调 `FreeLimitRecovery.TryStart`（`src\OpenLoop.Service\Worker\FreeLimitRecovery.cs`）：换时速网络节点 + 验证可用性这件事交给独立仓库 `..\ConnMan`，OpenLoop 只负责触发和收尾。

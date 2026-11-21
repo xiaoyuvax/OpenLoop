@@ -9,11 +9,22 @@ namespace OpenLoop.App
     public partial class PendingQueueView : UserControl
     {
         private PendingQueue _queue;
+        private IReadOnlyList<string> _agentNotes = [];
 
         public PendingQueueView()
         {
             InitializeComponent();
             _list.SizeChanged += (_, _) => FitRows();
+        }
+
+        /// <summary>
+        /// agent 自动插入的消息（协作监测汇报）：只在本机队列栏里显示，不归本机队列管，
+        /// 所以没有编辑/删除/立即按钮，也不参与发送。
+        /// </summary>
+        public void SetAgentNotes(IReadOnlyList<string> notes)
+        {
+            _agentNotes = notes ?? [];
+            Sync();
         }
 
         /// <summary>点了「编辑」：宿主把文本放回输入框，并把发送按钮改成「保存」。</summary>
@@ -49,14 +60,64 @@ namespace OpenLoop.App
 
             int count = _queue?.Count ?? 0;
             _lblCount.Text = $"待发送 {count}";
+            // agent 自动插入的排在前面：用户一眼看出哪些不是自己敲的
+            foreach (string note in _agentNotes)
+                _list.Controls.Add(CreateNoteRow(note));
             if (_queue != null)
                 foreach (var item in _queue.Items)
                     _list.Controls.Add(CreateRow(item));
 
             // 最多露出 4 行，其余滚动
-            Height = count == 0 ? 0 : Dip(30) + Math.Min(count, 4) * Dip(28) + Dip(6);
-            Visible = count > 0;
+            int rows = count + _agentNotes.Count;
+            Height = rows == 0 ? 0 : Dip(30) + Math.Min(rows, 4) * Dip(28) + Dip(6);
+            Visible = rows > 0;
             FitRows();
+        }
+
+        /// <summary>agent 自动插入的一行：特殊底色 + 「自动」标签，没有操作按钮。</summary>
+        private Control CreateNoteRow(string text)
+        {
+            var row = new TableLayoutPanel
+            {
+                ColumnCount = 2,
+                RowCount = 1,
+                Height = Dip(24),
+                Margin = new Padding(0, 0, 0, Dip(4)),
+                BackColor = UiStyle.AutoInsertBack,
+                Padding = new Padding(Dip(8), 0, Dip(8), 0)
+            };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            row.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            var tag = new AntdUI.Label
+            {
+                Text = "自动",
+                ForeColor = UiStyle.Accent,
+                Font = new Font("Segoe UI", 8F),
+                AutoSize = true,
+                Margin = new Padding(0, 0, Dip(6), 0),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            string line = (text ?? "").Replace("\r", " ").Replace("\n", " ");
+            var label = new AntdUI.Label
+            {
+                Dock = DockStyle.Fill,
+                AutoEllipsis = true,
+                TextMultiLine = false,
+                ShowTooltip = false,
+                Text = line,
+                ForeColor = UiStyle.Text,
+                Font = new Font("Segoe UI", 9F),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Margin = new Padding(0)
+            };
+            _tips.SetToolTip(label, line);
+
+            row.Controls.Add(tag, 0, 0);
+            row.Controls.Add(label, 1, 0);
+            return row;
         }
 
         private Control CreateRow(PendingItem item)
@@ -67,7 +128,8 @@ namespace OpenLoop.App
                 RowCount = 1,
                 Height = Dip(24),
                 Margin = new Padding(0, 0, 0, Dip(4)),
-                BackColor = UiStyle.Surface,
+                // agent 自动插入的（协作监测汇报）用特殊底色标出，用户敲的仍是普通底色
+                BackColor = item.Auto ? UiStyle.AutoInsertBack : UiStyle.Surface,
                 Padding = new Padding(Dip(8), 0, Dip(2), 0)
             };
             row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -93,6 +155,19 @@ namespace OpenLoop.App
             _tips.SetToolTip(mode, item.Immediate
                 ? "立即：插到下一步（当前轮在下一个 step 前收尾）"
                 : "等本轮：等这一轮返回（Ctrl+Enter 发送）");
+
+            // 自动插入的条目没有「立即/等本轮」的选择：位置上放「自动」标签，说明这条不是用户敲的
+            Control lead = item.Auto
+                ? new AntdUI.Label
+                {
+                    Text = "自动",
+                    ForeColor = UiStyle.Accent,
+                    Font = new Font("Segoe UI", 8F),
+                    AutoSize = true,
+                    Margin = new Padding(0, 0, Dip(6), 0),
+                    TextAlign = ContentAlignment.MiddleLeft
+                }
+                : mode;
 
             string line = item.Text.Length > 0 ? item.Text : "📎 附件";
             var text = new AntdUI.Label
@@ -140,7 +215,7 @@ namespace OpenLoop.App
             actions.Controls.Add(remove);
             actions.Controls.Add(edit);
 
-            row.Controls.Add(mode, 0, 0);
+            row.Controls.Add(lead, 0, 0);
             row.Controls.Add(text, 1, 0);
             row.Controls.Add(actions, 2, 0);
             return row;

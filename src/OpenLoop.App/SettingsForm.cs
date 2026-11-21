@@ -62,6 +62,9 @@ namespace OpenLoop.App
             _switchThinking.Checked = _source.ThinkingExpandedByDefault;
             _switchAutoEvolve.Checked = _source.AutoEvolve;
             _switchAutoIterate.Checked = _source.AutoIterate;
+            _switchEnableCollab.Checked = _source.EnableCollab;
+            _cboCollabPoll.SelectedValue = PollChoice(_source.CollabPollSeconds);
+            _switchCollabReuse.Checked = _source.CollabReuseContext;
             _filling = false;
 
             RefreshProviderCombo(_providers.FirstOrDefault());
@@ -721,6 +724,9 @@ namespace OpenLoop.App
                 MarkdownMaxChars = _source.MarkdownMaxChars,
                 AutoEvolve = _switchAutoEvolve.Checked,
                 AutoIterate = _switchAutoIterate.Checked,
+                EnableCollab = _switchEnableCollab.Checked,
+                CollabPollSeconds = _cboCollabPoll.SelectedValue is int poll ? poll : _source.CollabPollSeconds,
+                CollabReuseContext = _switchCollabReuse.Checked,
                 AutoEvolveRuns = _source.AutoEvolveRuns,
                 AutoEvolveCooldownMinutes = _source.AutoEvolveCooldownMinutes,
                 AutoEvolvePerDay = _source.AutoEvolvePerDay,
@@ -734,6 +740,16 @@ namespace OpenLoop.App
         }
 
         private void OnCancel(object sender, EventArgs e) => DialogResult = DialogResult.Cancel;
+
+        /// <summary>设置里的秒数落到下拉档位：没有正好相等的档就取最近的上一档。</summary>
+        private static int PollChoice(int seconds) => seconds switch
+        {
+            <= 10 => 10,
+            <= 30 => 30,
+            <= 60 => 60,
+            <= 120 => 120,
+            _ => 300
+        };
 
         /// <summary>点了「让 AI 帮我配置」时记下当前页；非空表示关掉设置页后由 MainForm 起一个 Loop 会话。</summary>
         public string AiConfigPage { get; private set; }

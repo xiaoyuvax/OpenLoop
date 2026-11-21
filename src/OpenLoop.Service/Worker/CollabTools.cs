@@ -39,17 +39,20 @@ namespace OpenLoop.Service.Worker
     /// <summary>发起方会话查协作会话当前状态的一行摘要：状态、步数、最近一步、结束原因。</summary>
     public static class CollabStatus
     {
+        /// <summary>状态词：界面与汇报共用同一套说法。</summary>
+        public static string StateText(string state) => state switch
+        {
+            WorkerSessionHost.Running => "运行中",
+            WorkerSessionHost.Done => "已正常结束",
+            WorkerSessionHost.Interrupted => "已停止/异常结束",
+            _ => "空闲（尚未开跑）"
+        };
+
         public static string Line(WorkerSessionSnapshot snapshot)
         {
             if (snapshot == null) return "（会话已不存在）";
 
-            string state = snapshot.State switch
-            {
-                WorkerSessionHost.Running => "运行中",
-                WorkerSessionHost.Done => "已正常结束",
-                WorkerSessionHost.Interrupted => "已停止/异常结束",
-                _ => "空闲（尚未开跑）"
-            };
+            string state = StateText(snapshot.State);
 
             string text = $"- {snapshot.Id} {state} · {snapshot.Steps} 步";
             if (snapshot.Cost is { } cost) text += $" · 成本 {cost:0.0000}";
@@ -74,10 +77,13 @@ namespace OpenLoop.Service.Worker
             return text;
         }
 
-        /// <summary>状态签名：状态 + 轮数 + 步数都变了才算「有新进展」，避免每轮轮询都往队列里塞同一条。</summary>
+        /// <summary>
+        /// 状态签名：状态 + 轮数 + 步数都变了才算「有新进展」，避免每轮轮询都往队列里塞同一条。
+        /// 不用 Revision：流式增量会一直改它，等于每个轮询周期都汇报一次。
+        /// </summary>
         public static string Signature(IEnumerable<WorkerSessionSnapshot> snapshots)
             => string.Join("|", (snapshots ?? []).Select(s =>
-                s == null ? "-" : $"{s.Id}:{s.State}:{s.Turns?.Count ?? 0}:{s.Steps}:{s.Revision}"));
+                s == null ? "-" : $"{s.Id}:{s.State}:{s.Turns?.Count ?? 0}:{s.Steps}"));
 
         private static string LastLine(string text)
         {
@@ -213,17 +219,16 @@ namespace OpenLoop.Service.Worker
 
     public static class CollabTools
     {
-        /// <summary>没有发起方会话（会话 id 为空）时不提供协作工具：脱离会话的协作没有监测对象。</summary>
-        public static IEnumerable<ITool> For(ICollabHost host, string initiatorId)
+        /// <summary>
+        /// 没有发起方会话（会话 id 为空）时不提供协作工具：脱离会话的协作没有监测对象。
+        /// 宿主自己已有 ReadSession（Loop 的会话读取工具）时传 includeReadSession=false，避免同名工具出现两次。
+        /// </summary>
+        public static IEnumerable<ITool> For(ICollabHost host, string initiatorId, bool includeReadSession = true)
         {
             if (host == null || string.IsNullOrWhiteSpace(initiatorId)) return [];
-            return
-            [
-                new CollabStartTool(host, initiatorId),
-                new CollabMonitorTool(host, initiatorId),
-                // ReadSession 只在协作场景放开给 Worker：平时 Worker 没有理由翻别人的会话
-                new CollabReadTool(host, initiatorId)
-            ];
+            var tools = new List<ITool> { new CollabStartTool(host, initiatorId), new CollabMonitorTool(host, initiatorId) };
+            if (includeReadSession) tools.Add(new CollabReadTool(host, initiatorId));
+            return tools;
         }
     }
 
@@ -247,7 +252,8 @@ namespace OpenLoop.Service.Worker
 
         public string Name => "CollabStart";
         public string Description =>
-            "把一个任务分解成互相独立的分工，各开一个同工作区的协作会话（平级会话，不是子 agent，不共享你的上下文）。" +
+            "把一个任务分解成互相独立的分工，各开一个同工作区的协作会话（平级会话，不是子 agent）。" +
+            "协作会话默认带上你已完成的对话（同模型才复用前缀缓存），也可以用 context 另给一份背景。" +
             "你自己不再执行任务，只做分解、监测与协调；启动后调用 CollabMonitor 交出会话 id 开始监测。";
         public string ParamsSchema =>
             "tasks: array（必需；每项 {title?: string, prompt: string 该会话要独立完成的活, " +
@@ -281,15 +287,26 @@ namespace OpenLoop.Service.Worker
             if (tasks.Count == 0)
                 return Task.FromResult(AgentToolResult.Failure("tasks 里没有有效任务（每项至少要有 prompt）"));
 
+            // 一次起太多会话会同时烧掉多份额度：超出上限就截断，并在结果里说清楚
+            string note = "";
+            if (tasks.Count > MaxTasks)
+            {
+                note = $"（一次最多起 {MaxTasks} 个协作会话，已忽略后面 {tasks.Count - MaxTasks} 项；剩下的请下一批再起）\n";
+                tasks = tasks.Take(MaxTasks).ToList();
+            }
+
             try
             {
-                return Task.FromResult(AgentToolResult.Success(_host.StartCollab(_initiatorId, tasks)));
+                return Task.FromResult(AgentToolResult.Success(note + _host.StartCollab(_initiatorId, tasks)));
             }
             catch (Exception ex)
             {
                 return Task.FromResult(AgentToolResult.Failure("启动协作会话失败：" + ex.Message));
             }
         }
+
+        /// <summary>单次启动的协作会话上限：并发额度是有限的，模型给的清单可能很长。</summary>
+        private const int MaxTasks = 8;
     }
 
     /// <summary>把协作会话交给后台监测：状态按轮询间隔作为仿用户消息插进发起方的队列。</summary>

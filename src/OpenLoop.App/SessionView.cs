@@ -1654,6 +1654,14 @@ namespace OpenLoop.App
             if (!string.IsNullOrEmpty(snapshot.TraceDirectory)) SetTrace(snapshot.Workspace, snapshot.TraceDirectory);
             if (snapshot.ActivationVersion > 0)
                 _lblDef.Text = $"def: v{snapshot.ActivationVersion} · {snapshot.FeatureCount} {Localization.T("Features")} · {snapshot.RuleCount} {Localization.T("Rules")}";
+
+            // A 队列里 agent 自动插入的消息（协作监测汇报）：只在本机队列栏显示，不参与本机发送
+            var autoNotes = new List<string>();
+            var pendingTexts = snapshot.Pending ?? [];
+            var pendingAuto = snapshot.PendingAuto ?? [];
+            for (int i = 0; i < pendingTexts.Count; i++)
+                if (i < pendingAuto.Count && pendingAuto[i]) autoNotes.Add(pendingTexts[i]);
+            _pending.SetAgentNotes(autoNotes);
         }
 
         /// <summary>

@@ -659,6 +659,24 @@ namespace OpenLoop.App
             view.ForkRequested += ForkLoop;
             view.NewSessionRequested += NewLoopSession;
             view.ComplaintRequested += text => PostComplaint(target, text);
+            // 协作：协作会话是同工作区、平级的其他 Loop 会话（不是子 agent）。
+            // 这两条委托会在 agent 的工具线程上被调用（CollabStart/CollabMonitor 都在后台轮里跑），
+            // 建会话、列举会话都要回到界面线程，否则会跨线程碰控件与会话表。
+            view.CollabOpen = task => OnUi(() =>
+            {
+                string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
+                // 沿用上下文：把发起方已完成的轮次写到新会话名下，前缀一致才能复用服务端缓存。
+                // Loop 会话跟随设置里的模型，模型对不上时拷过去只有坏处，不拷。
+                if (_settings.CollabReuseContext && string.Equals(view.Model, _settings.Model,
+                        StringComparison.OrdinalIgnoreCase))
+                    ChatStore.Save(target, view.Turns.Where(t => !t.Streaming), id, view.Model,
+                        _settings.ReasoningEffort);
+                return EnsureLoop(target, select: false, sessionId: id, title: task.Title);
+            });
+            view.CollabPeers = () => OnUi(() => _loops.Values
+                .Select(e => e.View)
+                .Where(v => v != null && Paths.Same(v.Workspace, target))
+                .ToList());
             view.Initialize(target, () => _settings, id);
             var page = new AntdUI.TabPage
             {
@@ -691,6 +709,10 @@ namespace OpenLoop.App
 
         private static string LoopKey(string workspace, string sessionId)
             => Paths.Normalize(workspace) + "|" + sessionId;
+
+        /// <summary>后台线程（agent 工具线程）要碰界面时切回界面线程；已在界面线程就直接执行。</summary>
+        private T OnUi<T>(Func<T> work)
+            => InvokeRequired ? (T)Invoke(work) : work();
 
         private static string LoopTabText(string workspace, string sessionId)
         {

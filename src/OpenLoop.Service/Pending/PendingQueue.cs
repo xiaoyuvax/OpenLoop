@@ -22,6 +22,9 @@ namespace OpenLoop.Service.Pending
 
         public PendingMode Mode { get; set; } = PendingMode.AfterTurn;
 
+        /// <summary>agent 自动插入（协作监测汇报），不是用户敲的：队列里用特殊底色标出。</summary>
+        public bool Auto { get; set; }
+
         public bool Immediate => Mode == PendingMode.NextStep;
     }
 
@@ -64,14 +67,17 @@ namespace OpenLoop.Service.Pending
         public bool AnyImmediate => _items.Exists(i => i.Immediate && !_held.Contains(i));
 
         public PendingItem Add(string text, string tag = "task", PendingMode mode = PendingMode.AfterTurn,
-            IEnumerable<string> attachments = null)
+            IEnumerable<string> attachments = null, bool auto = false)
         {
             var files = (attachments ?? [])
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             if (string.IsNullOrWhiteSpace(text) && files.Count == 0) return null;
-            var item = new PendingItem { Text = text?.Trim() ?? "", Tag = tag ?? "task", Mode = mode, Attachments = files };
+            var item = new PendingItem
+            {
+                Text = text?.Trim() ?? "", Tag = tag ?? "task", Mode = mode, Attachments = files, Auto = auto
+            };
             _items.Add(item);
             Changed?.Invoke();
             return item;
