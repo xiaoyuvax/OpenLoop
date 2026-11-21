@@ -189,6 +189,10 @@ namespace OpenLoop.Service.Worker
                 if (string.IsNullOrWhiteSpace(session.Effort)) session.Effort = last?.Effort ?? "";
             }
 
+            // 网页/API 新建时没带模型：最近用过的第一条，与下拉置顶一致
+            if (string.IsNullOrWhiteSpace(session.Model))
+                session.Model = OpenLoop.Service.Models.ModelCatalog.DefaultModel(session.Settings());
+
             session.ModelChanged = entries.Any(e => !string.IsNullOrWhiteSpace(e?.Model)
                 && !string.Equals(e.Model, session.Model, StringComparison.OrdinalIgnoreCase));
 
@@ -844,6 +848,13 @@ namespace OpenLoop.Service.Worker
                         .Select(m => new ChatMessageEntry { Role = m.Role, Content = m.Content })
                         .ToList()
                 }).ToList();
+            }
+
+            if (entries.Count == 0)
+            {
+                // 撤回全部轮次后这条会话就没有对话了：别留文件，也别再登进索引
+                ChatHistory.Delete(workspace, id);
+                return;
             }
 
             ChatHistory.Write(workspace, id, entries);

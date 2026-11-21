@@ -26,10 +26,11 @@ function baseName(path) {
 }
 
 const stateDot = state => ({
-  running: '#1677ff', done: '#52c41a', interrupted: '#faad14', idle: '#bfbfbf'
+  running: '#1677ff', done: '#52c41a', interrupted: '#ff4d4f', idle: '#bfbfbf'
 }[state] || '#bfbfbf');
 
 const Dot = ({ state }) => h('span', {
+  className: state === 'running' ? 'ol-dot-running' : undefined,
   style: {
     display: 'inline-block', width: 8, height: 8, borderRadius: 4,
     background: stateDot(state), marginRight: 6, flex: 'none'

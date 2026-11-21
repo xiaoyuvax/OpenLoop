@@ -39,7 +39,8 @@ namespace OpenLoop.App
                 !_projects.Any(p => Paths.Same(p, defaultWorkspace)))
                 _projects.Insert(0, defaultWorkspace);
 
-            _model = settings?.Model ?? "";
+            // 新会话的默认模型：最近用过的第一条，其次设置里上次选的
+            _model = ModelCatalog.DefaultModel(settings);
             _effort = settings?.ReasoningEffort ?? "";
             _onlyFree = settings?.OnlyFreeModels ?? true;
             _project = _projects.FirstOrDefault(p => Paths.Same(p, defaultWorkspace)) ??

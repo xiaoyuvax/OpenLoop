@@ -386,6 +386,25 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public async Task Truncating_every_turn_removes_the_saved_session()
+        {
+            var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult
+            {
+                Outcome = "ok",
+                FinalAnswer = "done"
+            }));
+            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "sess03");
+            host.Send(session.Id, "task", "hi");
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+            Assert.Single(ChatHistory.Index());
+
+            Assert.True(host.Truncate(session.Id, 0));
+
+            Assert.Empty(ChatHistory.Index());
+            Assert.False(File.Exists(ChatHistory.PathFor("C:/work", "sess03")));
+        }
+
+        [Fact]
         public async Task Persisting_a_turn_indexes_the_session_so_the_shell_can_list_it()
         {
             var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult

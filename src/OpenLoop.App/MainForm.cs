@@ -22,6 +22,9 @@ namespace OpenLoop.App
         private readonly List<Session> _sessions = new();
         /// <summary>定时把 A 那边（API / 网页 / 别的 agent 建的）会话并进界面。</summary>
         private readonly System.Windows.Forms.Timer _workerSync = new() { Interval = 3000 };
+        /// <summary>运行中标签页图标的呼吸动画：没有运行中的页就停。</summary>
+        private readonly System.Windows.Forms.Timer _tabPulse = new() { Interval = 100 };
+        private int _tabPulsePhase;
         private bool _syncingRemote;
         private AppSettings _settings = new();
         private bool _menuBusy;
@@ -43,6 +46,7 @@ namespace OpenLoop.App
             SurveyStore.Answered += OnSurveyAnswered;
             InitializeComponent();
             Icon = UiIcons.App;
+            _tabPulse.Tick += OnTabPulseTick;
         }
 
         [PuppetIgnore] string IPuppet.AgentAccessKey => PuppetKeyVault.GlobalKey;
@@ -641,6 +645,7 @@ namespace OpenLoop.App
                 if (select) _tabs.SelectTab(existing.Page);
                 _loopView = existing.View;
                 _loopPage = existing.Page;
+                UpdateTabIcon(existing.Page);
                 return existing.View;
             }
 
@@ -666,7 +671,7 @@ namespace OpenLoop.App
             page.Controls.Add(view);
             view.StateChanged += v =>
             {
-                page.IconSvg = UiIcons.Of(UiIcons.Loop, LoopStateColor(v.State));
+                UpdateTabIcon(page);
                 // 标签页关掉后只剩会话列表能看状态：[Loop] 页的行跟着刷新
                 RefreshOverview();
             };
@@ -709,6 +714,7 @@ namespace OpenLoop.App
             if (_puppets.TryGetValue(key, out var existing))
             {
                 _tabs.SelectTab(existing.Page);
+                UpdateTabIcon(existing.Page);
                 return existing.View;
             }
 
@@ -718,13 +724,14 @@ namespace OpenLoop.App
             var page = new AntdUI.TabPage
             {
                 Text = "Puppet · " + (string.IsNullOrWhiteSpace(agentId) ? host : agentId),
-                IconSvg = UiIcons.Of(UiIcons.List, UiStyle.Puppet),
+                IconSvg = UiIcons.Of(UiIcons.List, UiStyle.Muted),
                 ReadOnly = false,
                 Tag = view,
                 Dock = DockStyle.Fill
             };
             page.Controls.Add(view);
             _tabs.Pages.Add(page);
+            view.StateChanged += v => UpdateTabIcon(page);
             view.Initialize(host, agentId);
             _tabs.SelectTab(page);
             view.Reload();
@@ -1308,6 +1315,8 @@ namespace OpenLoop.App
             _closing = true;
             _workerSync.Stop();
             _workerSync.Dispose();
+            _tabPulse.Stop();
+            _tabPulse.Dispose();
             SaveWindowBounds();
             foreach (var session in _sessions)
             {
@@ -1593,6 +1602,7 @@ namespace OpenLoop.App
             _lastSession = session;
             EnsureView(session);
             if (session.Page.Parent == null) _tabs.Pages.Add(session.Page);
+            UpdateTabIcon(session.Page);
             _tabs.SelectTab(session.Page);
             RefreshOverview();
             _overview.FocusProject(session.Workspace);
@@ -1971,7 +1981,7 @@ namespace OpenLoop.App
             // 有新活动就浮到列表顶部（启动时的状态校正也会走到这里，代价只是多刷新一次）
             session.LastActiveAt = DateTime.Now;
             if (session.Page != null)
-                session.Page.IconSvg = UiIcons.Dot(StateColor(session.State));
+                UpdateTabIcon(session.Page);
             RefreshOverview();
         }
 
@@ -2005,17 +2015,63 @@ namespace OpenLoop.App
 
         private static Color StateColor(SessionState state) => state switch
         {
-            SessionState.Running => UiStyle.Success,
+            SessionState.Done => UiStyle.Success,
             SessionState.Interrupted => UiStyle.Error,
             _ => UiStyle.Muted
         };
 
-        private static Color LoopStateColor(SessionState state) => state switch
+        /// <summary>
+        /// 标签页图标与会话列表的圆点同义：运行中呼吸、正常停止绿色、中断红色、过往（本次启动前）灰色。
+        /// Loop / Puppet 用各自的特征图标，运行中同样是呼吸动画。
+        /// </summary>
+        private void UpdateTabIcon(AntdUI.TabPage page)
         {
-            SessionState.Running => UiStyle.Loop,
-            SessionState.Interrupted => UiStyle.Error,
-            _ => UiStyle.Muted
+            if (page == null) return;
+            switch (page.Tag)
+            {
+                case Session session:
+                    page.IconSvg = session.State == SessionState.Running
+                        ? UiIcons.Breath(UiIcons.DotShape, UiStyle.Accent, _tabPulsePhase)
+                        : UiIcons.Dot(StateColor(session.State));
+                    break;
+                case LoopView loop:
+                    page.IconSvg = FeatureIcon(UiIcons.Loop, UiStyle.Loop, loop.State);
+                    break;
+                case PuppetView puppet:
+                    page.IconSvg = FeatureIcon(UiIcons.List, UiStyle.Puppet, puppet.State);
+                    break;
+            }
+            if (IsRunningTab(page) && !_tabPulse.Enabled) _tabPulse.Start();
+        }
+
+        private string FeatureIcon(string template, Color color, SessionState state) => state switch
+        {
+            SessionState.Running => UiIcons.Breath(template, color, _tabPulsePhase),
+            SessionState.Done => UiIcons.Of(template, color),
+            SessionState.Interrupted => UiIcons.Of(template, UiStyle.Error),
+            _ => UiIcons.Of(template, UiStyle.Muted)
         };
+
+        private static bool IsRunningTab(AntdUI.TabPage page) => page.Tag switch
+        {
+            Session session => session.State == SessionState.Running,
+            LoopView loop => loop.State == SessionState.Running,
+            PuppetView puppet => puppet.State == SessionState.Running,
+            _ => false
+        };
+
+        private void OnTabPulseTick(object sender, EventArgs e)
+        {
+            _tabPulsePhase++;
+            bool any = false;
+            foreach (var page in _tabs.Pages)
+            {
+                if (!IsRunningTab(page)) continue;
+                any = true;
+                UpdateTabIcon(page);
+            }
+            if (!any) _tabPulse.Stop();
+        }
 
         private void OpenNewSessionTab(string workspace)
         {

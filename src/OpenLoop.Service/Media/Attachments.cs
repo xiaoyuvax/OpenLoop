@@ -66,11 +66,11 @@ namespace OpenLoop.Service.Media
             error = CheckSize(decoded.Select(f => (f.Name, (long)f.Bytes.Length)));
             if (error != null) return null;
 
-            string dir = Prepare(workspace, sessionId, out string stamp);
+            string dir = Prepare(workspace, sessionId);
             var saved = new List<string>();
             foreach (var file in decoded)
             {
-                string path = Unique(Path.Combine(dir, stamp + "_" + file.Name));
+                string path = Unique(Path.Combine(dir, file.Name));
                 File.WriteAllBytes(path, file.Bytes);
                 saved.Add(path);
             }
@@ -111,11 +111,11 @@ namespace OpenLoop.Service.Media
 
             try
             {
-                string dir = Prepare(workspace, sessionId, out string stamp);
+                string dir = Prepare(workspace, sessionId);
                 var saved = new List<string>();
                 foreach (var info in infos)
                 {
-                    string path = Unique(Path.Combine(dir, stamp + "_" + Safe(info.Name, "file")));
+                    string path = Unique(Path.Combine(dir, Safe(info.Name, "file")));
                     File.Copy(info.FullName, path);
                     saved.Add(path);
                 }
@@ -128,12 +128,11 @@ namespace OpenLoop.Service.Media
             }
         }
 
-        private static string Prepare(string workspace, string sessionId, out string stamp)
+        private static string Prepare(string workspace, string sessionId)
         {
             string dir = Path.Combine(workspace, ".openloop", "tmp", "attachments",
                 Safe(sessionId, "session"));
             Directory.CreateDirectory(dir);
-            stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             return dir;
         }
 

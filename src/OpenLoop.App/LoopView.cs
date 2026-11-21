@@ -265,7 +265,8 @@ namespace OpenLoop.App
 
             _book.ReplaceAll(ChatStore.Load(_workspace, _sessionId), null);
             ChatStore.PruneCold(_workspace, _sessionId, _model, _book.Turns);
-            LoopIndex.Touch(_workspace, _sessionId, _book.Turns.LastOrDefault()?.ToolStepCount);
+            if (_book.Turns.Count > 0)
+                LoopIndex.Touch(_workspace, _sessionId, _book.Turns.LastOrDefault()?.ToolStepCount);
             _chat.PlaceholderText = Localization.T("NoMessages");
             _chat.UndoRequested += OnChatUndo;
             _chat.CopyRequested += OnChatCopy;
@@ -443,6 +444,13 @@ namespace OpenLoop.App
         /// <summary>对话正文按「工作区|会话 id」存；顺带把项目记进 Loop 索引，供 [Loop] 页列出。</summary>
         private void SaveLoopChat()
         {
+            // 一句都没聊过：关窗不该把空会话留在列表里
+            if (_book.Turns.Count == 0)
+            {
+                ChatStore.Delete(_workspace, _sessionId);
+                LoopIndex.Remove(_workspace, _sessionId);
+                return;
+            }
             ChatStore.Save(_workspace, _book.Turns, _sessionId, _model);
             LoopIndex.Touch(_workspace, _sessionId, _book.Turns.LastOrDefault()?.ToolStepCount);
         }

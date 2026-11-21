@@ -43,6 +43,29 @@ namespace OpenLoop.Service.Models
             return builtin > 0 ? builtin : Core.Agent.AgentContext.DefaultContextLimit;
         }
 
+        /// <summary>
+        /// 新会话的默认模型：最近用过的第一条，其次设置里上次选的，最后才是列表第一条。
+        /// available 非空时只在其中挑（界面已按免费/提供商过滤后的可见模型）。
+        /// </summary>
+        public static string DefaultModel(AppSettings settings, IEnumerable<string> available = null)
+        {
+            var ids = available?.Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+
+            foreach (string recent in settings?.RecentModels ?? [])
+            {
+                string id = recent?.Trim();
+                if (string.IsNullOrEmpty(id)) continue;
+                if (ids == null) return id;
+                if (ids.Contains(id, StringComparer.OrdinalIgnoreCase)) return id;
+            }
+
+            string saved = settings?.Model?.Trim();
+            if (!string.IsNullOrEmpty(saved) && (ids == null || ids.Contains(saved, StringComparer.OrdinalIgnoreCase)))
+                return saved;
+
+            return ids is { Count: > 0 } ? ids[0] : "";
+        }
+
         private static ModelInfo Exact(string id)
             => Items.FirstOrDefault(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase))
                ?? OpenCodeHub.Models.FirstOrDefault(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase));

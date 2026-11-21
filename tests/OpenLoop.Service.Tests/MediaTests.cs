@@ -61,6 +61,10 @@ namespace OpenLoop.Service.Tests
                 var saved = Attachments.SaveFiles(Path.Combine(root, "ws"), "s1", [source], 1, out string error);
                 Assert.Null(error);
                 Assert.Equal(1024, new FileInfo(Assert.Single(saved)).Length);
+                Assert.Equal("clip.mp4", Path.GetFileName(Assert.Single(saved)));
+
+                var again = Attachments.SaveFiles(Path.Combine(root, "ws"), "s1", [source], 1, out error);
+                Assert.Equal("clip_1.mp4", Path.GetFileName(Assert.Single(again)));
 
                 Assert.Null(Attachments.SaveFiles(Path.Combine(root, "ws"), "s1", [source, source], 1, out error));
                 Assert.Contains("最多 1 个", error);

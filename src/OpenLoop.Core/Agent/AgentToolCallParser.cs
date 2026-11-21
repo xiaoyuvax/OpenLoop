@@ -38,6 +38,9 @@ namespace OpenLoop.Core.Agent
 
             string text = modelOutput.Replace("\r\n", "\n");
 
+            // 回答里用行内代码引用协议（`<invoke name="X">`）是讲解，不是调用
+            if (ProtocolOnlyQuoted(text)) return false;
+
             // 1) 优先：每个 marker 之后的第一个 JSON 对象（容忍跨行与尾随文字）
             int searchFrom = 0;
             while (true)
@@ -189,6 +192,7 @@ namespace OpenLoop.Core.Agent
         {
             if (string.IsNullOrWhiteSpace(modelOutput)) return [];
             string text = modelOutput.Replace("\r\n", "\n");
+            if (ProtocolOnlyQuoted(text)) return [];
             var calls = new List<AgentToolCall>();
 
             int searchFrom = 0;
@@ -417,6 +421,23 @@ namespace OpenLoop.Core.Agent
             return InlineCodeRegex.Replace(FencedCodeRegex.Replace(text, " "), " ");
         }
 
+        /// <summary>
+        /// 整段里的协议片段是否都写在行内代码里（回答中引用协议示例）。实测：正文写
+        /// <c>`&lt;invoke name="X"&gt;`</c> 讲解协议，被当成真实调用派发（「未知工具：X」）。
+        /// 只剥单个反引号片段，围栏代码块不剥（模型常把真实调用包在围栏里）。
+        /// shortcut: 正文里既有引用又有真实调用时按原文解析（可能先命中引用），真实调用整体被行内代码
+        /// 包住时也不再执行；两者都罕见，按「代码=引用」的既有约定处理。
+        /// </summary>
+        private static bool ProtocolOnlyQuoted(string text)
+        {
+            if (!text.Contains('`')) return false;
+            if (!ProtocolFragmentRegex.IsMatch(text)) return false;
+            return !ProtocolFragmentRegex.IsMatch(InlineCodeOnlyRegex.Replace(text, " "));
+        }
+
+        private static readonly Regex InlineCodeOnlyRegex = new(
+            @"(?<!`)`[^`\r\n]+`(?!`)", RegexOptions.Compiled);
+
         private static readonly Regex FencedCodeRegex = new(
             @"```.*?(```|$)", RegexOptions.Compiled | RegexOptions.Singleline);
 
@@ -514,7 +535,7 @@ namespace OpenLoop.Core.Agent
         /// 装饰可能是竖线、命名空间词（dsml/antml/anthropic/deepseek）或两者的组合，逐家列举追不上。
         /// </summary>
         private static readonly Regex ProtocolFragmentRegex = new(
-            @"<\s*/?\s*(?:[|｜▁:：\s]|dsml|antml|anthropic|deepseek)*(?:DSML|tool[▁_\s-]?calls?|invoke|parameter|function|工具调用|函数调用)\b" +
+            @"<\s*/?\s*(?:[|｜▁:：\s]|dsml|antml|anthropic|deepseek|｜DSML｜)*(?:DSML|tool[▁_\s-]?calls?|invoke|parameter|function|工具调用|函数调用)\b" +
             @"|<\s*/?\s*[|｜][^<>]{0,40}>" +   // 任意 <|token|>（python_tag / eot_id / im_start …）：名字不枚举
             @"|\[\s*tool[_\s-]?calls?\s*\]" +  // Mistral 系 [TOOL_CALLS]：没有尖括号，同样不能当正文
             @"|\btool-call\s*[:：]",

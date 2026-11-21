@@ -22,6 +22,8 @@ namespace OpenLoop.App
         private string _signature = "";
         private bool _loading;
         private bool _closed;
+        /// <summary>本次启动后活跃过：停下后图标保持特征色，与启动前的历史（灰色）区分。</summary>
+        private bool _wasLive;
 
         public PuppetView()
         {
@@ -33,6 +35,10 @@ namespace OpenLoop.App
 
         internal string Host => _host;
         internal string Agent => _agent;
+
+        /// <summary>留言板会话是否还在活跃（与 [Puppet] 列表的 Live 同源）。</summary>
+        internal SessionState State { get; private set; } = SessionState.Idle;
+        internal event Action<PuppetView> StateChanged;
 
         internal void Initialize(string host, string agentId)
         {
@@ -70,11 +76,16 @@ namespace OpenLoop.App
             {
                 var messages = PuppetBoard.Chat(host, agent);
                 string hosts = PuppetBoard.HostsText();
+                bool live = PuppetBoard.Sessions()
+                    .Any(s => s.Live && string.Equals(s.Host, host, StringComparison.Ordinal));
                 RunOnUi(() =>
                 {
                     _loading = false;
                     if (_closed || IsDisposed) return;
                     Apply(messages, hosts);
+                    if (live) _wasLive = true;
+                    SetState(live ? SessionState.Running
+                        : _wasLive ? SessionState.Done : SessionState.Idle);
                 });
             });
         }
@@ -88,6 +99,13 @@ namespace OpenLoop.App
             _signature = signature;
             _book.ReplaceAll(messages.Select(ToTurn), null);
             if (first || messages.Count > 0) _chat.ScrollToEnd();
+        }
+
+        private void SetState(SessionState state)
+        {
+            if (State == state) return;
+            State = state;
+            StateChanged?.Invoke(this);
         }
 
         private static ChatTurn ToTurn(PuppetMessage message)

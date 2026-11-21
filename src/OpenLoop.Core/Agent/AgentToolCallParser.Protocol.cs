@@ -157,7 +157,12 @@ namespace OpenLoop.Core.Agent
                     if (nextParam.Success) valueEnd = nextParam.Index;
                     if (nextBoundary.Success && nextBoundary.Index < valueEnd) valueEnd = nextBoundary.Index;
 
-                    args[key] = ConvertValue(text[valueStart..valueEnd].Trim());
+                    object value = ConvertValue(text[valueStart..valueEnd].Trim());
+                    if (IsToolParam(key, tool))
+                    {
+                        if (value is string name && string.IsNullOrEmpty(tool)) tool = name;
+                    }
+                    else args[key] = value;
                     cursor = valueEnd;
                 }
 
@@ -166,7 +171,48 @@ namespace OpenLoop.Core.Agent
 
                 search = blockEnd > head.Index ? blockEnd : head.Index + head.Length;
             }
+
+            if (calls.Count == 0) ParseHeadlessParams(text, calls);
             return calls;
+        }
+
+        /// <summary>
+        /// 参数名是不是工具名：<c>tool</c> 永远算；<c>name</c>/<c>function</c> 只在 invoke 头没给名字时算
+        /// （<c>ReadSkill</c> 这类工具本身就有 name 参数，不能一律吞掉）。
+        /// </summary>
+        private static bool IsToolParam(string key, string tool) =>
+            key != null && (key.Equals("tool", StringComparison.OrdinalIgnoreCase)
+                            || (string.IsNullOrEmpty(tool)
+                                && (key.Equals("name", StringComparison.OrdinalIgnoreCase)
+                                    || key.Equals("function", StringComparison.OrdinalIgnoreCase))));
+
+        /// <summary>
+        /// 网关会把 <c>&lt;invoke name="X"&gt;</c> 头整个丢掉，只留 <c>&lt;calls&gt;</c> 里的一串参数，
+        /// 工具名藏在 <c>&lt;parameter name="tool"&gt;</c> 中（实测 a2a/deepseek：缺头后整轮判成格式损坏）。
+        /// 参数整段按一条调用还原，参数名与值语义不变。
+        /// </summary>
+        private static void ParseHeadlessParams(string text, List<AgentToolCall> calls)
+        {
+            string tool = null;
+            var args = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (Match param in ParamTagRegex.Matches(text))
+            {
+                string key = AttrValue(param.Groups["attrs"].Value);
+                if (string.IsNullOrEmpty(key)) continue;
+                int valueStart = param.Index + param.Length;
+                var next = ParamTagRegex.Match(text, valueStart);
+                int valueEnd = next.Success ? next.Index : text.Length;
+
+                object value = ConvertValue(text[valueStart..valueEnd].Trim());
+                if (IsToolParam(key, tool))
+                {
+                    if (value is string name && string.IsNullOrEmpty(tool)) tool = name;
+                }
+                else args[key] = value;
+            }
+
+            if (string.IsNullOrEmpty(tool) || !NormalizeWrappedArgs(args)) return;
+            calls.Add(new AgentToolCall { Tool = tool, Args = args });
         }
 
         /// <summary>标签属性表里的 name 值（双引号 / 单引号 / 裸值）。</summary>

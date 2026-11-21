@@ -24,6 +24,8 @@ namespace OpenLoop.App
         private string _project = "";
         private bool _ready;
         private bool _building;
+        /// <summary>本次启动后活跃过的留言板：停下后显示「正常停止」，启动前的历史仍是灰色。</summary>
+        private readonly HashSet<string> _puppetLive = new(StringComparer.Ordinal);
 
         /// <summary>上一次真正重建的项目菜单与表格行；相同就不动控件（切标签会连续触发两次刷新）。</summary>
         private List<string> _builtProjects = [];
@@ -162,6 +164,7 @@ namespace OpenLoop.App
                 {
                     string title = string.IsNullOrWhiteSpace(s.LastText) ? "" : OneLine(s.LastText);
                     if (q.Length > 0 && !(s.Host + " " + title).Contains(q, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (s.Live) _puppetLive.Add(s.Host);
                     _rows.Add(new Session
                     {
                         Id = "puppet:" + s.Host + "|" + s.Id,
@@ -170,7 +173,8 @@ namespace OpenLoop.App
                         CustomTitle = title,
                         StartedAt = s.LastAt,
                         LastActiveAt = s.LastAt,
-                        State = s.Live ? SessionState.Running : SessionState.Idle,
+                        State = s.Live ? SessionState.Running
+                            : _puppetLive.Contains(s.Host) ? SessionState.Done : SessionState.Idle,
                         Steps = s.Steps?.Length ?? 0
                     });
                 }

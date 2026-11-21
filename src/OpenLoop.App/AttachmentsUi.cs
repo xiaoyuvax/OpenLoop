@@ -59,7 +59,7 @@ namespace OpenLoop.App
                 // shortcut: 粘贴的图片落在 %TEMP%\OpenLoop-paste，发送后不清理；需要回收时再加
                 string dir = Path.Combine(Path.GetTempPath(), "OpenLoop-paste");
                 Directory.CreateDirectory(dir);
-                string path = Path.Combine(dir, $"paste-{DateTime.Now:yyyyMMdd-HHmmssfff}.png");
+                string path = Path.Combine(dir, $"paste_{DateTime.Now:yyyyMMdd_HHmmssfff}.png");
                 image.Save(path, System.Drawing.Imaging.ImageFormat.Png);
                 Add(current, [path], limit);
                 return true;

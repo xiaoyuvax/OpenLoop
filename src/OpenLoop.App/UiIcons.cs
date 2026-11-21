@@ -111,8 +111,24 @@ namespace OpenLoop.App
         public const string Attach =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M16.5 6.5l-7.8 7.8a2.5 2.5 0 003.5 3.5l8-8a4.5 4.5 0 00-6.4-6.4l-8.3 8.3a6.5 6.5 0 009.2 9.2l6.6-6.6-1.4-1.4-6.6 6.6a4.5 4.5 0 01-6.4-6.4l8.3-8.3a2.5 2.5 0 013.5 3.5l-8 8a.5.5 0 01-.7-.7l7.8-7.8-1.3-1.3z'/></svg>";
 
-        public static string Dot(Color color)
-            => $"<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='7' fill='{Hex(color)}'/></svg>";
+        public const string DotShape =
+            "<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='7' fill='{0}'/></svg>";
+
+        public static string Dot(Color color) => Of(DotShape, color);
+
+        /// <summary>呼吸动画的帧数：运行中的标签页图标在底色与本色之间来回渐变。</summary>
+        public const int BreathFrames = 8;
+
+        public static string Breath(string template, Color color, int phase)
+        {
+            double wave = (Math.Sin(2 * Math.PI * (phase % BreathFrames) / BreathFrames) + 1) / 2;
+            return Of(template, Mix(UiStyle.Surface, color, 0.3 + 0.7 * wave));
+        }
+
+        private static Color Mix(Color back, Color color, double ratio) => Color.FromArgb(
+            (int)Math.Round(back.R + (color.R - back.R) * ratio),
+            (int)Math.Round(back.G + (color.G - back.G) * ratio),
+            (int)Math.Round(back.B + (color.B - back.B) * ratio));
 
         // 项目列表每次刷新都会重画全部头像：同（字母, 颜色, 尺寸）只画一次，位图全程复用。
         private static readonly Dictionary<(string, Color, int), Image> Avatars = new();

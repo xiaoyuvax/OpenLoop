@@ -95,10 +95,10 @@ namespace OpenLoop.App
             _initializing = true;
 
             var current = settings();
-            //重开会话按它上次用的模型/力度恢复；全局上次用的只给新会话当默认
+            //重开会话按它上次用的模型/力度恢复；新会话用最近用过的第一条
             var (savedModel, savedEffort) = ChatHistory.LastModel(session.Workspace, session.Id);
-            _model = !string.IsNullOrWhiteSpace(savedModel) ? savedModel
-                : string.IsNullOrWhiteSpace(current.Model) ? "openrouter/free" : current.Model;
+            _model = !string.IsNullOrWhiteSpace(savedModel) ? savedModel : ModelCatalog.DefaultModel(current);
+            if (string.IsNullOrWhiteSpace(_model)) _model = "openrouter/free";
             _effort = savedEffort ?? current.ReasoningEffort ?? "";
             _onlyFree = current.OnlyFreeModels;
 

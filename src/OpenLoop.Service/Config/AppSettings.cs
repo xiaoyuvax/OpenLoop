@@ -140,6 +140,15 @@ namespace OpenLoop.Service.Config
             if (recent.Count > RecentLimit) recent.RemoveRange(RecentLimit, recent.Count - RecentLimit);
         }
 
+        /// <summary>启用协作会话：发起方可以分解任务、启动并监测同工作区的平级协作会话。</summary>
+        public bool EnableCollab { get; set; }
+
+        /// <summary>协作监测的轮询间隔（秒）：会话状态有变化才插消息，没变化不打扰。</summary>
+        public int CollabPollSeconds { get; set; } = 30;
+
+        /// <summary>协作会话默认沿用发起方上下文（复用前缀缓存）；单个任务可用 reuse 覆盖。</summary>
+        public bool CollabReuseContext { get; set; } = true;
+
         /// <summary>已使用的项目（工作区路径），用于启动时恢复项目列表。</summary>
         public List<string> Projects { get; set; } = [];
 

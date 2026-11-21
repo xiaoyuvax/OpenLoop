@@ -56,6 +56,19 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Saving_an_empty_conversation_leaves_no_file_or_index()
+        {
+            ChatHistory.Write(@"C:\work", "empty", [new ChatEntry { User = "a" }]);
+            ChatHistory.Touch(@"C:\work", "empty");
+            Assert.Single(ChatHistory.Index());
+
+            ChatHistory.Write(@"C:\work", "empty", []);
+
+            Assert.False(File.Exists(ChatHistory.PathFor(@"C:\work", "empty")));
+            Assert.Empty(ChatHistory.Index());
+        }
+
+        [Fact]
         public void Last_model_is_null_for_a_session_without_records()
         {
             Assert.Equal((null, null), ChatHistory.LastModel(@"C:\work", "nothing"));

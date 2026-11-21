@@ -163,6 +163,44 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void ParsesHeadlessDsmlCallsBlock()
+        {
+            // 实测（a2a/deepseek）：网关把 <invoke name="WriteFile"> 头整个丢掉，
+            // 只留参数，工具名写在 <parameter name="tool"> 里；旧实现整轮判成格式损坏。
+            const string text =
+                "<｜｜DSML｜｜ calls>\n" +
+                "<｜｜DSML｜｜ parameter name=\"args\" string=\"false\">{\"content\":\"x\",\"path\":\"a.ps1\"}</｜｜DSML｜｜ parameter>\n" +
+                "<｜｜DSML｜｜ parameter name=\"tool\" string=\"true\">WriteFile</｜｜DSML｜｜ parameter>\n" +
+                "</｜｜DSML｜｜ invoke>\n" +
+                "</｜｜DSML｜｜ calls>";
+
+            Assert.True(AgentToolCallParser.TryParse(text, out var call));
+            Assert.Equal("WriteFile", call.Tool);
+            Assert.Equal("a.ps1", call.Args["path"]);
+            Assert.Equal("x", call.Args["content"]);
+            Assert.False(call.Args.ContainsKey("tool"));
+        }
+
+        [Fact]
+        public void ToolParameterIsNameNotArgument()
+        {
+            // 同一种泄漏的另一半：有 invoke 头，但参数里又夹了 name="tool"；
+            // 旧实现把它当参数，args 摊不平 → 执行时缺 path。
+            const string text =
+                "<｜｜DSML｜｜ calls>\n" +
+                "<｜｜DSML｜｜ invoke name=\"WriteFile\">\n" +
+                "<｜｜DSML｜｜ parameter name=\"args\" string=\"false\">{\"content\":\"x\",\"path\":\"a.ps1\"}</｜｜DSML｜｜ parameter>\n" +
+                "<｜｜DSML｜｜ parameter name=\"tool\" string=\"true\">WriteFile</｜｜DSML｜｜ parameter>\n" +
+                "</｜｜DSML｜｜ invoke>\n" +
+                "</｜｜DSML｜｜ calls>";
+
+            Assert.True(AgentToolCallParser.TryParse(text, out var call));
+            Assert.Equal("WriteFile", call.Tool);
+            Assert.Equal("a.ps1", call.Args["path"]);
+            Assert.False(call.Args.ContainsKey("tool"));
+        }
+
+        [Fact]
         public void ParsesMultipleInvokeBlocksWithoutMixingArgs()
         {
             const string text =
@@ -218,6 +256,27 @@ namespace OpenLoop.Core.Tests
             Assert.True(AgentToolCallParser.LooksLikeToolCallText("  \r\n tool-call: {\"tool\":\"x\"}"));
             Assert.False(AgentToolCallParser.LooksLikeToolCallText("先看一下现状。\ntool-call: {\"tool\":\"x\"}"));
             Assert.False(AgentToolCallParser.LooksLikeToolCallText(""));
+        }
+
+        [Fact]
+        public void InlineCodeProtocolIsQuotedNotCalled()
+        {
+            // 实测（Loop 自己踩到）：回答正文用行内代码讲解协议，被当成真实调用派发（「未知工具：X」）
+            const string prose =
+                "协议长这样：`<invoke name=\"X\">`，或者 `tool-call: {\"tool\":\"Shell\",\"args\":{}}`。";
+            Assert.Empty(AgentToolCallParser.TryParseAll(prose));
+            Assert.False(AgentToolCallParser.TryParse(prose, out _));
+            Assert.False(AgentToolCallParser.LooksLikeToolCallAttempt(prose));
+        }
+
+        [Fact]
+        public void FencedProtocolStillRuns()
+        {
+            // 围栏代码块里的是真实调用（模型偶尔这样包一层），不能被当成引用吞掉
+            const string text = "```\ntool-call: {\"tool\":\"Shell\",\"args\":{\"command\":\"ls\"}}\n```";
+            var calls = AgentToolCallParser.TryParseAll(text);
+            Assert.Single(calls);
+            Assert.Equal("Shell", calls[0].Tool);
         }
 
         [Fact]

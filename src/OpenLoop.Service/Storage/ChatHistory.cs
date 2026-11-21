@@ -104,6 +104,12 @@ namespace OpenLoop.Service.Storage
             try
             {
                 var list = entries?.ToList() ?? [];
+                // 没有任何一轮对话 = 不该留下会话：连文件和索引一起清掉（关窗时壳会对空会话调 Save）
+                if (list.Count == 0)
+                {
+                    Delete(workspace, kind);
+                    return;
+                }
                 CarryTranscripts(workspace, kind, list);
                 Directory.CreateDirectory(Dir);
                 string path = PathFor(workspace, kind);
