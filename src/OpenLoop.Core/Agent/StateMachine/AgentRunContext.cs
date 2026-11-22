@@ -14,6 +14,9 @@ namespace OpenLoop.Core.Agent
         /// <summary>0 表示不压缩。</summary>
         public int ContextLimit { get; init; }
 
+        /// <summary>Single-task output token budget (reasoning+text+tool fragments); 0 means unlimited.</summary>
+        public int OutputTokenBudget { get; init; }
+
         public Func<bool> ShouldStop { get; init; }
         public Action<string> OnDelta { get; init; }
         public Action<string> OnReasoning { get; init; }

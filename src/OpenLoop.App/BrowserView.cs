@@ -7,6 +7,7 @@ namespace OpenLoop.App
     /// 右侧栏里的内嵌浏览器（WebView2）。
     /// 默认锁定：用户点不动网页（Agent 照常驱动）；「解锁」后用户可正常操作；「独立窗口」把网页移进顶层窗口。
     /// 所有方法都可以从任意线程调用，内部转回 UI 线程；WebView2 的异步初始化/脚本调用用消息泵等待。
+    /// LoopApp 相关的能力（虚拟域映射、会话级 Puppet 实例、页面消息桥）在 BrowserView.OpenUi.cs。
     /// </summary>
     public partial class BrowserView : UserControl
     {
@@ -171,6 +172,9 @@ namespace OpenLoop.App
             if (!EnsureCore(out string initError)) return new CallResult(false, null, initError);
             try
             {
+                // LoopApp 页面要先有映射，否则虚拟域会解析成 chrome-error
+                if (target.StartsWith("https://" + VirtualHost + "/", StringComparison.OrdinalIgnoreCase))
+                    ApplyVirtualHost();
                 _web.CoreWebView2.Navigate(target);
                 _txtUrl.Text = target;
                 return new CallResult(true, target, null);
@@ -247,8 +251,18 @@ namespace OpenLoop.App
                     core.Navigate(e.Uri);
                 };
 
+                // LoopApp：页面 → agent 的消息桥（来源在 OnWebMessage 里再校验一次）
+                core.WebMessageReceived += (s, e) =>
+                {
+                    try { OnWebMessage(e.Source, e.WebMessageAsJson); }
+                    catch (Exception ex) { AppLog.Warn("LoopApp 消息处理失败：" + ex.Message); }
+                };
+                InstallShim(core);
+
                 _ready = true;
                 _overlay.Visible = false;
+                // 浏览器建好时应用可能已经在盘上了（agent 先 create 后 open）
+                ApplyVirtualHost();
                 return true;
             }
             catch (Exception ex)
@@ -303,9 +317,24 @@ namespace OpenLoop.App
 
         private void OnBack(object sender, EventArgs e) => OnWeb(w => { if (w.CanGoBack) w.GoBack(); });
         private void OnForward(object sender, EventArgs e) => OnWeb(w => { if (w.CanGoForward) w.GoForward(); });
-        private void OnReload(object sender, EventArgs e) => OnWeb(w => w.Reload());
+        private void OnReload(object sender, EventArgs e) => Reload();
         private void OnGo(object sender, EventArgs e) => Navigate(_txtUrl.Text, out _);
         private void OnUndock(object sender, EventArgs e) => Undock();
+
+        /// <summary>
+        /// 刷新当前页。LoopApp 页面用带时间戳的重新导航：映射来的响应没有 Cache-Control，
+        /// 直接 Reload 会命中 WebView2 的启发式缓存，改过的 app.js 不会生效（实测）。
+        /// </summary>
+        private void Reload()
+        {
+            string url = Url;
+            if (url.StartsWith("https://" + VirtualHost + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                Navigate(url.Contains('?') ? url : url + "?t=" + DateTimeOffset.Now.ToUnixTimeMilliseconds(), out _);
+                return;
+            }
+            OnWeb(w => w.Reload());
+        }
 
         /// <summary>用系统默认浏览器打开当前页；还没导航过就用地址栏里的地址。</summary>
         private void OpenExternal()

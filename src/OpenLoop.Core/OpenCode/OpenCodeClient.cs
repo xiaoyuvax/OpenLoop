@@ -152,7 +152,6 @@ namespace OpenLoop.Core.OpenCode
             var failure = new StrongBox<string>();
             var answered = new HashSet<string>(StringComparer.Ordinal);
             var seenNative = new HashSet<string>(StringComparer.Ordinal);
-            var native = new List<OpenCodeNativeTool>();
             // 轮次不设总时限：几十次原生工具的长任务不该被墙钟砍掉。只有「连续 timeoutSeconds 秒
             // 没有任何新输出」才判挂住；会话结束由事件流/状态轮询给出，服务断了则请求本身会抛。
             var idleLimit = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 5, 3600));
@@ -181,7 +180,6 @@ namespace OpenLoop.Core.OpenCode
                     if (tool.Status is "running" or "streaming" or "pending") continue;
                     string key = tool.Id.Length > 0 ? tool.Id : tool.Name + "\u0001" + tool.Input;
                     if (!seenNative.Add(key)) continue;
-                    native.Add(tool);
                     onNativeTool?.Invoke(tool);
                 }
             }
@@ -220,16 +218,6 @@ namespace OpenLoop.Core.OpenCode
                         Touch();
                     }
                     Collect(polled);
-                    // 思维链发散护栏：只在持续吐字时才有输出，idle 判定永远等不到；等它自己停下
-                    // 可能已经吐掉几十万字（实测一轮 23.7 万字词沙拉，界面思维链整段是乱码）。
-                    if (native.Count == 0
-                        && OpenAiCompatibleReasoner.ReasoningRunaway(
-                            polled.Sum(m => m.Reasoning.Length), polled.Sum(m => m.Text.Length)))
-                    {
-                        try { await InterruptAsync(sessionID, ct); }
-                        catch { }
-                        throw new DegenerateOutputException(OpenAiCompatibleReasoner.ReasoningRunawayMessage);
-                    }
                     snapshot = await GetSessionAsync(sessionID, ct);
                     if (snapshot.Outcome.Length > 0) break;
                 }

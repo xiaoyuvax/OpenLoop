@@ -95,7 +95,7 @@ namespace OpenLoop.Core.Tests
         public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
         {
             Calls++;
-            throw new DegenerateOutputException(OpenAiCompatibleReasoner.ReasoningRunawayMessage);
+            throw new DegenerateOutputException(OpenAiCompatibleReasoner.DegenerateMessage);
         }
     }
 

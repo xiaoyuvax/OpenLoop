@@ -44,5 +44,11 @@ namespace OpenLoop.Core.Agent
 
         /// <summary>回填给模型的单条工具结果上限（字符）。</summary>
         public int ToolResultLimit { get; set; } = 6000;
+
+        /// <summary>
+        /// 单次任务的输出 token 总预算（思维链 + 正文 + 工具调用片段合计）。
+        /// 0 表示不设输出预算：长思考由上下文窗口与墙钟停滞护栏兜底。
+        /// </summary>
+        public int OutputTokenBudget { get; set; } = 0;
     }
 }

@@ -58,6 +58,9 @@ namespace OpenLoop.Core.Agent
         /// <summary>步数上限已自动追加的次数。</summary>
         public int BudgetExtensions { get; set; }
 
+        /// <summary>Tokens spent on model output so far (sum of TokensOut). Drives OutputTokenBudget.</summary>
+        public int SpentOutputTokens { get; set; }
+
         /// <summary>本轮自动修复了坏 JSON 后回给模型的一句说明（ToolDispatch 消费）。</summary>
         public string PendingRepairNote { get; set; }
 

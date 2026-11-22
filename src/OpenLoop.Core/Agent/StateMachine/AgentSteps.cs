@@ -19,7 +19,7 @@ namespace OpenLoop.Core.Agent
         }
     }
 
-    internal sealed class CompressionStep : IAgentStep
+    public sealed class CompressionStep : IAgentStep
     {
         public string Name => "compression";
 
@@ -45,7 +45,8 @@ namespace OpenLoop.Core.Agent
             return AgentStepResult.Continue(new ReplaceMessagesEffect(compressed));
         }
 
-        internal static async Task<List<LlmMessage>> CompressAsync(
+        /// <summary>把中间消息换成模型摘要（自动压缩与手动 /compact 共用）；没有可压缩的中间段返回 null。</summary>
+        public static async Task<List<LlmMessage>> CompressAsync(
             IReadOnlyList<LlmMessage> messages, IReasoner reasoner, CancellationToken ct, int tailTokens = 0)
         {
             var (head, middle, tail) = AgentContext.SplitForCompression(
@@ -97,6 +98,16 @@ namespace OpenLoop.Core.Agent
                     new SetFinalAnswerEffect(AgentLoop.BudgetText(state)));
             }
 
+            // Output token budget: stop before spending more, hand back what we have.
+            int outputBudget = context.OutputTokenBudget;
+            if (outputBudget > 0 && state.SpentOutputTokens >= outputBudget)
+            {
+                state.Result.Guards.OutputBudgetStops++;
+                return AgentStepResult.Complete(
+                    new SetBudgetExhaustedEffect(),
+                    new SetFinalAnswerEffect(AgentLoop.OutputBudgetText(state, outputBudget)));
+            }
+
             state.Step++;
 
             // 上下文占比用本轮实际发出的消息估算（与压缩阈值同源）；通道回报的 TokensIn 是会话累计账单，不能当窗口占用。
@@ -123,18 +134,27 @@ namespace OpenLoop.Core.Agent
                 state.Result.Guards.Compressions++;
                 return AgentStepResult.Continue(new ReplaceMessagesEffect(compressed));
             }
-            catch (DegenerateOutputException)
+            catch (DegenerateOutputException ex)
             {
-                // 退化输出整段丢弃：先清掉宿主界面上的思考与半截正文，重试用尽再报失败时也不会留着词沙拉。
+                // 退化输出整段丢弃：先清掉宿主界面上的思考与半截正文，收尾时也不会留着词沙拉。
                 context.OnRestart?.Invoke();
                 // 复读多是网关把模板标记泄进正文，换一次采样常常就正常了；
                 // 整轮作废（几十步的进度全丢）代价远大于重发一次。
-                if (state.DegenerateRetries >= 2) throw;
-                state.DegenerateRetries++;
-                return AgentStepResult.Continue(new AppendMessageEffect("user",
-                    "（系统提示）你上一条输出退化（复读同一段标记，或思维链一路发散却没产出正文），已丢弃。"
-                    + "请继续当前任务，直接给出下一步（工具调用或结论），不要重复刚才的内容。"));
+                if (state.DegenerateRetries < 2)
+                {
+                    state.DegenerateRetries++;
+                    return AgentStepResult.Continue(new AppendMessageEffect("user", GuardStopText.DegenerateRetry()));
+                }
+
+                // 重试用尽也不整轮判失败：把已跑的进度交回宿主当答复，用户看得见发生了什么，也接得下去。
+                state.Result.Guards.DegenerateStops++;
+                return AgentStepResult.Complete(
+                    new SetFinalAnswerEffect(GuardStopText.Degenerate(ex.Message, state)),
+                    new SetGuardedStopEffect());
             }
+
+            if (completion?.TokensOut is { } used && used > 0)
+                state.SpentOutputTokens += used;
 
             string content = completion?.Content;
             var calls = AgentToolCallParser.TryParseAll(content);
@@ -423,7 +443,8 @@ namespace OpenLoop.Core.Agent
                     return Task.FromResult(AgentStepResult.Complete(
                         new SetFinalAnswerEffect(
                             $"连续 {state.ExplorationStreak} 步仅执行只读侦察、未产生任何写操作，判定为在原地打转，已停止。" +
-                            "请给出更明确的目标或参数（例如具体文件、目录或要执行的动作）。"),
+                            "请给出更明确的目标或参数（例如具体文件、目录或要执行的动作）。\n\n" +
+                            GuardStopText.Progress(state)),
                         new SetGuardedStopEffect()));
                 }
 
@@ -465,7 +486,8 @@ namespace OpenLoop.Core.Agent
                     new SetFinalAnswerEffect(
                         $"检测到连续 {state.RepeatStreak} 次完全相同的工具调用（{state.LastBatchTool} 等 {state.LastBatchCount} 个），" +
                         "判定为无进展，已停止以免空转。若确实需要反复等待，请在调用里声明轮询：" +
-                        "{\"tool\":\"…\",\"args\":{…},\"poll\":{\"id\":\"wait-1\",\"max\":5}}。"),
+                        "{\"tool\":\"…\",\"args\":{…},\"poll\":{\"id\":\"wait-1\",\"max\":5}}。\n\n" +
+                        GuardStopText.Progress(state)),
                     new SetGuardedStopEffect()));
             }
 
@@ -496,7 +518,8 @@ namespace OpenLoop.Core.Agent
                     return Task.FromResult(AgentStepResult.Complete(
                         new SetFinalAnswerEffect(
                             $"连续 {state.ExplorationStreak} 步仅执行只读侦察、未产生任何写操作，判定为在原地打转，已停止。" +
-                            "请给出更明确的目标或参数（例如具体文件、目录或要执行的动作）。"),
+                            "请给出更明确的目标或参数（例如具体文件、目录或要执行的动作）。\n\n" +
+                            GuardStopText.Progress(state)),
                         new SetGuardedStopEffect()));
                 }
 
@@ -635,8 +658,9 @@ namespace OpenLoop.Core.Agent
                         : "（系统提示·强制）又一次空正文。请直接回答用户的问题，或用 tool-call 继续任务；不要再输出安全判定/空白。")));
             }
 
+            // 正文为空也要给一句可操作的提示：留一条空白回复等于静默中断。
             return Task.FromResult(AgentStepResult.Complete(new SetFinalAnswerEffect(
-                content?.Trim(), finishReason)));
+                GuardStopText.Answer(content, finishReason), finishReason)));
         }
     }
 }

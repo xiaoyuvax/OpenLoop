@@ -133,6 +133,7 @@ namespace OpenLoop.App
             if (_browser == null)
             {
                 _browser = new BrowserView { Dock = DockStyle.Fill, Visible = false };
+                AttachLoopApp(_browser);
                 _sideHost.Controls.Add(_browser);
                 _sideTabs.Items.Insert(BrowserPage, new AntdUI.SegmentedItem { Text = "网页" });
                 if (_filePage >= BrowserPage) _filePage++;
@@ -261,8 +262,13 @@ namespace OpenLoop.App
             _settings = settings;
 
             var current = settings();
-            _model = string.IsNullOrWhiteSpace(current.Model) ? "openrouter/free" : current.Model;
-            _effort = current.ReasoningEffort ?? "";
+            // 会话按它自己上次用的模型/强度恢复（与 Worker 一致）：分叉、转交过来的会话沿用原参数，
+            // 关掉标签页再打开也不会退回全局设置。没有记录时才用全局设置。
+            var (savedModel, savedEffort) = ChatHistory.LastModel(_workspace, _sessionId);
+            _model = !string.IsNullOrWhiteSpace(savedModel)
+                ? savedModel
+                : string.IsNullOrWhiteSpace(current.Model) ? "openrouter/free" : current.Model;
+            _effort = savedEffort ?? current.ReasoningEffort ?? "";
             _onlyFree = current.OnlyFreeModels;
 
             _filling = true;
@@ -389,6 +395,25 @@ namespace OpenLoop.App
         public string Effort => _effort;
 
         public void SetEffort(string effort) => SelectEffort(effort);
+
+        /// <summary>
+        /// 宿主注入会话参数（/complain、/fork、转交、协作带过来的模型与强度）：只改本会话，
+        /// 不写全局设置——沿用别人的参数不该顺手把默认模型改掉。
+        /// </summary>
+        internal void AdoptParameters(string model, string effort)
+        {
+            _filling = true;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(model)) SetModel(model);
+                if (effort != null) SetEffort(effort);
+            }
+            finally
+            {
+                _filling = false;
+            }
+            ApplyDetail();
+        }
 
         /// <summary>发到 Loop：空闲直接开跑；运行中 immediate=插到下一步（软打断本轮），否则等本轮返回；只取输入框内容时 text 传 null。</summary>
         public string Send(string text = null, bool immediate = true)
@@ -528,7 +553,7 @@ namespace OpenLoop.App
                 LoopIndex.Remove(_workspace, _sessionId);
                 return;
             }
-            ChatStore.Save(_workspace, _book.Turns, _sessionId, _model);
+            ChatStore.Save(_workspace, _book.Turns, _sessionId, _model, _effort);
             LoopIndex.Touch(_workspace, _sessionId, _book.Turns.LastOrDefault()?.ToolStepCount);
         }
 
@@ -663,7 +688,9 @@ namespace OpenLoop.App
                             // 协作：与 Worker 同一套工具，协作会话是同工作区的其他 Loop 会话。
                             // Loop 自己已有 ReadSession（已扩到能读这些会话），不再重复注册同名工具。
                             .Concat(CollabTools.For(settings.EnableCollab ? Collab() : null, _sessionId,
-                                includeReadSession: false)),
+                                includeReadSession: false))
+                            // LoopApp：与 Worker 同一份工具，owner 是本 Loop 会话
+                            .Concat(OpenLoop.Service.Worker.WorkerScopeRules.LoopApp(_workspace, _sessionId)),
                         settings.WebFetchMode);
                     var registry = new ToolRegistry(loopTools.Tools.Concat(
                         [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
@@ -679,7 +706,7 @@ namespace OpenLoop.App
                 AppLog.Error("Loop 准备失败", ex);
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
-                turn.AssistantText = "执行失败：" + ex.Message;
+                turn.AssistantText = FailedText(turn, ex.Message);
                 _cts?.Dispose();
                 _cts = null;
                 SetRunning(false);
@@ -701,6 +728,22 @@ namespace OpenLoop.App
             // 正文喂进时间线的进度：正文出现即分段，正文之后的思维另起一段折叠区
             int answerLen = 0;
             long lastDeltaUi = 0;
+            // 把缓冲区里还没进时间线的正文补进去。250ms 节流会跳过大部分 delta，只在采样点补的话，
+            // 每步正文只剩开头一两个字符（实测「现在现在现在现在现在补 `CoreCore」），工具开始前必须补一次。
+            string FlushAnswer()
+            {
+                string snapshot;
+                lock (_streamBuffer) snapshot = _streamBuffer.ToString();
+                string visible = AgentToolCallParser.CutToolCallText(snapshot);
+                if (visible.Length > answerLen)
+                {
+                    lock (timeline) timeline.Answer(visible[answerLen..]);
+                    answerLen = visible.Length;
+                    // 正文先进数据：标签页关掉（句柄失效）时界面更新会被跳过，重开后按数据重建
+                    turn.AssistantText = LlmTextSanitizer.StripSafetyLines(visible);
+                }
+                return visible;
+            }
             Action<string> onDelta = piece =>
             {
                 lock (_streamBuffer) _streamBuffer.Append(piece);
@@ -709,17 +752,7 @@ namespace OpenLoop.App
                 long now = Environment.TickCount64;
                 if (now - Interlocked.Read(ref lastDeltaUi) < 250) return;
                 Interlocked.Exchange(ref lastDeltaUi, now);
-                string snapshot;
-                lock (_streamBuffer) snapshot = _streamBuffer.ToString();
-                string visible = AgentToolCallParser.CutToolCallText(snapshot);
-                if (visible.Length == 0) return;
-                if (visible.Length > answerLen)
-                {
-                    lock (timeline) timeline.Answer(visible[answerLen..]);
-                    answerLen = visible.Length;
-                }
-                // 正文先进数据：标签页关掉（句柄失效）时界面更新会被跳过，重开后按数据重建
-                turn.AssistantText = LlmTextSanitizer.StripSafetyLines(visible);
+                if (FlushAnswer().Length == 0) return;
                 RunOnUi(() =>
                 {
                     lock (timeline) SyncPhases(turn, timeline);
@@ -797,11 +830,14 @@ namespace OpenLoop.App
                 },
                 onToolStart: (name, args) =>
                 {
+                    // 本步正文先补进时间线，再清缓冲：节流窗口里的尾巴不能跟着缓冲区一起丢掉
+                    FlushAnswer();
                     lock (_streamBuffer) _streamBuffer.Clear();
                     answerLen = 0;
                     string hint = AgentStepRecord.InFlightLine(name, args);
                     RunOnUi(() =>
                     {
+                        lock (timeline) SyncPhases(turn, timeline);
                         turn.AssistantText = "";
                         turn.ToolStarted(hint);
                         _chat.UpdateStreamingMessage(turn, "", true);
@@ -842,6 +878,7 @@ namespace OpenLoop.App
                         }),
                     ct);
 
+                FlushAnswer();
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
                 lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
@@ -880,7 +917,7 @@ namespace OpenLoop.App
                 AppLog.Error("Loop 会话失败", ex);
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
-                turn.AssistantText = "执行失败：" + ex.Message;
+                turn.AssistantText = FailedText(turn, ex.Message);
                 trace.Finish("error", turn.AssistantText);
                 _lblStatus.Text = "状态: error";
                 SetState(SessionState.Interrupted);
@@ -919,6 +956,20 @@ namespace OpenLoop.App
                 if (outcome is "ok" or "budget") _queue.Paused = false;
                 if (outcome != "error" && !IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
             }
+        }
+
+        /// <summary>
+        /// 失败轮的正文：先交代这一轮已经做了什么，再写失败原因。
+        /// 只留一句错误信息时，几十步的进展在界面上等于凭空消失。
+        /// </summary>
+        internal static string FailedText(ChatTurn turn, string error)
+        {
+            string head = OpenLoop.Core.Messages.ServerNotice.FailedPrefix + error;
+            string tools = turn?.ToolCallLines?.Trim();
+            if (string.IsNullOrEmpty(tools)) return head;
+            var lines = tools.Split('\n');
+            var tail = lines.Length <= 6 ? lines : lines[(lines.Length - 6)..];
+            return head + "\n\n本轮已执行 " + lines.Length + " 步，最近几步：\n" + string.Join("\n", tail);
         }
 
         /// <summary>把时间线的分段同步进回话数据；分段正文过一遍安全行清洗，与正文区一致。</summary>
@@ -1361,6 +1412,17 @@ namespace OpenLoop.App
                 return true;
             }
 
+            if (SessionView.IsCommand(text, "/compact"))
+            {
+                if (_running)
+                {
+                    Notify("正在运行", "请先停止当前任务，再压缩上下文。", error: true);
+                    return true;
+                }
+                _ = CompactContextAsync();
+                return true;
+            }
+
             if (SessionView.IsCommand(text, "/fork"))
             {
                 string request = text[5..].Trim();
@@ -1387,10 +1449,65 @@ namespace OpenLoop.App
             return false;
         }
 
+        /// <summary>/compact：把较早的消息换成摘要并挂到最近一轮的 transcript；下一轮起按压缩后的历史发。</summary>
+        private async Task CompactContextAsync()
+        {
+            var history = BuildHistory();
+            if (history.Count == 0)
+            {
+                Notify("没有可压缩的上下文", "当前会话还没有历史。", error: true);
+                return;
+            }
+
+            string model = _model?.Trim() ?? "";
+            if (model.Length == 0)
+            {
+                Notify("缺少配置", "请先选择模型。", error: true);
+                return;
+            }
+
+            string status = _lblStatus.Text;
+            _lblStatus.Text = "状态: 压缩上下文…";
+            try
+            {
+                var settings = _settings();
+                int before = AgentContext.EstimateTokens(history);
+                var compacted = await Task.Run(async () =>
+                {
+                    var reasoner = Reasoners.Create(settings, model, _effort, _workspace, AskApproval);
+                    return await CompressionStep.CompressAsync(history, reasoner, CancellationToken.None,
+                        AgentContext.TailTokenBudget(ModelChoices.ContextLimit(model, settings)));
+                });
+                if (compacted == null)
+                {
+                    Notify("未压缩", "上下文太短，没有可压缩的中间部分。", error: true);
+                    return;
+                }
+
+                var last = _book.Turns.LastOrDefault();
+                if (last != null) ChatStore.AttachTranscript(last, compacted);
+                int after = AgentContext.EstimateTokens(compacted);
+                _contextTokens = after;
+                SaveLoopChat();
+                Notify("已压缩上下文", $"{before:N0} → {after:N0} tokens");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("压缩上下文失败", ex);
+                Notify("压缩失败", ex.Message, error: true);
+            }
+            finally
+            {
+                _lblStatus.Text = status;
+                ApplyDetail();
+            }
+        }
+
         private static readonly (string Command, string Description)[] Commands =
         {
             ("/btw", "在右侧栏用当前上下文跑一个只读旁路任务"),
             ("/complain", "把对 Loop 表现的不满发给 Loop 立即处理"),
+            ("/compact", "把较早的对话压缩成摘要，省下上下文"),
             ("/fork", "复制当前上下文开一个新的 Loop 会话（可继续对话）并跳转"),
             ("/new", "开一个新的 Loop 会话，沿用当前的模型与强度")
         };

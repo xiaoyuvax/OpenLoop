@@ -355,6 +355,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
               { key: 'stop', label: '停止当前轮', disabled: !running },
               { key: 'interrupt', label: '打断（下一 step 前收尾）', disabled: !running },
               { key: 'resume', label: '继续', disabled: running },
+              { key: 'compact', label: '压缩上下文', disabled: running },
               { type: 'divider' },
               { key: 'copy', label: '复制工作区' }
             ],
@@ -362,6 +363,13 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
               if (key === 'copy') {
                 navigator.clipboard?.writeText(snapshot?.workspace || '');
                 return message.success('已复制工作区');
+              }
+              if (key === 'compact') {
+                post(`/api/sessions/${activeId}/compact`, {}).then(r => {
+                  if (r?.ok) message.success(`已压缩上下文：${r.before} → ${r.after} tokens`);
+                  else message.warning(r?.error || '没有可压缩的上下文');
+                }).catch(e => message.error('压缩失败：' + e.message));
+                return;
               }
               act(key, null, '已执行');
             }

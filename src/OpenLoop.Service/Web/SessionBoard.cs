@@ -101,6 +101,12 @@ namespace OpenLoop.Service.Web
         /// 同工作区的其他会话：与留言同一保留期（<see cref="AgentBook.Retention"/>，30 分钟内有心跳），
         /// 是否还在干活看 PeerInfo.IdleSeconds。工作区按登记时的 Purpose 后缀精确比对。
         /// </summary>
+
+        /// <summary>鍚屽伐浣滃尯鍑虹幇鏂颁細璇濇椂濉炶繘杈撳叆闃熷垪鐨勪竴鏉℃彁绀猴細涓庣敤鎴疯緭鍏ュ悓涓€鏉￠槦鍒楋紝鐢ㄦ埛鍙互鎾ゅ洖銆?/summary>
+        public static string PeerNotice(IReadOnlyList<string> peers)
+            => PeerNoticeText.For(peers);
+
+
         public static IReadOnlyList<PeerInfo> Peers(string workspace, string selfId, bool remote = false)
         {
             string ws = Normalize(workspace);

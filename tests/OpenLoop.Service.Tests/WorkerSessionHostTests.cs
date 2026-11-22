@@ -31,6 +31,16 @@ namespace OpenLoop.Service.Tests
             Func<WorkerRunRequest, CancellationToken, Task<WorkerRunResult>> runner)
             => new(runner);
 
+        /// <summary>鎺掗槦椤归噷鐢ㄦ埛鏁茬殑閭ｉ儴鍒嗭紙鎺掗櫎鍗忎綔鎻愮ず绛?Auto 鏉＄洰锛夈€?/summary>
+        private static IReadOnlyList<string> UserPending(WorkerSessionHost host, string id)
+        {
+            var snapshot = host.Get(id);
+            return snapshot.Pending
+                .Zip(snapshot.PendingAuto, (text, auto) => (text, auto))
+                .Where(p => !p.auto)
+                .Select(p => p.text).ToList();
+        }
+
         private static WorkerSessionSnapshot NewSession(WorkerSessionHost host)
             => host.Create("C:/work", "openrouter/free", "", () => new AppSettings());
 
@@ -144,14 +154,14 @@ namespace OpenLoop.Service.Tests
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Running);
 
             host.Send(session.Id, "task", "second");
-            Assert.Single(host.Get(session.Id).Pending);
+            Assert.Single(UserPending(host, session.Id));
 
             gate.SetResult();
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done && calls >= 2);
 
             var snapshot = host.Get(session.Id);
             Assert.Equal(2, snapshot.Turns.Count);
-            Assert.Empty(snapshot.Pending);
+            Assert.Empty(UserPending(host, snapshot.Id));
             Assert.Equal("second", snapshot.Turns[1].Assistant);
         }
 
@@ -179,7 +189,7 @@ namespace OpenLoop.Service.Tests
             gate.SetResult();
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Interrupted);
             // 失败轮不续发队列：队列留着，也没有自己开下一轮
-            Assert.Single(host.Get(session.Id).Pending);
+            Assert.Single(UserPending(host, session.Id));
             await Task.Delay(100);
             Assert.Equal(new[] { "first" }, calls.ToArray());
 
@@ -189,7 +199,7 @@ namespace OpenLoop.Service.Tests
 
             var snapshot = host.Get(session.Id);
             Assert.Equal(new[] { "first", "retry", "queued" }, calls.ToArray());
-            Assert.Empty(snapshot.Pending);
+            Assert.Empty(UserPending(host, snapshot.Id));
         }
 
         [Fact]
@@ -266,14 +276,14 @@ namespace OpenLoop.Service.Tests
             host.Stop(session.Id);
 
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Interrupted);
-            Assert.Single(host.Get(session.Id).Pending);
+            Assert.Single(UserPending(host, session.Id));
             Assert.True(host.Get(session.Id).Paused);
 
             host.Resume(session.Id);
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done && calls >= 2);
 
             var snapshot = host.Get(session.Id);
-            Assert.Empty(snapshot.Pending);
+            Assert.Empty(UserPending(host, snapshot.Id));
             Assert.Equal("resumed", snapshot.Turns[1].Assistant);
         }
 
@@ -301,7 +311,7 @@ namespace OpenLoop.Service.Tests
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done && calls >= 3);
 
             var snapshot = host.Get(session.Id);
-            Assert.Empty(snapshot.Pending);
+            Assert.Empty(UserPending(host, snapshot.Id));
             Assert.False(snapshot.Paused);
             Assert.Equal("queued", snapshot.Turns[^1].Assistant);
         }

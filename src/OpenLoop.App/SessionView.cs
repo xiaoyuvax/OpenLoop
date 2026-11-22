@@ -187,7 +187,7 @@ namespace OpenLoop.App
         internal event Action<Session, string> ForkRequested;
         internal event Action<Session, string> NewSessionRequested;
         internal event Action<Session> TitleChanged;
-        internal event Action<string, IReadOnlyList<ChatTurn>> SideWorkEvicted;
+        internal event Action<string, IReadOnlyList<ChatTurn>, string, string> SideWorkEvicted;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Workspace => Session?.Workspace ?? "";
@@ -330,6 +330,7 @@ namespace OpenLoop.App
             if (_browser == null)
             {
                 _browser = new BrowserView { Dock = DockStyle.Fill, Visible = false };
+                AttachLoopApp(_browser);
                 _sideHost.Controls.Add(_browser);
                 _sideTabs.Items.Insert(BrowserPage, new AntdUI.SegmentedItem { Text = "网页" });
                 if (_filePage >= BrowserPage) _filePage++;
@@ -619,6 +620,7 @@ namespace OpenLoop.App
         {
             ("/btw", "在右侧栏用当前上下文跑一个只读旁路任务"),
             ("/complain", "把对 Worker 表现的不满发给 Loop 立即处理"),
+            ("/compact", "把较早的对话压缩成摘要，省下上下文"),
             ("/fork", "复制当前上下文开一个新会话（可继续对话）并跳转"),
             ("/new", "开一个新会话，沿用当前的模型与强度")
         };
@@ -697,7 +699,7 @@ namespace OpenLoop.App
             var previous = _sideBtw.Snapshot();
             if (previous.Count > 0)
             {
-                SideWorkEvicted?.Invoke(Session.Workspace, previous);
+                SideWorkEvicted?.Invoke(Session.Workspace, previous, _sideBtw.Model, _sideBtw.Effort);
                 _sideBtw.Reset();
             }
             _sideBtw.Run(request, BuildHistory());
@@ -713,7 +715,7 @@ namespace OpenLoop.App
         {
             var turns = _sideBtw.Snapshot();
             if (turns.Count == 0) return;
-            SideWorkEvicted?.Invoke(Session.Workspace, turns);
+            SideWorkEvicted?.Invoke(Session.Workspace, turns, _sideBtw.Model, _sideBtw.Effort);
             _sideBtw.Reset();
         }
 
@@ -912,6 +914,17 @@ namespace OpenLoop.App
                 return true;
             }
 
+            if (IsCommand(text, "/compact"))
+            {
+                if (_running)
+                {
+                    Notify("正在运行", "请先停止当前任务，再压缩上下文。", error: true);
+                    return true;
+                }
+                _ = CompactContextAsync();
+                return true;
+            }
+
             if (IsCommand(text, "/fork"))
             {
                 string request = text[5..].Trim();
@@ -938,6 +951,35 @@ namespace OpenLoop.App
                 || (text.StartsWith(command, StringComparison.OrdinalIgnoreCase)
                     && text.Length > command.Length
                     && char.IsWhiteSpace(text[command.Length]));
+
+        /// <summary>/compact：A 把较早的消息换成摘要；返回的压缩历史同步到本地副本，旁路/分叉也用新上下文。</summary>
+        private async Task CompactContextAsync()
+        {
+            try
+            {
+                var result = await Client.CompactAsync(Session.Id);
+                if (result == null)
+                {
+                    Notify("压缩失败", "Worker 不认识这个会话。", error: true);
+                    return;
+                }
+                if (!result.Ok)
+                {
+                    Notify("未压缩", result.Error ?? "没有可压缩的上下文。", error: true);
+                    return;
+                }
+                var last = Session.Book.Turns.LastOrDefault();
+                if (last != null && result.Messages is { Count: > 0 })
+                    ChatStore.AttachTranscript(last, result.Messages);
+                UpdateContext(result.After);
+                Notify("已压缩上下文", $"{result.Before:N0} → {result.After:N0} tokens");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("压缩上下文失败", ex);
+                Notify("压缩失败", ex.Message, error: true);
+            }
+        }
 
         /// <summary>转给 Loop 的用户反馈：带上最近一轮与源会话完整记录，Loop 才知道指的是哪次运行。</summary>
         private string ComplaintText(string complaint)

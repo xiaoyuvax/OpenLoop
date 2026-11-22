@@ -242,6 +242,10 @@ namespace OpenLoop.Service.Source
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 RedirectStandardInput = stdin != null,
+                // git 的路径输出是 UTF-8：不显式指定就按控制台代码页（中文系统 936）解码，
+                // 非 ASCII 文件名变成乱码，再拿乱码路径去 add 就报 "pathspec ... did not match any files"。
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };

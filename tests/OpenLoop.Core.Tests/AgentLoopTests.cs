@@ -40,7 +40,8 @@ namespace OpenLoop.Core.Tests
 
             var result = await loop.RunAsync([], "hi");
 
-            Assert.True(string.IsNullOrEmpty(result.FinalAnswer));
+            // 推理文本不算正文：重试用尽后给一句可操作的提示，而不是空白回复
+            Assert.Contains("没有返回正文", result.FinalAnswer);
             Assert.Equal(4, reasoner.Calls);
             Assert.Equal(3, result.Guards.EmptyRetries);
         }
@@ -433,19 +434,35 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
-        public async Task DegenerateOutputIsClearedFromHostBeforeFailing()
+        public async Task DegenerateOutputStopsSoftlyWithProgressInsteadOfFailing()
         {
             var history = new List<OpenLoop.Core.Messages.LlmMessage> { new("user", "hi") };
             var reasoner = new DegenerateAlwaysReasoner();
             var loop = Loops.Build(new FakeTool(), reasoner);
             int restarts = 0;
 
-            var ex = await Record.ExceptionAsync(
-                () => loop.RunAsync(history, "hi", onRestart: () => restarts++));
+            // 护栏不再整轮抛异常：用户看到的是一段带进度的答复，而不是一条空白失败轮
+            var result = await loop.RunAsync(history, "hi", onRestart: () => restarts++);
 
-            Assert.Equal(OpenAiCompatibleReasoner.ReasoningRunawayMessage, ex?.Message);
-            Assert.Equal(3, reasoner.Calls);   // 两次重试 + 一次放弃
-            Assert.Equal(3, restarts);         // 每次退化都通知宿主清屏，失败那次也不例外
+            Assert.Equal(3, reasoner.Calls);   // 两次重试 + 第三次收尾
+            Assert.Equal(3, restarts);         // 每次退化都通知宿主清屏
+            Assert.True(result.StoppedByGuard);
+            Assert.Equal(1, result.Guards.DegenerateStops);
+            Assert.Contains("跑偏", result.FinalAnswer);
+            Assert.Contains("继续", result.FinalAnswer);
+        }
+
+        [Fact]
+        public async Task EmptyAnswerGetsActionableTextInsteadOfBlank()
+        {
+            var history = new List<OpenLoop.Core.Messages.LlmMessage> { new("user", "hi") };
+            var loop = Loops.Build(new FakeTool(), new ReasoningOnlyReasoner("想了一下，但没有结论。"));
+
+            var result = await loop.RunAsync(history, "hi");
+
+            // 正文为空时不能留一条空白回复（用户只看到「没有正文」等于静默中断）
+            Assert.False(string.IsNullOrWhiteSpace(result.FinalAnswer));
+            Assert.Contains("继续", result.FinalAnswer);
         }
 
         [Fact]

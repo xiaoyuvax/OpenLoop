@@ -43,6 +43,12 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool Busy => _running;
 
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string Model => _model;
+
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string Effort => _effort;
+
         internal void Initialize(string workspace, Func<AppSettings> settings)
         {
             _workspace = workspace ?? "";
@@ -201,6 +207,20 @@ namespace OpenLoop.App
             // 正文喂进时间线的进度：正文出现即分段，正文之后的思维另起一段折叠区
             int answerLen = 0;
             long lastDeltaUi = 0;
+            // 把缓冲区里还没进时间线的正文补进去。250ms 节流会跳过大部分 delta，只在采样点补的话，
+            // 每步正文只剩开头一两个字符（实测「现在现在现在现在现在补 `CoreCore」），工具开始前必须补一次。
+            string FlushAnswer()
+            {
+                string snapshot;
+                lock (_streamBuffer) snapshot = _streamBuffer.ToString();
+                string visible = AgentToolCallParser.CutToolCallText(snapshot);
+                if (visible.Length > answerLen)
+                {
+                    lock (timeline) timeline.Answer(visible[answerLen..]);
+                    answerLen = visible.Length;
+                }
+                return visible;
+            }
             Action<string> onDelta = piece =>
             {
                 lock (_streamBuffer) _streamBuffer.Append(piece);
@@ -208,15 +228,8 @@ namespace OpenLoop.App
                 long now = Environment.TickCount64;
                 if (now - Interlocked.Read(ref lastDeltaUi) < 250) return;
                 Interlocked.Exchange(ref lastDeltaUi, now);
-                string snapshot;
-                lock (_streamBuffer) snapshot = _streamBuffer.ToString();
-                string visible = AgentToolCallParser.CutToolCallText(snapshot);
+                string visible = FlushAnswer();
                 if (visible.Length == 0) return;
-                if (visible.Length > answerLen)
-                {
-                    lock (timeline) timeline.Answer(visible[answerLen..]);
-                    answerLen = visible.Length;
-                }
                 RunOnUi(() =>
                 {
                     lock (timeline) SyncPhases(turn, timeline);
@@ -283,11 +296,14 @@ namespace OpenLoop.App
                 },
                 onToolStart: (name, args) =>
                 {
+                    // 本步正文先补进时间线，再清缓冲：节流窗口里的尾巴不能跟着缓冲区一起丢掉
+                    FlushAnswer();
                     lock (_streamBuffer) _streamBuffer.Clear();
                     answerLen = 0;
                     string hint = AgentStepRecord.InFlightLine(name, args);
                     RunOnUi(() =>
                     {
+                        lock (timeline) SyncPhases(turn, timeline);
                         turn.AssistantText = "";
                         turn.ToolStarted(hint);
                         _chat.UpdateStreamingMessage(turn, "", true);
@@ -317,6 +333,7 @@ namespace OpenLoop.App
                         () => ct.IsCancellationRequested, onDelta, onReasoning, ResetStream),
                     ct);
 
+                FlushAnswer();
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
                 lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
@@ -347,7 +364,7 @@ namespace OpenLoop.App
                 AppLog.Error("旁路任务失败", ex);
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
-                turn.AssistantText = "执行失败：" + ex.Message;
+                turn.AssistantText = LoopView.FailedText(turn, ex.Message);
                 trace.Finish("error", turn.AssistantText);
                 _lblStatus.Text = "只读 · error";
                 Notify("旁路执行失败", ex.Message, error: true);

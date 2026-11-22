@@ -99,15 +99,18 @@ LoopApp(action, name?, js?, url?, dock?)
 宿主抽象：
 
 ```csharp
-interface ILoopAppHost { Open(string path); Eval(string js); Shot(); Undock(); Dock(); Interact(bool); State(); }
+public interface ILoopAppHost { Open; Eval; Shot; State; Undock; Dock; Interact; }   // 全部 async + ct
 ```
 
-- Worker（A 进程）→ `ShellPuppetHost`，走 `PuppetBridge.ShellEndpoint`（`PuppetTool.cs:143-173` 已有完整实现可抄）；
-- Loop（跑在壳进程里，`LoopView.cs:655`）→ `LocalHost`，直调 `BrowserView`。
+实现只有一份 `ShellLoopAppHost`：它把动作发到壳的 `MainForm.LoopApp*For(sessionId, ...)`。
+壳进程内（Loop 会话）走 `PuppetBridge.LocalHub` 直调，不经端口；A 进程里的 Worker 会话走 HTTP 到壳的 Puppet 端口（`ShellPuppet.InvokeAsync`）。两条路共用同一个实例名 `MainForm`。
+
+为什么不是直接调会话级实例 `LoopApp-<id>`：那个实例只在「网页」页建出来之后才存在，而 agent 的第一次 `open` 恰恰发生在页面还不存在的时候——先有实例才能建页，鸡生蛋。所以壳上多一层 `LoopApp*For`：按 id 找到会话 → 建页（`SessionView.ShowBrowser` 顺手接线）→ 转给那个会话自己的 `BrowserView`。`sessionId` 由工具构造时注入，不是模型参数（§9.2）。
 
 与 `CollabTools.For(host)` 同一模式，不新增架构概念。
 
 ## 6. 迭代循环
+
 
 ```
 首版   create → open                          ~300ms
@@ -189,22 +192,30 @@ const r = await ui.call("SessionSubmit", { text: JSON.stringify(form) });   // �
 - 页面参数里出现 `sessionId` / `title` 一律丢弃，不参与寻址；
 - 两个会话的 LoopApp 在两个独立 `BrowserView` 里，连 `openui.local` 的映射根都不同（§9）。
 
-### 8.4 能力面：会话级实例的 action 清单
+### 8.4 能力面：两层，各自没有会话参数
 
-页面能调的 action，就是 §9 那个实例上带 `[PuppetAction]` 的方法；其余一律 `unknown action`：
+**第一层：页面 → 宿主**（`BrowserView` 上的会话级实例 `LoopApp-<sessionId>`）
+
+页面能调的 action 就是这个实例上带 `[PuppetAction]` 的方法；其余一律 `unknown action`：
 
 | action | 语义 |
 |---|---|
 | `SessionState` | 读 owner 会话的 `busy / model / title / queueLen` |
 | `SessionSubmit` | 把页面数据作为一条用户消息入队 owner 会话（默认「等本轮」，不打断正在跑的轮次） |
 | `SessionStop` | 硬停 owner 会话当前轮 |
-| `AppUndock` / `AppDock` | 搬进/搬出独立窗口 |
-| `AppClose` | 关闭本页（页面自毁） |
-| `AppInteract` | 解锁/锁定用户点按 |
+| `LoopAppOpen` / `LoopAppEval` / `LoopAppShot` | 打开/执行 JS/截图（`Open` 也接受页面 URL，不只是目录名） |
+| `LoopAppUndock` / `LoopAppDock` / `LoopAppInteract` | 独立窗口、锁定/解锁 |
+| `LoopAppState` | 锁定/浮动/当前地址 |
 
-Loop 侧是同一形状的另一个实例，方法转发到 `SendLoop` / `StopLoop` / 同一套浏览器动作。
+Loop 侧是同一形状的另一个实例（`LoopView` 的 `BrowserView`），`SessionSubmit` 落到 `Send(text, immediate:false)`。
 
 关键在于这些方法**签名里没有会话参数**（§9.2）：页面不是「被允许只能操作自己」，而是「没有语法能指向别人」。
+
+**第二层：agent → 宿主**（`MainForm` 上的 `LoopApp*For`）
+
+agent 侧工具要能在「网页」页还不存在时就把页面建出来，所以它调的是 `MainForm.LoopApp*For(sessionId, ...)`：
+按 id 找到会话 → 建页（`SessionView.ShowBrowser` 顺手接线）→ 转给那个会话自己的 `BrowserView`。
+`sessionId` 由 `LoopAppTool` 构造时注入（本会话 id），不是模型给的参数；找不到会话就拒绝，绝不新建。
 
 ### 8.5 事件方向
 
@@ -233,20 +244,17 @@ LoopApp 与 OpenLoop 同机同源、代码全部由 agent 生成，调内部状�
 `PuppetRegistry` 本来就支持多实例（`WebUi` 已是第二个）。给每个 `BrowserView` 注册一个实例，**构造时绑定 owner，方法签名里没有任何会话参数**：
 
 ```csharp
-// 一个浏览器一份；_owner 是构造时绑定的那个会话，之后无法更换
-internal sealed class LoopAppPuppet : IPuppet
+// BrowserView.OpenUi.cs：一个浏览器一份，Configure(owner, root) 时绑定，之后无法更换
+public partial class BrowserView : IPuppet
 {
-    private readonly Session _owner;          // Loop 侧换成 LoopView
-    string IPuppet.AgentInstanceName => "LoopApp-" + _owner.Id[..8];
+    private string _owner = "";                                   // 构造时绑定
+    string IPuppet.AgentInstanceName => "LoopApp-" + _owner;
 
-    [PuppetAction(Desc = "读本会话状态")]
-    public string SessionState() => ...;      // busy/model/title/queueLen
-
-    [PuppetAction(Desc = "把页面提交的数据作为用户消息入队本会话")]
-    public OperationResult SessionSubmit(string text, string tag = null) => ...;
-
-    [PuppetAction(Desc = "停止本会话当前轮")]
-    public OperationResult SessionStop() => ...;
+    [PuppetAction] public string SessionState() => ...;           // busy/model/title/queueLen
+    [PuppetAction] public OperationResult SessionSubmit(string text, string tag = "task") => ...;
+    [PuppetAction] public OperationResult SessionStop() => ...;
+    [PuppetAction] public OperationResult LoopAppOpen(string target) => ...;
+    [PuppetAction] public OperationResult LoopAppEval(string js) => ...;
 }
 ```
 
@@ -260,6 +268,8 @@ internal sealed class LoopAppPuppet : IPuppet
 | 改实例名去调 `MainForm.StopSession` | `name` 由桥拼，不读页面输入 |
 | 伪造 `{action:"invoke", args:[...]}` | `invoke` 不是该实例的 action，`unknown action` |
 | 直连端口 `POST /appagent/actions/StopSession` | 无 Bearer key → 401；`probe` / `help` 免凭证但读不到会话状态 |
+
+**agent 侧的第二层**（§8.4）：`LoopAppTool` 调的是 `MainForm.LoopApp*For(sessionId, ...)`，`sessionId` 在工具构造时注入，同样不是模型参数。它按 id 找会话、建页、转给那个会话自己的实例——找不到会话就拒绝，不会新建。两条链上都没有「模型指定别的会话」的位置。
 
 ### 9.3 其余口子逐条封
 

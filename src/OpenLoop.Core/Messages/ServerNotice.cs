@@ -9,10 +9,18 @@ namespace OpenLoop.Core.Messages
         public const string FailedPrefix = "执行失败：";
         public const string Stopped = "（已停止）";
 
+        /// <summary>没有正文的轮次在界面上留下的说明（壳补的，不是模型说的话）。</summary>
+        public const string BlankTurn = "（本轮没有产出正文";
+
+        /// <summary>护栏柔性收尾的答复前缀：用户看得见进度，但不是模型说的话，不回灌上下文。</summary>
+        public const string GuardStopped = "（本轮提前收尾）";
+
         public static bool IsNotice(string text)
             => !string.IsNullOrEmpty(text)
                && (text.StartsWith(FailedPrefix, StringComparison.Ordinal)
-                   || text.StartsWith(Stopped, StringComparison.Ordinal));
+                   || text.StartsWith(Stopped, StringComparison.Ordinal)
+                   || text.StartsWith(BlankTurn, StringComparison.Ordinal)
+                   || text.StartsWith(GuardStopped, StringComparison.Ordinal));
 
         /// <summary>额度/限流类失败的常见信号：各家没有统一错误码，只能靠错误文本启发式。</summary>
         private static readonly string[] QuotaSignals =

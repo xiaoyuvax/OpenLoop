@@ -69,6 +69,7 @@ namespace OpenLoop.Core.Agent
                 Reasoner = _reasoner,
                 Policy = _policy,
                 ContextLimit = contextLimit,
+                OutputTokenBudget = _policy.OutputTokenBudget,
                 ShouldStop = shouldStop,
                 OnDelta = onDelta,
                 OnReasoning = onReasoning,
@@ -109,6 +110,12 @@ namespace OpenLoop.Core.Agent
                    $"{s.Index}. {s.Tool}({s.ArgsSummary}) → {(s.Ok ? "成功" : "失败")}"));
 
         /// <summary>承诺话术只扫结尾这一段：正文里的「当前正在运行的…」这类描述性用词不算承诺。</summary>
+        /// <summary>输出 token 预算耗尽：把已跑的进度交回宿主，用户看得见发生了什么。</summary>
+        internal static string OutputBudgetText(AgentState state, int budget)
+            => $"已达单次任务输出 token 预算（{budget} 输出 token）。已执行的步骤：\n"
+               + string.Join("\n", state.Result.Steps.Select(s =>
+                   $"{s.Index}. {s.Tool}({s.ArgsSummary}) → {(s.Ok ? "成功" : "失败")}"));
+
         private const int ActionPromiseWindow = 300;
 
         private static readonly string[] ActionPromiseSignals =

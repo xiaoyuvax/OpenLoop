@@ -14,18 +14,28 @@ namespace OpenLoop.Service.Web
     {
         private readonly HttpClient _http;
 
+        /// <summary>手动压缩要等一次模型摘要（几十秒），不能沿用轮询用的 30 秒超时。</summary>
+        private readonly HttpClient _long;
+
         public WorkerApiClient(string endpoint = null, string key = null)
         {
             Endpoint = string.IsNullOrWhiteSpace(endpoint) ? Discover() : endpoint;
+            string actual = key ?? KeyFile.ReadOrCreate(AppPaths.BusKeyPath);
             // loopback：系统代理就是 VPN 自己，走代理会把本地请求发到隧道外
-            _http = new HttpClient(new SocketsHttpHandler { UseProxy = false })
+            _http = Create(TimeSpan.FromSeconds(30), actual);
+            _long = Create(TimeSpan.FromMinutes(3), actual);
+        }
+
+        private HttpClient Create(TimeSpan timeout, string key)
+        {
+            var http = new HttpClient(new SocketsHttpHandler { UseProxy = false })
             {
                 BaseAddress = new Uri("http://" + Endpoint),
-                Timeout = TimeSpan.FromSeconds(30)
+                Timeout = timeout
             };
-            string actual = key ?? KeyFile.ReadOrCreate(AppPaths.BusKeyPath);
-            if (!string.IsNullOrEmpty(actual))
-                _http.DefaultRequestHeaders.TryAddWithoutValidation(BusProtocol.KeyHeader, actual);
+            if (!string.IsNullOrEmpty(key))
+                http.DefaultRequestHeaders.TryAddWithoutValidation(BusProtocol.KeyHeader, key);
+            return http;
         }
 
         public string Endpoint { get; }
@@ -98,6 +108,15 @@ namespace OpenLoop.Service.Web
         public async Task<WorkerSessionSnapshot> TruncateAsync(string id, int keep, CancellationToken ct = default)
             => await PostAsync(Path(id) + "/truncate", new { keep }, ct);
 
+        /// <summary>手动压缩上下文（/compact）：A 把较早的消息换成摘要，返回压缩后的历史供界面同步。</summary>
+        public async Task<WorkerCompactResult> CompactAsync(string id, CancellationToken ct = default)
+        {
+            using var response = await _long.PostAsJsonAsync(Path(id) + "/compact", new { }, BusProtocol.Json, ct);
+            if (response.StatusCode == HttpStatusCode.NotFound) return null;
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<WorkerCompactResult>(BusProtocol.Json, ct);
+        }
+
         /// <summary>让 A 丢掉这个会话（正在跑的先停）；A 不认识它也算成功。</summary>
         public async Task DeleteAsync(string id, CancellationToken ct = default)
         {
@@ -128,6 +147,10 @@ namespace OpenLoop.Service.Web
             return await response.Content.ReadFromJsonAsync<WorkerSessionSnapshot>(BusProtocol.Json, ct);
         }
 
-        public void Dispose() => _http.Dispose();
+        public void Dispose()
+        {
+            _http.Dispose();
+            _long.Dispose();
+        }
     }
 }

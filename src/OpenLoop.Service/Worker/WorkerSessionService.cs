@@ -129,7 +129,7 @@ namespace OpenLoop.Service.Worker
                 : request.Approve ?? (_ => ApprovalDecision.Deny);
 
             var undo = new FileUndoLog();
-            var scope = new WorkspaceScope(workspace, fullAccess ? [] : null, fullAccess) { Undo = undo };
+            var scope = new WorkspaceScope(workspace, fullAccess ? [] : null, fullAccess, allowed: WorkerScopeRules.Allowed) { Undo = undo };
             var skillCatalog = SkillCatalog.Load(workspace, AppSettings.GlobalSkillsPath);
             using var plugins = PluginCatalog.Load(workspace);
             string checkpoint = Snapshots.Create(workspace, "worker");
@@ -165,6 +165,7 @@ namespace OpenLoop.Service.Worker
                     .Concat(plugins.Tools())
                     .Concat(OpenLoop.Service.Web.PuppetTools.For())
                     .Concat(CollabTools.For(request.Collab, request.SessionId))
+                    .Concat(WorkerScopeRules.LoopApp(workspace, request.SessionId))
                     .Concat(Media.ImageTools.For(workspace, settings, request.ImageModel, request.Attachments)),
                 settings.WebFetchMode);
 

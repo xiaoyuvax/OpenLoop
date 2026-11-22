@@ -5,6 +5,7 @@ using ChatMessage = ChatFlow.ChatMessage;
 using OpenLoop.Service.Loop;
 using OpenLoop.Service.Shell;
 using OpenLoop.Service.Source;
+using OpenLoop.Service.Storage;
 using OpenLoop.Service.Web;
 using OpenLoop.Service.Worker;
 using Puppet.Core;
@@ -35,6 +36,7 @@ namespace OpenLoop.App
         private readonly Dictionary<string, (PuppetView View, AntdUI.TabPage Page)> _puppets = new(StringComparer.Ordinal);
         private Session _lastSession;
         private bool _closing;
+        private bool _restoringTabs;
 
         /// <summary>3 秒一次的同步和打开会话都复用它：每次 new 一个客户端等于每次新建 HttpClient。</summary>
         private WorkerApiClient _workerClient;
@@ -622,13 +624,21 @@ namespace OpenLoop.App
             return (canRead ? "read=ok" : "read=denied") + " " + (canWrite ? "write=ok" : "write=denied");
         }
 
-        /// <summary>/complain：每条反馈独立起一个 Loop 会话，不并到最近的会话里；不抢当前标签页。</summary>
+        /// <summary>
+        /// /complain：每条反馈独立起一个 Loop 会话，不并到最近的会话里；不抢当前标签页。
+        /// 新会话沿用来源 Worker 会话的模型与强度（视图没建过就取它落盘的记录）。
+        /// </summary>
         private void OnComplaint(Session session, string text)
-            => PostComplaint(session.Workspace, text);
+        {
+            var (model, effort) = session.View != null
+                ? (session.View.Model, session.View.Effort)
+                : ChatHistory.LastModel(session.Workspace, session.Id);
+            PostComplaint(session.Workspace, text, model, effort);
+        }
 
-        private void PostComplaint(string workspace, string text)
+        private void PostComplaint(string workspace, string text, string model = null, string effort = null)
             => EnsureLoop(workspace, select: false, sessionId: "",
-                title: "反馈 " + DateTime.Now.ToString("HH:mm"))?.Post(text);
+                title: "反馈 " + DateTime.Now.ToString("HH:mm"), model: model, effort: effort)?.Post(text);
 
         /// <summary>
         /// 取（必要时创建）某个项目的 Loop 会话。历史按「项目 + 会话 id」分开存，
@@ -636,7 +646,8 @@ namespace OpenLoop.App
         /// </summary>
         /// <param name="sessionId">null = 该项目最近的 Loop 会话（没有就新建）；"" = 总是新建。</param>
         /// <param name="title">新建时的标题；null = 用索引里已有的标题。</param>
-        private LoopView EnsureLoop(string workspace, bool select, string sessionId = null, string title = null)
+        private LoopView EnsureLoop(string workspace, bool select, string sessionId = null, string title = null,
+            string model = null, string effort = null)
         {
             string target = workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _lastSession?.Workspace;
@@ -664,6 +675,7 @@ namespace OpenLoop.App
                 _loopView = existing.View;
                 _loopPage = existing.Page;
                 UpdateTabIcon(existing.Page);
+                SaveOpenTabs();
                 return existing.View;
             }
 
@@ -673,10 +685,10 @@ namespace OpenLoop.App
             view.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
             view.Sessions = () => _sessions;
             view.Iterate = () => ShowIterationAsync(target);
-            view.TransferToWorker = turns => TransferToWorker(target, turns);
+            view.TransferToWorker = turns => TransferToWorker(target, turns, view.Model, view.Effort);
             view.ForkRequested += ForkLoop;
             view.NewSessionRequested += NewLoopSession;
-            view.ComplaintRequested += text => PostComplaint(target, text);
+            view.ComplaintRequested += text => PostComplaint(target, text, view.Model, view.Effort);
             // 协作：协作会话是同工作区、平级的其他 Loop 会话（不是子 agent）。
             // 这两条委托会在 agent 的工具线程上被调用（CollabStart/CollabMonitor 都在后台轮里跑），
             // 建会话、列举会话都要回到界面线程，否则会跨线程碰控件与会话表。
@@ -684,18 +696,20 @@ namespace OpenLoop.App
             {
                 string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
                 // 沿用上下文：把发起方已完成的轮次写到新会话名下，前缀一致才能复用服务端缓存。
-                // Loop 会话跟随设置里的模型，模型对不上时拷过去只有坏处，不拷。
-                if (_settings.CollabReuseContext && string.Equals(view.Model, _settings.Model,
-                        StringComparison.OrdinalIgnoreCase))
+                // 协作会话沿用发起方的模型与强度（与 Worker 侧 StartCollab 同口径）。
+                if (_settings.CollabReuseContext)
                     ChatStore.Save(target, view.Turns.Where(t => !t.Streaming), id, view.Model,
-                        _settings.ReasoningEffort);
-                return EnsureLoop(target, select: false, sessionId: id, title: task.Title);
+                        view.Effort);
+                return EnsureLoop(target, select: false, sessionId: id, title: task.Title,
+                    model: view.Model, effort: view.Effort);
             });
             view.CollabPeers = () => OnUi(() => _loops.Values
                 .Select(e => e.View)
                 .Where(v => v != null && Paths.Same(v.Workspace, target))
                 .ToList());
             view.Initialize(target, () => _settings, id);
+            // 来源会话（/complain、/fork、转交、协作）带过来的模型与强度：新会话按它起步
+            if (!string.IsNullOrWhiteSpace(model)) view.AdoptParameters(model, effort);
             var page = new AntdUI.TabPage
             {
                 Text = LoopTabText(target, id),
@@ -722,6 +736,7 @@ namespace OpenLoop.App
             _loops[key] = (view, page);
             _loopView = view;
             _loopPage = page;
+            SaveOpenTabs();
             return view;
         }
 
@@ -844,6 +859,7 @@ namespace OpenLoop.App
             await OpenCodeHub.RefreshAsync();
             _tabs.SelectTab(_overviewPage);
             RestoreSessions();
+            RestoreTabs();
             if (_settings.Projects.Count == 0 && _sessions.Count == 0) OpenNewSessionTab("");
             else RefreshOverview();
             _ = BackfillStepsAsync();
@@ -1358,6 +1374,7 @@ namespace OpenLoop.App
             _tabPulse.Stop();
             _tabPulse.Dispose();
             SaveWindowBounds();
+            SaveOpenTabs();
             foreach (var session in _sessions)
             {
                 session.View?.FlushSideWork();
@@ -1445,7 +1462,8 @@ namespace OpenLoop.App
             view.ComplaintRequested += OnComplaint;
             view.ForkRequested += ForkSession;
             view.NewSessionRequested += NewSessionFrom;
-            view.TransferToLoop = turns => TransferToLoop(session.Workspace, turns);
+            view.TransferToLoop = turns => TransferToLoop(session.Workspace, turns,
+                view.Model, view.Effort);
             view.TitleChanged += OnSessionTitleChanged;
             view.SideWorkEvicted += OnSideWorkEvicted;
             session.Page?.Controls.Add(view);
@@ -1488,6 +1506,95 @@ namespace OpenLoop.App
             {
                 AppLog.Error("恢复会话失败", ex);
             }
+        }
+
+        /// <summary>
+        /// 上次开着哪些标签页：重启后按顺序摆回，并选回原来那一页。
+        /// 页面照常按需建（历史在 EnsureView 里读），不逐页去对 A，交给 3 秒同步。
+        /// </summary>
+        private void RestoreTabs()
+        {
+            if (_settings.OpenTabs.Count == 0) return;
+            _restoringTabs = true;
+            try
+            {
+                var loops = LoopIndex.List();
+                AntdUI.TabPage active = null;
+                foreach (var key in _settings.OpenTabs)
+                {
+                    AntdUI.TabPage page = null;
+                    if (key.StartsWith("w|", StringComparison.Ordinal))
+                    {
+                        var session = _sessions.FirstOrDefault(s => s.Id == key[2..]);
+                        if (session == null) continue;
+                        EnsureView(session);
+                        if (session.Page.Parent == null) _tabs.Pages.Add(session.Page);
+                        UpdateTabIcon(session.Page);
+                        page = session.Page;
+                    }
+                    else if (key.StartsWith("l|", StringComparison.Ordinal))
+                    {
+                        var parts = key[2..].Split('|', 2);
+                        if (parts.Length != 2) continue;
+                        // 小账本里没有这条 Loop 会话（删掉了）就不再复活一个空页
+                        if (!loops.Any(l => Paths.Same(l.Workspace, parts[0]) && l.SessionId == parts[1])) continue;
+                        if (EnsureLoop(parts[0], select: false, sessionId: parts[1]) != null
+                            && _loops.TryGetValue(LoopKey(parts[0], parts[1]), out var entry))
+                            page = entry.Page;
+                    }
+                    if (page != null && string.Equals(key, _settings.ActiveTab, StringComparison.OrdinalIgnoreCase))
+                        active = page;
+                }
+
+                if (active != null)
+                {
+                    _tabs.SelectTab(active);
+                    if (active.Tag is Session selected)
+                    {
+                        _lastSession = selected;
+                        _overview.FocusProject(selected.Workspace);
+                    }
+                    if (active.Tag is LoopView loop) _overview.FocusProject(loop.Workspace);
+                }
+                RefreshOverview();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("恢复标签页失败：" + ex.Message);
+            }
+            finally
+            {
+                _restoringTabs = false;
+            }
+        }
+
+        /// <summary>把标签栏记进设置（只存 Worker / Loop 页），下次启动按原顺序摆回来。</summary>
+        private void SaveOpenTabs()
+        {
+            if (_restoringTabs) return;
+            var tabs = new List<string>();
+            foreach (var page in _tabs.Pages)
+            {
+                switch (page.Tag)
+                {
+                    case Session session: tabs.Add("w|" + session.Id); break;
+                    case LoopView loop when !string.IsNullOrWhiteSpace(loop.Workspace):
+                        tabs.Add("l|" + loop.Workspace + "|" + loop.SessionId); break;
+                }
+            }
+
+            string active = _tabs.SelectedTab switch
+            {
+                var page when page?.Tag is Session session => "w|" + session.Id,
+                var page when page?.Tag is LoopView loop && !string.IsNullOrWhiteSpace(loop.Workspace)
+                    => "l|" + loop.Workspace + "|" + loop.SessionId,
+                _ => ""
+            };
+
+            if (active == _settings.ActiveTab && tabs.SequenceEqual(_settings.OpenTabs)) return;
+            _settings.OpenTabs = tabs;
+            _settings.ActiveTab = active;
+            try { _settings.Save(); } catch (Exception ex) { AppLog.Warn("保存标签页失败：" + ex.Message); }
         }
 
         /// <summary>
@@ -1656,6 +1763,9 @@ namespace OpenLoop.App
             var session = CreateSession(source.Workspace);
             //克隆可见历史：新会话既是「带着上下文」起步，后续追问也仍带上下文
             session.Book.ReplaceAll(source.Book.Turns.Select(CloneTurn), null);
+            // 分叉沿用源会话的模型与强度：写进历史，重开这个会话也还是它
+            ChatStore.Save(session.Workspace, session.Book.Turns, session.Id,
+                source.View?.Model, source.View?.Effort);
             ShowSession(session);
             session.View.ComposerText = request;
             session.View.SendMode("task");
@@ -1673,9 +1783,11 @@ namespace OpenLoop.App
             }
 
             string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
-            ChatStore.Save(workspace, source.Turns.Select(CloneTurn).ToList(), id);
+            // 分叉沿用源 Loop 会话的模型与强度
+            ChatStore.Save(workspace, source.Turns.Select(CloneTurn).ToList(), id, source.Model, source.Effort);
             ChatStore.Touch(workspace, id, "分叉 " + DateTime.Now.ToString("HH:mm"));
-            EnsureLoop(workspace, select: true, sessionId: id)?.Send(request);
+            EnsureLoop(workspace, select: true, sessionId: id, model: source.Model, effort: source.Effort)
+                ?.Send(request);
         }
 
         /// <summary>/new：开一个空会话，沿用来源会话的模型与强度；带请求就顺手发出去。</summary>
@@ -1707,14 +1819,16 @@ namespace OpenLoop.App
         /// Loop 页「转给 worker」：先把选中的对话落成新会话的历史，
         /// Worker 首次 Create 时会读这份历史当初始上下文；再开这个会话让用户接着追问。
         /// </summary>
-        private bool TransferToWorker(string workspace, IReadOnlyList<ChatTurn> turns)
+        private bool TransferToWorker(string workspace, IReadOnlyList<ChatTurn> turns,
+            string model = null, string effort = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return false;
             workspace = Paths.Normalize(workspace);
             string id = Guid.NewGuid().ToString("N")[..8];
             string title = "转交 " + DateTime.Now.ToString("HH:mm");
             var cloned = turns.Select(CloneTurn).ToList();
-            ChatStore.Save(workspace, cloned, id);
+            // 沿用来源 Loop 会话的模型与强度：Worker 打开时按这份记录恢复
+            ChatStore.Save(workspace, cloned, id, model, effort);
             ChatStore.Touch(workspace, id, title);
             ShowSession(CreateSession(workspace, id, title));
             return true;
@@ -1724,16 +1838,18 @@ namespace OpenLoop.App
         /// Worker 页「转给 Loop」：把选中的对话落成新 Loop 会话的历史，
         /// Loop 页打开时会读这份历史当初始上下文。
         /// </summary>
-        private bool TransferToLoop(string workspace, IReadOnlyList<ChatTurn> turns)
+        private bool TransferToLoop(string workspace, IReadOnlyList<ChatTurn> turns,
+            string model = null, string effort = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return false;
             workspace = Paths.Normalize(workspace);
             string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
             string title = "转交 " + DateTime.Now.ToString("HH:mm");
-            ChatStore.Save(workspace, turns.Select(CloneTurn).ToList(), id);
+            // 沿用来源 Worker 会话的模型与强度：Loop 打开时按这份记录恢复
+            ChatStore.Save(workspace, turns.Select(CloneTurn).ToList(), id, model, effort);
             // Loop 会话只登记在 loops.json：写 chats/index.json 会让它被当成 Worker 会话恢复出来
             LoopIndex.Rename(workspace, id, title);
-            return EnsureLoop(workspace, true, id) != null;
+            return EnsureLoop(workspace, true, id, model: model, effort: effort) != null;
         }
 
         private static ChatTurn CloneTurn(ChatTurn t)
@@ -1872,6 +1988,7 @@ namespace OpenLoop.App
 
             if (selected) _tabs.SelectTab(_overviewPage);
             RefreshOverview();
+            SaveOpenTabs();
         }
 
         private bool OnClosingPage(object sender, AntdUI.ClosingPageEventArgs e)
@@ -2013,6 +2130,7 @@ namespace OpenLoop.App
                 session.View?.SetActive(session.Page == selected);
             if (selected == _overviewPage) _overview.FocusProject(_lastSession?.Workspace);
             RefreshOverview();
+            SaveOpenTabs();
         }
 
         private void OnSessionStateChanged(Session session)
@@ -2033,7 +2151,8 @@ namespace OpenLoop.App
         }
 
         /// <summary>旁路被新旁路挤走：旧结果落成一个普通会话，之后可从会话历史恢复继续聊。</summary>
-        private void OnSideWorkEvicted(string workspace, IReadOnlyList<ChatTurn> turns)
+        private void OnSideWorkEvicted(string workspace, IReadOnlyList<ChatTurn> turns,
+            string model = null, string effort = null)
         {
             if (turns == null || turns.Count == 0) return;
             int steps = turns[^1].ToolStepCount;
@@ -2041,13 +2160,14 @@ namespace OpenLoop.App
             {
                 // 关窗时只落盘，不建视图、不再请求模型
                 string id = Guid.NewGuid().ToString("N")[..8];
-                ChatStore.Save(workspace, turns, id);
+                ChatStore.Save(workspace, turns, id, model, effort);
                 ChatStore.Touch(workspace, id, null, steps);
                 return;
             }
             var session = CreateSession(workspace, steps: steps);
             session.Book.ReplaceAll(turns, null);
-            ChatStore.Save(workspace, turns, session.Id);
+            // 旁路用的模型/强度跟着落盘：转成普通会话后重开也还是它
+            ChatStore.Save(workspace, turns, session.Id, model, effort);
             ChatStore.Touch(workspace, session.Id, null, steps);
             EnsureView(session).RequestTitle();
             RefreshOverview();

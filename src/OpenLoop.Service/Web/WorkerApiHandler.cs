@@ -142,6 +142,11 @@ namespace OpenLoop.Service.Web
                         ? Json(req, _host.Get(id))
                         : NotFound(req);
                 }
+                case "compact":
+                {
+                    var compact = _host.Compact(id);
+                    return compact == null ? NotFound(req) : Json(req, compact);
+                }
                 case "model":
                 {
                     var body = ReadBody<ModelRequest>(req);

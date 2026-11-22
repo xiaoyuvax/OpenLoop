@@ -4,6 +4,7 @@ using OpenLoop.Core.Safety;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Logging;
 using OpenLoop.Service.Media;
+using OpenLoop.Service.Models;
 using OpenLoop.Service.Storage;
 
 namespace OpenLoop.Service.Worker
@@ -111,6 +112,27 @@ namespace OpenLoop.Service.Worker
         public string Reason { get; set; }
     }
 
+    /// <summary>手动压缩（/compact）的输入：压缩只需模型与会话信息，不跑工具。</summary>
+    public sealed class WorkerCompactRequest
+    {
+        public AppSettings Settings { get; init; }
+        public string Workspace { get; init; }
+        public string Model { get; init; }
+        public string Effort { get; init; }
+        public IReadOnlyList<LlmMessage> History { get; init; }
+        public int TailTokens { get; init; }
+    }
+
+    /// <summary>手动压缩的结果：Messages 是压缩后的历史，界面拿它同步本地副本。</summary>
+    public sealed class WorkerCompactResult
+    {
+        public bool Ok { get; set; }
+        public string Error { get; set; }
+        public int Before { get; set; }
+        public int After { get; set; }
+        public List<LlmMessage> Messages { get; set; }
+    }
+
     /// <summary>
     /// Worker 会话宿主：拥有会话、队列与运行状态，不依赖界面。
     /// WinForms 与 Web 都只读取快照、调用方法；进程内用 <see cref="Changed"/>，跨进程用 revision 轮询。
@@ -124,15 +146,25 @@ namespace OpenLoop.Service.Worker
 
         private readonly Dictionary<string, Session> _sessions = new(StringComparer.OrdinalIgnoreCase);
         private readonly Func<WorkerRunRequest, CancellationToken, Task<WorkerRunResult>> _runner;
+        private readonly Func<WorkerCompactRequest, CancellationToken, Task<List<LlmMessage>>> _compactor;
         private readonly OpenLoop.Service.Web.LoopApiClient _loop;
         private readonly object _lock = new();
 
         public WorkerSessionHost(
             Func<WorkerRunRequest, CancellationToken, Task<WorkerRunResult>> runner = null,
-            OpenLoop.Service.Web.LoopApiClient loop = null)
+            OpenLoop.Service.Web.LoopApiClient loop = null,
+            Func<WorkerCompactRequest, CancellationToken, Task<List<LlmMessage>>> compactor = null)
         {
             _runner = runner ?? ((request, ct) => new WorkerSessionService().RunAsync(request, ct));
+            _compactor = compactor ?? CompactWithModel;
             _loop = loop;
+        }
+
+        private static async Task<List<LlmMessage>> CompactWithModel(WorkerCompactRequest request, CancellationToken ct)
+        {
+            var reasoner = Reasoners.Create(request.Settings, request.Model, request.Effort, request.Workspace,
+                _ => ApprovalDecision.Deny);
+            return await CompressionStep.CompressAsync(request.History, reasoner, ct, request.TailTokens);
         }
 
         /// <summary>会话有任何变化时触发（参数是会话 id）。可能在线程池线程上触发。</summary>
@@ -416,6 +448,80 @@ namespace OpenLoop.Service.Worker
             return true;
         }
 
+        /// <summary>
+        /// 手动压缩上下文（/compact）：把较早的消息换成模型摘要，写进最近一轮的 transcript，
+        /// 下一轮起沿用。运行中拒绝；压缩期间用户又动了会话就丢弃这次结果。
+        /// </summary>
+        public WorkerCompactResult Compact(string id)
+        {
+            Session session;
+            List<LlmMessage> history;
+            int epoch;
+            lock (_lock)
+            {
+                if (!_sessions.TryGetValue(id ?? "", out session)) return null;
+                if (session.State == Running) return new() { Error = "当前轮还在跑，先停止再压缩。" };
+                history = BuildHistory(session.Turns);
+                epoch = session.UserEpoch;
+            }
+
+            if (history.Count < 2) return new() { Error = "上下文太短，没有可压缩的部分。" };
+
+            int before = AgentContext.EstimateTokens(history);
+            var settings = session.Settings();
+            List<LlmMessage> compacted;
+            try
+            {
+                compacted = _compactor(new WorkerCompactRequest
+                {
+                    Settings = settings,
+                    Workspace = session.Workspace,
+                    Model = session.Model,
+                    Effort = session.Effort,
+                    History = history,
+                    TailTokens = AgentContext.TailTokenBudget(ModelCatalog.ContextLimit(session.Model, settings))
+                }, CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("手动压缩失败：" + ex.Message);
+                return new() { Error = ex.Message };
+            }
+
+            if (compacted == null || compacted.Count == 0)
+                return new() { Error = "上下文太短，没有可压缩的中间部分。" };
+
+            int after;
+            lock (_lock)
+            {
+                if (session.State == Running || session.UserEpoch != epoch)
+                    return new() { Error = "会话有新动作，本次压缩已丢弃。" };
+                after = ApplyCompacted(session.Turns, compacted);
+                if (after < 0) return new() { Error = "没有可压缩的上下文。" };
+                session.ContextTokens = after;
+                session.UserEpoch++;
+                session.Revision++;
+            }
+
+            Changed?.Invoke(id);
+            Persist(session);
+            return new() { Ok = true, Before = before, After = after, Messages = compacted };
+        }
+
+        /// <summary>把压缩结果挂到最近一轮，下一轮的 BuildHistory 就以它为准；返回压缩后的估算 token。</summary>
+        internal static int ApplyCompacted(List<WorkerTurn> turns, IReadOnlyList<LlmMessage> compacted)
+        {
+            if (turns == null || turns.Count == 0 || compacted == null) return -1;
+            var list = compacted
+                .Where(m => m != null && !string.IsNullOrEmpty(m.Content)
+                    && !string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase))
+                .Select(m => new LlmMessage(m.Role, m.Content))
+                .ToList();
+            if (list.Count == 0) return -1;
+            turns[^1].Transcript = list;
+            return AgentContext.EstimateTokens(list);
+        }
+
         public bool RemovePending(string id, int index)
         {
             lock (_lock)
@@ -478,6 +584,23 @@ namespace OpenLoop.Service.Worker
             OpenLoop.Service.Web.SessionBoard.Leaving(
                 AgentIdentity.IdFor("A", session.Id), LastWords(session));
             return true;
+        }
+
+        /// <summary>鍚屽伐浣滃尯鏈夋柊浼氳瘽鏃跺線闃熷垪閲屾斁涓€鏉″崗浣滄彁绀猴紙涓庣敤鎴疯緭鍏ュ悓涓€闃熷垪锛屽彲鎾ゅ洖锛夈€?/summary>
+        private void AnnouncePeers(Session session)
+        {
+            // 璋冪敤鏂规寔鏈?_lock
+            var peers = OpenLoop.Service.Web.SessionBoard.Peers(
+                session.Workspace, AgentIdentity.IdFor("A", session.Id));
+            var fresh = peers.Where(p => session.PeersAnnounced.Add(p.Id)).ToList();
+            if (fresh.Count == 0) return;
+            session.Pending.Add(new PendingSend
+            {
+                Text = OpenLoop.Service.Web.SessionBoard.PeerNotice(fresh.Select(p => p.Summary()).ToList()),
+                Tag = "collab",
+                Auto = true
+            });
+            session.Revision++;
         }
 
         /// <summary>会话关闭时留给留言板的最后一句：优先最后一条回答，未完成的任务说清楚。</summary>
@@ -592,6 +715,7 @@ namespace OpenLoop.Service.Worker
             // 留言板报到：首轮附自我介绍（身份+任务），之后每次开轮只更新「在做的事」。
             OpenLoop.Service.Web.SessionBoard.Opening(
                 AgentIdentity.IdFor("A", session.Id), "Worker", session.Workspace, session.Model, text);
+            AnnouncePeers(session);
 
             string id = session.Id;
             // 流式正文只写截掉协议片段后的部分（CutToolCallText），与 LoopView/SideWorkView 的
@@ -772,7 +896,7 @@ namespace OpenLoop.Service.Worker
                     turn.Steps = result.Steps > turn.Steps ? result.Steps : turn.Steps;
                     turn.Assistant = result.Outcome switch
                     {
-                        "error" => ServerNotice.FailedPrefix + result.ErrorMessage,
+                        "error" => FailedText(turn, result.ErrorMessage),
                         // 被打断的轮次保留已经流出来的正文，否则用户前面看到的输出会凭空消失
                         "stopped" when string.IsNullOrWhiteSpace(result.FinalAnswer) || ServerNotice.IsNotice(result.FinalAnswer)
                             => string.IsNullOrWhiteSpace(turn.Assistant) ? ServerNotice.Stopped : turn.Assistant,
@@ -811,6 +935,20 @@ namespace OpenLoop.Service.Worker
                     FreeLimitRecovery.TryStart(id, failedModel, () => UserEpochOf(id), text => Send(id, "task", text));
                 }
             });
+        }
+
+        /// <summary>
+        /// 失败轮的正文：先交代这一轮已经做了什么，再写失败原因。
+        /// 只留一句错误信息时，几十步的进展在界面上等于凭空消失（与 Loop 侧同一文案）。
+        /// </summary>
+        private static string FailedText(WorkerTurn turn, string error)
+        {
+            string head = ServerNotice.FailedPrefix + error;
+            string tools = turn?.ToolLines?.Trim();
+            if (string.IsNullOrEmpty(tools)) return head;
+            var lines = tools.Split('\n');
+            var tail = lines.Length <= 6 ? lines : lines[(lines.Length - 6)..];
+            return head + "\n\n本轮已执行 " + lines.Length + " 步，最近几步：\n" + string.Join("\n", tail);
         }
 
         /// <summary>会话的用户动作计数；会话已不存在返回 null（免费额度自愈据此收工）。</summary>
@@ -1024,6 +1162,9 @@ namespace OpenLoop.Service.Worker
             public List<WorkerTurn> Turns { get; } = [];
             public List<PendingSend> Pending { get; } = [];
             public List<Prompt> Prompts { get; } = [];
+
+            /// <summary>宸茬粡鎻愮ず杩囩殑鏂板悓浼翠細璇?id锛氬悓涓€涓悓浼村彧鍏ラ槦涓€娆★紝鍏嶅緱姣忚疆閮藉埛鎻愮ず銆?/summary>
+            public HashSet<string> PeersAnnounced { get; } = new(StringComparer.Ordinal);
 
             public string State { get; set; } = Idle;
             public int Revision { get; set; }

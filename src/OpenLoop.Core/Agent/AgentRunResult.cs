@@ -52,5 +52,11 @@ namespace OpenLoop.Core.Agent
         public int ArgRepairAttempts { get; set; }
         public int ArgRepairSuccesses { get; set; }
         public int Compressions { get; set; }
+
+        /// <summary>输出退化/思维链发散重试用尽后，按柔性收尾结束的次数（不是失败）。</summary>
+        public int DegenerateStops { get; set; }
+
+        /// <summary>Output token budget exhausted (per-task cap); budget-style stop, not a failure.</summary>
+        public int OutputBudgetStops { get; set; }
     }
 }

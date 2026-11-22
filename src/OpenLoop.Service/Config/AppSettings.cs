@@ -152,6 +152,12 @@ namespace OpenLoop.Service.Config
         /// <summary>已使用的项目（工作区路径），用于启动时恢复项目列表。</summary>
         public List<string> Projects { get; set; } = [];
 
+        /// <summary>上次打开的标签页：w|会话id / l|工作区|Loop会话id，启动时按顺序摆回。</summary>
+        public List<string> OpenTabs { get; set; } = [];
+
+        /// <summary>上次选中的标签页键（OpenTabs 里的一个）；空 = 会话总览。</summary>
+        public string ActiveTab { get; set; } = "";
+
         /// <summary>配色：light / dark / grayblue。</summary>
         public string Theme { get; set; } = "light";
 
@@ -237,6 +243,7 @@ namespace OpenLoop.Service.Config
             settings.ModelProps ??= [];
             settings.RecentModels ??= [];
             settings.DisabledModels ??= [];
+            settings.OpenTabs ??= [];
 
             if (settings.Providers.Count == 0 && !string.IsNullOrWhiteSpace(settings.BaseUrl))
             {

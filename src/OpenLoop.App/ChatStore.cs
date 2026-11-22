@@ -69,7 +69,9 @@ namespace OpenLoop.App
             var entries = (turns ?? []).Select(t => new ChatEntry
             {
                 User = t.UserText,
-                Assistant = t.AssistantText,
+                // 已结束的轮次不许落盘成空白：重新打开会话时那会变成一条「静默中断」，
+                // 既看不出跑了什么，也没法判断要不要继续。
+                Assistant = AssistantOf(t),
                 Reasoning = t.ReasoningText,
                 ToolLines = t.ToolCallLines,
                 Timeline = t.TimelineText,
@@ -84,6 +86,17 @@ namespace OpenLoop.App
             }).ToList();
 
             ChatHistory.Write(workspace, kind, entries);
+        }
+
+        /// <summary>这一轮要落盘的正文；已结束却什么都没留下时补一句可操作的说明。</summary>
+        private static string AssistantOf(ChatTurn turn)
+        {
+            string text = turn.AssistantText;
+            if (!string.IsNullOrWhiteSpace(text)) return text;
+            if (turn.Streaming) return text;   // 正在跑的轮次照旧留空，收尾时会再存一次
+            int steps = turn.ToolStepCount;
+            return OpenLoop.Core.Messages.ServerNotice.BlankTurn
+                   + (steps > 0 ? $"，已执行 {steps} 步；说「继续」会接着做。）" : "；说「继续」会重新开一轮。）");
         }
 
         /// <summary>
