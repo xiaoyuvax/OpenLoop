@@ -182,6 +182,27 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void ParsesDsmlInvokeWithSingleQuotesInArgs()
+        {
+            // 实测（付费模型写 PowerShell 补丁脚本）：args 的 content 全是 'Stop' 这类单引号，
+            // 旧实现先把 ' 全换成 " 再解析 → JSON 坏掉 → 整条调用判格式损坏，重试 3 次后整轮停机
+            const string text =
+                "<｜｜DSML｜｜ calls>\n" +
+                "<｜｜DSML｜｜ invoke name=\"WriteFile\">\n" +
+                "<｜｜DSML｜｜ parameter name=\"args\" string=\"false\">" +
+                "{\"path\":\"a.ps1\",\"content\":\"$x='Stop'\\r\\n$y='D:\\\\PUB'\"}" +
+                "</｜｜DSML｜｜ parameter>\n" +
+                "</｜｜DSML｜｜ invoke>\n" +
+                "</｜｜DSML｜｜ calls>";
+
+            var calls = AgentToolCallParser.TryParseAll(text);
+            Assert.Single(calls);
+            Assert.Equal("WriteFile", calls[0].Tool);
+            Assert.Equal("a.ps1", calls[0].Args["path"]);
+            Assert.Equal("$x='Stop'\r\n$y='D:\\PUB'", calls[0].Args["content"]);
+        }
+
+        [Fact]
         public void ToolParameterIsNameNotArgument()
         {
             // 同一种泄漏的另一半：有 invoke 头，但参数里又夹了 name="tool"；

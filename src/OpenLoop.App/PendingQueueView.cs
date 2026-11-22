@@ -1,4 +1,5 @@
 using OpenLoop.Service.Pending;
+using System.Text;
 
 namespace OpenLoop.App
 {
@@ -11,9 +12,15 @@ namespace OpenLoop.App
         private PendingQueue _queue;
         private IReadOnlyList<string> _agentNotes = [];
 
+        /// <summary>上次建行时的内容指纹：宿主高频 Sync 而内容没变就跳过重建。</summary>
+        private string _syncSignature;
+
         public PendingQueueView()
         {
             InitializeComponent();
+            // 队列行按内容整体重建：双缓冲，避免重建过程中闪白
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
+            UpdateStyles();
             _list.SizeChanged += (_, _) => FitRows();
         }
 
@@ -41,6 +48,7 @@ namespace OpenLoop.App
         public void Bind(PendingQueue queue)
         {
             _queue = queue;
+            _syncSignature = null;   // 换了队列：下一次 Sync 必须重建
             Sync();
         }
 
@@ -49,29 +57,60 @@ namespace OpenLoop.App
         {
             if (IsDisposed) return;
 
-            while (_list.Controls.Count > 0)
-            {
-                var old = _list.Controls[0];
-                _list.Controls.RemoveAt(0);
-                // 行按钮的 Click 正在执行时销毁会崩，延后一拍
-                if (IsHandleCreated) BeginInvoke(new Action(old.Dispose));
-                else old.Dispose();
-            }
+            // 宿主每 250ms 把 A 的快照并进来一次：内容没变就别重建行，否则队列栏一直闪
+            string signature = Signature();
+            if (signature == _syncSignature) return;
+            _syncSignature = signature;
 
-            int count = _queue?.Count ?? 0;
-            _lblCount.Text = $"待发送 {count}";
-            // agent 自动插入的排在前面：用户一眼看出哪些不是自己敲的
+            SuspendLayout();
+            _list.SuspendLayout();
+            try
+            {
+                while (_list.Controls.Count > 0)
+                {
+                    var old = _list.Controls[0];
+                    _list.Controls.RemoveAt(0);
+                    // 行按钮的 Click 正在执行时销毁会崩，延后一拍
+                    if (IsHandleCreated) BeginInvoke(new Action(old.Dispose));
+                    else old.Dispose();
+                }
+
+                int count = _queue?.Count ?? 0;
+                _lblCount.Text = $"待发送 {count}";
+                // agent 自动插入的排在前面：用户一眼看出哪些不是自己敲的
+                foreach (string note in _agentNotes)
+                    _list.Controls.Add(CreateNoteRow(note));
+                if (_queue != null)
+                    foreach (var item in _queue.Items)
+                        _list.Controls.Add(CreateRow(item));
+
+                // 最多露出 4 行，其余滚动
+                int rows = count + _agentNotes.Count;
+                Height = rows == 0 ? 0 : Dip(30) + Math.Min(rows, 4) * Dip(28) + Dip(6);
+                Visible = rows > 0;
+                FitRows();
+            }
+            finally
+            {
+                _list.ResumeLayout(true);
+                ResumeLayout(true);
+            }
+        }
+
+        /// <summary>队列栏要显示的内容指纹：条数、自动汇报文本、每条的模式/来源/附件/正文。</summary>
+        private string Signature()
+        {
+            var sb = new StringBuilder();
+            sb.Append(_queue?.Count ?? 0).Append('|').Append(_agentNotes.Count).Append('|');
             foreach (string note in _agentNotes)
-                _list.Controls.Add(CreateNoteRow(note));
+                sb.Append(note).Append('\u001F');
             if (_queue != null)
                 foreach (var item in _queue.Items)
-                    _list.Controls.Add(CreateRow(item));
-
-            // 最多露出 4 行，其余滚动
-            int rows = count + _agentNotes.Count;
-            Height = rows == 0 ? 0 : Dip(30) + Math.Min(rows, 4) * Dip(28) + Dip(6);
-            Visible = rows > 0;
-            FitRows();
+                    sb.Append(item.Auto ? 'a' : 'u')
+                        .Append(item.Immediate ? 'i' : 'w')
+                        .Append(item.Attachments.Count).Append(':')
+                        .Append(item.Text).Append('\u001F');
+            return sb.ToString();
         }
 
         /// <summary>agent 自动插入的一行：特殊底色 + 「自动」标签，没有操作按钮。</summary>

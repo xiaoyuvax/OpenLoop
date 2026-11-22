@@ -64,6 +64,8 @@ namespace OpenLoop.Service.Worker
                 string doing = !string.IsNullOrWhiteSpace(last?.Status) ? last.Status
                     : !string.IsNullOrWhiteSpace(last?.ToolLines) ? LastLine(last.ToolLines)
                     : "";
+                // 进行中的工具行带 ">> " 前缀（界面上是未收尾标记），汇报里是噪声
+                doing = doing.Trim().TrimStart('>').Trim();
                 if (doing.Length > 0) text += " · 正在：" + Clip(doing, 160);
             }
             else if (last != null)

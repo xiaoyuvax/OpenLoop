@@ -310,6 +310,10 @@ namespace OpenLoop.Core.Agent
                 System.Globalization.CultureInfo.InvariantCulture, out double d)) return d;
             if ((raw.StartsWith('[') && raw.EndsWith(']')) || (raw.StartsWith('{') && raw.EndsWith('}')))
             {
+                try { using var doc = JsonDocument.Parse(raw); return doc.RootElement.Clone(); }
+                catch (JsonException) { }
+                // 单引号 JSON 是模型方言，只在严格解析失败后回退：直接替换会毁掉值里的合法单引号
+                // （实测 DSML 的 WriteFile content 全是 PowerShell 的 'Stop'，整条调用被判格式损坏）
                 try { using var doc = JsonDocument.Parse(raw.Replace('\'', '"')); return doc.RootElement.Clone(); }
                 catch (JsonException) { }
             }

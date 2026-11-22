@@ -585,9 +585,11 @@ namespace OpenLoop.Core.Agent
                         "tool-result: {\"ok\":false,\"error\":\"工具调用格式无效，JSON 无法解析。请重新输出一行合法 JSON（可跨行），格式：tool-call: {\\\"tool\\\":\\\"工具名\\\",\\\"args\\\":{...}}。\"}")));
                 }
 
+                // 停机也要留证据：只回一句「请更换模型」，原文一丢就再也查不出模型到底写了什么
                 return Task.FromResult(AgentStepResult.Complete(
                     new SetFinalAnswerEffect(
-                        "⚠ 模型多次输出无法解析的工具调用（JSON 格式错误，或泄漏原生 tool_calls / DSML 标记），已停止本次执行。请重试或更换模型。"),
+                        $"⚠ 模型连续 {state.MalformedRetries + 1} 次输出无法解析的工具调用（JSON 格式错误，或泄漏原生 tool_calls / DSML 标记），已停止本次执行。请重试或更换模型。"
+                        + "\n\n最后一次原始输出（供排查）：\n" + AgentLoop.Truncate(content?.Trim(), 2000)),
                     new SetGuardedStopEffect()));
             }
 

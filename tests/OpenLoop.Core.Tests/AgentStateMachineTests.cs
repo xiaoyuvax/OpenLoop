@@ -105,6 +105,23 @@ namespace OpenLoop.Core.Tests
             Assert.Equal(4, tool.Calls);
         }
 
+        /// <summary>格式纠正重试耗尽后停机时，把模型原文一起留下，否则无从判断是模型乱写还是解析器缺口。</summary>
+        [Fact]
+        public async Task Malformed_Stop_Keeps_Model_Raw_Output()
+        {
+            const string broken =
+                "<|DSML| invoke name=\"Shell\"><|DSML| parameter name=\"args\" string=\"false\">{\"argv\": [\"git\"";
+            var reasoner = new ScriptedReasoner(broken, broken, broken, broken);
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync([], "做点事");
+
+            Assert.True(result.StoppedByGuard);
+            Assert.Equal(3, result.Guards.MalformedRetries);
+            Assert.Contains("无法解析的工具调用", result.FinalAnswer);
+            Assert.Contains("{\"argv\": [\"git\"", result.FinalAnswer);
+        }
+
         /// <summary>并行只读批次不走 ExecuteWithArgRepairAsync：OnToolStart 仍须每个调用各报一次。</summary>
         [Fact]
         public async Task Parallel_ReadOnly_Batch_Reports_Every_Tool_Start()
