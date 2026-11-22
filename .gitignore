@@ -6,3 +6,4 @@ obj/
 .openloop/
 logs/
 artifacts/
+.tmp/
