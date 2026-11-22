@@ -239,6 +239,25 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void ParsesDsmlInvokeWithTrailingBraceJunk()
+        {
+            // 实测（deepseek-flash-1017，Loop 会话）：args JSON 后面多一个 }、整条 invoke 也没有结束标签。
+            // 旧实现把整段值当字符串 → args 摊不平 → 连续 3 次判格式损坏停机。
+            const string text =
+                "<｜｜DSML｜｜ calls>\n" +
+                "<｜｜DSML｜｜ invoke name=\"Shell\">\n" +
+                "<｜｜DSML｜｜ parameter name=\"args\" string=\"false\">" +
+                "{\"argv\":[\"powershell\",\"-NoProfile\",\"-Command\"," +
+                "\"$j.PSObject.Properties | ForEach-Object { $_.Name }\"]}}";
+
+            var calls = AgentToolCallParser.TryParseAll(text);
+            Assert.Single(calls);
+            Assert.Equal("Shell", calls[0].Tool);
+            Assert.Contains("powershell", calls[0].Args["argv"].ToString());
+            Assert.Contains("ForEach-Object", calls[0].Args["argv"].ToString());
+        }
+
+        [Fact]
         public void BracketStyleToolCallsTokenNeverReachesTheAnswer()
         {
             // Mistral 系没有尖括号，只有 [TOOL_CALLS] 前缀：同样算协议片段
@@ -401,6 +420,22 @@ namespace OpenLoop.Core.Tests
             Assert.Equal("改这句要用 tool", AgentToolCallParser.CutToolCallText("改这句要用 tool"));
             Assert.Equal("keytool 是签名工具", AgentToolCallParser.CutToolCallText("keytool 是签名工具"));
             Assert.Equal("toolbox 好用", AgentToolCallParser.CutToolCallText("toolbox 好用"));
+        }
+
+        /// <summary>正文里用行内代码/围栏引用协议是讲解，不是泄漏：流式显示不能按它把后文整段截掉。</summary>
+        [Fact]
+        public void CutToolCallTextKeepsProtocolQuotedInCode()
+        {
+            string inline = "历史里的 `tool-call:` / `tool-result:` 行由适配层翻译。\n\n结论：保留。";
+            Assert.Equal(inline, AgentToolCallParser.CutToolCallText(inline));
+
+            string fenced = "格式如下：\n```\ntool-call: {\"tool\":\"Shell\"}\n```\n其余正文照常显示。";
+            Assert.Equal(fenced, AgentToolCallParser.CutToolCallText(fenced));
+
+            // 代码外的真协议片段照旧截断（行内代码里的引用不能把后面这段也豁免掉）
+            Assert.Equal("先看一下现状。\n`tool-call:` 之后又吐了真调用：",
+                AgentToolCallParser.CutToolCallText(
+                    "先看一下现状。\n`tool-call:` 之后又吐了真调用：tool-call: {\"tool\":\"Shell\"}"));
         }
 
         [Fact]

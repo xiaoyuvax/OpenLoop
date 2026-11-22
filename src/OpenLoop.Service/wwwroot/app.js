@@ -173,14 +173,14 @@ function OverviewPage({ sessions, project, setProject, onOpen, onNew, onDelete, 
 
 // ---------------- 会话页 ----------------
 
-function Turn({ turn }) {
+function Turn({ turn, bodyRef }) {
   return h('div', { className: 'ol-turn' },
     turn.user ? h('div', null,
       h(Muted, null, '你'),
       h('div', { className: 'ol-body' }, turn.user)) : null,
     h('div', { style: turn.user ? { marginTop: 10 } : null },
       h(Muted, null, 'OpenLoop' + (turn.streaming ? ' · 输出中…' : '')),
-      h('div', { className: 'ol-body' }, turn.assistant || ''),
+      h('div', { ref: bodyRef, className: 'ol-body' }, turn.assistant || ''),
       turn.reasoning ? h('details', { className: 'ol-details' },
         h('summary', null, '思考'),
         h('pre', null, turn.reasoning)) : null,
@@ -200,6 +200,8 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   const [imageModel, setImageModel] = useState('');
   const [imageOpen, setImageOpen] = useState(false);
   const chatRef = useRef(null);
+  const answerRef = useRef(null);
+  const prevRun = useRef(null);   // 上一次快照的会话 id 与是否运行中：用来识别「本轮刚正常收尾」
 
   useEffect(() => {
     setModel(snapshot?.model || '');
@@ -209,6 +211,20 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   useEffect(() => {
     const el = chatRef.current;
     if (!el) return;
+    const nowRunning = snapshot?.state === 'running';
+    const prev = prevRun.current;
+    prevRun.current = { id: snapshot?.id, running: nowRunning };
+    // 正常收尾：把最后一条正文的开头对齐视口顶部，长回答从头读（流式期间照旧跟随末尾）。
+    // 正文不足一屏时浏览器把 scrollTop 钳到上限，仍停在末尾；与 WinForms 的 ScrollToAnswerStart 一致。
+    if (prev && prev.id === snapshot?.id && prev.running && !nowRunning
+        && snapshot?.outcome === 'ok' && answerRef.current) {
+      const box = el.getBoundingClientRect();
+      el.scrollTop = Math.max(0,
+        answerRef.current.getBoundingClientRect().top - box.top + el.scrollTop - 12);
+      return;
+    }
+    // 收尾之后不再自动跟随：否则下一次轮询又会把刚对齐到开头的正文拽回末尾
+    if (!nowRunning) return;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 160) el.scrollTop = el.scrollHeight;
   }, [snapshot]);
 
@@ -361,7 +377,10 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
       ? h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: '暂无对话' })
       : (snapshot.turns || []).length === 0
         ? h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: '暂无对话' })
-        : (snapshot.turns || []).map((t, i) => h(Turn, { key: i, turn: t })),
+        : (snapshot.turns || []).map((t, i) => h(Turn, {
+            key: i, turn: t,
+            bodyRef: i === (snapshot.turns || []).length - 1 ? answerRef : undefined
+          })),
     (snapshot?.prompts || []).map(p => h('div', { key: p.id, className: 'ol-prompt' },
       h('div', { style: { flex: 1, minWidth: 0 } },
         h('div', { style: { fontWeight: 600, whiteSpace: 'pre-wrap' } },

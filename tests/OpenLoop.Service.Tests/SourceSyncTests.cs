@@ -113,5 +113,21 @@ namespace OpenLoop.Service.Tests
             Assert.True(write.TryResolve(Path.Combine(sibling, "ChatFlow", "ChatMessageRow.cs"), out _, out _));
             Assert.False(write.TryResolve(Path.Combine(temp, "elsewhere", "a.cs"), out _, out _));
         }
+
+        [Fact]
+        public void Loop_writes_its_tmp_but_not_evidence_or_binaries()
+        {
+            var (read, write) = LoopScope.Create();
+            string root = LoopScope.SourceRoot;
+            string tmp = Path.Combine(root, ".openloop", "tmp", "images", "a.png");
+
+            Assert.True(write.TryResolve(tmp, out _, out _));
+            Assert.True(read.TryResolve(tmp, out _, out _));
+            Assert.False(write.TryResolve(Path.Combine(root, ".openloop", "loop", "findings.jsonl"), out _, out _));
+
+            string exe = Path.Combine(SourceSync.InstallRoot, "backends", "OpenLoop.A.exe");
+            Assert.True(read.TryResolve(exe, out _, out _));
+            Assert.False(write.TryResolve(exe, out _, out _));
+        }
     }
 }

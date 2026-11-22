@@ -392,6 +392,24 @@ namespace OpenLoop.App
 
         private BrowserView Browser => VisibleLoop?.Browser ?? Current?.View?.Browser;
 
+        /// <summary>取内嵌浏览器；「网页」页不存在时由 Agent 顺手打开（用户点不出空 WebView）。</summary>
+        private BrowserView EnsureBrowser()
+        {
+            if (Browser != null) return Browser;
+            if (VisibleLoop != null)
+            {
+                VisibleLoop.ShowBrowser();
+                return Browser;
+            }
+
+            var view = Current?.View;
+            if (view == null) return null;
+            // 目标会话不在前台时先切过去，否则用户看不到这个浏览器
+            if (Active == null) ShowSession(Current);
+            view.ShowBrowser();
+            return Browser;
+        }
+
         /// <summary>选中标签页如果是 Loop 页，就返回它（Loop 页有自己的右侧栏与「网页」页）。</summary>
         private LoopView VisibleLoop => (_tabs.SelectedTab as AntdUI.TabPage)?.Tag as LoopView;
 
@@ -422,7 +440,7 @@ namespace OpenLoop.App
         [PuppetAction(Desc = "在内嵌浏览器里导航到 url")]
         public OperationResult NavigateBrowser(string url)
         {
-            var browser = Browser;
+            var browser = EnsureBrowser();
             if (browser == null) return OperationResult.Failure("还没有会话");
             return browser.Navigate(url, out string error)
                 ? OperationResult.Success("已导航到 " + url, browser.Url)
@@ -432,7 +450,7 @@ namespace OpenLoop.App
         [PuppetAction(Desc = "在内嵌浏览器里执行 JS；data 是 WebView2 的 JSON 结果串（字符串结果带引号）")]
         public OperationResult EvalBrowserScript(string script)
         {
-            var browser = Browser;
+            var browser = EnsureBrowser();
             if (browser == null) return OperationResult.Failure("还没有会话");
             return browser.Eval(script, out string value, out string error)
                 ? OperationResult.Success("已执行", value)
@@ -442,7 +460,7 @@ namespace OpenLoop.App
         [PuppetAction(Desc = "截取内嵌浏览器当前页面（PNG，作为可下载产物返回）")]
         public OperationResult BrowserScreenshot()
         {
-            var browser = Browser;
+            var browser = EnsureBrowser();
             if (browser == null) return OperationResult.Failure("还没有会话");
             if (!browser.Screenshot(out string png, out string error)) return OperationResult.Failure(error);
             return OperationResult.Success("已截图",
@@ -452,7 +470,7 @@ namespace OpenLoop.App
         [PuppetAction(Desc = "解锁/锁定内嵌浏览器：解锁后用户可以直接点按网页")]
         public OperationResult SetBrowserInteract(bool enabled)
         {
-            var browser = Browser;
+            var browser = EnsureBrowser();
             if (browser == null) return OperationResult.Failure("还没有会话");
             browser.SetInteract(enabled);
             return OperationResult.Success(enabled ? "已解锁：用户可以操作网页" : "已锁定：网页由 Agent 控制");

@@ -4,7 +4,7 @@
 
 **一个可自我迭代的开放式 Agent。**
 
-OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A，前台）** 面向用户完成真实任务；**Loop（I，后台）** 观察 Worker、用户反馈与运行证据，迭代出 Worker 与壳的下一个版本。两者是独立进程，由**壳**统一拉起、监督与换版。
+OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A，前台）** 面向用户完成真实任务；**Loop（I，后台）** 是 OpenLoop 自己的 Worker——开发、除虫、维护它的源码并编排二进制迭代，同时用真实使用中的证据演进版本定义。两者是独立进程，由**壳**统一拉起、监督与换版。
 
 名字里的「Open」指环不闭合：世界（和用户）始终是环的一部分——Loop 的判断来自真实使用，而不是一套封闭的自评。
 
@@ -16,17 +16,17 @@ OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A�
 |---|---|---|
 | 壳 | `OpenLoop.exe`（WinForms）／`OpenLoop.Shell`（跨平台 CLI） | 唯一的进程编排者：拉起 A/I、展示界面、执行 stage / 重启 / 回滚 |
 | Worker（A） | `OpenLoop.A` | 会话、工具调用、审批、流式输出、trace；同时提供 Web 界面与 `/api/*` |
-| Loop（I） | `OpenLoop.I` | 按项目观察、读证据、记录发现、起草考核题、发起迭代（`/api/loop/*`） |
+| Loop（I） | `OpenLoop.I` | OpenLoop 自己的 Worker：开发/维护源码（Core/Service、A、I、壳、可迭代组件）、编排二进制迭代；按项目观察、读证据、记录发现、起草考核题、演进版本定义（`/api/loop/*`） |
 
 - 桌面壳与 Web 壳功能对齐：Web 界面由 A 在 bus 端口上直接提供（`http://<bus>/?key=...`），桌面壳右侧栏内嵌 WebView2。
-- Loop 的写权限只限：配置目录（`%APPDATA%\OpenLoop`）、OpenLoop 源码工作树、二进制版本目录；读权限与 Worker 同宽。
-- Loop 不改自己的源码；I 的二进制由 A 代换（I 不能重启自己，也不替换运行中的壳）。
+- Loop 的写权限：配置目录（`%APPDATA%\OpenLoop`，`versions/` 除外）、源码工作树（部署态是 `<安装根>/src/` 下的克隆，开发态是仓库与同级组件）、安装根下的配置与文档、本会话工作区的 `.openloop/tmp`；二进制（`backends/`、`versions/`）只读。读权限到 OpenLoop 安装/配置路径与本会话来源会话的工作区。
+- Loop 可以改自己的源码；I 的二进制由 A 代换（I 不能重启自己，也不替换运行中的壳）。
 
 ### 能做什么
 
 - **Worker**：多会话（关标签不停止）、流式正文与思考区、排队/立即插入、`/btw` 只读旁路、`/fork` 复制上下文、`/new` 新会话、模型与推理强度选择、上下文占比、成本与步数、完整 trace、调查卡（AskUser）。
 - **工具**：`ReadFile`、`WriteFile`、`ListDir`、`Grep`、`Shell` 等内置工具；`ReadEvidence`、`RecordFinding`、`ProposeTask` 走证据通道；技能（内置 + 项目级）；外部 `OpenCodeTask` / `DshTask`；`WebFetch` 只读抓取；Puppet 探测对端进程与界面。
-- **Loop**：每个项目一段 Loop 会话；读账本/trace/findings；把结论写成发现或考核题草稿；出迭代计划并执行。
+- **Loop**：OpenLoop 自己的 Worker——读写源码、跑构建与测试、出迭代计划并执行；每个项目一段 Loop 会话，读账本/trace/findings，把结论写成发现或考核题草稿，并演进版本定义。
 - **模型与外部 agent**：
   - **opencode**：本机 OpenCode v2 服务通过 `~/.local/state/opencode/service.json` 自动发现，就绪后作为 OpenCode 提供商出现；模型 id 形如 `opencode/<模型>@<提供商>`，可直接当会话模型，也可用 `OpenCodeTask` 把整件事交给它的 agent（工具、会话、上下文都在对方那边，权限仍转给你审批）。免费模型有标记。
   - **dsh**：装了 dsh 就作为一个提供商出现，模型 id 形如 `dsh/<提供商>/<模型>`；`DshTask` 把任务交给 dsh 的 agent，用它是因为 dsh 的插件生态（如 `our-free-model` 的免费模型）或 dsh 特有工具。模型清单在后台探测，界面隔一拍重开下拉即可。

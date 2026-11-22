@@ -69,6 +69,7 @@ namespace OpenLoop.Core.Agent
         /// <summary>
         /// 按「正文出现即分段」切分：（本段的思维与工具过程，本段的正文）。
         /// 正文之后又出现思维/工具就另起一段，末段正文可能为空串（仍在流）。始终至少一段。
+        /// 正文停在句子中间时不分段：模型常在答案写到一半时插一次工具调用，断在这里会把一句话劈到两个折叠区之间。
         /// </summary>
         public List<(string Thinking, string Answer)> RenderPhases()
         {
@@ -82,8 +83,8 @@ namespace OpenLoop.Core.Agent
                     answer.Append(block.Text);
                     continue;
                 }
-                // 本段已有正文，又回到思维/工具：先把当前段收尾，这个块开新段
-                if (answer.Length > 0)
+                // 本段已有正文，又回到思维/工具：停在自然断点才收尾，否则并入本段（正文继续接在后面）
+                if (answer.Length > 0 && EndsAtBreak(answer))
                 {
                     phases.Add((thinking.ToString().TrimEnd(), answer.ToString()));
                     thinking.Clear();
@@ -94,6 +95,17 @@ namespace OpenLoop.Core.Agent
             }
             phases.Add((thinking.ToString().TrimEnd(), answer.ToString()));
             return phases;
+        }
+
+        /// <summary>正文是否停在自然断点（换行、句末标点或代码块收尾）；停在词/半句中间就不让工具把正文切断。</summary>
+        private static bool EndsAtBreak(StringBuilder text)
+        {
+            string raw = text.ToString();
+            if (raw.EndsWith("\n", StringComparison.Ordinal)) return true;
+            string trimmed = raw.TrimEnd();
+            return trimmed.Length == 0
+                || trimmed.EndsWith("```", StringComparison.Ordinal)
+                || "。！？!?；;：:.…".Contains(trimmed[^1]);
         }
 
         /// <summary>

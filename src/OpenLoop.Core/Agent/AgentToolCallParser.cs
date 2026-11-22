@@ -308,14 +308,21 @@ namespace OpenLoop.Core.Agent
             if (long.TryParse(raw, out long l)) return l;
             if (double.TryParse(raw, System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out double d)) return d;
-            if ((raw.StartsWith('[') && raw.EndsWith(']')) || (raw.StartsWith('{') && raw.EndsWith('}')))
+            if ((raw.StartsWith('[') && raw.EndsWith(']')) || raw.StartsWith('{'))
             {
-                try { using var doc = JsonDocument.Parse(raw); return doc.RootElement.Clone(); }
-                catch (JsonException) { }
-                // 单引号 JSON 是模型方言，只在严格解析失败后回退：直接替换会毁掉值里的合法单引号
-                // （实测 DSML 的 WriteFile content 全是 PowerShell 的 'Stop'，整条调用被判格式损坏）
-                try { using var doc = JsonDocument.Parse(raw.Replace('\'', '"')); return doc.RootElement.Clone(); }
-                catch (JsonException) { }
+                // 值后面常跟残渣（实测 DSML：{"argv":[…]} 后多一个 }、没有结束标签）：
+                // 原文解不开就按括号配对取完整片段再试，别把整条调用判成格式损坏
+                string balanced = raw.StartsWith('{') ? ExtractJsonObject(raw, 0) : null;
+                foreach (string candidate in new[] { raw, balanced })
+                {
+                    if (candidate == null) continue;
+                    try { using var doc = JsonDocument.Parse(candidate); return doc.RootElement.Clone(); }
+                    catch (JsonException) { }
+                    // 单引号 JSON 是模型方言，只在严格解析失败后回退：直接替换会毁掉值里的合法单引号
+                    // （实测 DSML 的 WriteFile content 全是 PowerShell 的 'Stop'，整条调用被判格式损坏）
+                    try { using var doc = JsonDocument.Parse(candidate.Replace('\'', '"')); return doc.RootElement.Clone(); }
+                    catch (JsonException) { }
+                }
             }
             return raw;
         }
@@ -460,15 +467,23 @@ namespace OpenLoop.Core.Agent
         /// 流式显示用：截掉从第一个工具协议片段起的尾巴。模型在正文后面接着吐调用原文时，
         /// 只在整段以 marker 开头才屏蔽会让协议原文先显示、收尾再被清掉（用户看到闪现）。
         /// [final] 也是协议：流式中它先进时间线，收尾时只从最终答案里去掉，正文里就会留下标记。
-        /// shortcut: 这里不做 <see cref="StripCodeSpans"/> 豁免，正文里用代码块引用协议时流式会被截短；
-        /// 最终答案由 ResponseGuardStep 走 LooksLikeToolCallAttempt（已豁免代码块）覆盖，显示层可忍。
+        /// 反引号/围栏里的协议字样是引用（讲解、文档，本机 agent 的回答常在行内代码里写 <c>`tool-call:`</c>）：
+        /// 与 <see cref="LooksLikeToolCallAttempt"/> 同一判据，不算泄漏、不截，否则整段后文在流式期间消失。
         /// </summary>
         public static string CutToolCallText(string modelOutput)
         {
             if (string.IsNullOrWhiteSpace(modelOutput)) return "";
-            var match = ProtocolFragmentRegex.Match(modelOutput);
+            var match = ProtocolFragmentRegex.Match(MaskCodeSpans(modelOutput));
             string text = match.Success ? modelOutput[..match.Index].TrimEnd() : modelOutput;
             return CutProtocolPrefix(CutFinalMarkerTail(text));
+        }
+
+        /// <summary>把行内代码与围栏代码块换成等长占位符（索引不变）：判定协议片段时跳过代码里的引用。</summary>
+        private static string MaskCodeSpans(string text)
+        {
+            if (!text.Contains('`')) return text;
+            static string Mask(Match m) => new('x', m.Length);
+            return InlineCodeRegex.Replace(FencedCodeRegex.Replace(text, Mask), Mask);
         }
 
         /// <summary>

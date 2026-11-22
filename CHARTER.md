@@ -8,23 +8,28 @@
 
 - **壳（shell）**：唯一的进程编排者。拉起并监督 Worker（A）与 Loop（I），负责版本 stage / 重启 / 回滚。
 - **Worker（A，前台）**：面向用户工作——会话、工具、审批、trace。
-- **Loop（I，后台）**：观察 A 与壳的工作状态，积累判断，改进 **Worker 与壳**。
-- Loop **不改自己的源码**；I 的二进制换版由 A 在收到交接单后执行（I 不能换自己，也不能在运行中替换壳）。
+- **Loop（I，后台）**：OpenLoop 自己的 Worker——它的用户是 OpenLoop 本身。负责 Core/Service、A、I、壳与可迭代组件的开发、除虫、维护，并编排二进制迭代；同时观察 A 与壳的工作状态、用户的判定，演进版本定义。
+- Loop 的工区覆盖**部署态**（安装根：`src/` 下的源码克隆、`backends/`、`versions/`）与**开发态**（源码仓库与同级组件），两种布局等效，路径一律由 `SourceSync` 解析。
+- Loop 可以改自己的源码；I 的二进制换版由 A 在收到交接单后执行（I 不能换自己，也不能在运行中替换壳）。
+- **演进**只改版本定义（提示词、技能、策略、模型参数、激活的工具与模型集）；**迭代**才换二进制。两条线互不触发。
 
 ## 2. 权限边界
 
 Loop 的写权限**只限**：
 
-1. OpenLoop 的配置目录（`%APPDATA%\OpenLoop`）；
-2. OpenLoop 的源码仓库工作树（克隆/更新来的那份）；
-3. OpenLoop 的二进制安装路径（`%APPDATA%\OpenLoop\versions`）。
+1. OpenLoop 的配置目录（`%APPDATA%\OpenLoop`，`versions/` 除外）；
+2. OpenLoop 的源码仓库工作树（`<安装>/src/openloop` 与同级组件仓库）——Loop 对它负完全管理责任，目标是可用性、可维护性、可迭代性；
+3. 安装路径下的配置与文档（`<安装>` 根下的 json / md 等非二进制文件）；
+4. 本会话工作区里 Loop 自己的临时目录（`.openloop/tmp`：附件、生图等产物）。
+
+二进制（`backends/`、`versions/`）只经迭代/换版流程产出与替换，Loop 的工具只读。
 
 Loop 的**读**权限只限：
 
 1. OpenLoop 的安装路径（源码、二进制、参与编译的组件仓库）与配置目录；
 2. 本 Loop 会话**来源会话**的工作区——`/complain` 转发、Worker「转给 Loop」带过来的那个工作区。
 
-其它项目的工作区不读；要看外部信息走 WebFetch。读只用于查状态与 trace，绝不写。
+其它项目的工作区不读；要看外部信息走 WebFetch。读用于查状态、读证据与读源码，绝不越界写。
 
 文件工具（ReadFile / ListDir / Grep / WriteFile）的边界在代码里逐路径判定（realpath 后比前缀），
 模型绕不开；Shell 多一层——`cwd` 必须在边界内，参数里的绝对路径一旦越界就按风险操作要求用户批准，

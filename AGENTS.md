@@ -4,8 +4,9 @@
 
 ## 定位
 
-- OpenLoop 是一个自演进 agent 设施：**Worker（前台）** 面向用户干活，**Loop（后台观察者）** 观察、收集、迭代版本。
+- OpenLoop 是一个自演进 agent 设施：**Worker（前台）** 面向用户干活，**Loop（后台）** 是 OpenLoop 自己的 Worker——开发与维护它的源码、编排二进制迭代，并观察 Worker 与用户判定来演进版本定义。
 - Worker 与 Loop 各自是独立进程（A / I，同一个壳拉起与收摊），活动周期不同：Worker 跟任务走，Loop 由事件驱动（可自主启动、跑到结束条件）。
+- Loop 是 OpenLoop 自己的 Worker：工区 = 部署态（安装根：`src/` 克隆、`backends/`、`versions/`）+ 开发态（源码仓库与同级组件），两种布局等效、路径由 `SourceSync` 解析；源码有完全管理权，二进制只读（只经迭代/换版流程改）。
 - **每次只迭代一个角色**：迭代 Worker 时 Loop 不变，反之亦然；两者二进制可以分别替换（`versions/<role>/`），但协议号必须对齐，替换只能走「登记 → 交接 → 重启 → 回滚」。
 - **Worker 与 Loop 的 harness（agent 中性的控制逻辑）及壳 UI 的基本功能始终保持一致对齐**：只有角色/功能区分造成的合理差异可以例外；改一侧时同步检查另一侧。
 - **Worker 与 Loop 的会话窗口按同一套界面操作体验实现**：输入框与排队队列（Enter/Ctrl+Enter/Shift+Enter 语义、「立即/等本轮」、编辑/删除、Stop 后暂停续发）、停止/打断、附件、模型选择、右侧预览等操作，两侧行为、提示文案与状态复位必须一致；允许的差异只有角色本身造成的部分——刻意的视觉识别设计，以及工具/能力范围（如 Loop 的迭代、仓库动作）不同。改一侧的交互语义时，另一侧同轮对齐（含 Web 壳同一功能的对应文案）。
@@ -30,8 +31,8 @@
 
 - **A 面（`/agent/*`）**：开发期全反射调试，key 见下；**B 面（`/appagent/*`）**：用户 Agent 的具名 Action 通道，凭证在框架写的发现档案 `%LOCALAPPDATA%\Puppet.AppAgents\OpenLoop.<pid>.json`（`probe`/`help` 免凭证，其余带 `Authorization: Bearer <key>`）。两面调的是同一批公开方法，结果同源；区别只在 A 用位置参数、B 用按名参数（未知/缺必填直接 400）。
 - **壳的操作面按 Action 范式写**：`public` 实例方法返回 `OperationResult`/`bool`（= 成败可观察）即自动进 B 的 manifest；`string`/`string[]` 查询方法只属于 A/内部，不要为了 B 去改它们的返回形状。新增操作时同步考虑两面，别写两份。
-- 常用 B 动作：`OpenSession` → `SetComposerText` → `Send`（空闲=发送 / 运行中=立即发送（软打断本轮，收尾后先发；`immediate:false` 等本轮返回）/ 运行中且输入框为空=停止）；`StopSession` 硬停当前轮、`InterruptSession` 软打断（下一 step 前收尾）；`EnqueuePending`/`SendPendingNow`/`RetractPending`/`RemovePending` 管排队；`OpenLoop`/`SendLoop`（同样收 `immediate`）/`StopLoop` 管后台观察者；`DeleteSessions`/`RemoveProject` 是不可恢复的 High 风险动作。
-- **右侧栏「网页」页是内嵌 WebView2 浏览器**（`BrowserView`，页序 3）：默认锁定，只有 Agent 能操作；`OpenBrowser(url)`/`NavigateBrowser(url)`/`EvalBrowserScript(js)`/`BrowserScreenshot()` 驱动它，`SetBrowserInteract(true)` 解锁给用户点按，`UndockBrowser`/`DockBrowser` 在独立窗口与侧栏之间搬。状态看 `BrowserState`/`BrowserUrl`。`EvalBrowserScript` 返回 WebView2 的 JSON 结果（字符串结果带引号）。**`BrowserScreenshot` 需要「网页」页已激活**（先 `OpenBrowser` 不带 url），否则 `CapturePreviewAsync` 失败且只报「截图超时」；`NavigateBrowser` 异步返回（`data` 是导航前的旧 URL），取页面内容前先轮询 `EvalBrowserScript("document.readyState")`，并检查 `location.href` 不是 `chrome-error://`（DNS/网络失败时 `NavigateBrowser` 仍回成功）；`BrowserScreenshot` 的 PNG 走 `asset` 链接（`/appagent/assets/<id>`）下载。
+- 常用 B 动作：`OpenSession` → `SetComposerText` → `Send`（空闲=发送 / 运行中=立即发送（软打断本轮，收尾后先发；`immediate:false` 等本轮返回）/ 运行中且输入框为空=停止）；`StopSession` 硬停当前轮、`InterruptSession` 软打断（下一 step 前收尾）；`EnqueuePending`/`SendPendingNow`/`RetractPending`/`RemovePending` 管排队；`OpenLoop`/`SendLoop`（同样收 `immediate`）/`StopLoop` 管 Loop 会话；`DeleteSessions`/`RemoveProject` 是不可恢复的 High 风险动作。
+- **右侧栏「网页」页是内嵌 WebView2 浏览器**（`BrowserView`）：**按需创建**——侧栏默认没有这一页，只有 Agent 调浏览器动作时才插入并选中（用户点不出空 WebView，避免白占内存），右键页签可「关闭网页」销毁实例。默认锁定，只有 Agent 能操作；`OpenBrowser(url)`/`NavigateBrowser(url)`/`EvalBrowserScript(js)`/`BrowserScreenshot()` 驱动它（后三个在没有该页时也会自动打开），`SetBrowserInteract(true)` 解锁给用户点按，`UndockBrowser`/`DockBrowser` 在独立窗口与侧栏之间搬。状态看 `BrowserState`/`BrowserUrl`。`EvalBrowserScript` 返回 WebView2 的 JSON 结果（字符串结果带引号）。**`BrowserScreenshot` 需要「网页」页已激活**，否则 `CapturePreviewAsync` 失败且只报「截图超时」；`NavigateBrowser` 异步返回（`data` 是导航前的旧 URL），取页面内容前先轮询 `EvalBrowserScript("document.readyState")`，并检查 `location.href` 不是 `chrome-error://`（DNS/网络失败时 `NavigateBrowser` 仍回成功）；`BrowserScreenshot` 的 PNG 走 `asset` 链接（`/appagent/assets/<id>`）下载。侧栏最窄 360 DIP；再窄时工具栏按「系统浏览器 → 刷新 → 前进 → 独立窗口」收起按钮，保住地址栏。
 - **B 面按实例强制串行**（并发 409 `instance-busy`），读类端点（manifest/state）不加锁；B 也认 `agentId`/`site` 协商参数。
 - **窗口几何两套动作，单位不同**：`MoveAction`/`ResizeAction`/`SetBoundsAction` 收**物理像素**（WinForms `Bounds`）；DIP 版本由 Puppet 框架统一提供（`MoveDipAction`/`ResizeDipAction`/`SetBoundsDipAction`，x/y 相对目标屏工作区左上角，`screen` 选屏）。跨屏 DPI 不同时必须用 DIP 版本；各屏缩放比看 `Screens` 状态里的 `scale=`。窗体最小尺寸会钳制宽高（返回里会说明），核对用 `WindowBounds`（物理矩形 + 屏 + dpi）。
 - **进程是 `SystemAware`**：窗口矩形能按目标屏换算正确，但内容仍按系统 DPI 渲染，跨到别的 DPI 屏会由 DWM 呈缩放画面（偏大/模糊都在这一层）。要彻底对齐得改 `ApplicationHighDpiMode=PerMonitorV2`，会动全局布局，需单独验证。

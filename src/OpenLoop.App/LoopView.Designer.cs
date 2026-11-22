@@ -211,7 +211,7 @@ namespace OpenLoop.App
             _sideTabs.Margin = new Padding(0);
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabDetail") });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "旁路" });
-            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "网页" });
+            // 「网页」页不预置：只有 Agent 打开浏览器时才插入，用户点不出一个空 WebView
             _sideTabs.SelectIndex = 0;
             _sideTabs.SelectIndexChanged += OnSidePageChanged;
             _sideTabs.MouseUp += OnSideTabsMouseUp;
@@ -225,7 +225,6 @@ namespace OpenLoop.App
             _detailFlow.AutoScroll = true;
 
             _sideBtw = new SideWorkView { Dock = DockStyle.Fill, Visible = false };
-            _browser = new BrowserView { Dock = DockStyle.Fill, Visible = false };
             _fileView.Dock = DockStyle.Fill;
             _fileView.Visible = false;
 
@@ -286,7 +285,6 @@ namespace OpenLoop.App
 
             _sideHost.Controls.Add(_detailFlow);
             _sideHost.Controls.Add(_sideBtw);
-            _sideHost.Controls.Add(_browser);
             _sideHost.Controls.Add(_fileView);
             _side.Controls.Add(_sideTabs, 0, 0);
             _side.Controls.Add(_sideHost, 0, 1);

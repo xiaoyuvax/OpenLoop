@@ -52,17 +52,32 @@ namespace OpenLoop.Core.Tests
         {
             var timeline = new RunTimeline();
             timeline.Thinking("想");
-            timeline.Answer("正文一");
+            timeline.Answer("正文一。");
             timeline.Thinking("再想");
-            timeline.Answer("正文二");
+            timeline.Answer("正文二。");
 
             // 整轮时间线仍只含思维与工具（正文由分段渲染，避免折叠区重复正文）
             Assert.Equal("想\n\n再想", timeline.Render());
 
             var phases = timeline.RenderPhases();
             Assert.Equal(2, phases.Count);
-            Assert.Equal(("想", "正文一"), phases[0]);
-            Assert.Equal(("再想", "正文二"), phases[1]);
+            Assert.Equal(("想", "正文一。"), phases[0]);
+            Assert.Equal(("再想", "正文二。"), phases[1]);
+        }
+
+        [Fact]
+        public void RenderPhasesKeepsMidSentenceAnswerInOnePhase()
+        {
+            var timeline = new RunTimeline();
+            timeline.Thinking("想");
+            timeline.Answer("这些改动要在下一次迭代换版（A/I/");
+            timeline.Tool("Read(AGENTS.md) · 1s");
+            timeline.Answer("壳）后才对运行中的 Loop 生效。");
+
+            var phases = timeline.RenderPhases();
+            Assert.Single(phases);
+            Assert.Equal("这些改动要在下一次迭代换版（A/I/壳）后才对运行中的 Loop 生效。", phases[0].Answer);
+            Assert.Contains("Read(AGENTS.md)", phases[0].Thinking);
         }
 
         [Fact]
@@ -70,12 +85,12 @@ namespace OpenLoop.Core.Tests
         {
             var timeline = new RunTimeline();
             timeline.Thinking("想");
-            timeline.Answer("正文一");
+            timeline.Answer("正文一。");
             timeline.Thinking("还在流");
 
             var phases = timeline.RenderPhases();
             Assert.Equal(2, phases.Count);
-            Assert.Equal(("想", "正文一"), phases[0]);
+            Assert.Equal(("想", "正文一。"), phases[0]);
             Assert.Equal(("还在流", ""), phases[1]);
 
             Assert.Equal(("", ""), new RunTimeline().RenderPhases()[0]);

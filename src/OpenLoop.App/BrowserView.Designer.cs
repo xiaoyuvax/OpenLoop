@@ -155,6 +155,8 @@ namespace OpenLoop.App
             _host.Name = "browserHost";
             _host.Dock = DockStyle.Fill;
             _host.Margin = new Padding(0);
+            // 提示只在文字区域上，其余部分用同一底色兜住，锁定时整块面板看起来仍是「未加载」
+            _host.BackColor = UiStyle.Surface;
 
             _web.Name = "web";
             _web.Dock = DockStyle.Fill;
@@ -163,8 +165,9 @@ namespace OpenLoop.App
             _web.Enabled = false;
 
             // 锁定时盖在网页上：既不响应鼠标键盘，也明确告诉用户「当前由 Agent 控制」
+            // 尺寸由 CenterOverlay 按面板宽度算（AutoSize=false，Label 自己按宽度换行）：侧栏很窄时换行，不裁字
             _overlay.Name = "browserOverlay";
-            _overlay.Dock = DockStyle.Fill;
+            _overlay.AutoSize = false;
             _overlay.Text = "已锁定：网页由 Agent 控制\r\n点上方「解锁」后可自行操作";
             _overlay.TextAlign = ContentAlignment.MiddleCenter;
             _overlay.ForeColor = UiStyle.Muted;

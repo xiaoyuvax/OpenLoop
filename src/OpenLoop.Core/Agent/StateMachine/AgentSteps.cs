@@ -575,6 +575,9 @@ namespace OpenLoop.Core.Agent
 
             if (AgentToolCallParser.LooksLikeToolCallAttempt(content))
             {
+                // 被输出上限截断的坏调用不是「写坏」：重发同一条只会再截一次，
+                // 该提示模型拆小调用，也别把它算成模型不会用协议。
+                bool truncated = AgentLoop.IsLengthFinish(finishReason);
                 if (context.Policy.MalformedRetry
                     && state.MalformedRetries < context.Policy.MaxMalformedRetries
                     && !state.StepLimitReached)
@@ -582,13 +585,17 @@ namespace OpenLoop.Core.Agent
                     state.MalformedRetries++;
                     state.Result.Guards.MalformedRetries++;
                     return Task.FromResult(AgentStepResult.Continue(new AppendMessageEffect("user",
-                        "tool-result: {\"ok\":false,\"error\":\"工具调用格式无效，JSON 无法解析。请重新输出一行合法 JSON（可跨行），格式：tool-call: {\\\"tool\\\":\\\"工具名\\\",\\\"args\\\":{...}}。\"}")));
+                        truncated
+                            ? "tool-result: {\"ok\":false,\"error\":\"上一条输出在工具调用中途被截断（达到输出上限），参数不完整。请把这次调用拆小、只保留必要参数后重新输出，或先给出已完成部分的结论。\"}"
+                            : "tool-result: {\"ok\":false,\"error\":\"工具调用格式无效，JSON 无法解析。请重新输出一行合法 JSON（可跨行），格式：tool-call: {\\\"tool\\\":\\\"工具名\\\",\\\"args\\\":{...}}。\"}")));
                 }
 
                 // 停机也要留证据：只回一句「请更换模型」，原文一丢就再也查不出模型到底写了什么
                 return Task.FromResult(AgentStepResult.Complete(
                     new SetFinalAnswerEffect(
-                        $"⚠ 模型连续 {state.MalformedRetries + 1} 次输出无法解析的工具调用（JSON 格式错误，或泄漏原生 tool_calls / DSML 标记），已停止本次执行。请重试或更换模型。"
+                        (truncated
+                            ? $"⚠ 模型连续 {state.MalformedRetries + 1} 次在工具调用中途被截断（达到输出上限），已停止本次执行。请把任务拆小，或换一个输出上限更高的模型。"
+                            : $"⚠ 模型连续 {state.MalformedRetries + 1} 次输出无法解析的工具调用（JSON 格式错误，或泄漏原生 tool_calls / DSML 标记），已停止本次执行。请重试或更换模型。")
                         + "\n\n最后一次原始输出（供排查）：\n" + AgentLoop.Truncate(content?.Trim(), 2000)),
                     new SetGuardedStopEffect()));
             }

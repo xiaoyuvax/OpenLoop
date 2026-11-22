@@ -318,7 +318,7 @@ namespace OpenLoop.Service.Source
             if (!File.Exists(Path.Combine(root, Iteration.Solution)))
             {
                 sb.AppendLine($"源码根不可用：{root}");
-                sb.AppendLine("检查 <安装根>\\source\\openloop 是否存在，或用环境变量 OPENLOOP_SOURCE 指到源码工作树");
+                sb.AppendLine("检查 <安装根>\\src\\openloop 是否存在，或用环境变量 OPENLOOP_SOURCE 指到源码工作树");
                 return sb.ToString().TrimEnd();
             }
 

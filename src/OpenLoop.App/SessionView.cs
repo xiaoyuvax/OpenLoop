@@ -501,7 +501,7 @@ namespace OpenLoop.App
             if (_upperSplit.Panel2Collapsed) return;
 
             ApplySplit(_upperSplit, vertical: true,
-                panel1Min: Dip(400), panel2Min: Dip(280), targetPanel2: Dip(320));
+                panel1Min: Dip(400), panel2Min: Dip(360), targetPanel2: Dip(400));
             _layoutReady = true;
         }
 
@@ -1541,6 +1541,8 @@ namespace OpenLoop.App
             Session.Steps = remoteTurn?.Steps ?? Session.Steps;
             SetState(outcome is "ok" or "budget" ? SessionState.Done : SessionState.Interrupted);
             RefreshChat();
+            // 正常收尾：长正文从头读（与 Loop 同一套交互），流式期间已经跟随到底
+            if (outcome == "ok" && turn != null) _chat.ScrollToAnswerStart(turn);
             RefreshLedgerInfo();
             ChatStore.Save(workspace, Session.Book.Turns, Session.Id, _model, _effort);
             // 首轮成功结束后由所选模型生成短标题（已有人工/历史标题就不再覆盖）

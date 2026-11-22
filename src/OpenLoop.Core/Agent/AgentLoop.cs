@@ -59,7 +59,11 @@ namespace OpenLoop.Core.Agent
             Action<string> onReasoning = null,
             Action onRestart = null,
             Action<IReadOnlyList<LlmMessage>, int> onRequest = null)
-            => new()
+        {
+            // 直连通道能声明工具表就走原生调用；网关不认 tools 时它会自己退回文本协议。
+            // 放在这里而不是构造函数：同一个 reasoner 可能被不同 scope 的 loop 复用。
+            if (_reasoner is OpenAiCompatibleReasoner direct) direct.Tools = _tools.Tools;
+            return new()
             {
                 Tools = _tools,
                 Reasoner = _reasoner,
@@ -74,6 +78,7 @@ namespace OpenLoop.Core.Agent
                 OnRequest = onRequest,
                 ConfirmContinue = _confirmContinue
             };
+        }
 
         /// <summary>
         /// 执行一次完整任务。history 为既有对话（不含本次用户消息），userMessage 为本次请求。
@@ -151,6 +156,11 @@ namespace OpenLoop.Core.Agent
             => HasFinalMarker(content)
                 ? content.TrimEnd()[..^FinalMarker.Length].TrimEnd()
                 : content;
+
+        /// <summary>输出被上限截断（OpenAI 用 length，Anthropic 用 max_tokens）：这类坏 JSON 是缺尾巴，不是写坏。</summary>
+        internal static bool IsLengthFinish(string finishReason)
+            => string.Equals(finishReason, "length", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(finishReason, "max_tokens", StringComparison.OrdinalIgnoreCase);
 
         private static readonly string[] CompletionClaimSignals =
         [

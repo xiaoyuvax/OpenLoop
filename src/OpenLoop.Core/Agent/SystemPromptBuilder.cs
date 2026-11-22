@@ -131,7 +131,7 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("tool-call: {\"tool\":\"工具名\",\"args\":{\"参数名\":\"值\"}}");
             sb.AppendLine("正例：tool-call: {\"tool\":\"ListDir\",\"args\":{\"path\":\".\",\"recursive\":false}}");
             sb.AppendLine("反例（都会被判为格式错误并回退纠正）：写在代码围栏里、前后带解释、JSON 用单引号、tool-call 不在行首。");
-            sb.AppendLine("禁止输出原生工具标记变体（DSML、全角竖线包裹的标签、tool_calls 标签）；工具只能用单行 tool-call: {json} 协议。");
+            sb.AppendLine("禁止输出模型原生的工具标记格式（XML 风格的特殊标签、特殊 token 包裹的调用块）；工具只能用单行 tool-call: {json} 协议。");
             sb.AppendLine($"多个相互独立的只读调用可各占一行连续输出，一轮最多 {AgentPolicy.MaxParallelCalls} 个；一轮只调用一个工具的情形（含任何写操作）照旧单行。");
             sb.AppendLine("需要等待或轮询时（例如反复查看构建进度），在首次调用里加同级的 poll 声明：" +
                           "tool-call: {\"tool\":\"RunCommand\",\"args\":{...},\"poll\":{\"id\":\"build-1\",\"max\":8}}。" +

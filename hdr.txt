@@ -1,0 +1,5 @@
+> GET http://127.0.0.1:9090/agent/registry
+> Origin: https://openui.local
+> Authorization: Bearer ***
+> body: 0B
+[200] 198B

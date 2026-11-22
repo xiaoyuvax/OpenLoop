@@ -22,6 +22,52 @@ namespace OpenLoop.App
         public BrowserView()
         {
             InitializeComponent();
+            // 侧栏宽度会随分栏拖动变化：提示文字按当前宽度重排并居中，避免被裁掉
+            _host.SizeChanged += (_, _) => CenterOverlay();
+            _overlay.TextChanged += (_, _) => CenterOverlay();
+            _overlay.VisibleChanged += (_, _) => { if (_overlay.Visible) CenterOverlay(); };
+            // 侧栏窄时收起次要按钮，别把地址栏挤成一条缝
+            _bar.SizeChanged += (_, _) => FitBar();
+            CenterOverlay();
+            FitBar();
+        }
+
+        /// <summary>工具栏放不下就按「系统浏览器 → 刷新 → 前进 → 独立窗口」的顺序收起，给地址栏留位置。</summary>
+        private void FitBar()
+        {
+            int width = _bar.ClientSize.Width;
+            if (width <= 0) return;
+            int need = Dip(26 * 7 + 120);          // 七个按钮 + 最小地址栏
+            int hidden = width >= need ? 0
+                : width >= need - Dip(26) ? 1
+                : width >= need - Dip(52) ? 2
+                : width >= need - Dip(78) ? 3 : 4;
+            SetBarButton(_btnExternal, 7, hidden < 1);
+            SetBarButton(_btnReload, 2, hidden < 2);
+            SetBarButton(_btnForward, 1, hidden < 3);
+            SetBarButton(_btnUndock, 6, hidden < 4);
+        }
+
+        private void SetBarButton(Control button, int column, bool visible)
+        {
+            if (button.Visible == visible) return;
+            button.Visible = visible;
+            _bar.ColumnStyles[column].Width = visible ? 26F : 0F;
+            // 改 ColumnStyles 不会自动重排，得显式触发一次
+            _bar.PerformLayout();
+        }
+
+        /// <summary>锁定/错误提示按面板宽度换行并居中（先量高度再定尺寸，避免文字被裁）。</summary>
+        private void CenterOverlay()
+        {
+            int pad = Dip(12);
+            int max = Math.Max(Dip(80), _host.ClientSize.Width - pad * 2);
+            Size need = TextRenderer.MeasureText(_overlay.Text, _overlay.Font,
+                new Size(max, int.MaxValue), TextFormatFlags.WordBreak);
+            _overlay.Size = new Size(Math.Min(max, need.Width + Dip(2)), need.Height + Dip(2));
+            _overlay.Location = new Point(
+                Math.Max(0, (_host.ClientSize.Width - _overlay.Width) / 2),
+                Math.Max(0, (_host.ClientSize.Height - _overlay.Height) / 2));
         }
 
         /// <summary>解锁状态变化（界面按钮靠它刷新）。</summary>

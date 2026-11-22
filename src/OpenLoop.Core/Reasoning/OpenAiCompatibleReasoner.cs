@@ -2,7 +2,9 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
+using OpenLoop.Core.Tools;
 
 namespace OpenLoop.Core.Reasoning
 {
@@ -71,6 +73,12 @@ namespace OpenLoop.Core.Reasoning
         private readonly bool _includeUsage;
         private readonly string _effort;
 
+        /// <summary>可声明的工具表（由 AgentLoop 注入）。为空时只走文本协议。</summary>
+        public IReadOnlyList<ITool> Tools { get; set; }
+
+        /// <summary>该通道已明确拒绝工具表：此后不再带 tools，退回文本协议。</summary>
+        private bool _toolsUnsupported;
+
         public OpenAiCompatibleReasoner(string baseUrl, string model, string apiKey, string effort = null)
         {
             if (string.IsNullOrWhiteSpace(baseUrl)) throw new ArgumentException("baseUrl 不能为空", nameof(baseUrl));
@@ -91,18 +99,9 @@ namespace OpenLoop.Core.Reasoning
 
         public async Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
         {
-            var payload = new RequestPayload
-            {
-                Model = _model,
-                Stream = false,
-                Messages = (messages ?? []).Select(m => new MessagePayload { Role = m.Role, Content = m.Content }).ToArray(),
-                Usage = _includeUsage ? new UsageOption() : null,
-                Reasoning = _effort == null ? null : new ReasoningOption { Effort = _effort },
-                IncludeReasoning = true
-            };
-            string json = JsonSerializer.Serialize(payload, PayloadJson);
-
-            using var response = await SendWithRetryAsync(() => BuildRequest(json), ct);
+            using var response = await SendPayloadAsync(
+                withTools => JsonSerializer.Serialize(BuildPayload(messages, false, withTools), PayloadJson),
+                WantsTools(messages), ct);
             string body = await response.Content.ReadAsStringAsync(ct);
             return Parse(body);
         }
@@ -111,18 +110,6 @@ namespace OpenLoop.Core.Reasoning
             IReadOnlyList<LlmMessage> messages, Action<string> onDelta, CancellationToken ct = default,
             Action<string> onReasoning = null, Action onRestart = null)
         {
-            var payload = new RequestPayload
-            {
-                Model = _model,
-                Stream = true,
-                Messages = (messages ?? []).Select(m => new MessagePayload { Role = m.Role, Content = m.Content }).ToArray(),
-                Usage = _includeUsage ? new UsageOption() : null,
-                StreamOptions = _includeUsage ? new StreamOption { IncludeUsage = true } : null,
-                Reasoning = _effort == null ? null : new ReasoningOption { Effort = _effort },
-                IncludeReasoning = true
-            };
-            string json = JsonSerializer.Serialize(payload, PayloadJson);
-
             int attempt = 0;
             int stalls = 0;
             while (true)
@@ -130,8 +117,9 @@ namespace OpenLoop.Core.Reasoning
                 string failure;
                 try
                 {
-                    using var response = await SendWithRetryAsync(
-                        () => BuildRequest(json), ct, HttpCompletionOption.ResponseHeadersRead);
+                    using var response = await SendPayloadAsync(
+                        withTools => JsonSerializer.Serialize(BuildPayload(messages, true, withTools), PayloadJson),
+                        WantsTools(messages), ct, HttpCompletionOption.ResponseHeadersRead);
 
                     await using var stream = await response.Content.ReadAsStreamAsync(ct);
                     using var reader = new StreamReader(stream, Encoding.UTF8);
@@ -177,6 +165,68 @@ namespace OpenLoop.Core.Reasoning
             }
         }
 
+        /// <summary>
+        /// 请求体：带工具表时走原生调用，否则只发文本历史。压缩摘要请求只有一条 user 消息，
+        /// 不带工具表——它不是 agent 轮次，不该产生工具调用。
+        /// </summary>
+        private RequestPayload BuildPayload(IReadOnlyList<LlmMessage> messages, bool stream, bool withTools)
+            => new()
+            {
+                Model = _model,
+                Stream = stream,
+                Messages = NativeToolWire.Messages(messages),
+                Tools = withTools ? NativeToolWire.Declare(Tools) : null,
+                Usage = _includeUsage ? new UsageOption() : null,
+                StreamOptions = stream && _includeUsage ? new StreamOption { IncludeUsage = true } : null,
+                Reasoning = _effort == null ? null : new ReasoningOption { Effort = _effort },
+                IncludeReasoning = true
+            };
+
+        private bool WantsTools(IReadOnlyList<LlmMessage> messages)
+            => Tools is { Count: > 0 }
+               && messages != null
+               && messages.Any(m => string.Equals(m?.Role, "system", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// 发一次请求。网关明确拒绝工具表（400/422 且报错指向 tools）时关掉工具表重发，
+        /// 该通道此后走文本协议——不能让一个不认 tools 的 provider 直接判整轮失败。
+        /// </summary>
+        private async Task<HttpResponseMessage> SendPayloadAsync(
+            Func<bool, string> json, bool wantsTools, CancellationToken ct,
+            HttpCompletionOption option = HttpCompletionOption.ResponseContentRead)
+        {
+            while (true)
+            {
+                bool withTools = wantsTools && !_toolsUnsupported;
+                string body = json(withTools);
+                try
+                {
+                    return await SendWithRetryAsync(() => BuildRequest(body), withTools, ct, option);
+                }
+                catch (ToolsUnsupportedException)
+                {
+                    // 标记已在 SendWithRetryAsync 里置上；下一圈自动不带工具表
+                }
+            }
+        }
+
+        private sealed class ToolsUnsupportedException : Exception;
+
+        /// <summary>报错是否在拒绝工具表（而不是拒绝模型名、鉴权之类）。</summary>
+        internal static bool LooksLikeToolRejection(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body)) return false;
+            string text = body.ToLowerInvariant();
+            if (!text.Contains("tool")) return false;
+            foreach (string signal in new[]
+                     {
+                         "unsupported", "not support", "not supported", "unknown", "unrecognized",
+                         "invalid", "unexpected", "不支持", "未知", "非法"
+                     })
+                if (text.Contains(signal)) return true;
+            return false;
+        }
+
         private HttpRequestMessage BuildRequest(string json)
         {
             var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
@@ -194,7 +244,7 @@ namespace OpenLoop.Core.Reasoning
         /// 正文阶段的断流由 <see cref="StreamAsync"/> 自己整轮重发（含 onRestart 通知宿主清屏）。
         /// </summary>
         private async Task<HttpResponseMessage> SendWithRetryAsync(
-            Func<HttpRequestMessage> factory, CancellationToken ct,
+            Func<HttpRequestMessage> factory, bool withTools, CancellationToken ct,
             HttpCompletionOption option = HttpCompletionOption.ResponseContentRead)
         {
             int transientAttempt = 0;
@@ -224,6 +274,14 @@ namespace OpenLoop.Core.Reasoning
                 int code = (int)response.StatusCode;
                 string phrase = response.ReasonPhrase;
                 response.Dispose();
+
+                // 有的网关不接受 tools：关掉工具表重发，别把整轮判死（文本协议仍可用）
+                if (withTools && code is 400 or 422 && LooksLikeToolRejection(body))
+                {
+                    _toolsUnsupported = true;
+                    throw new ToolsUnsupportedException();
+                }
+
                 switch (ClassifyStatus(code))
                 {
                     case StatusClass.NoRetry:
@@ -359,6 +417,7 @@ namespace OpenLoop.Core.Reasoning
         {
             var content = new StringBuilder();
             var reasoning = new StringBuilder();
+            var toolCalls = new Dictionary<int, NativeToolWire.NativeCallDraft>();
             string finish = null;
             string error = null;
             decimal? cost = null;
@@ -420,6 +479,8 @@ namespace OpenLoop.Core.Reasoning
                         if (LooksDegenerate(content)) throw new DegenerateOutputException(DegenerateMessage);
                     }
                 }
+                if (choice.TryGetProperty("delta", out delta))
+                    NativeToolWire.MergeDelta(delta, toolCalls);
                 if (choice.TryGetProperty("finish_reason", out var f) && f.ValueKind == JsonValueKind.String)
                     finish = f.GetString();
             }
@@ -427,9 +488,12 @@ namespace OpenLoop.Core.Reasoning
             if (error != null && content.Length == 0 && reasoning.Length == 0 && finish == null)
                 throw new InvalidOperationException($"模型返回错误：{error}");
 
+            var calls = NativeToolWire.Complete(toolCalls);
+            string text = PreferNativeCalls(content.ToString(), calls);
+
             return new CompletionResult
             {
-                Content = content.ToString(),
+                Content = text,
                 Reasoning = reasoning.ToString(),
                 Cost = cost,
                 FinishReason = finish,
@@ -445,6 +509,17 @@ namespace OpenLoop.Core.Reasoning
                && message.ValueKind == JsonValueKind.String
                 ? message.GetString()
                 : null;
+
+        /// <summary>
+        /// 原生调用优先：正文里若还夹着文本协议就切掉，避免同一次调用被执行两遍；
+        /// 原生调用本身翻成一行一条 tool-call，后续解析与执行链不必认识两套协议。
+        /// </summary>
+        private static string PreferNativeCalls(string content, IReadOnlyList<NativeToolWire.NativeCall> calls)
+        {
+            if (calls == null || calls.Count == 0) return content;
+            string prose = AgentToolCallParser.CutToolCallText(content);
+            return (prose.Length == 0 ? "" : prose + "\n") + NativeToolWire.RenderCalls(calls);
+        }
 
         internal static CompletionResult Parse(string body)
         {
@@ -469,6 +544,7 @@ namespace OpenLoop.Core.Reasoning
                     content = contentEl.GetString() ?? "";
                 }
                 reasoning = string.Concat(ReadReasoningPieces(message));
+                content = PreferNativeCalls(content, NativeToolWire.ReadCalls(message));
             }
 
             string finish = choice.TryGetProperty("finish_reason", out var f) && f.ValueKind == JsonValueKind.String
@@ -555,7 +631,13 @@ namespace OpenLoop.Core.Reasoning
         {
             public string Model { get; init; }
             public bool Stream { get; init; }
-            public MessagePayload[] Messages { get; init; }
+
+            /// <summary>线上消息：可能是纯文本，也可能是带 tool_calls / role:tool 的结构。</summary>
+            public List<object> Messages { get; init; }
+
+            /// <summary>工具声明（JSON Schema）。为 null 时该通道走文本协议。</summary>
+            public List<object> Tools { get; init; }
+
             public UsageOption Usage { get; init; }
             public StreamOption StreamOptions { get; init; }
             public ReasoningOption Reasoning { get; init; }
@@ -563,12 +645,6 @@ namespace OpenLoop.Core.Reasoning
             /// <summary>OpenRouter 扩展：要求上游把推理过程一并返回（reasoning 增量）。</summary>
             [JsonPropertyName("include_reasoning")]
             public bool? IncludeReasoning { get; init; }
-        }
-
-        private sealed class MessagePayload
-        {
-            public string Role { get; init; }
-            public string Content { get; init; }
         }
 
         private sealed class UsageOption

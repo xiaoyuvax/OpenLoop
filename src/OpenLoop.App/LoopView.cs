@@ -20,8 +20,8 @@ using OpenLoop.Service.Worker;
 namespace OpenLoop.App
 {
     /// <summary>
-    /// Loop 的会话视图（观察者）：与 Worker 页相似的聊天界面，模型是同一个 Loop agent，
-    /// 但提示词是观察者/改进者角色，历史单独存（ChatStore kind="loop"）。
+    /// Loop 的会话视图：与 Worker 页同一套聊天界面，但提示词是「OpenLoop 自己的 Worker」角色
+    /// （源码开发与迭代编排），历史单独存（ChatStore kind="loop"）。
     /// </summary>
     public partial class LoopView : UserControl
     {
@@ -811,12 +811,14 @@ namespace OpenLoop.App
                 confirmContinue: AskOnUi,
                 skills: skills);
 
+            // 约定按实际动手的目录（源码根）取：Loop 从 /complain 起时会话工作区是别人的项目，
+            // 那份 AGENTS.md 讲的是那个项目，不是这里要维护的仓库
             string systemPrompt = loop.BuildSystemPrompt(
                 LoopPrompt.Role, LoopPrompt.Rules,
                 settings.UseAgentsMd
-                    ? AgentsInstructions.Load(_workspace, AppSettings.GlobalAgentsPath)
+                    ? AgentsInstructions.Load(root, AppSettings.GlobalAgentsPath)
                     : null,
-                _workspace, LoopPrompt.Access);
+                root, LoopPrompt.Access);
             history.Insert(0, new LlmMessage("system", systemPrompt));
             trace.SystemPrompt(systemPrompt);
 
@@ -902,6 +904,9 @@ namespace OpenLoop.App
                 _cts = null;
                 SetRunning(false);
                 RefreshChat();
+                // 正常收尾：长正文从头读（流式期间已跟随到底），避免用户打开就落在末尾
+                if (outcome == "ok" && !IsDisposed && IsHandleCreated)
+                    BeginInvoke(new Action(() => _chat.ScrollToAnswerStart(turn)));
                 SaveLoopChat();
                 // 这一轮可能改过源码/配置：仓库按钮跟着刷新
                 _ = RefreshRepoActionsAsync();
@@ -1251,7 +1256,7 @@ namespace OpenLoop.App
             if (IsDisposed || _upperSplit.Width < Dip(700)) return;
             if (_upperSplit.Panel2Collapsed) return;
             SessionView.ApplySplit(_upperSplit, vertical: true,
-                panel1Min: Dip(400), panel2Min: Dip(280), targetPanel2: Dip(320));
+                panel1Min: Dip(400), panel2Min: Dip(360), targetPanel2: Dip(400));
             _layoutReady = true;
         }
 

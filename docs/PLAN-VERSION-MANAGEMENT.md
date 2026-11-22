@@ -151,7 +151,7 @@ fingerprint(node) = SHA256(
 
 ### 6.2 源码依赖
 
-- `ProjectReference` 用相对路径，确保开发态（同级仓库）与安装态（`<安装根>/source/<repo>`）通用；
+- `ProjectReference` 用相对路径，确保开发态（同级仓库）与安装态（`<安装根>/src/<repo>`）通用；
   ChatFlow 现有写法已验证两种布局都落到同一相对位置。
 - **同一依赖全仓只允许一种模式**：target 扫描「同一程序集既被 ProjectReference 又被 PackageReference」→ `Error`。
 
@@ -172,7 +172,7 @@ fingerprint(node) = SHA256(
 
 ### 6.5 外部仓库写号
 
-- I 可以写 `<安装根>/source/*` 与开发态同级仓库的**版本文件**；只允许改 `<Version>` 一行，
+- I 可以写 `<安装根>/src/*` 与开发态同级仓库的**版本文件**；只允许改 `<Version>` 一行，
   写前校验「除版本号外内容不变」，否则停手并报告。
 - PuppetCore 的版本在 `Puppet.Common.targets`，一次升号等于整族升号；ChatFlow 在 `ChatFlow.csproj`。
 - 外部仓库写号同样进失败日志与回撤范围。
@@ -291,7 +291,7 @@ POST /loop/git/commit  { repos, message?, push?, token }
 2. Windows 下「新壳等旧壳退出再复制」的文件锁释放时延：已实测到旧壳退出后仍有短暂占用，复制改为按文件重试 30 秒；
    仍极端的情况下会走「还原并起旧壳」。
 3. 外部仓库写号与用户/其他 agent 同时编辑的冲突（只设计了「除版本号外内容不变」的前置校验）。
-4. 部署态没有组件源码时无法构建——发行包必须带 `<安装根>/source/*` 克隆或各组件提交号清单。
+4. 部署态没有组件源码时无法构建——发行包必须带 `<安装根>/src/*` 克隆或各组件提交号清单。
 5. `state.json` 首次缺失导致全量升号（已接受，但会让第一次发布的四个版本同时跳号）。
 6. ChatFlow 改包依赖后，壳内的 FCTB 版本从「源码 1.0.0.0」变为「包 2.19.x」；强签名下这是一次性的
    程序集身份变化，需在真机确认 ChatFlow 渲染与 `FilePreviewView` 均正常。

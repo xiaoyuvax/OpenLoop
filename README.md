@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 **A self-iterating open agent.**
 
-OpenLoop splits "doing the work" from "improving itself" into two roles: the **Worker (A, foreground)** completes real tasks for the user, while the **Loop (I, background)** observes the Worker, user feedback and runtime evidence, and ships the next version of the Worker and shell. They are separate processes, launched, supervised and swapped by one **shell**.
+OpenLoop splits "doing the work" from "improving itself" into two roles: the **Worker (A, foreground)** completes real tasks for the user, while the **Loop (I, background)** is OpenLoop's own Worker — it develops, debugs and maintains the source and orchestrates binary iteration, and turns real-usage evidence into version-definition evolution. They are separate processes, launched, supervised and swapped by one **shell**.
 
 The "Open" in the name means the loop never closes: the world (and the user) always stays part of it. The Loop's judgement comes from real use, not from a sealed self-assessment.
 
@@ -16,17 +16,17 @@ The "Open" in the name means the loop never closes: the world (and the user) alw
 |---|---|---|
 | Shell | `OpenLoop.exe` (WinForms) / `OpenLoop.Shell` (cross-platform CLI) | The only process orchestrator: launches A/I, hosts the UI, performs stage / restart / rollback |
 | Worker (A) | `OpenLoop.A` | Sessions, tool calls, approvals, streaming output, traces; also serves the web UI and `/api/*` |
-| Loop (I) | `OpenLoop.I` | Per-project observation, reading evidence, recording findings, drafting eval tasks, running iterations (`/api/loop/*`) |
+| Loop (I) | `OpenLoop.I` | OpenLoop's own Worker: develops and maintains the source (Core/Service, A, I, shell, iterable components), orchestrates binary iteration, and per project observes, reads evidence, records findings, drafts eval tasks and evolves version definitions (`/api/loop/*`) |
 
 - The desktop and web shells stay feature-aligned. The web UI is served by A on its bus port (`http://<bus>/?key=...`); the desktop shell embeds WebView2 in its side panel.
-- The Loop's write scope is limited to the config directory (`%APPDATA%\OpenLoop`), the OpenLoop source worktree, and the binary version directory. Its read scope is as wide as the Worker's.
-- The Loop does not modify its own source. The I binary is replaced by A (I cannot restart itself or replace a running shell).
+- The Loop's write scope: the config directory (`%APPDATA%\OpenLoop`, except `versions/`), the source worktree (the `<install root>/src/` clones in the install layout, the repo and its sibling checkouts in the development layout), config and docs under the install root, and `.openloop/tmp` in its session workspace. Binaries (`backends/`, `versions/`) are read-only. Its read scope covers the OpenLoop install/config paths and its session's source workspace.
+- The Loop may modify its own source; the I binary is replaced by A (I cannot restart itself or replace a running shell).
 
 ### Capabilities
 
 - **Worker**: multiple sessions (closing a tab does not stop it), streaming body and reasoning, pending queue with "send now", `/btw` read-only side work, `/fork` to clone context, `/new` sessions, model and reasoning-effort selection, context usage, cost and step count, full traces, and surveys (AskUser).
 - **Tools**: built-ins such as `ReadFile`, `WriteFile`, `ListDir`, `Grep`, `Shell`; `ReadEvidence`, `RecordFinding`, `ProposeTask` for the evidence channel; skills (built-in and project-level); external `OpenCodeTask` / `DshTask`; read-only `WebFetch`; Puppet for probing the peer process and its UI.
-- **Loop**: one Loop session per project; reads the ledger, traces and findings; turns conclusions into findings or eval-task drafts; produces and executes iteration plans.
+- **Loop**: OpenLoop's own Worker — reads and writes the source, runs builds and tests, produces and executes iteration plans; one Loop session per project, reading the ledger, traces and findings, turning conclusions into findings or eval-task drafts, and evolving version definitions.
 - **Models and external agents**:
   - **opencode**: the local OpenCode v2 service is discovered automatically via `~/.local/state/opencode/service.json` and shows up as an OpenCode provider once ready. Model ids look like `opencode/<model>@<provider>`; use one as the session model, or hand a whole task to its agent with `OpenCodeTask` (tools, session and context stay on its side, permissions still come back to you). Free models are marked.
   - **dsh**: with dsh installed it appears as a provider, model ids look like `dsh/<provider>/<model>`; `DshTask` hands a task to a dsh agent, which you want for its plugin ecosystem (e.g. `our-free-model`'s free models) or dsh-only tools. The model list is probed in the background, so reopen the dropdown a beat later.

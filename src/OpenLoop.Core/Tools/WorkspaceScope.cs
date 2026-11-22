@@ -14,11 +14,14 @@ namespace OpenLoop.Core.Tools
                 : StringComparison.Ordinal;
 
         private readonly string[] _denied;
+        private readonly string[] _allowed;
         private readonly bool _unrestricted;
 
         /// <param name="denied">相对 root 的受保护子路径；默认保护运行态证据 <c>.openloop</c>。</param>
         /// <param name="unrestricted">完全许可：不限制路径边界，也不过滤受保护子目录（仅交互 Worker 使用）。</param>
-        public WorkspaceScope(string root, IEnumerable<string> denied = null, bool unrestricted = false)
+        /// <param name="allowed">受保护子路径下仍放行的例外（如 Loop 的 <c>.openloop/tmp</c>）。</param>
+        public WorkspaceScope(string root, IEnumerable<string> denied = null, bool unrestricted = false,
+            IEnumerable<string> allowed = null)
         {
             if (string.IsNullOrWhiteSpace(root)) throw new ArgumentException("工作目录不能为空", nameof(root));
             Root = RealPath(Path.GetFullPath(root));
@@ -28,6 +31,12 @@ namespace OpenLoop.Core.Tools
                 : (denied ?? [".openloop"])
                     .Where(d => !string.IsNullOrWhiteSpace(d))
                     .Select(d => RealPath(Path.Combine(Root, d)))
+                    .ToArray();
+            _allowed = unrestricted
+                ? []
+                : (allowed ?? [])
+                    .Where(a => !string.IsNullOrWhiteSpace(a))
+                    .Select(a => RealPath(Path.Combine(Root, a)))
                     .ToArray();
         }
 
@@ -48,6 +57,11 @@ namespace OpenLoop.Core.Tools
         {
             if (string.IsNullOrEmpty(path) || _denied.Length == 0) return false;
             string full = RealPath(Path.GetFullPath(path));
+            foreach (string allowed in _allowed)
+            {
+                if (full.Equals(allowed, PathComparison)) return false;
+                if (full.StartsWith(allowed + Path.DirectorySeparatorChar, PathComparison)) return false;
+            }
             foreach (string denied in _denied)
             {
                 if (full.Equals(denied, PathComparison)) return true;

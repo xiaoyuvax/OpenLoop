@@ -1196,7 +1196,7 @@ Service 84 通过，Core 195 通过 / 1 跳过。
 
 `charter.md`（仓库根）记下角色、权限边界、源码同步与迭代归属。落地情况：
 
-- `SourceSync`（`src/OpenLoop.Service/Source/`）：源码放**安装根**下 `<安装根>/source/{openloop,puppetcore}`
+- `SourceSync`（`src/OpenLoop.Service/Source/`）：源码放**安装根**下 `<安装根>/src/{openloop,PuppetCore,ChatFlow}`
   （`OPENLOOP_HOME` 可覆盖），不再放用户配置目录——源码可见性必须跟二进制一致，否则多用户系统会跨用户竞争。
   开发环境下当前目录是 OpenLoop 仓库时直接用当前目录，不复制一份。
   同步只 `clone --depth 1` / `fetch`，**不 reset**（工作树里有 Loop 的改动）；版本从远端读
@@ -1206,6 +1206,8 @@ Service 84 通过，Core 195 通过 / 1 跳过。
   实测（Puppet `/agent/logs`）：`源码同步：UpToDate source=0.1.0 running=0.1.0`、`PuppetCore 同步：UpToDate source=23f8b01`。
 - Loop 工具边界（`LoopScope` + `ToolRegistry.Loop(read, write, …)`）：读与 Worker 同宽（任意路径、克隆仓库、查配置），
   写只允许配置目录（`%APPDATA%\OpenLoop`）与安装路径（源码 + 二进制）；越界写直接拒绝，不走审批。
+  （2026-11-22 修订：读边界收窄为安装/配置路径与来源会话的工作区；写放开安装根的配置与文档与本会话的
+  `.openloop/tmp`，二进制 `backends/`、`versions/` 改为只读——见 `CHARTER.md` §2 与 `LoopScope`。）
 - 项目列表底部固定项 `[Loop]`：列出全部项目的 Loop 会话（`%APPDATA%\OpenLoop\loops.json` 索引，
   对话正文仍是 `工作区|loop` 文件）；点一行 → 打开对应项目的 Loop 页签。实测 `MainForm.OpenLoop` 后索引写入了当前项目。
 - 单测 `SourceSyncTests`：版本比较、csproj/带后缀版本解析、Loop 读放行/写拒绝。Service 100 通过，Core 195 通过 / 1 跳过。
