@@ -31,12 +31,12 @@ public sealed class LedgerTests : IDisposable
         var ledger = NewLedger();
 
         Assert.True(File.Exists(ledger.LedgerPath));
-        Assert.Equal(12, ledger.Features().Count);
+        Assert.Equal(13, ledger.Features().Count);
 
         var current = ledger.Current;
         Assert.NotNull(current);
         Assert.Equal(1, current.Version);
-        Assert.Equal(12, current.Features.Count);
+        Assert.Equal(13, current.Features.Count);
 
         var policy = FeatureCatalog.PolicyFrom(current, Map(ledger));
         Assert.True(policy.RepeatCallGuard);
@@ -44,6 +44,7 @@ public sealed class LedgerTests : IDisposable
         Assert.True(policy.MalformedRetry);
         Assert.Equal(0, policy.MaxSteps);
         Assert.Equal(6000, policy.ToolResultLimit);
+        Assert.Equal(8, policy.OutputTokenRatio);
         Assert.Equal(3, FeatureCatalog.RulesFrom(current, Map(ledger)).Count);
     }
 
@@ -64,7 +65,7 @@ public sealed class LedgerTests : IDisposable
 
         var edited = ledger.AddRule("先读再写", "修改前先读文件，再写。");
         Assert.NotEqual(feature.Id, edited.Id);
-        Assert.Equal(14, ledger.Features().Count);
+        Assert.Equal(15, ledger.Features().Count);
     }
 
     [Fact]

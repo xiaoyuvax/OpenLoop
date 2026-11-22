@@ -13,6 +13,8 @@ namespace OpenLoop.App
     /// 这里只做一件事：按 owner 找到（或建出）那个会话的浏览器，再转给它自己的实例。
     /// 传进来的 sessionId 来自工具构造时注入的本会话 id，不是模型给的参数；
     /// 而且它只会找到那一个会话的浏览器——跨会话在形状上仍然不可表达。
+    ///
+    /// 两种会话都要认：Worker 在 <c>_sessions</c>，Loop 在 <c>_loops</c>（键是 workspace|sessionId）。
     /// </summary>
     public partial class MainForm
     {
@@ -55,43 +57,55 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string LoopAppStateFor(string sessionId)
         {
-            var session = ResolveSessionById(sessionId);
-            return session?.View?.Browser?.LoopAppState ?? "没有网页页";
+            var browser = FindBrowserById(sessionId, create: false);
+            return browser?.LoopAppState ?? "没有网页页";
         }
 
         /// <summary>
-        /// 找到会话的浏览器并把动作转给它。会话必须已经存在（有 <see cref="Session"/> 记录）：
+        /// 找到会话的浏览器并把动作转给它。会话必须已经存在（Worker 或 Loop）：
         /// 找不到就拒绝，不会顺手新建一个会话。
         /// </summary>
         private OperationResult OnLoopAppBrowser(string sessionId, Func<BrowserView, OperationResult> action)
         {
-            var session = ResolveSessionById(sessionId);
-            if (session == null)
+            var browser = FindBrowserById(sessionId, create: true);
+            if (browser == null)
                 return OperationResult.Failure(string.IsNullOrWhiteSpace(sessionId)
                     ? "没有打开的会话"
                     : $"找不到会话 {sessionId}");
-
-            var browser = EnsureBrowserFor(session);
-            if (browser == null) return OperationResult.Failure("打不开这个会话的网页页");
             return action(browser);
         }
 
-        /// <summary>按 id 找会话；空 id 取当前会话。</summary>
-        private Session ResolveSessionById(string sessionId)
-            => string.IsNullOrWhiteSpace(sessionId)
-                ? Current
-                : _sessions.FirstOrDefault(s => string.Equals(s.Id, sessionId, StringComparison.OrdinalIgnoreCase));
-
         /// <summary>
-        /// 取该会话的浏览器，没有就建（<see cref="SessionView.ShowBrowser"/> 会顺手接线）。
+        /// 按 id 找那个会话的浏览器：先找 Worker 会话，再找 Loop 会话（Loop 的 id 形如 <c>loop-xxxx</c>）。
+        /// <paramref name="create"/> = 没有「网页」页就建一个（会顺手接线）。
         /// 不切标签页：后台会话调工具不该把用户正看的东西换掉。
         /// </summary>
-        private BrowserView EnsureBrowserFor(Session session)
+        private BrowserView FindBrowserById(string sessionId, bool create)
         {
-            var view = EnsureView(session);
-            if (view == null) return null;
-            if (view.Browser == null) view.ShowBrowser();
-            return view.Browser;
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                var current = Current?.View;
+                if (current == null) return null;
+                if (create && current.Browser == null) current.ShowBrowser();
+                return current.Browser;
+            }
+
+            var session = _sessions.FirstOrDefault(s =>
+                string.Equals(s.Id, sessionId, StringComparison.OrdinalIgnoreCase));
+            if (session != null)
+            {
+                var view = EnsureView(session);
+                if (view == null) return null;
+                if (create && view.Browser == null) view.ShowBrowser();
+                return view.Browser;
+            }
+
+            // Loop 会话：键是 workspace|sessionId，值里有视图与页面
+            var loop = _loops.Values.FirstOrDefault(e =>
+                string.Equals(e.View.SessionId, sessionId, StringComparison.OrdinalIgnoreCase));
+            if (loop.View == null) return null;
+            if (create && loop.View.Browser == null) loop.View.ShowBrowser();
+            return loop.View.Browser;
         }
     }
 }

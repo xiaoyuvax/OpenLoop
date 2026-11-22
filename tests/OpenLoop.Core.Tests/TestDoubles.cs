@@ -137,6 +137,20 @@ namespace OpenLoop.Core.Tests
         }
     }
 
+
+    /// <summary>脚本式通道，每次调用都报固定输出 token：用于验证任务级输出预算。</summary>
+    internal sealed class TokenReportingReasoner(string[] script, int tokensOut) : IReasoner
+    {
+        private int _next;
+        public int Calls { get; private set; }
+
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+        {
+            Calls++;
+            string next = _next < script.Length ? script[_next++] : "完成";
+            return Task.FromResult(new CompletionResult { Content = next, TokensOut = tokensOut });
+        }
+    }
     internal static class Loops
     {
         public static AgentLoop Build(ITool tool, IReasoner reasoner, AgentPolicy policy = null,

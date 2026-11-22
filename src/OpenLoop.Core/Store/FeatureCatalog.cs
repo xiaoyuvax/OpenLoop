@@ -18,6 +18,7 @@ namespace OpenLoop.Core.Store
         public const string MaxSteps = "limit.steps";
         public const string ToolResultLimit = "limit.tool_result";
         public const string CompressAt = "compress.at";
+        public const string OutputTokenRatio = "limit.output_tokens";
 
         public static IReadOnlyList<FeatureRecord> SeedFeatures() =>
         [
@@ -71,6 +72,12 @@ namespace OpenLoop.Core.Store
             },
             new FeatureRecord
             {
+                Id = OutputTokenRatio, Kind = "limit", Source = "user", CreatedAt = Now(),
+                Problem = "模型单步思考一路发散、把几十万 token 的思考吐进上下文，成本与界面一起失控。",
+                Payload = J(new { value = 8 })
+            },
+            new FeatureRecord
+            {
                 Id = CompressAt, Kind = "limit", Source = "user", CreatedAt = Now(),
                 Problem = "上下文超过窗口后请求直接失败。",
                 Payload = J(new { value = 0.8 })
@@ -111,6 +118,7 @@ namespace OpenLoop.Core.Store
                 Ref(MalformedRetry, ("enabled", true), ("max", 2)),
                 Ref(MaxSteps, ("value", 0)),
                 Ref(ToolResultLimit, ("value", 6000)),
+                Ref(OutputTokenRatio, ("value", 8)),
                 Ref(CompressAt, ("value", 0.8)),
                 Ref("rule.read_before_write"),
                 Ref("rule.answer_first"),
@@ -163,6 +171,9 @@ namespace OpenLoop.Core.Store
                         break;
                     case ToolResultLimit:
                         policy.ToolResultLimit = Number(reference, feature, "value", policy.ToolResultLimit);
+                        break;
+                    case OutputTokenRatio:
+                        policy.OutputTokenRatio = Real(reference, feature, "value", policy.OutputTokenRatio);
                         break;
                     case CompressAt:
                         policy.CompressAt = Real(reference, feature, "value", policy.CompressAt);

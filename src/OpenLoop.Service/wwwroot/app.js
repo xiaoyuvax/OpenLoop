@@ -174,13 +174,13 @@ function OverviewPage({ sessions, project, setProject, onOpen, onNew, onDelete, 
 // ---------------- 会话页 ----------------
 
 function Turn({ turn, bodyRef }) {
+  // 角色靠左右位置区分（用户靠右、宽度封顶一半；助手贴左占满），不再显示「你 / OpenLoop」标注。
   return h('div', { className: 'ol-turn' },
-    turn.user ? h('div', null,
-      h(Muted, null, '你'),
+    turn.user ? h('div', { className: 'ol-msg ol-msg-user' },
       h('div', { className: 'ol-body' }, turn.user)) : null,
-    h('div', { style: turn.user ? { marginTop: 10 } : null },
-      h(Muted, null, 'OpenLoop' + (turn.streaming ? ' · 输出中…' : '')),
+    h('div', { className: 'ol-msg ol-msg-ai' + (turn.user ? ' ol-msg-next' : '') },
       h('div', { ref: bodyRef, className: 'ol-body' }, turn.assistant || ''),
+      turn.streaming ? h('div', { className: 'ol-streaming' }, '输出中…') : null,
       turn.reasoning ? h('details', { className: 'ol-details' },
         h('summary', null, '思考'),
         h('pre', null, turn.reasoning)) : null,

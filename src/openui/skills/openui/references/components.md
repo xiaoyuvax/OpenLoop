@@ -185,6 +185,30 @@ const m = ui.modal({
 });
 ```
 
+## 状态与持久化
+
+ui.state(initial) 返回 { get, set, on }：
+
+```js
+const s = ui.state(0);
+s.set(1);                 // 也可以 set(v => v + 1)
+const off = s.on(v => console.log(v));
+s.get();                  // 1
+```
+
+ui.persist(key, fallback) 形状**一样**，只是每次 set 顺带写 localStorage
+（键自动加 openui: 前缀，隐私模式下静默跳过）：
+
+```js
+const store = ui.persist('draft', {});   // 注意：返回对象，不是函数
+let data = store.get();                  // 读到 fallback 或上次的值
+store.set({ a: 1 });                     // 写入并持久化
+store.on(v => render(v));
+```
+
+**常见错法**：把 persist 当柯里化用——ui.persist('draft', {})() 会报
+ui.persist(...) is not a function。它不返回函数，返回 {get,set,on}。
+
 ## 主题
 
 `body.ui` 即可。浅色主题自动跟随系统；要强制深色：

@@ -46,9 +46,17 @@ namespace OpenLoop.Core.Agent
         public int ToolResultLimit { get; set; } = 6000;
 
         /// <summary>
-        /// 单次任务的输出 token 总预算（思维链 + 正文 + 工具调用片段合计）。
-        /// 0 表示不设输出预算：长思考由上下文窗口与墙钟停滞护栏兜底。
+        /// 单次任务的输出 token 总预算 = 上下文窗口 × 这个倍数（思维链 + 正文 + 工具片段合计）。
+        /// 刻意给大：长思考不该被一个小上限砍掉，只防「一路吐到几十万字」这种失控。
+        /// &lt;=0 表示不设输出预算。
         /// </summary>
-        public int OutputTokenBudget { get; set; } = 0;
+        public double OutputTokenRatio { get; set; } = 8;
+
+        /// <summary>按上下文窗口算出单次任务的输出 token 预算；&lt;=0 表示不限。</summary>
+        public int OutputTokenBudgetFor(int contextLimit)
+        {
+            if (OutputTokenRatio <= 0 || contextLimit <= 0) return 0;
+            return (int)Math.Min(int.MaxValue, contextLimit * OutputTokenRatio);
+        }
     }
 }

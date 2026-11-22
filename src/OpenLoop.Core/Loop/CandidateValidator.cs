@@ -77,6 +77,9 @@ namespace OpenLoop.Core.Loop
                     case FeatureCatalog.CompressAt:
                         CheckNumber(problems, reference, feature, "value", 0.1, 0.95);
                         break;
+                    case FeatureCatalog.OutputTokenRatio:
+                        CheckNumber(problems, reference, feature, "value", 1, 64);
+                        break;
                 }
             }
             return problems;
@@ -87,6 +90,7 @@ namespace OpenLoop.Core.Loop
             FeatureCatalog.RepeatCall or FeatureCatalog.Exploration or FeatureCatalog.MalformedRetry
                 => ["enabled", "max"],
             FeatureCatalog.MaxSteps or FeatureCatalog.ToolResultLimit or FeatureCatalog.CompressAt
+                or FeatureCatalog.OutputTokenRatio
                 => ["value"],
             _ => ["enabled"]
         };

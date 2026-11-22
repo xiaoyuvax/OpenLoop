@@ -1,3 +1,4 @@
+using OpenLoop.Core.Agent;
 using OpenLoop.Core.Tools;
 using OpenLoop.Service.OpenUI;
 using OpenLoop.Service.Worker;
@@ -79,6 +80,33 @@ namespace OpenLoop.Service.Tests
             Assert.Equal("改过的标题", app.Title);
         }
 
+        [Fact]
+        public async Task Tool_list_gives_absolute_paths_so_the_agent_does_not_guess()
+        {
+            LoopAppPaths.Create(_workspace, "demo", _skill, "演示", out _);
+            var tool = new LoopAppTool(_workspace, "sess0001", new NoopHost());
+
+            var result = await tool.ExecuteAsync(
+                new ToolArgs(new Dictionary<string, object> { ["action"] = "list" }),
+                CancellationToken.None);
+            string text = result.Data;
+
+            // agent 拿到名字后第一件事是找文件：只给 slug 它会去猜路径，白跑几次 Shell
+            Assert.Contains(LoopAppPaths.For(_workspace, "demo"), text);
+            Assert.Contains(Path.Combine(LoopAppPaths.For(_workspace, "demo"), "app.js"), text);
+        }
+
+        private sealed class NoopHost : ILoopAppHost
+        {
+            public Task<string> OpenAsync(string o, string u, CancellationToken c) => Task.FromResult("");
+            public Task<string> EvalAsync(string o, string j, CancellationToken c) => Task.FromResult("");
+            public Task<string> ReloadAsync(string o, CancellationToken c) => Task.FromResult("");
+            public Task<string> ShotAsync(string o, CancellationToken c) => Task.FromResult("");
+            public Task<string> StateAsync(string o, CancellationToken c) => Task.FromResult("");
+            public Task<string> UndockAsync(string o, CancellationToken c) => Task.FromResult("");
+            public Task<string> DockAsync(string o, CancellationToken c) => Task.FromResult("");
+            public Task<string> InteractAsync(string o, bool e, CancellationToken c) => Task.FromResult("");
+        }
         [Fact]
         public void List_does_not_create_the_directory()
         {

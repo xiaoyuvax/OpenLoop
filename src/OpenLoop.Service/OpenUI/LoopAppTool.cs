@@ -93,14 +93,25 @@ namespace OpenLoop.Service.OpenUI
                 "改 index.html / app.js 后用 LoopApp(reload) 重新加载");
         }
 
+        /// <summary>
+        /// 列本工作区的 LoopApp。给出绝对路径：agent 拿到名字之后第一件事就是找文件，
+        /// 只给 slug 它会去猜 `.openloop/apps` 之类的路径，白跑好几次 Shell（实测）。
+        /// </summary>
         private AgentToolResult List()
         {
             var apps = LoopAppPaths.List(_workspace);
-            if (apps.Count == 0) return AgentToolResult.Success("还没有 LoopApp");
+            if (apps.Count == 0)
+                return AgentToolResult.Success(
+                    $"还没有 LoopApp。\n落盘根：{LoopAppPaths.Root(_workspace)}\n" +
+                    "用 LoopApp(create, name) 建一个");
+
             var sb = new StringBuilder("本工作区的 LoopApp：\n");
             foreach (var app in apps)
-                sb.Append("- ").Append(app.Slug).Append("  「").Append(app.Title).Append("」\n");
-            return AgentToolResult.Success(sb.ToString().TrimEnd());
+                sb.Append("- ").Append(app.Slug).Append("  「").Append(app.Title).Append("」\n")
+                  .Append("  目录：").Append(app.Directory).Append('\n')
+                  .Append("  改这个：").Append(Path.Combine(app.Directory, "app.js")).Append('\n');
+            sb.Append("落盘根：").Append(LoopAppPaths.Root(_workspace));
+            return AgentToolResult.Success(sb.ToString());
         }
 
         private async Task<AgentToolResult> OpenAppAsync(string name, CancellationToken ct)

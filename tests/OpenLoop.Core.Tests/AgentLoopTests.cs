@@ -180,6 +180,32 @@ namespace OpenLoop.Core.Tests
             Assert.Equal("最终答案", result.FinalAnswer);
         }
 
+    [Fact]
+    public void Output_token_budget_scales_with_context_window()
+    {
+        // 预算刻意给大：按窗口倍数算，长思考不该被小上限砍掉。
+        var policy = new AgentPolicy { OutputTokenRatio = 8 };
+        Assert.Equal(262144, policy.OutputTokenBudgetFor(32768));
+        Assert.Equal(0, new AgentPolicy { OutputTokenRatio = 0 }.OutputTokenBudgetFor(32768));
+        Assert.Equal(0, policy.OutputTokenBudgetFor(0));
+    }
+
+    [Fact]
+    public async Task Output_token_budget_stops_softly_and_keeps_progress()
+    {
+        var tool = new FakeTool();
+        var calls = Enumerable.Range(0, 6).Select(i => Loops.Call("echo", $"{{\"x\":\"{i}\"}}")).ToArray();
+        // 每步报满输出 token：窗口 1000 × 比例 1 = 预算 1000，第一步之后就该收手。
+        var loop = Loops.Build(tool, new TokenReportingReasoner(calls, 1000), new AgentPolicy { OutputTokenRatio = 1 });
+
+        var result = await loop.RunAsync([], "做点事", contextLimit: 1000);
+
+        Assert.True(result.BudgetExhausted);
+        Assert.Equal(1, result.Guards.OutputBudgetStops);
+        Assert.Equal(1, result.Steps.Count);
+        Assert.Contains("输出 token 预算", result.FinalAnswer);
+    }
+
         [Fact]
         public async Task TruncatedToolCallIsRepairedAndExecuted()
         {

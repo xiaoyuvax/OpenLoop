@@ -7,7 +7,7 @@
     <LangVersion>13</LangVersion>
     <RootNamespace>OpenLoop.Service</RootNamespace>
     <AssemblyName>OpenLoop.Service</AssemblyName>
-    <Version>0.1.43</Version>
+    <Version>0.1.44</Version>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 

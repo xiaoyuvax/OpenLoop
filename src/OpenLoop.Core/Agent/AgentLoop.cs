@@ -69,7 +69,7 @@ namespace OpenLoop.Core.Agent
                 Reasoner = _reasoner,
                 Policy = _policy,
                 ContextLimit = contextLimit,
-                OutputTokenBudget = _policy.OutputTokenBudget,
+                OutputTokenBudget = _policy.OutputTokenBudgetFor(contextLimit),
                 ShouldStop = shouldStop,
                 OnDelta = onDelta,
                 OnReasoning = onReasoning,
