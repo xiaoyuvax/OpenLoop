@@ -30,7 +30,7 @@ namespace OpenLoop.Service.Shell
             install = Path.GetFullPath(install).TrimEnd('\\', '/');
             string backup = Path.Combine(AppPaths.VersionsDir, "shell", "rollback-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
 
-            if (!WaitExit(pid, TimeSpan.FromSeconds(60)))
+            if (!WaitExit(pid, TimeSpan.FromSeconds(300)))
             {
                 // 旧壳还活着就覆盖安装目录只会撞文件锁，留下半新半旧的产物
                 Log("old shell still running, skip update " + DateTimeOffset.Now.ToString("O") + " pid=" + pid);
