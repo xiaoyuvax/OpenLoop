@@ -4,7 +4,8 @@ namespace OpenLoop.Service.OpenUI
 {
     /// <summary>
     /// LoopApp 的落盘布局：<c>&lt;workspace&gt;/.openloop/tmp/LoopApps/&lt;slug&gt;/</c>。
-    /// 运行时资产（openui.css/js/icons.svg）来自技能目录，create 时整份复制进来，应用自包含。
+    /// 运行时资产（openui.css/js/icons.svg）来自 openui 技能目录，create 时整份复制进来，应用自包含。
+    /// 规范与资产在本仓库 <c>src/OpenUI/</c>（SKILL.md + references/runtime），随 OpenLoop 一起迭代。
     /// </summary>
     public static class LoopAppPaths
     {
@@ -36,7 +37,19 @@ namespace OpenLoop.Service.OpenUI
         public static string Url(string name)
             => $"https://{VirtualHost}/{Slug(name)}/index.html";
 
-        /// <summary>找 openui 技能的目录（运行时资产的来源）。找不到返回 null。</summary>
+        /// <summary>技能目录下的资产库位置。<c>references/runtime</c>（现用）；曾试过独立仓库 <c>OpenUI/runtime</c>，一并兼容，以后加新布局在这里登记。</summary>
+        public static string FindRuntime(string skillDir)
+        {
+            if (string.IsNullOrWhiteSpace(skillDir)) return null;
+            foreach (string rel in new[] { Path.Combine("references", "runtime"), Path.Combine("OpenUI", "runtime") })
+            {
+                string full = Path.Combine(skillDir, rel);
+                if (Directory.Exists(full)) return Path.GetFullPath(full);
+            }
+            return null;
+        }
+
+        /// <summary>找 openui 技能的目录（规范与资产的来源）。找不到返回 null。</summary>
         public static string FindSkill(string workspace, string globalSkills)
         {
             string explicitPath = Environment.GetEnvironmentVariable("OPENLOOP_OPENUI_SKILL");
@@ -53,7 +66,7 @@ namespace OpenLoop.Service.OpenUI
             {
                 if (string.IsNullOrWhiteSpace(dir)) continue;
                 if (!File.Exists(Path.Combine(dir, "SKILL.md"))) continue;
-                if (!Directory.Exists(Path.Combine(dir, "references", "runtime"))) continue;
+                if (FindRuntime(dir) == null) continue;
                 return Path.GetFullPath(dir);
             }
             return null;
@@ -67,13 +80,15 @@ namespace OpenLoop.Service.OpenUI
         {
             error = null;
             if (string.IsNullOrWhiteSpace(workspace)) { error = "工作目录为空"; return null; }
-            if (string.IsNullOrWhiteSpace(skillRoot)) { error = "找不到 openui 技能（references/runtime 缺失）"; return null; }
+            if (string.IsNullOrWhiteSpace(skillRoot)) { error = "找不到 openui 技能（缺 SKILL.md 或资产库）"; return null; }
+            string runtime = FindRuntime(skillRoot);
+            if (runtime == null) { error = $"技能目录里没有资产库（references/runtime）：{skillRoot}"; return null; }
 
             string dir = For(workspace, name);
             try
             {
                 Directory.CreateDirectory(dir);
-                CopyRuntime(Path.Combine(skillRoot, "references", "runtime"), Path.Combine(dir, "runtime"));
+                CopyRuntime(runtime, Path.Combine(dir, "runtime"));
 
                 string display = string.IsNullOrWhiteSpace(title) ? Slug(name) : title;
                 WriteIfMissing(Path.Combine(dir, "index.html"), IndexHtml(display));
@@ -164,7 +179,7 @@ namespace OpenLoop.Service.OpenUI
 """;
 
         private static string AppJs(string title) => $$"""
-// {{title}} —— 起步骨架：改这个文件，然后 LoopApp(eval, "location.reload()")
+// {{title}} —— 起步骨架：改这个文件，然后 LoopApp(reload) 重新加载
 ui.ready(() => {
   ui.mount('#app', [
     ui.h('div.row.between', [

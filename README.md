@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 **A self-iterating open agent.**
 
-OpenLoop splits "doing the work" from "improving itself" into two roles: the **Worker (A, foreground)** completes real tasks for the user, while the **Loop (I, background)** is OpenLoop's own Worker — it develops, debugs and maintains the source and orchestrates binary iteration, and turns real-usage evidence into version-definition evolution. They are separate processes, launched, supervised and swapped by one **shell**.
+OpenLoop splits "doing the work" from "improving itself" into two roles: the **Worker (A, foreground)** completes real tasks for the user, while the **Loop (I, background)** is OpenLoop's own Worker — it develops, debugs and maintains the source and orchestrates binary iteration, and turns real-usage evidence into evolution of the workspace's harness parameters. They are separate processes, launched, supervised and swapped by one **shell**.
 
 The "Open" in the name means the loop never closes: the world (and the user) always stays part of it. The Loop's judgement comes from real use, not from a sealed self-assessment.
 
@@ -16,7 +16,7 @@ The "Open" in the name means the loop never closes: the world (and the user) alw
 |---|---|---|
 | Shell | `OpenLoop.exe` (WinForms) / `OpenLoop.Shell` (cross-platform CLI) | The only process orchestrator: launches A/I, hosts the UI, performs stage / restart / rollback |
 | Worker (A) | `OpenLoop.A` | Sessions, tool calls, approvals, streaming output, traces; also serves the web UI and `/api/*` |
-| Loop (I) | `OpenLoop.I` | OpenLoop's own Worker: develops and maintains the source (Core/Service, A, I, shell, iterable components), orchestrates binary iteration, and per project observes, reads evidence, records findings, drafts eval tasks and evolves version definitions (`/api/loop/*`) |
+| Loop (I) | `OpenLoop.I` | OpenLoop's own Worker: develops and maintains the source (Core/Service, A, I, shell, iterable components), orchestrates binary iteration, and per project observes, reads evidence, records findings, drafts eval tasks and evolves the workspace's harness parameters (`/api/loop/*`) |
 
 - The desktop and web shells stay feature-aligned. The web UI is served by A on its bus port (`http://<bus>/?key=...`); the desktop shell embeds WebView2 in its side panel.
 - The Loop's write scope: the config directory (`%APPDATA%\OpenLoop`, except `versions/`), the source worktree (the `<install root>/src/` clones in the install layout, the repo and its sibling checkouts in the development layout), config and docs under the install root, and `.openloop/tmp` in its session workspace. Binaries (`backends/`, `versions/`) are read-only. Its read scope covers the OpenLoop install/config paths and its session's source workspace.
@@ -26,7 +26,8 @@ The "Open" in the name means the loop never closes: the world (and the user) alw
 
 - **Worker**: multiple sessions (closing a tab does not stop it), streaming body and reasoning, pending queue with "send now", `/btw` read-only side work, `/fork` to clone context, `/new` sessions, model and reasoning-effort selection, context usage, cost and step count, full traces, and surveys (AskUser).
 - **Tools**: built-ins such as `ReadFile`, `WriteFile`, `ListDir`, `Grep`, `Shell`; `ReadEvidence`, `RecordFinding`, `ProposeTask` for the evidence channel; skills (built-in and project-level); external `OpenCodeTask` / `DshTask`; read-only `WebFetch`; Puppet for probing the peer process and its UI.
-- **Loop**: OpenLoop's own Worker — reads and writes the source, runs builds and tests, produces and executes iteration plans; one Loop session per project, reading the ledger, traces and findings, turning conclusions into findings or eval-task drafts, and evolving version definitions.
+- **Loop**: OpenLoop's own Worker — reads and writes the source, runs builds and tests, produces and executes iteration plans; one Loop session per project, reading the ledger, traces and findings, turning conclusions into findings or eval-task drafts, and evolving the workspace's harness parameters.
+- **Harness page**: both Worker and Loop sessions have it in the side panel; it manages the workspace's evolvable parameters (activation set, rules, eval tasks, reports) and triggers evolution/rollback and iteration.
 - **Models and external agents**:
   - **opencode**: the local OpenCode v2 service is discovered automatically via `~/.local/state/opencode/service.json` and shows up as an OpenCode provider once ready. Model ids look like `opencode/<model>@<provider>`; use one as the session model, or hand a whole task to its agent with `OpenCodeTask` (tools, session and context stay on its side, permissions still come back to you). Free models are marked.
   - **dsh**: with dsh installed it appears as a provider, model ids look like `dsh/<provider>/<model>`; `DshTask` hands a task to a dsh agent, which you want for its plugin ecosystem (e.g. `our-free-model`'s free models) or dsh-only tools. The model list is probed in the background, so reopen the dropdown a beat later.
@@ -36,10 +37,10 @@ The "Open" in the name means the loop never closes: the world (and the user) alw
 
 ### Iteration and versioning
 
-- Two parallel tracks: **evolution** changes the version definition (prompts, skills, policies, model parameters, active models and tool sets); **iteration** swaps executables (Worker `OpenLoop.A`, Loop `OpenLoop.I`, shell `OpenLoop.App`).
-- One role per iteration, with matching protocol numbers; version definitions and binaries are archived separately.
+- Two parallel tracks: **evolution** changes the workspace's harness parameters (activation set: guard toggles, thresholds, rules, skill order, model parameters, active models and tool sets); **iteration** swaps executables (Worker `OpenLoop.A`, Loop `OpenLoop.I`, shell `OpenLoop.App`).
+- One role per iteration, with matching protocol numbers; harness parameters and binaries are archived separately.
 - Version graph: `PuppetCore → Service → {A, I, shell}`, `ChatFlow → shell`, `Core → Service`. When an upstream changes, downstream must be bumped, cascading along dependency edges.
-- Entry point: the Loop page's **Iterate** button → a plan first (who is bumped, current → target, change summary) → user confirms → build → swap A → A updates I → finally publish the new shell and let it restart itself (the UI briefly exits).
+- Entry point: the shell's **Iterate** button (Loop session detail page / the web Harness page) → a plan first (who is bumped, current → target, change summary) → user confirms → build → swap A → A updates I → finally publish the new shell and let it restart itself (the UI briefly exits).
 - Failures roll back: the whole chain is restored from its snapshot; a failed build stays in the source tree with the diff preserved, never producing a half-built version.
 - Before swapping the shell it checks for running sessions (Worker / Loop / side work) and asks first.
 - Version directories: `%APPDATA%\OpenLoop\versions\<role>\<ver>-<sha8>`; each role keeps a limited number of old versions (A/I keep current + previous, the shell also keeps rollback backups).

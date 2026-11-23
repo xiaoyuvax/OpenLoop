@@ -56,13 +56,14 @@ namespace OpenLoop.App
 
             _table.Name = "tblPuppetActions";
             _table.Dock = DockStyle.Fill;
+            _table.Font = new Font("Microsoft YaHei UI", 8F);   // 与思考区同一字号（ChatFont 9pt - 1）
             _table.Bordered = false;
             _table.VisibleHeader = true;
             _table.RowHeight = 36;
             _table.MultipleRows = false;
             _table.EmptyText = "没有可用的 action";
             _table.Margin = new Padding(0);
-            _table.Columns.Add(new AntdUI.Column("Name", "action") { Width = "170" });
+            _table.Columns.Add(new AntdUI.Column("Name", "Action") { Width = "170" });
             _table.Columns.Add(new AntdUI.Column("ParamText", "参数") { Width = "150" });
             _table.Columns.Add(new AntdUI.Column("Desc", "说明"));
 

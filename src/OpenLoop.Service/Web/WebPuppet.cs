@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using Puppet.Core;
@@ -64,6 +65,23 @@ namespace OpenLoop.Service.Web
             if (!BusAuth.IsAuthorized(req, _busKey, allowCookie: true)) return NotFound(req);
 
             string method = (req.Method ?? "GET").ToUpperInvariant();
+
+            // 壳的 Puppet Action 清单（与 WinForms 侧栏「Puppet」页同源：壳的 /appagent/manifest）
+            if (method == "GET" && path.Equals("/api/puppet/actions", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    string manifest = ShellManifest();
+                    req.Response.Headers.Set("Content-Type", "application/json; charset=utf-8");
+                    req.Response.Headers.Set("Cache-Control", "no-store");
+                    req.Response.Buffer = Encoding.UTF8.GetBytes(manifest);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    return Json(req, new { ok = false, error = ex.Message }, 503);
+                }
+            }
 
             if (method == "POST" && path.Equals("/api/puppet/state", StringComparison.OrdinalIgnoreCase))
             {
@@ -136,6 +154,77 @@ namespace OpenLoop.Service.Web
                 throw new InvalidOperationException("页面没有在 15 秒内回传截图。");
             return new PuppetArtifact("webpage.png", "image/png", png);
         }
+
+        // 环回必须绕开系统代理（VPN 开着时系统代理就是 mihomo 自己）
+        private static readonly HttpClient Http = new(new HttpClientHandler { UseProxy = false })
+        {
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+
+        /// <summary>
+        /// 壳的 B 面 Action 清单：桌面壳是独立进程，按 Puppet 写的发现文件
+        /// （<c>%LOCALAPPDATA%\Puppet.AppAgents\OpenLoop.&lt;pid&gt;.json</c>）取端点与凭证，
+        /// 再 GET 壳的 <c>/appagent/manifest</c>（A 面 key 在 B 面无效）。
+        /// </summary>
+        private static string ShellManifest()
+        {
+            var (endpoint, key) = ShellCredential();
+            string url = (endpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? endpoint : "http://" + endpoint)
+                .TrimEnd('/') + "/appagent/manifest?name=MainForm";
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + key);
+            using var response = Http.Send(request);
+            string text = new StreamReader(response.Content.ReadAsStream(), Encoding.UTF8).ReadToEnd();
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"HTTP {(int)response.StatusCode}：{Clip(text)}");
+            return text;
+        }
+
+        private static (string Endpoint, string Key) ShellCredential()
+        {
+            string dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Puppet.AppAgents");
+            if (!Directory.Exists(dir))
+                throw new InvalidOperationException("桌面壳未运行（没有 Puppet B 面发现文件）");
+
+            foreach (string file in Directory.EnumerateFiles(dir, "OpenLoop.*.json"))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(file));
+                    var root = doc.RootElement;
+                    int pid = root.TryGetProperty("pid", out var p) && p.TryGetInt32(out int value) ? value : 0;
+                    if (pid <= 0 || !IsLive(pid)) continue;   // 退出的壳留下的旧文件：端点可能已归别人
+                    string endpoint = Str(root, "endpoint");
+                    string key = Str(root, "key");
+                    if (endpoint.Length > 0 && key.Length > 0) return (endpoint, key);
+                }
+                catch (Exception)
+                {
+                    // 壳正在重写这个文件：换下一个
+                }
+            }
+            throw new InvalidOperationException("桌面壳未运行（没有存活的 Puppet B 面发现文件）");
+        }
+
+        private static bool IsLive(int pid)
+        {
+            try
+            {
+                using var process = System.Diagnostics.Process.GetProcessById(pid);
+                return !process.HasExited;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static string Str(JsonElement obj, string name)
+            => obj.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
+        private static string Clip(string text)
+            => string.IsNullOrEmpty(text) ? "(空)" : text.Length <= 400 ? text : text[..400] + "…";
 
         private void Submit(long id, string png)
         {

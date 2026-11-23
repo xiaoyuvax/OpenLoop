@@ -13,6 +13,13 @@ namespace OpenLoop.App
     {
         private static readonly ConditionalWeakTable<ChatTurn, List<LlmMessage>> Transcripts = new();
 
+        /// <summary>
+        /// 会话打开时还没有挂 transcript 的轮次按需回读文件：Load 不再把每轮的 Messages 全量载进内存
+        /// （几十 MB 的会话，JSON 解析时间与内存占用都由它贡献）。挂在 <see cref="Transcripts"/> 里的
+        /// 仍是完整消息列表，取一次之后就不回读。
+        /// </summary>
+        private static readonly ConditionalWeakTable<ChatTurn, string> DeferredFiles = new();
+
         /// <summary>记下这一轮结束时的消息列表；下一次 Save 会一起落盘，BuildHistory 用它当上下文。</summary>
         public static void AttachTranscript(ChatTurn turn, IReadOnlyList<LlmMessage> messages)
         {
@@ -25,15 +32,65 @@ namespace OpenLoop.App
             if (list.Count > 0) Transcripts.AddOrUpdate(turn, list);
         }
 
-        /// <summary>这一轮落盘的消息列表；旧会话没有时为 null。</summary>
+        /// <summary>
+        /// 这一轮落盘的消息列表；旧会话没有时为 null。轮次带延迟回读登记时先回读一次（可能整表为 null）。
+        /// </summary>
         public static IReadOnlyList<LlmMessage> Transcript(ChatTurn turn)
-            => turn != null && Transcripts.TryGetValue(turn, out var list) ? list : null;
+        {
+            if (turn == null) return null;
+            if (Transcripts.TryGetValue(turn, out var list)) return list;
+            if (DeferredFiles.TryGetValue(turn, out var file))
+            {
+                DeferredFiles.Remove(turn);
+                LoadTranscriptsFor(turn, file);
+                return Transcripts.TryGetValue(turn, out list) ? list : null;
+            }
+            return null;
+        }
+
+        /// <summary>把一个会话文件里挂得上号的 transcript 读进内存（只挑有 Messages 的轮次）。</summary>
+        private static void LoadTranscriptsFor(ChatTurn turn, string file)
+        {
+            try
+            {
+                if (!File.Exists(file)) return;
+                var entries = ChatHistory.ReadEntries(file);
+                // 该轮在文件里的位置没有直接记号：transcript 属于「这条 user 消息」的那一轮，按 user 文本对号
+                var match = entries.FirstOrDefault(e => e?.Messages is { Count: > 0 }
+                    && string.Equals(e.User, turn.UserText, StringComparison.Ordinal));
+                if (match != null)
+                    AttachTranscript(turn, match.Messages
+                        .Where(m => !string.IsNullOrEmpty(m?.Content))
+                        .Select(m => new LlmMessage(m.Role ?? "user", m.Content))
+                        .ToList());
+            }
+            catch
+            {
+                // 回读失败就当没有 transcript：BuildHistory 会退回正文
+            }
+        }
 
         public static List<ChatTurn> Load(string workspace, string kind = null)
         {
             var turns = new List<ChatTurn>();
             if (string.IsNullOrWhiteSpace(workspace)) return turns;
-            var entries = ChatHistory.Read(workspace, kind);
+            Turns(ChatHistory.Read(workspace, kind), turns, ChatHistory.PathFor(workspace, kind));
+            return turns;
+        }
+
+        /// <summary>
+        /// 把已读出的条目投影成轮次（纯内存）：打开一个会话只解析一次文件，
+        /// 模型恢复 / 历史加载 / 冷启动整理共用同一份 entries，别各读一遍几十 MB 的 JSON。
+        /// </summary>
+        public static List<ChatTurn> Turns(IReadOnlyList<ChatEntry> entries, string transcriptSource = null)
+        {
+            var turns = new List<ChatTurn>();
+            Turns(entries, turns, transcriptSource);
+            return turns;
+        }
+
+        private static void Turns(IReadOnlyList<ChatEntry> entries, List<ChatTurn> turns, string transcriptSource)
+        {
             foreach (var entry in entries)
             {
                 if (entry == null || (string.IsNullOrEmpty(entry.User) && string.IsNullOrEmpty(entry.Assistant)))
@@ -59,14 +116,12 @@ namespace OpenLoop.App
                 if (entry.Phases is { Count: > 0 })
                     foreach (var phase in entry.Phases)
                         turn.Phases.Add((phase?.Thinking ?? "", phase?.Answer ?? ""));
-                if (entry.Messages is { Count: > 0 })
-                    AttachTranscript(turn, entry.Messages
-                        .Where(m => !string.IsNullOrEmpty(m?.Content))
-                        .Select(m => new LlmMessage(m.Role ?? "user", m.Content))
-                        .ToList());
+                // transcript 延迟加载：打开会话不把每轮完整消息全部载进内存（大头在 Messages），
+                // BuildHistory 第一次要某轮的上下文时才回读文件
+                if (entry.Messages is { Count: > 0 } && transcriptSource != null)
+                    DeferredFiles.AddOrUpdate(turn, transcriptSource);
                 turns.Add(turn);
             }
-            return turns;
         }
 
         public static void Save(string workspace, IEnumerable<ChatTurn> turns, string kind = null,
@@ -81,29 +136,38 @@ namespace OpenLoop.App
         /// 流式中的字段不会在写盘途中被界面改掉。
         /// </summary>
         public static List<ChatEntry> Entries(IEnumerable<ChatTurn> turns, string model = null, string effort = null)
-            => (turns ?? []).Select(t => new ChatEntry
+            => EntriesFromSnapshot(
+                (turns ?? []).Select(t => (Turn: t, Transcript: Transcript(t))).ToList(), model, effort);
+
+        /// <summary>
+        /// 从浅引用快照投影（给后台写盘线程用）：UI 线程只取各字段的当前引用，深拷贝全部挪到后台。
+        /// 界面对已存在轮次只会替换字段引用、不会原地改写旧字符串对象，投影读到的都是一致值。
+        /// </summary>
+        public static List<ChatEntry> EntriesFromSnapshot(
+            IReadOnlyList<(ChatTurn Turn, IReadOnlyList<LlmMessage> Transcript)> snapshot,
+            string model = null, string effort = null)
+            => snapshot.Select(x => new ChatEntry
             {
-                User = t.UserText,
+                User = x.Turn.UserText,
                 // 已结束的轮次不许落盘成空白：重新打开会变成一条「静默中断」。补法在 ChatHistory.AssistantFor
                 // 里，与 Worker（A 的 Persist）同一口径，别在这里再写一份。
-                Assistant = t.Streaming
-                    ? t.AssistantText
-                    : OpenLoop.Service.Storage.ChatHistory.AssistantFor(t.AssistantText, t.ToolStepCount),
-                Reasoning = t.ReasoningText,
-                ToolLines = t.ToolCallLines,
-                Timeline = t.TimelineText,
-                Phases = t.Phases.Select(p => new ChatPhaseEntry { Thinking = p.Thinking, Answer = p.Answer }).ToList(),
-                Steps = t.ToolStepCount,
-                Ms = t.ToolTotalMs,
-                Notice = t.Notice,
-                NoticeKind = t.NoticeKind,
+                Assistant = x.Turn.Streaming
+                    ? x.Turn.AssistantText
+                    : OpenLoop.Service.Storage.ChatHistory.AssistantFor(x.Turn.AssistantText, x.Turn.ToolStepCount),
+                Reasoning = x.Turn.ReasoningText,
+                ToolLines = x.Turn.ToolCallLines,
+                Timeline = x.Turn.TimelineText,
+                Phases = x.Turn.Phases.Select(p => new ChatPhaseEntry { Thinking = p.Thinking, Answer = p.Answer }).ToList(),
+                Steps = x.Turn.ToolStepCount,
+                Ms = x.Turn.ToolTotalMs,
+                Notice = x.Turn.Notice,
+                NoticeKind = x.Turn.NoticeKind,
                 Model = model,
                 Effort = effort,
                 // 中途快照：这一轮还在跑，读回来要能认出来（Loop 的流式轮次靠它区分「跑到一半」与「空轮」）
-                Streaming = t.Streaming,
-                Messages = Transcripts.TryGetValue(t, out var transcript)
-                    ? transcript.Select(m => new ChatMessageEntry { Role = m.Role, Content = m.Content }).ToList()
-                    : null
+                Streaming = x.Turn.Streaming,
+                Messages = x.Transcript?
+                    .Select(m => new ChatMessageEntry { Role = m.Role, Content = m.Content }).ToList()
             }).ToList();
 
         /// <summary>
@@ -145,14 +209,16 @@ namespace OpenLoop.App
         /// 冷启动整理历史：文件空闲超过一小时（服务端前缀缓存必然过期）或换了模型时做一次。
         /// 会话进行中不得调用，否则会改写已提交的前缀、打断前缀缓存。
         /// </summary>
-        public static int PruneCold(string workspace, string kind, string model, IReadOnlyList<ChatTurn> turns)
+        public static int PruneCold(string workspace, string kind, string model, IReadOnlyList<ChatTurn> turns,
+            IReadOnlyList<ChatEntry> entries = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return 0;
 
             string path = ChatHistory.PathFor(workspace, kind);
             bool idle = !File.Exists(path)
                 || DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromMinutes(60);
-            bool modelChanged = ChatHistory.Read(workspace, kind).Any(e =>
+            // 已读出的 entries 就不再读文件：打开一个会话只解析一次
+            bool modelChanged = (entries ?? ChatHistory.Read(workspace, kind)).Any(e =>
                 !string.IsNullOrWhiteSpace(e?.Model)
                 && !string.Equals(e.Model, model, StringComparison.OrdinalIgnoreCase));
             if (!idle && !modelChanged) return 0;

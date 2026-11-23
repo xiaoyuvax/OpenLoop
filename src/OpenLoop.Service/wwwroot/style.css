@@ -99,6 +99,9 @@ body ::-webkit-scrollbar-track { background: transparent; }
 .ol-section-title { font-size: 12px; color: #8c8c8c; margin: 12px 0 6px; }
 .ol-section-title:first-child { margin-top: 0; }
 
+/* Puppet Action 清单：字号跟随「思考」区（12px），侧栏窄，默认 14px 太挤 */
+.ol-puppet-table .ant-table { font-size: 12px; }
+
 @media (max-width: 1100px) {
   .ol-sider-right { display: none !important; }
 }

@@ -1,7 +1,8 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using OpenLoop.Core.Agent;
 using OpenLoop.Service.Config;
+using OpenLoop.Service.Storage;
 using OpenLoop.Service.Web;
 using OpenLoop.Service.Worker;
 using Puppet.Core;
@@ -13,9 +14,24 @@ namespace OpenLoop.Service.Tests
     /// 留言板私信（say 带 to）：只对发送方与目标可见，并作为「协作提示」主动投递到目标会话队列。
     /// 这里只测不依赖模型的纯逻辑：可见性过滤、提示文本、投递分流与入队语义。
     /// </summary>
-    [Collection("peer-delivery")]
-    public class PeerDeliveryTests
+    [Collection("chat-index")]
+    public class PeerDeliveryTests : IDisposable
     {
+        private readonly string _chats = Path.Combine(Path.GetTempPath(), "ol-peer-chats-" + Guid.NewGuid().ToString("N"));
+        private readonly string _previousRoot;
+
+        public PeerDeliveryTests()
+        {
+            _previousRoot = ChatHistory.Root;
+            ChatHistory.Root = _chats;
+        }
+
+        public void Dispose()
+        {
+            ChatHistory.Root = _previousRoot;
+            Puppet.Core.AgentBook.Reset();
+            try { Directory.Delete(_chats, true); } catch { }
+        }
         private const string Board = """
             {
               "messages": [
@@ -102,7 +118,7 @@ namespace OpenLoop.Service.Tests
         {
             var gate = new TaskCompletionSource<WorkerRunResult>();
             var host = new WorkerSessionHost((_, _) => gate.Task);
-            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "peer0001");
+            var session = host.Create(Path.Combine(Path.GetTempPath(), "ol-peer-ws-" + Guid.NewGuid().ToString("N")), "m", "", () => new AppSettings(), "peer0001");
 
             host.Send(session.Id, "task", "先跑一段");
             Assert.Equal(WorkerSessionHost.Running, host.Get(session.Id).State);
@@ -116,7 +132,8 @@ namespace OpenLoop.Service.Tests
             Assert.True(snapshot.PendingAuto[at]);
 
             gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
-            await Task.CompletedTask;
+            // 等后台轮收尾落盘完再退：Dispose 删目录后它还写就只会报「找不到路径」
+            await Task.Delay(300);
         }
 
         [Fact]

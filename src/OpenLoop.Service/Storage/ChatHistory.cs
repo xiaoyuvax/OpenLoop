@@ -136,10 +136,15 @@ namespace OpenLoop.Service.Storage
         public static List<ChatEntry> Read(string workspace, string kind)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return [];
+            return ReadEntries(PathFor(workspace, kind));
+        }
+
+        /// <summary>按文件路径读条目：延迟回读 transcript 时只传路径，不再重复算哈希。</summary>
+        public static List<ChatEntry> ReadEntries(string path)
+        {
             try
             {
-                string path = PathFor(workspace, kind);
-                if (!File.Exists(path)) return [];
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return [];
                 return JsonSerializer.Deserialize<List<ChatEntry>>(File.ReadAllText(path, Encoding.UTF8), Json) ?? [];
             }
             catch
@@ -150,8 +155,11 @@ namespace OpenLoop.Service.Storage
 
         /// <summary>会话最后使用的模型与推理力度（旧文件没有时为 null）：重开会话按它恢复，而不是全局上次的。</summary>
         public static (string Model, string Effort) LastModel(string workspace, string kind)
+            => LastModelFrom(Read(workspace, kind));
+
+        /// <summary>从已读出的条目里取最后的模型与力度：打开一个会话只解析一次文件时复用。</summary>
+        public static (string Model, string Effort) LastModelFrom(IReadOnlyList<ChatEntry> entries)
         {
-            var entries = Read(workspace, kind);
             for (int i = entries.Count - 1; i >= 0; i--)
             {
                 var entry = entries[i];

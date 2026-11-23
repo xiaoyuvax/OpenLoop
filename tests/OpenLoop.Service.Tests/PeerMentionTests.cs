@@ -1,4 +1,4 @@
-using OpenLoop.Core.Agent;
+﻿using OpenLoop.Core.Agent;
 using OpenLoop.Service.Web;
 using Puppet.Core;
 using Xunit;
@@ -9,7 +9,7 @@ namespace OpenLoop.Service.Tests
     /// 正文里 @ 一个同工作区会话：不写 to 也算定向留言，投递到对方队列（广播要对方自己来读）。
     /// 只认留言板上同工作区的会话，@ 到别人/别的项目不当作定向。
     /// </summary>
-    [Collection("peer-delivery")]
+    [Collection("chat-index")]
     public class PeerMentionTests
     {
         [Fact]

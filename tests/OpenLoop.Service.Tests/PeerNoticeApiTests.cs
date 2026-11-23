@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Wima.Web;
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Config;
@@ -13,8 +13,23 @@ namespace OpenLoop.Service.Tests
     /// 别的会话 say 带 to 指向本机的 Worker 会话时，PeerDelivery 走这条 HTTP 把私信推进它的队列。
     /// </summary>
     [Collection("chat-index")]
-    public class PeerNoticeApiTests
+    public class PeerNoticeApiTests : IDisposable
     {
+        private readonly string _chats = Path.Combine(Path.GetTempPath(), "ol-notice-chats-" + Guid.NewGuid().ToString("N"));
+        private readonly string _previousRoot;
+
+        public PeerNoticeApiTests()
+        {
+            _previousRoot = Storage.ChatHistory.Root;
+            Storage.ChatHistory.Root = _chats;
+        }
+
+        public void Dispose()
+        {
+            Storage.ChatHistory.Root = _previousRoot;
+            Puppet.Core.AgentBook.Reset();
+            try { Directory.Delete(_chats, true); } catch { }
+        }
         private const string Key = "test-key";
 
         private static WebRequest Call(WorkerApiHandler handler, string method, string path, string body = null)
@@ -55,7 +70,8 @@ namespace OpenLoop.Service.Tests
             Assert.True(snapshot.PendingAuto[at]);
 
             gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
-            await Task.Delay(50);
+            // 等后台轮收尾落盘完再退，别把落盘带进下一个测试的根目录
+            await Task.Delay(300);
         }
 
         [Fact]

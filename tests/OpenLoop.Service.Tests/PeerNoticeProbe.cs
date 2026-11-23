@@ -1,9 +1,10 @@
-using OpenLoop.Service.Worker;
+﻿using OpenLoop.Service.Worker;
 using Xunit;
 
 namespace OpenLoop.Service.Tests
 {
     /// <summary>AnnouncePeers 的行为验证（诊断用，跑完即删）。</summary>
+    [Collection("chat-index")]
     public sealed class PeerNoticeProbe : IDisposable
     {
         private readonly string _chats = Path.Combine(Path.GetTempPath(), "ol-peerprobe-" + Guid.NewGuid().ToString("N"));

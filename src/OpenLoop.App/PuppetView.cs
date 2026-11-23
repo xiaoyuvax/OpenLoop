@@ -228,7 +228,7 @@ namespace OpenLoop.App
                 if (e.KeyCode == Keys.Down) { _cmdPopup.MoveSelection(1); e.SuppressKeyPress = true; return; }
                 if (e.KeyCode == Keys.Up) { _cmdPopup.MoveSelection(-1); e.SuppressKeyPress = true; return; }
                 if (e.KeyCode == Keys.Escape) { _cmdPopup.Close(); e.SuppressKeyPress = true; return; }
-                if (e.KeyCode == Keys.Enter) { _cmdPopup.Accept(); e.SuppressKeyPress = true; return; }
+                if (e.KeyCode == Keys.Enter && !_cmdPopup.IsExact(_txtInput.Text)) { _cmdPopup.Accept(); e.SuppressKeyPress = true; return; }
             }
 
             if (e.KeyCode != Keys.Enter) return;

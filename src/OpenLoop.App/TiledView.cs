@@ -159,6 +159,8 @@ namespace OpenLoop.App
                 BorderStyle = BorderStyle.None,
                 BackColor = UiStyle.Surface,
                 ForeColor = UiStyle.Text,
+                // FCTB 默认只收等宽字体，设比例字体（雅黑）必须先开这个开关，否则构造方块就抛异常
+                AllowProportionalFont = true,
                 Font = new Font("Microsoft YaHei UI", 8F),
                 Margin = new Padding(0)
             };

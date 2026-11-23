@@ -200,7 +200,6 @@ namespace OpenLoop.App
         internal Session Session { get; private set; }
 
         internal event Action<Session> StateChanged;
-        internal event Action<string> OpenLoopRequested;
         internal event Action<Session, string> ComplaintRequested;
         internal event Action<Session, string> ForkRequested;
         internal event Action<Session, string> NewSessionRequested;
@@ -408,10 +407,10 @@ namespace OpenLoop.App
 
         private void UpdateSideVisibility(int index)
         {
-            _loopFlow.Visible = index == 0;
-            _detailFlow.Visible = index == 1;
-            _sideBtw.Visible = index == 2;
-            _sideBtw.SetActive(index == 2);   // 没摆在前台的旁路页不渲染
+            _detailFlow.Visible = index == 0;
+            _sideBtw.Visible = index == 1;
+            _sideBtw.SetActive(index == 1);   // 没摆在前台的旁路页不渲染
+            _loopFlow.Visible = index == 2;
             _fileView.Visible = index >= 0 && index == _filePage;
             _puppetView.Visible = index == PuppetPage;
             if (index == PuppetPage) _puppetView.Reload();
@@ -424,7 +423,7 @@ namespace OpenLoop.App
                     _browser.MarkShown();
                 }
             }
-            if (index == 1) ApplyDetail();
+            if (index == 0) ApplyDetail();
         }
 
         /// <summary>聊天区里点链接：网址进右侧「网页」页，本地路径进「文件」页（文件夹直接用资源管理器打开）。</summary>
@@ -589,13 +588,13 @@ namespace OpenLoop.App
                 _upperSplit.Panel2Collapsed ? UiIcons.PanelOpen : UiIcons.PanelClose, UiStyle.Text);
             if (!_upperSplit.Panel2Collapsed) ApplyLayout();
             // 侧栏整体收起：旁路页即便仍停在那一项也看不到，跟着停渲染
-            _sideBtw.SetActive(!_upperSplit.Panel2Collapsed && _sideTabs.SelectIndex == 2);
+            _sideBtw.SetActive(!_upperSplit.Panel2Collapsed && _sideTabs.SelectIndex == 1);
         }
 
         private void OnContextClick(object sender, EventArgs e)
         {
             if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
-            ShowSidePage(1);
+            ShowSidePage(0);
         }
 
         private void OnSidePageChanged(object sender, AntdUI.IntEventArgs e)
@@ -603,7 +602,6 @@ namespace OpenLoop.App
             UpdateSideVisibility(e?.Value ?? 0);
         }
 
-        private void OnOpenLoop(object sender, EventArgs e) => OpenLoopRequested?.Invoke(Session?.Workspace ?? "");
 
         private void ApplyDetail()
         {
@@ -655,7 +653,8 @@ namespace OpenLoop.App
             if (shift) { ComposerKeys.InsertSoftNewline(_txtInput); UpdateSendButton(); return; }
             // 只挂附件、不写字也是合法消息：这里必须和 Submit 的判据一致，否则回车被静默吞掉
             if (_editing == null && _txtInput.Text.Trim().Length == 0 && _attachments.Count == 0) return;
-            if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
+            // 已经敲全的命令（/compact、/new 这类无参命令）不再只补全，回车直接执行
+            if (_cmdPopup.IsOpen && !_cmdPopup.IsExact(_txtInput.Text)) { _cmdPopup.Accept(); return; }
             Submit(immediate: !ctrl);
         }
 
@@ -789,7 +788,7 @@ namespace OpenLoop.App
         private void RunSideWork(string request)
         {
             if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
-            ShowSidePage(2);
+            ShowSidePage(1);
             _sideBtw.SetModel(_model);
             _sideBtw.SetEffort(_effort);
             // 只保留最新一条旁路：上一条转成普通会话存进会话历史，之后可恢复继续聊
@@ -831,7 +830,9 @@ namespace OpenLoop.App
                 new("system", TitlePrompt),
                 new("user", input)
             };
-            var reasoner = Reasoners.Create(settings, model, "", workspace);
+            // 标题是一次性短问答：免费模型不保留原生工具表，否则权限询问全被拒、模型只留下
+            // 思维链没有正文，标题静默拿空串（实测整段会话都起不了标题）。
+            var reasoner = Reasoners.Create(settings, model, "", workspace, keepTools: false);
             var completion = await reasoner.CompleteAsync(messages, ct);
             return CleanTitle(completion?.Content);
         }
@@ -851,7 +852,12 @@ namespace OpenLoop.App
             {
                 string title = await AskTitleAsync(_settings(), Session.Workspace, _model, TitleInput(turns),
                     CancellationToken.None);
-                if (title.Length == 0) return;
+                if (title.Length == 0)
+                {
+                    // 空返回也留痕：静默放弃只会让用户以为「自动总结没工作」又无从查起
+                    AppLog.Warn("生成标题：模型没有返回可用正文（轮数 " + turns.Count + "，模型 " + _model + "）");
+                    return;
+                }
                 bool same = string.Equals(previous, title, StringComparison.Ordinal);
                 _titleTurnCount = turns.Count;
                 Session.ManualTitle = false;
@@ -884,7 +890,12 @@ namespace OpenLoop.App
                 try
                 {
                     string title = await AskTitleAsync(settings(), workspace, model, input, CancellationToken.None);
-                    if (title.Length == 0 || string.Equals(session.CustomTitle, title, StringComparison.Ordinal)) return;
+                    if (title.Length == 0)
+                    {
+                        AppLog.Warn("会话结束时总结标题：模型没有返回可用正文（会话 " + sessionId + "）");
+                        return;
+                    }
+                    if (string.Equals(session.CustomTitle, title, StringComparison.Ordinal)) return;
                     session.CustomTitle = title;
                     ChatStore.Touch(workspace, sessionId, title);
                     AppLog.Info("会话结束时更新标题：" + title);
@@ -911,8 +922,9 @@ namespace OpenLoop.App
         internal static string CleanTitle(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
+            // 协议行（[system] 之类标签、tool-call 样板）不是标题候选：只认像正文的第一行
             string line = raw.Replace("\r", "\n").Split('\n').Select(l => l.Trim())
-                .FirstOrDefault(l => l.Length > 0) ?? "";
+                .FirstOrDefault(l => l.Length > 0 && !l.StartsWith("[") && !l.StartsWith("tool-call:")) ?? "";
             line = line.Trim('"', '\'', '“', '”', '‘', '’', '「', '」', '#', '*', ' ');
             line = line.TrimEnd('。', '.', '：', ':');
             return line.Length <= 20 ? line : line[..20];
@@ -1018,8 +1030,8 @@ namespace OpenLoop.App
 
         private void OnSendClick(object sender, EventArgs e)
         {
-            // 联想浮层开着时点发送等同回车：先选中，不把「@…」「/…」当正文发出去
-            if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
+            // 联想浮层开着时点发送等同回车：先选中，不把「@…」「/…」当正文发出去（已敲全的命令直接发）
+            if (_cmdPopup.IsOpen && !_cmdPopup.IsExact(_txtInput.Text)) { _cmdPopup.Accept(); return; }
             // 免费额度撞墙后按钮是「继续」：输入框为空时点它就把继续发出去
             if (_txtInput.Text.Trim().Length == 0 && _attachments.Count == 0 && !_running && QuotaOnLastTurn)
             {

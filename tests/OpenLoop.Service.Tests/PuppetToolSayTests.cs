@@ -1,4 +1,4 @@
-using OpenLoop.Core.Agent;
+﻿using OpenLoop.Core.Agent;
 using OpenLoop.Core.Tools;
 using OpenLoop.Service.Web;
 using Puppet.Core;
@@ -11,7 +11,7 @@ namespace OpenLoop.Service.Tests
     /// Puppet 工具的 say：带 to 的留言既要写进留言板（只有双方可见），
     /// 也要作为「协作提示」主动投递到目标会话队列——广播要对方自己来读，错过就看不到。
     /// </summary>
-    [Collection("peer-delivery")]
+    [Collection("chat-index")]
     public class PuppetToolSayTests
     {
         [Fact]

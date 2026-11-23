@@ -667,7 +667,7 @@ namespace OpenLoop.App
 
         private void PostComplaint(string workspace, string text, string model = null, string effort = null)
             => EnsureLoop(workspace, select: false, sessionId: "",
-                title: "反馈 " + DateTime.Now.ToString("HH:mm"), model: model, effort: effort)?.Post(text);
+                title: "反馈 " + DateTime.Now.ToString("HH:mm"), model: model, effort: effort)?.Post(text, "feedback");
 
         /// <summary>
         /// 取（必要时创建）某个项目的 Loop 会话。历史按「项目 + 会话 id」分开存，
@@ -1535,7 +1535,6 @@ namespace OpenLoop.App
                 .Where(v => v != null)
                 .ToList());
             view.StateChanged += OnSessionStateChanged;
-            view.OpenLoopRequested += workspace => OpenLoop(workspace);
             view.ComplaintRequested += OnComplaint;
             view.ForkRequested += ForkSession;
             view.NewSessionRequested += NewSessionFrom;
@@ -2056,6 +2055,7 @@ namespace OpenLoop.App
             var targets = _sessions.Where(s => ids.Contains(s.Id)).ToList();
             foreach (var session in targets)
             {
+                DetachFromTiled(session);
                 session.View?.Shutdown();
                 if (session.Page != null) CloseTab(session.Page);
                 ChatStore.Delete(session.Workspace, session.Id);

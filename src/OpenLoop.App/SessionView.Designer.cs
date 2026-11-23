@@ -25,7 +25,6 @@ namespace OpenLoop.App
         private FilePreviewView _fileView;
         private PuppetActionView _puppetView;
         private BrowserView _browser;
-        private AntdUI.Button _btnOpenLoop;
         private AntdUI.Button _btnOpenWorkspace;
         private System.Windows.Forms.Label _lblDModel;
         private AntdUI.Label _lblDEffort;
@@ -95,7 +94,6 @@ namespace OpenLoop.App
             _loopFlow = new FlowLayoutPanel();
             _btnPendingSurveys = new AntdUI.Button();
             _detailFlow = new FlowLayoutPanel();
-            _btnOpenLoop = new AntdUI.Button();
             _btnOpenWorkspace = new AntdUI.Button();
             _lblDModel = new System.Windows.Forms.Label();
             _lblDEffort = new AntdUI.Label();
@@ -222,7 +220,7 @@ namespace OpenLoop.App
             _headerLine.BackColor = UiStyle.Border;
             _headerLine.Margin = new Padding(0);
 
-            // 一个纵向拆分：左栏 = 聊天流 + 队列 + 输入区，右栏 = Loop/详情/旁路/文件
+            // 一个纵向拆分：左栏 = 聊天流 + 队列 + 输入区，右栏 = 详情/旁路/Loop/文件
             _upperSplit.Dock = DockStyle.Fill;
             _upperSplit.Orientation = Orientation.Vertical;
             _upperSplit.SplitterWidth = 8;
@@ -250,9 +248,9 @@ namespace OpenLoop.App
             _sideTabs.Dock = DockStyle.Fill;
             _sideTabs.Height = 32;
             _sideTabs.Margin = new Padding(0);
-            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Loop" });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabDetail") });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "旁路" });
+            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Harness" });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Puppet" });
             // 「网页」页不预置：只有 Agent 打开浏览器时才插入，用户点不出一个空 WebView
             _sideTabs.SelectIndex = 0;
@@ -328,8 +326,8 @@ namespace OpenLoop.App
             _lblEvolveHint.TextMultiLine = true;
             _lblEvolveHint.Width = 236;
             _lblEvolveHint.Height = 60;
-            _lblEvolveHint.Text = "演进只改当前工作区的激活集：护栏开关、阈值、规则与技能顺序；"
-                + "不改代码/工具/提示词，其它工作区不受影响；考核题 A/B 更好才采纳。";
+            _lblEvolveHint.Text = "Harness 只改当前工作区的可演进参数（激活集：护栏开关、阈值、规则、"
+                + "技能顺序、模型参数）；不改代码/工具/提示词，其它工作区不受影响；考核题 A/B 更好才采纳。";
             _lblEvolveHint.Font = new Font("Segoe UI", 8F);
             _lblEvolveHint.ForeColor = UiStyle.Muted;
             // 放在按钮组下方：与上方按钮留一段距离，别贴着
@@ -379,15 +377,6 @@ namespace OpenLoop.App
             _btnRule.IconSvg = UiIcons.Of(UiIcons.Plus, UiStyle.Text);
             _btnRule.Margin = new Padding(0, 0, 0, 4);
             _btnRule.Click += OnAddRule;
-
-            _btnOpenLoop.Name = "btnOpenLoop";
-            _btnOpenLoop.Text = Localization.T("OpenLoopChat");
-            _btnOpenLoop.Radius = 8;
-            _btnOpenLoop.Height = 34;
-            _btnOpenLoop.Width = 236;
-            _btnOpenLoop.IconSvg = UiIcons.Dot(UiStyle.Loop);
-            _btnOpenLoop.Margin = new Padding(0, 12, 0, 4);
-            _btnOpenLoop.Click += OnOpenLoop;
 
             _lblDModel.AutoSize = true;
             _lblDModel.Text = Localization.T("Model") + ": —";
@@ -453,7 +442,6 @@ namespace OpenLoop.App
             _loopFlow.Controls.Add(_btnEvolve);
             _loopFlow.Controls.Add(_btnRollback);
             _loopFlow.Controls.Add(_btnRule);
-            _loopFlow.Controls.Add(_btnOpenLoop);
             // 说明文字放最后：所有按钮之下，占住底部空白区
             _loopFlow.Controls.Add(_lblEvolveHint);
 

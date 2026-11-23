@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using Wima.Web;
 using OpenLoop.Core.Safety;
@@ -6,14 +6,20 @@ using OpenLoop.Service.Bus;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Web;
 using OpenLoop.Service.Worker;
+using Puppet.Core;
 using Xunit;
 
 namespace OpenLoop.Service.Tests
 {
     /// <summary>界面客户端依赖的 API 形状：显式 id、404、审批回传。</summary>
     [Collection("chat-index")]
-    public class WorkerApiHandlerTests
+    public class WorkerApiHandlerTests : IDisposable
     {
+        // 鐙珛宸ヤ綔鍖猴細閬垮厤鍏变韩宸ヤ綔鍖虹殑鐧昏鍦ㄧ湅鏉夸笂浜掔浉瑙﹀彂鍗忎綔鎻愮ず
+        private readonly string _workspace = Path.Combine(Path.GetTempPath(), "openloop-ws-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
+
+        public void Dispose() => AgentBook.Reset();
+
         private const string Key = "test-key";
 
         private static readonly JsonSerializerOptions Json = BusProtocol.Json;
@@ -50,7 +56,7 @@ namespace OpenLoop.Service.Tests
             var handler = Handler(host);
 
             var created = Call(handler, "POST", "/api/sessions",
-                """{"id":"abc12345","workspace":"C:/work","model":"openrouter/free","effort":""}""");
+                $$"""{"id":"abc12345","workspace":"{{_workspace}}","model":"openrouter/free","effort":""}""");
 
             Assert.Equal(201, created.Response.StatusCode);
             Assert.Equal("abc12345", Snapshot(created).Id);
@@ -69,7 +75,7 @@ namespace OpenLoop.Service.Tests
             var handler = Handler(host);
 
             Call(handler, "POST", "/api/sessions",
-                """{"id":"del00001","workspace":"C:/work","model":"m","effort":""}""");
+                $$"""{"id":"del00001","workspace":"{{_workspace}}","model":"m","effort":""}""");
 
             var deleted = Call(handler, "DELETE", "/api/sessions/del00001");
             Assert.Equal(200, deleted.Response.StatusCode);
@@ -83,7 +89,7 @@ namespace OpenLoop.Service.Tests
             var host = new WorkerSessionHost((_, _) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }));
             var handler = Handler(host);
             Call(handler, "POST", "/api/sessions",
-                """{"id":"sum00001","workspace":"C:/work","model":"m","effort":""}""");
+                $$"""{"id":"sum00001","workspace":"{{_workspace}}","model":"m","effort":""}""");
 
             var summary = Call(handler, "GET", "/api/sessions", null, "summary=1");
             var list = JsonSerializer.Deserialize<List<WorkerSessionSnapshot>>(summary.Response.Buffer, Json);
@@ -105,7 +111,7 @@ namespace OpenLoop.Service.Tests
                 return Task.FromResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
             });
             var handler = Handler(host);
-            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "sess0001");
+            var session = host.Create(_workspace, "m", "", () => new AppSettings(), "sess0001");
 
             Call(handler, "POST", "/api/sessions/sess0001/messages", """{"tag":"task","text":"hi"}""");
 
@@ -137,7 +143,7 @@ namespace OpenLoop.Service.Tests
             var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             var host = new WorkerSessionHost((request, ct) => { seen = request; return gate.Task; });
             var handler = Handler(host);
-            host.Create("C:/work", "m", "", () => new AppSettings(), "sess0002");
+            host.Create(_workspace, "m", "", () => new AppSettings(), "sess0002");
 
             Call(handler, "POST", "/api/sessions/sess0002/messages", """{"tag":"task","text":"hi"}""");
             for (int i = 0; i < 100 && seen == null; i++) await Task.Delay(20);

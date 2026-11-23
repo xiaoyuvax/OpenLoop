@@ -10,7 +10,6 @@ agent 即时生成的 Web 界面框架。产物叫 **LoopApp**：一个自包含
 skills/openui/SKILL.md                 技能正文（agent 读它）
 skills/openui/references/runtime/      经验性资产：css / js / icons（create 时整目录复制）
 skills/openui/references/*.md          按需读的手册：quickstart / components / pitfalls
-examples/                              可复制的完整应用
 ```
 
 运行时放在技能目录里是刻意设计：**装技能 = 装框架**。`LoopApp(create)` 从 `SkillInfo.Directory` 复制 `references/runtime/`，不依赖任何安装布局的路径解析。

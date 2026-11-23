@@ -1,5 +1,6 @@
-using OpenLoop.Service.Config;
+﻿using OpenLoop.Service.Config;
 using OpenLoop.Service.Storage;
+using Puppet.Core;
 using OpenLoop.Service.Worker;
 using Xunit;
 
@@ -24,6 +25,7 @@ namespace OpenLoop.Service.Tests
         public void Dispose()
         {
             ChatHistory.Root = _previousRoot;
+            AgentBook.Reset();
             try { Directory.Delete(_chats, true); } catch { }
         }
 
@@ -43,18 +45,18 @@ namespace OpenLoop.Service.Tests
         {
             var watch = new CollabWatch
             {
-                Initiator = "init1", Workspace = "C:/work", Sessions = ["a", "b"], Signature = "sig"
+                Initiator = "init1", Workspace = _chats, Sessions = ["a", "b"], Signature = "sig"
             };
             CollabSidecar.Save(watch);
 
-            var loaded = CollabSidecar.Load("C:/work", "init1");
+            var loaded = CollabSidecar.Load(_chats, "init1");
             Assert.NotNull(loaded);
             Assert.Equal(["a", "b"], loaded.Sessions);
             Assert.Equal("sig", loaded.Signature);
-            Assert.Contains(CollabSidecar.List("C:/work"), w => w.Initiator == "init1");
+            Assert.Contains(CollabSidecar.List(_chats), w => w.Initiator == "init1");
 
-            CollabSidecar.Delete("C:/work", "init1");
-            Assert.Null(CollabSidecar.Load("C:/work", "init1"));
+            CollabSidecar.Delete(_chats, "init1");
+            Assert.Null(CollabSidecar.Load(_chats, "init1"));
         }
 
         [Fact]
@@ -88,13 +90,13 @@ namespace OpenLoop.Service.Tests
                 Outcome = "ok",
                 FinalAnswer = "done"
             }));
-            var s = host.Create("C:/work", "m", "", () => new AppSettings(), "diag1");
+            var s = host.Create(_chats, "m", "", () => new AppSettings(), "diag1");
             host.Send(s.Id, "task", "hi");
             await Task.Delay(500);
             var index = ChatHistory.Index();
             Assert.True(index.Any(e => e.Id == "diag1"),
                 "count=" + index.Count + " state=" + host.Get(s.Id)?.State + " file=" +
-                File.Exists(ChatHistory.PathFor("C:/work", "diag1")));
+                File.Exists(ChatHistory.PathFor(_chats, "diag1")));
         }
 
         [Fact]
@@ -107,7 +109,7 @@ namespace OpenLoop.Service.Tests
                 lock (texts) texts.Add(request.Text);
                 return gate.Task;
             });
-            var session = host.Create("C:/work", "openrouter/free", "", () => new AppSettings());
+            var session = host.Create(_chats, "openrouter/free", "", () => new AppSettings());
 
             host.Send(session.Id, "task", "先跑一段");
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Running);

@@ -4,7 +4,7 @@
 const { createElement: h, useEffect, useMemo, useRef, useState } = React;
 const {
   ConfigProvider, Dropdown, Tabs, Button, Input, Select, Space, Typography, Tag,
-  Progress, Modal, Switch, Segmented, Tooltip, Empty, Popconfirm, theme, message
+  Progress, Modal, Switch, Segmented, Tooltip, Empty, Popconfirm, Table, theme, message
 } = antd;
 const { Text } = Typography;
 
@@ -19,6 +19,14 @@ async function api(path, options = {}) {
   return text ? JSON.parse(text) : null;
 }
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
+
+// 与 WinForms 的 SessionView.TryRunCommand 同一组命令：Web 只接自己能真正执行的，其余明确回绝，别把「/命令」当正文发给模型
+const WEB_COMMANDS = ['/compact'];
+const SHELL_COMMANDS = ['/btw', '/complain', '/debug', '/fork', '/new', '/puppet', '/review', '/optimize'];
+const commandOf = text => {
+  const m = /^(\S+)(?:\s|$)/.exec(text || '');
+  return m ? m[1].toLowerCase() : '';
+};
 
 function baseName(path) {
   const s = (path || '').replace(/[\\/]+$/, '');
@@ -121,7 +129,7 @@ function OverviewPage({ sessions, project, setProject, onOpen, onNew, onDelete, 
           h('span', { style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name),
           h(Muted, null, p.count)))),
       h('div', { style: { padding: 10, borderTop: '1px solid #f0f0f0', display: 'grid', gap: 8 } },
-        h(Button, { block: true, onClick: onLoop }, 'Loop'),
+        h(Button, { block: true, onClick: onLoop }, 'Harness'),
         h(Button, { block: true, onClick: onNew }, '新建会话'))),
 
     h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 } },
@@ -200,6 +208,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   const [provider, setProvider] = useState('');
   const [sideOpen, setSideOpen] = useState(true);
   const [sideTab, setSideTab] = useState('detail');
+  const [puppetSheet, setPuppetSheet] = useState(null);   // Puppet Action 清单：null=未读，{error} 或壳的 manifest
   const [selectMode, setSelectMode] = useState(false);
   const [files, setFiles] = useState([]);
   const [imageModel, setImageModel] = useState('');
@@ -212,6 +221,14 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     setModel(snapshot?.model || '');
     setEffort(snapshot?.effort || '');
   }, [snapshot?.id, snapshot?.model, snapshot?.effort]);
+
+  // 与 WinForms 侧栏「Puppet」页同一个数据源：壳的 /appagent/manifest（Web 侧经 /api/puppet/actions 代理）
+  const loadPuppet = async () => {
+    setPuppetSheet(prev => ({ ...(prev || {}), loading: true }));
+    try { setPuppetSheet({ ...(await api('/api/puppet/actions')), at: new Date() }); }
+    catch (e) { setPuppetSheet({ error: e.message }); }
+  };
+  useEffect(() => { if (sideOpen && sideTab === 'puppet') loadPuppet(); }, [sideTab, sideOpen]);
 
   useEffect(() => {
     const el = chatRef.current;
@@ -297,8 +314,27 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     if (next.length) setFiles(list => [...list, ...next].slice(0, 8));
   };
 
+  // 手动压缩上下文（/compact 与「操作 ▾ → 压缩上下文」同一条路）
+  const compactContext = async () => {
+    if (!activeId) return;
+    if (running) return message.warning('请先停止当前任务，再压缩上下文');
+    const hide = message.loading('正在压缩上下文，最长约 2 分钟…', 0);
+    try {
+      const r = await post(`/api/sessions/${activeId}/compact`, {});
+      hide();
+      if (r?.ok) message.success(`已压缩上下文：${r.before} → ${r.after} tokens`);
+      else message.warning(r?.error || '没有可压缩的上下文');
+    } catch (e) { hide(); message.error('压缩失败：' + e.message); }
+  };
+
   const send = async (immediate = true) => {
     if (!activeId) return;
+    // 命令不走普通对话：/compact 直接执行；WinForms 才有的命令回绝并保留原文，免得模型收到一句看不懂的「/xxx」
+    const command = value.startsWith('/') ? commandOf(value) : '';
+    if (WEB_COMMANDS.includes(command)) { setText(''); return compactContext(); }
+    if (SHELL_COMMANDS.includes(command)) {
+      return message.warning(`${command} 是 WinForms 壳的命令，Web 壳暂不支持；请在 WinForms 壳里用`);
+    }
     if (!value && !files.length) {
       if (retry) {
         try { await post(`/api/sessions/${activeId}/messages`, { text: '继续', tag: 'task' }); }
@@ -369,15 +405,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
                 navigator.clipboard?.writeText(snapshot?.workspace || '');
                 return message.success('已复制工作区');
               }
-              if (key === 'compact') {
-                const hide = message.loading('正在压缩上下文，最长约 2 分钟…', 0);
-                post(`/api/sessions/${activeId}/compact`, {}).then(r => {
-                  hide();
-                  if (r?.ok) message.success(`已压缩上下文：${r.before} → ${r.after} tokens`);
-                  else message.warning(r?.error || '没有可压缩的上下文');
-                }).catch(e => { hide(); message.error('压缩失败：' + e.message); });
-                return;
-              }
+              if (key === 'compact') { compactContext(); return; }
               act(key, null, '已执行');
             }
           }
@@ -519,6 +547,41 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     h(Muted, null, '状态'), h('div', null, [snapshot?.state, snapshot?.outcome].filter(Boolean).join(' · ') || '—'),
     h(Muted, null, '工作区'), h('div', { style: { wordBreak: 'break-all' } }, snapshot?.workspace || '—'));
 
+  const puppetRows = ((puppetSheet && puppetSheet.actions) || []).map(a => {
+    const params = (a.parameters || []).slice()
+      .sort((x, y) => (x.required ? 0 : 1) - (y.required ? 0 : 1));
+    return {
+      name: a.name,
+      desc: a.desc || '',
+      paramText: params.length ? params.map(p => p.name + (p.required ? '' : '?')).join(', ') : '—'
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  const puppetHint = puppetSheet?.error
+    ? '读不到清单：' + puppetSheet.error
+    : puppetSheet
+      ? 'Puppet Action 清单 · 实例 ' + (puppetSheet.instance || '—') + ' · ' + puppetRows.length + ' 个 action'
+        + (puppetSheet.at ? ' · ' + puppetSheet.at.toLocaleTimeString() : '')
+      : 'Puppet Action 清单 · 读取中…';
+
+  const puppetSide = h('div', { style: { padding: 12, display: 'grid', gap: 8 } },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+      h(Muted, { style: { flex: 1, minWidth: 0 } }, puppetHint),
+      h(Button, { size: 'small', loading: !!puppetSheet?.loading, onClick: loadPuppet }, '刷新')),
+    h(Table, {
+      size: 'small', rowKey: 'name', pagination: false, dataSource: puppetRows, className: 'ol-puppet-table',
+      locale: { emptyText: puppetSheet?.loading ? '读取中…' : '没有可用的 action' },
+      onRow: row => ({ onDoubleClick: () => setText('/puppet ' + row.name + ' ') }),
+      columns: [
+        { title: 'Action', dataIndex: 'name', width: 116, ellipsis: true },
+        { title: '参数', dataIndex: 'paramText', width: 104, ellipsis: true },
+        { title: '说明', dataIndex: 'desc', width: 120, ellipsis: true }
+      ]
+    }),
+    h(Muted, null, puppetSheet?.error
+      ? '壳启用 Puppet（B 面）后才能列出 action；清单来自壳的 /appagent/manifest。'
+      : '双击一行把这条命令填进输入框：/puppet <action> <参数…>（参数用自然语言写，模型自己对应）'));
+
   const side = h('div', {
     style: {
       width: 372, flex: 'none', borderLeft: '1px solid #f0f0f0', background: '#fff',
@@ -528,12 +591,14 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     h('div', { style: { padding: 8, borderBottom: '1px solid #f0f0f0' } },
       h(Segmented, {
         block: true, size: 'small', value: sideTab, onChange: setSideTab,
-        options: [{ label: 'Loop', value: 'loop' }, { label: '详情', value: 'detail' }, { label: '旁路', value: 'btw' }]
+        options: [{ label: '详情', value: 'detail' }, { label: '旁路', value: 'btw' },
+          { label: 'Harness', value: 'loop' }, { label: 'Puppet', value: 'puppet' }]
       })),
     h('div', { className: 'ol-scroll', style: { flex: 1, minHeight: 0 } },
       sideTab === 'loop' ? loopSide
         : sideTab === 'detail' ? detailSide
-          : h('div', { style: { padding: 24 } }, h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: '旁路未接入浏览器' }))));
+          : sideTab === 'puppet' ? puppetSide
+            : h('div', { style: { padding: 24 } }, h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: '旁路未接入浏览器' }))));
 
   return h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
     header,
@@ -638,8 +703,8 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
 
       h('div', { className: 'ol-section-title' }, '演进'),
       h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
-        '只改当前工作区的激活集（护栏开关、阈值、规则与技能顺序）；不改代码/工具/提示词，'
-        + '其它工作区不受影响；考核题 A/B 更好才采纳。'),
+        'Harness 只改当前工作区的可演进参数（激活集：护栏开关、阈值、规则、技能顺序、模型参数）；'
+        + '不改代码/工具/提示词，其它工作区不受影响；考核题 A/B 更好才采纳。'),
       h(Space, { wrap: true, style: { marginBottom: 6 } },
         h(Input, { value: model, onChange: e => setModel(e.target.value), placeholder: '模型（留空用默认）', style: { width: 280 } }),
         h(Button, {
@@ -1543,7 +1608,7 @@ function App() {
   const items = [
     { key: 'new', label: '新建会话' },
     { key: 'list', label: '会话列表' },
-    { key: 'loop', label: 'Loop' },
+    { key: 'loop', label: 'Harness' },
     { type: 'divider' },
     { key: 'settings', label: '设置' },
     { key: 'about', label: '关于' }
@@ -1611,7 +1676,7 @@ function App() {
   const tabItems = caps?.worker
     ? [{ key: 'overview', label: tabLabel('会话'), closable: false }, ...tabs.map(sessionTab)]
     : [];
-  if (caps?.loop) tabItems.push({ key: 'loop', label: 'Loop', closable: false });
+  if (caps?.loop) tabItems.push({ key: 'loop', label: 'Harness', closable: false });
 
   let page;
   if (caps == null) page = h('div', { style: { padding: 40, textAlign: 'center' } }, h(Muted, null, status || '正在连接…'));

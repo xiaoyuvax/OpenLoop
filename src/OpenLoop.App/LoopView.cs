@@ -57,6 +57,8 @@ namespace OpenLoop.App
         private bool _hasRollback;
         private bool _layoutReady;
         private DateTime _lastCheckpointUtc;
+        /// <summary>Initialize 读出的对话条目：模型恢复 / 历史加载 / 冷启动整理共用一次文件解析。</summary>
+        private List<ChatEntry> _loadedEntries;
 
         /// <summary>落盘队列：中途快照与收尾保存串行写，保证最后落盘的是最新那份。</summary>
         private Task _chatWrite = Task.CompletedTask;
@@ -135,10 +137,13 @@ namespace OpenLoop.App
         /// 与 Worker 的 SessionView.SetActive 同一口径。</summary>
         internal void SetActive(bool active) => _chat.SuspendRendering = !active;
 
-        private const int BrowserPage = 3;
+        private const int BrowserPage = 4;
+
+        /// <summary>「Harness」页在侧栏标签里的固定下标（可演进参数管理）。</summary>
+        private const int HarnessPage = 2;
 
         /// <summary>「Puppet」页在侧栏标签里的固定下标（Action 清单，/puppet 打开）。</summary>
-        private const int PuppetPage = 2;
+        private const int PuppetPage = 3;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public BrowserView Browser => _browser;
@@ -295,14 +300,18 @@ namespace OpenLoop.App
             _settings = settings;
 
             var current = settings();
+            // 打开一个会话只解析一次对话文件（几十 MB 的 JSON 解析很贵，恢复大量标签页时尤其明显）：
+            // 模型恢复、历史加载、冷启动整理共用同一份 entries。
+            var entries = ChatHistory.Read(_workspace, _sessionId);
+            var (savedModel, savedEffort) = ChatHistory.LastModelFrom(entries);
             // 会话按它自己上次用的模型/强度恢复（与 Worker 一致）：分叉、转交过来的会话沿用原参数，
             // 关掉标签页再打开也不会退回全局设置。没有记录时才用全局设置。
-            var (savedModel, savedEffort) = ChatHistory.LastModel(_workspace, _sessionId);
             _model = !string.IsNullOrWhiteSpace(savedModel)
                 ? savedModel
                 : string.IsNullOrWhiteSpace(current.Model) ? "openrouter/free" : current.Model;
             _effort = savedEffort ?? current.ReasoningEffort ?? "";
             _onlyFree = current.OnlyFreeModels;
+            _loadedEntries = entries;
 
             _filling = true;
             try { _freeSwitch.Checked = _onlyFree; }
@@ -336,8 +345,11 @@ namespace OpenLoop.App
             _pending.Sync();
             _txtInput.TextChanged += (_, _) => { UpdateSendButton(); UpdateCommandPopup(); };
 
-            _book.ReplaceAll(ChatStore.Load(_workspace, _sessionId), null);
-            ChatStore.PruneCold(_workspace, _sessionId, _model, _book.Turns);
+            // 历史加载只做轮次投影（不重复读文件）：Initialize 开头读的那份 entries 在这里消费掉；
+            // transcript 延迟回读需要文件路径，一起传下去
+            _book.ReplaceAll(ChatStore.Turns(_loadedEntries, ChatHistory.PathFor(_workspace, _sessionId)), null);
+            ChatStore.PruneCold(_workspace, _sessionId, _model, _book.Turns, _loadedEntries);
+            _loadedEntries = null;   // 只在 Initialize 用这一次，别让它挂着几十 MB 不放
             if (_book.Turns.Count > 0)
                 LoopIndex.Touch(_workspace, _sessionId, _book.Turns.LastOrDefault()?.ToolStepCount);
             _chat.PlaceholderText = Localization.T("NoMessages");
@@ -363,6 +375,9 @@ namespace OpenLoop.App
 
             _lblStatus.TextChanged += (_, _) => ApplyDetail();
             _sideBtw.Initialize(_workspace, settings);
+            // Harness 页：与 Worker 同一套入口，演进/回滚走 I 的 /api/loop/*
+            _harness.Initialize(() => _workspace, settings, () => _model, () => _effort, Notify);
+            _harness.SetBusy(_running);
             // Puppet Action 清单页：双击一行把「/puppet <action> 」填回输入框
             _puppetView.CommandRequested += command =>
             {
@@ -500,16 +515,17 @@ namespace OpenLoop.App
         /// 外部投递（/complain、协作会话派活）：空闲就立即处理，忙就排队等当前轮结束后按顺序处理。
         /// 可能在 agent 的工具线程上调用，这里负责切回界面线程。
         /// </summary>
-        internal void Post(string text)
+        /// <param name="noticeKind">宿主注入的提示（如 /complain 的用户反馈）：界面按协作提示折成一行、淡黄底。</param>
+        internal void Post(string text, string noticeKind = null)
         {
             if (string.IsNullOrWhiteSpace(text) || IsDisposed) return;
             if (InvokeRequired)
             {
-                try { BeginInvoke(new Action(() => Post(text))); }
+                try { BeginInvoke(new Action(() => Post(text, noticeKind))); }
                 catch (InvalidOperationException) { }
                 return;
             }
-            _queue.Add(text);
+            _queue.Add(text, noticeKind ?? "task", auto: noticeKind != null);
             _pending.Sync();
             DrainQueue();
         }
@@ -637,17 +653,21 @@ namespace OpenLoop.App
                 return;
             }
             _lastCheckpointUtc = DateTime.UtcNow;
-            // 序列化在 UI 线程拍快照（流式字段不会在写盘途中被界面改掉），文件 IO 交给后台——
-            // 与 Worker 的 Persist（跑在 A 的后台线程）同一口径，几十 MB 的历史不该卡住界面。
-            var entries = ChatStore.Entries(_book.Turns, _model, _effort);
+            // 快照只取「本轮各字段的当前引用」（浅拷贝，微秒级）：投影与 JSON 序列化都在后台做。
+            // 界面对已存在轮次只会替换字段引用、不会原地改写旧字符串，写盘途中读到的都是一致值；
+            // 快照不含新增轮次 —— 它们会进下一次保存，丢失窗口只是一个节流间隔。
+            var snapshot = _book.Turns
+                .Select(t => (Turn: t, Transcript: ChatStore.Transcript(t)))
+                .ToList();
             // 步数取「上一轮」与「正在跑的这轮」的较大者，与 Worker 的 Persist 同口径
             int steps = Math.Max(_book.Turns.LastOrDefault()?.ToolStepCount ?? 0,
                 _book.Turns.Count > 1 ? _book.Turns[^2].ToolStepCount : 0);
-            string workspace = _workspace, sessionId = _sessionId;
+            string workspace = _workspace, sessionId = _sessionId, model = _model, effort = _effort;
             // 索引文件很小，留在 UI 线程写（它没有跨线程锁，别和界面的改名/删除抢读-改-写）
             LoopIndex.Touch(workspace, sessionId, steps);
             _chatWrite = _chatWrite.ContinueWith(_ =>
-                OpenLoop.Service.Storage.ChatHistory.Write(workspace, sessionId, entries),
+                OpenLoop.Service.Storage.ChatHistory.Write(workspace, sessionId,
+                    ChatStore.EntriesFromSnapshot(snapshot, model, effort)),
                 CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
         }
 
@@ -745,6 +765,8 @@ namespace OpenLoop.App
                 ThinkingExpanded = _settings().ThinkingExpandedByDefault
             };
             _book.AddTurn(turn);
+            // 用户这条要立刻画出来：首个 delta/step 之前没人刷新正文，失败轮会几分钟看不到自己发的消息
+            RefreshChat();
             // 先把用户这条请求落盘（与 Worker 侧开轮即 Persist 同一口径）：整轮要跑十几二十分钟，
             // 中途崩溃时历史里至少留得下这条需求；节流间隔开轮时从账本读一次
             _checkpointEvery = OpenLoop.Service.Storage.ChatHistory.CheckpointIntervalOf(_workspace);
@@ -1335,6 +1357,7 @@ namespace OpenLoop.App
             _detailFlow.Visible = index == 0;
             _sideBtw.Visible = index == 1;
             _sideBtw.SetActive(index == 1);   // 没摆在前台的旁路页不渲染
+            _harness.Visible = index == HarnessPage;
             if (_browser != null)
             {
                 _browser.Visible = index == BrowserPage;
@@ -1886,7 +1909,7 @@ namespace OpenLoop.App
         private void OnSendClick(object sender, EventArgs e)
         {
             // 联想浮层开着时点发送等同回车：先选中，不把「@…」「/…」当正文发出去
-            if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
+            if (_cmdPopup.IsOpen && !_cmdPopup.IsExact(_txtInput.Text)) { _cmdPopup.Accept(); return; }
             // 免费额度撞墙后按钮是「继续」：输入框为空时点它就把继续发出去
             if (_txtInput.Text.Trim().Length == 0 && _attachments.Count == 0 && !_running && QuotaOnLastTurn)
             {
@@ -2239,7 +2262,7 @@ namespace OpenLoop.App
             if (shift) { InsertSoftNewline(); return; }
             // 只挂附件、不写字也是合法消息：这里必须和 Submit 的判据一致，否则回车被静默吞掉
             if (_editing == null && _txtInput.Text.Trim().Length == 0 && _attachments.Count == 0) return;
-            if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
+            if (_cmdPopup.IsOpen && !_cmdPopup.IsExact(_txtInput.Text)) { _cmdPopup.Accept(); return; }
             Submit(immediate: !ctrl);
         }
 
@@ -2278,6 +2301,7 @@ namespace OpenLoop.App
         {
             _running = running;
             if (running) SetState(SessionState.Running);
+            _harness.SetBusy(running);   // Harness 页的演进按钮跟着会话忙闲走
             UpdateSendButton();
         }
 

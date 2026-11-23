@@ -18,6 +18,7 @@ namespace OpenLoop.App
         private AntdUI.Segmented _sideTabs;
         private Panel _sideHost;
         private FlowLayoutPanel _detailFlow;
+        private HarnessView _harness;
         private SideWorkView _sideBtw;
         private BrowserView _browser;
         private FilePreviewView _fileView;
@@ -214,6 +215,7 @@ namespace OpenLoop.App
             _sideTabs.Margin = new Padding(0);
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabDetail") });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "旁路" });
+            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Harness" });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Puppet" });
             // 「网页」页不预置：只有 Agent 打开浏览器时才插入，用户点不出一个空 WebView
             _sideTabs.SelectIndex = 0;
@@ -230,6 +232,7 @@ namespace OpenLoop.App
             _detailFlow.Layout += OnFlowLayout;
 
             _sideBtw = new SideWorkView { Dock = DockStyle.Fill, Visible = false };
+            _harness = new HarnessView { Dock = DockStyle.Fill, Visible = false };
             _puppetView = new PuppetActionView { Dock = DockStyle.Fill, Visible = false };
             _fileView.Dock = DockStyle.Fill;
             _fileView.Visible = false;
@@ -291,6 +294,7 @@ namespace OpenLoop.App
             _detailFlow.Controls.Add(_btnOpenWorkspace);
 
             _sideHost.Controls.Add(_detailFlow);
+            _sideHost.Controls.Add(_harness);
             _sideHost.Controls.Add(_sideBtw);
             _sideHost.Controls.Add(_fileView);
             _sideHost.Controls.Add(_puppetView);

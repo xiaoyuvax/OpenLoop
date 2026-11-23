@@ -1,4 +1,4 @@
-using OpenLoop.Core.Messages;
+﻿using OpenLoop.Core.Messages;
 using OpenLoop.Core.Safety;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Storage;
@@ -13,6 +13,10 @@ namespace OpenLoop.Service.Tests
     {
         /// <summary>每个测试用独立目录，别把会话写进真实的 %APPDATA%\OpenLoop\chats。</summary>
         private readonly string _chats = Path.Combine(Path.GetTempPath(), "openloop-chat-" + Guid.NewGuid().ToString("N"));
+
+        // 每个测试独立工作区：开轮会往看板登记「Worker 会话 · 工作区」，共享工作区会让
+        // 下一个测试的 AnnouncePeers 把残留登记当成同工作区 peer，多插一条协作提示。
+        private readonly string _workspace = Path.Combine(Path.GetTempPath(), "openloop-ws-" + Guid.NewGuid().ToString("N"));
         private readonly string _previousRoot;
 
         public WorkerSessionHostTests()
@@ -24,6 +28,7 @@ namespace OpenLoop.Service.Tests
         public void Dispose()
         {
             ChatHistory.Root = _previousRoot;
+            AgentBook.Reset();
             try { Directory.Delete(_chats, true); } catch { }
         }
 
@@ -41,8 +46,8 @@ namespace OpenLoop.Service.Tests
                 .Select(p => p.text).ToList();
         }
 
-        private static WorkerSessionSnapshot NewSession(WorkerSessionHost host)
-            => host.Create("C:/work", "openrouter/free", "", () => new AppSettings());
+        private WorkerSessionSnapshot NewSession(WorkerSessionHost host)
+            => host.Create(_workspace, "openrouter/free", "", () => new AppSettings());
 
         private static async Task WaitAsync(Func<bool> condition, int timeoutMs = 3000)
         {
@@ -74,7 +79,7 @@ namespace OpenLoop.Service.Tests
                 Assert.Contains("action=\"book\"", notice);
 
                 gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
-                await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Idle);
+                await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
             }
             finally
             {
@@ -353,7 +358,7 @@ namespace OpenLoop.Service.Tests
                 return Task.FromResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
             });
             var settings = new AppSettings { AutoApprove = true };
-            var session = host.Create("C:/work", "m", "", () => settings);
+            var session = host.Create(_workspace, "m", "", () => settings);
 
             host.Send(session.Id, "task", "hi");
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
@@ -377,14 +382,14 @@ namespace OpenLoop.Service.Tests
                     Transcript = [new LlmMessage("user", "hi"), new LlmMessage("assistant", "persisted")]
                 }));
 
-                var session = host.Create("C:/work", "m", "", () => new AppSettings(), "sess01");
+                var session = host.Create(_workspace, "m", "", () => new AppSettings(), "sess01");
                 host.Send(session.Id, "task", "hi");
                 await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
 
-                Assert.True(File.Exists(ChatHistory.PathFor("C:/work", "sess01")));
+                Assert.True(File.Exists(ChatHistory.PathFor(_workspace, "sess01")));
 
                 var reopened = NewHost((request, ct) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }))
-                    .Create("C:/work", "m", "", () => new AppSettings(), "sess01");
+                    .Create(_workspace, "m", "", () => new AppSettings(), "sess01");
                 Assert.Single(reopened.Turns);
                 Assert.Equal("persisted", reopened.Turns[0].Assistant);
             }
@@ -400,12 +405,12 @@ namespace OpenLoop.Service.Tests
         {
             var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             var host = NewHost((_, _) => gate.Task);
-            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "sess-run");
+            var session = host.Create(_workspace, "m", "", () => new AppSettings(), "sess-run");
 
             host.Send(session.Id, "task", "半路崩掉也不能丢");
             // 开轮即落盘：还没跑完，盘上就该有这一轮的用户请求（壳崩了 A 只活 1 秒）
-            await WaitAsync(() => ChatHistory.Read("C:/work", "sess-run").Any(e => e.User == "半路崩掉也不能丢"));
-            Assert.True(ChatHistory.Read("C:/work", "sess-run").Single().Streaming);
+            await WaitAsync(() => ChatHistory.Read(_workspace, "sess-run").Any(e => e.User == "半路崩掉也不能丢"));
+            Assert.True(ChatHistory.Read(_workspace, "sess-run").Single().Streaming);
 
             gate.SetResult(new WorkerRunResult { Outcome = "ok" });
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
@@ -419,7 +424,7 @@ namespace OpenLoop.Service.Tests
                 Outcome = "ok",
                 FinalAnswer = "done"
             }));
-            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "sess03");
+            var session = host.Create(_workspace, "m", "", () => new AppSettings(), "sess03");
             host.Send(session.Id, "task", "hi");
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
             Assert.Single(ChatHistory.Index());
@@ -427,7 +432,7 @@ namespace OpenLoop.Service.Tests
             Assert.True(host.Truncate(session.Id, 0));
 
             Assert.Empty(ChatHistory.Index());
-            Assert.False(File.Exists(ChatHistory.PathFor("C:/work", "sess03")));
+            Assert.False(File.Exists(ChatHistory.PathFor(_workspace, "sess03")));
         }
 
         [Fact]
@@ -438,7 +443,7 @@ namespace OpenLoop.Service.Tests
                 Outcome = "ok",
                 FinalAnswer = "done"
             }));
-            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "sess02");
+            var session = host.Create(_workspace, "m", "", () => new AppSettings(), "sess02");
 
             Assert.Empty(ChatHistory.Index());   // 没跑过就没有索引项
             host.Send(session.Id, "task", "hi");
@@ -446,7 +451,7 @@ namespace OpenLoop.Service.Tests
 
             var entry = Assert.Single(ChatHistory.Index());
             Assert.Equal("sess02", entry.Id);
-            Assert.Equal(Path.GetFullPath("C:/work"), entry.Workspace);
+            Assert.Equal(Path.GetFullPath(_workspace), entry.Workspace);
         }
 
         [Fact]
@@ -530,16 +535,16 @@ namespace OpenLoop.Service.Tests
                 Assistant = "回答",
                 Messages = [new ChatMessageEntry { Role = "user", Content = "hi" }]
             };
-            ChatHistory.Write("C:/work", "merge1", [entry]);
+            ChatHistory.Write(_workspace, "merge1", [entry]);
 
             // 壳手里的轮次没有 transcript，整表覆盖不能把它抹掉
-            ChatHistory.Write("C:/work", "merge1", [new ChatEntry { User = "hi", Assistant = "回答" }]);
-            var stored = Assert.Single(ChatHistory.Read("C:/work", "merge1"));
+            ChatHistory.Write(_workspace, "merge1", [new ChatEntry { User = "hi", Assistant = "回答" }]);
+            var stored = Assert.Single(ChatHistory.Read(_workspace, "merge1"));
             Assert.Equal("hi", Assert.Single(stored.Messages).Content);
 
             // 换了轮次（user 对不上）就不该继承别人的 transcript
-            ChatHistory.Write("C:/work", "merge1", [new ChatEntry { User = "别的", Assistant = "回答" }]);
-            Assert.Null(Assert.Single(ChatHistory.Read("C:/work", "merge1")).Messages);
+            ChatHistory.Write(_workspace, "merge1", [new ChatEntry { User = "别的", Assistant = "回答" }]);
+            Assert.Null(Assert.Single(ChatHistory.Read(_workspace, "merge1")).Messages);
         }
 
         [Fact]
@@ -648,7 +653,8 @@ namespace OpenLoop.Service.Tests
 
                 gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done", Steps = 1 });
                 await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
-                Assert.False(Assert.Single(ChatHistory.Read(session.Workspace, session.Id)).Streaming);
+                // Done 在锁内先置位，最终落盘在锁外：等盘上这一轮不再是「运行中」快照
+                await WaitAsync(() => ChatHistory.Read(session.Workspace, session.Id) is [var last] && !last.Streaming);
             }
             finally
             {
@@ -660,12 +666,12 @@ namespace OpenLoop.Service.Tests
         public void A_crashed_blank_turn_reads_back_with_an_actionable_notice()
         {
             // 中途快照留下的「还在跑 + 正文为空」，重开会话时要能看出这一轮断在哪，而不是一条静默空白
-            ChatHistory.Write("C:/work", "crash1",
+            ChatHistory.Write(_workspace, "crash1",
                 [new ChatEntry { User = "做一半", Assistant = "", Steps = 12, Streaming = true }]);
-            ChatHistory.Touch("C:/work", "crash1");
+            ChatHistory.Touch(_workspace, "crash1");
 
             var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }));
-            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "crash1");
+            var session = host.Create(_workspace, "m", "", () => new AppSettings(), "crash1");
 
             var turn = Assert.Single(session.Turns);
             Assert.StartsWith(ServerNotice.Interrupted, turn.Assistant);
@@ -678,12 +684,12 @@ namespace OpenLoop.Service.Tests
         {
             // 崩溃前已经产出了一部分正文：读回来要保留内容，但顶上标明「没跑完」，
             // 这句以 ServerNotice.Interrupted 开头，拼上下文时会被剔掉（不当成模型说过的话）
-            ChatHistory.Write("C:/work", "crash2",
+            ChatHistory.Write(_workspace, "crash2",
                 [new ChatEntry { User = "做一半", Assistant = "已改到一半", Steps = 7, Streaming = true }]);
-            ChatHistory.Touch("C:/work", "crash2");
+            ChatHistory.Touch(_workspace, "crash2");
 
             var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }));
-            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "crash2");
+            var session = host.Create(_workspace, "m", "", () => new AppSettings(), "crash2");
 
             var turn = Assert.Single(session.Turns);
             Assert.StartsWith(ServerNotice.Interrupted, turn.Assistant);

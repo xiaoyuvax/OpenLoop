@@ -4,7 +4,7 @@
 
 **一个可自我迭代的开放式 Agent。**
 
-OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A，前台）** 面向用户完成真实任务；**Loop（I，后台）** 是 OpenLoop 自己的 Worker——开发、除虫、维护它的源码并编排二进制迭代，同时用真实使用中的证据演进版本定义。两者是独立进程，由**壳**统一拉起、监督与换版。
+OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A，前台）** 面向用户完成真实任务；**Loop（I，后台）** 是 OpenLoop 自己的 Worker——开发、除虫、维护它的源码并编排二进制迭代，同时用真实使用中的证据演进工作区 Harness 参数。两者是独立进程，由**壳**统一拉起、监督与换版。
 
 名字里的「Open」指环不闭合：世界（和用户）始终是环的一部分——Loop 的判断来自真实使用，而不是一套封闭的自评。
 
@@ -16,7 +16,7 @@ OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A�
 |---|---|---|
 | 壳 | `OpenLoop.exe`（WinForms）／`OpenLoop.Shell`（跨平台 CLI） | 唯一的进程编排者：拉起 A/I、展示界面、执行 stage / 重启 / 回滚 |
 | Worker（A） | `OpenLoop.A` | 会话、工具调用、审批、流式输出、trace；同时提供 Web 界面与 `/api/*` |
-| Loop（I） | `OpenLoop.I` | OpenLoop 自己的 Worker：开发/维护源码（Core/Service、A、I、壳、可迭代组件）、编排二进制迭代；按项目观察、读证据、记录发现、起草考核题、演进版本定义（`/api/loop/*`） |
+| Loop（I） | `OpenLoop.I` | OpenLoop 自己的 Worker：开发/维护源码（Core/Service、A、I、壳、可迭代组件）、编排二进制迭代；按项目观察、读证据、记录发现、起草考核题、演进工作区 Harness 参数（`/api/loop/*`） |
 
 - 桌面壳与 Web 壳功能对齐：Web 界面由 A 在 bus 端口上直接提供（`http://<bus>/?key=...`），桌面壳右侧栏内嵌 WebView2。
 - Loop 的写权限：配置目录（`%APPDATA%\OpenLoop`，`versions/` 除外）、源码工作树（部署态是 `<安装根>/src/` 下的克隆，开发态是仓库与同级组件）、安装根下的配置与文档、本会话工作区的 `.openloop/tmp`；二进制（`backends/`、`versions/`）只读。读权限到 OpenLoop 安装/配置路径与本会话来源会话的工作区。
@@ -26,7 +26,8 @@ OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A�
 
 - **Worker**：多会话（关标签不停止）、流式正文与思考区、排队/立即插入、`/btw` 只读旁路、`/fork` 复制上下文、`/new` 新会话、模型与推理强度选择、上下文占比、成本与步数、完整 trace、调查卡（AskUser）。
 - **工具**：`ReadFile`、`WriteFile`、`ListDir`、`Grep`、`Shell` 等内置工具；`ReadEvidence`、`RecordFinding`、`ProposeTask` 走证据通道；技能（内置 + 项目级）；外部 `OpenCodeTask` / `DshTask`；`WebFetch` 只读抓取；Puppet 探测对端进程与界面。
-- **Loop**：OpenLoop 自己的 Worker——读写源码、跑构建与测试、出迭代计划并执行；每个项目一段 Loop 会话，读账本/trace/findings，把结论写成发现或考核题草稿，并演进版本定义。
+- **Loop**：OpenLoop 自己的 Worker——读写源码、跑构建与测试、出迭代计划并执行；每个项目一段 Loop 会话，读账本/trace/findings，把结论写成发现或考核题草稿，并演进工作区 Harness 参数。
+- **Harness 页**：Worker 与 Loop 会话的右侧栏都有这一页，管理本工作区的可演进参数（激活集、规则、考核题、报告），触发演进/回滚与迭代。
 - **模型与外部 agent**：
   - **opencode**：本机 OpenCode v2 服务通过 `~/.local/state/opencode/service.json` 自动发现，就绪后作为 OpenCode 提供商出现；模型 id 形如 `opencode/<模型>@<提供商>`，可直接当会话模型，也可用 `OpenCodeTask` 把整件事交给它的 agent（工具、会话、上下文都在对方那边，权限仍转给你审批）。免费模型有标记。
   - **dsh**：装了 dsh 就作为一个提供商出现，模型 id 形如 `dsh/<提供商>/<模型>`；`DshTask` 把任务交给 dsh 的 agent，用它是因为 dsh 的插件生态（如 `our-free-model` 的免费模型）或 dsh 特有工具。模型清单在后台探测，界面隔一拍重开下拉即可。
@@ -36,10 +37,10 @@ OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A�
 
 ### 迭代与版本
 
-- 两条线并行：**演进**改版本定义（提示词、技能、策略、模型参数、激活的模型与工具集）；**迭代**换可执行物（Worker `OpenLoop.A`、Loop `OpenLoop.I`、壳 `OpenLoop.App`）。
-- 每轮迭代只换一个角色，两侧协议号必须对齐；版本定义与二进制分开存档。
+- 两条线并行：**演进**改当前工作区的 Harness 参数（激活集：护栏开关、阈值、规则、技能顺序、模型参数、激活的模型与工具集）；**迭代**换可执行物（Worker `OpenLoop.A`、Loop `OpenLoop.I`、壳 `OpenLoop.App`）。
+- 每轮迭代只换一个角色，两侧协议号必须对齐；Harness 参数与二进制分开存档。
 - 版本图：`PuppetCore → Service → {A, I, 壳}`、`ChatFlow → 壳`、`Core → Service`；上游变了下游必须升，沿依赖边级联。
-- 迭代入口：Loop 页「迭代」→ 先出计划（谁升版、现版本 → 目标版本、变更摘要）→ 用户确认 → 编译 → 换 A → A 更新 I → 最后发布新壳并由新壳自我重启（界面短暂退出）。
+- 迭代入口：壳里的「迭代」按钮（Loop 会话详情页 / Web 的 Harness 页）→ 先出计划（谁升版、现版本 → 目标版本、变更摘要）→ 用户确认 → 编译 → 换 A → A 更新 I → 最后发布新壳并由新壳自我重启（界面短暂退出）。
 - 失败可回退：按整条链的快照回退；构建不通过就停在源码树、保留改动，不产生半成品版本。
 - 换版前会检查是否还有在跑的会话（Worker / Loop / 旁路），有则先询问。
 - 版本目录：`%APPDATA%\OpenLoop\versions\<role>\<ver>-<sha8>`；旧版本按角色保留有限份数（A/I 留当前 + 上一版，壳另留回退备份）。

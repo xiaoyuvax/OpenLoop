@@ -11,8 +11,9 @@ namespace OpenLoop.Service.Models
     /// <summary>按模型 id 选择通道：插件贡献 → opencode/* → 其余 OpenAI 兼容接口。</summary>
     public static class Reasoners
     {
+        /// <param name="keepTools">null = 默认（免费模型保留工具表过上游门禁）；false = 一次性短问答（标题等）不保留。</param>
         public static IReasoner Create(AppSettings settings, string model, string effort, string workspace = null,
-            ApprovalHandler approve = null)
+            ApprovalHandler approve = null, bool? keepTools = null)
         {
             if (DshAcpHub.IsDsh(model))
                 return DshAcpHub.Reasoner(settings, model, workspace);
@@ -23,7 +24,7 @@ namespace OpenLoop.Service.Models
             if (OpenCodeHub.Resolve(model) is { } reference)
                 return new OpenCodeReasoner(OpenCodeHub.RequireClient(), reference,
                     string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace, approve,
-                    keepTools: OpenCodeHub.IsFree(model));
+                    keepTools: keepTools ?? OpenCodeHub.IsFree(model));
 
             string pluginWorkspace = string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace;
             if (PluginCatalog.TryProvider(pluginWorkspace, model, out var provider))
