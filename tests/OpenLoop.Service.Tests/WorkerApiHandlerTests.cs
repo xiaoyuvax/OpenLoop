@@ -93,7 +93,9 @@ namespace OpenLoop.Service.Tests
 
             var summary = Call(handler, "GET", "/api/sessions", null, "summary=1");
             var list = JsonSerializer.Deserialize<List<WorkerSessionSnapshot>>(summary.Response.Buffer, Json);
-            var one = Assert.Single(list);
+            // chat-index 集合共用进程级 chats 根：并发测试的异步收尾可能往索引里补登一条，
+            // List() 会把它也列出来。断言只看本测试创建的会话，别把别人的尾巴算进来。
+            var one = Assert.Single(list, s => s.Id == "sum00001");
             Assert.Equal("sum00001", one.Id);
             Assert.Equal(WorkerSessionHost.Idle, one.State);
             Assert.Empty(one.Turns);
