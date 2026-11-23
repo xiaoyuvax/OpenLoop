@@ -99,6 +99,10 @@ namespace OpenLoop.App
         public const string Loop =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 2a10 10 0 110 20 10 10 0 010-20zm0 3a7 7 0 100 14 7 7 0 000-14zm0 4a3 3 0 110 6 3 3 0 010-6z'/></svg>";
 
+        /// <summary>agent 自动插入的消息（协作汇报）。</summary>
+        public const string Auto =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M11 2h2v4h3a3 3 0 013 3v8a3 3 0 01-3 3H8a3 3 0 01-3-3V9a3 3 0 013-3h3zM9 10v2h2v-2zm4 0v2h2v-2zM9 14.5V16h6v-1.5z'/></svg>";
+
         /// <summary>等这一轮返回。</summary>
         public const string Clock =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 3a9 9 0 110 18 9 9 0 010-18zm0 2a7 7 0 100 14 7 7 0 000-14zm-1 2h2v5.6l4 2.4-1 1.7-5-3z'/></svg>";

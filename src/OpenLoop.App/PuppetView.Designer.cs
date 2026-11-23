@@ -119,11 +119,13 @@ namespace OpenLoop.App
             _toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _toolbar.Margin = new Padding(0, 4, 0, 0);
 
+            // AntdUI.Button 放进 TableLayoutPanel 必须显式给 Height：默认高度 0，不设就整颗按钮不可见
             _btnSend.Name = "btnSend";
             _btnSend.Text = Localization.T("Send");
             _btnSend.Type = AntdUI.TTypeMini.Primary;
             _btnSend.Radius = 8;
             _btnSend.Width = 96;
+            _btnSend.Height = 30;
             _btnSend.IconSvg = UiIcons.Of(UiIcons.Send, Color.White);
             _btnSend.Margin = new Padding(0);
             _toolbar.Controls.Add(_btnSend, 1, 0);

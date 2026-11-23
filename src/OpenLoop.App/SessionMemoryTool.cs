@@ -1,4 +1,5 @@
 using System.Text;
+using ChatFlow;
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Tools;
 
@@ -16,7 +17,7 @@ namespace OpenLoop.App
 
         public string Name => "ReadSession";
         public string Description =>
-            "读内存里打开的会话（/complain 定位问题先用它了解上下文；协作时也用它读协作会话）：" +
+            "读内存里打开的会话（/complain、/debug 定位问题先用它了解上下文；协作时也用它读协作会话）：" +
             "不给 session 时列出打开的会话与各自当前状态（运行中 / 已正常结束 / 异常结束及错误信息）；" +
             "给了就按轮返回用户输入、工具调用与回复。会话已关闭时再用 ReadFile 读记录文件。";
         public string ParamsSchema =>
@@ -62,18 +63,23 @@ namespace OpenLoop.App
 
         /// <param name="offset">1 起；&lt;=0 表示「最近 count 轮」。</param>
         internal static string Describe(Session session, int offset, int count)
+            => DescribeTurns(session.Title, LoopCollabHost.StateText(session.State),
+                session.Book.Turns, offset, count);
+
+        /// <summary>按轮渲染一段对话（@ 引用与 ReadSession 共用同一段格式）。</summary>
+        internal static string DescribeTurns(string title, string state,
+            IReadOnlyList<ChatTurn> turns, int offset, int count)
         {
-            var turns = session.Book.Turns;
-            string state = LoopCollabHost.StateText(session.State);
-            if (turns.Count == 0) return $"会话「{session.Title}」（{state}）还没有轮次。";
+            turns ??= [];
+            if (turns.Count == 0) return $"会话「{title}」（{state}）还没有轮次。";
 
             count = Math.Clamp(count, 1, 50);
-            if (offset > turns.Count) return $"会话「{session.Title}」（{state}）共 {turns.Count} 轮，offset={offset} 超出范围。";
+            if (offset > turns.Count) return $"会话「{title}」（{state}）共 {turns.Count} 轮，offset={offset} 超出范围。";
             int start = offset > 0 ? offset : Math.Max(1, turns.Count - count + 1);
             int end = Math.Min(turns.Count + 1, start + count);
 
             var sb = new StringBuilder();
-            sb.AppendLine($"会话「{session.Title}」第 {start}-{end - 1} 轮（共 {turns.Count} 轮，{state}）：");
+            sb.AppendLine($"会话「{title}」第 {start}-{end - 1} 轮（共 {turns.Count} 轮，{state}）：");
             for (int i = start; i < end; i++)
             {
                 var turn = turns[i - 1];

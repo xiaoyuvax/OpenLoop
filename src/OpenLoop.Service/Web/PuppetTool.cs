@@ -23,13 +23,14 @@ namespace OpenLoop.Service.Web
         public string Description =>
             "探测 Puppet 实例与状态。target=self 走本进程内 Hub（不经端口、无网络）；target=a / i / shell 走 Puppet 接口。" +
             "壳只被动提供窗口/会话状态；Web 页面是不完整 Puppet（实例 WebUi，只有页面状态与截图钩子，截图需页面勾选开关）。" +
-            "chat=读本机会话留言板；book=看在场会话、各自在做的事与最近几次工具步骤；say=以本会话身份发言（text、to），用于会话间协作。";
+            "chat=读本机会话留言板；book=看在场会话、各自在做的事与最近几次工具步骤；say=以本会话身份发言（text、to），用于会话间协作。" +
+            "带 to（或在正文里 @ 一个同工作区会话）的 say 是私信：只有你与目标可见，并会直接投递到目标会话的输入队列（协作提示样式），不必等它来读板；省略才是广播。";
 
         public string ParamsSchema =>
             "target: self|a|i|shell（默认 self）; action: registry|state|get|describe|invoke|chat|book|say（默认 registry）; " +
             "instance: string（state/get/describe/invoke 必填）; path: string（get 的属性路径）; " +
             "method: string（invoke 的方法名）; args: array（invoke 的位置参数，JSON 数组）; " +
-            "chat: tail/q/from/to（读留言板）; say: text（要说的内容）、to（对方 id，省略=广播）";
+            "chat: tail/q/from/to（读留言板）; say: text（要说的内容）、to（同工作区会话 id，也可只写前缀；省略就认正文里的 @id；都没有=广播，只有主动投递才算送达）";
 
         public bool IsReadOnly => false;
 
@@ -39,7 +40,6 @@ namespace OpenLoop.Service.Web
             string action = (args.Str("action") ?? "registry").Trim().ToLowerInvariant();
             string instance = args.Str("instance")?.Trim();
             string path = args.Str("path")?.Trim();
-            string method = args.Str("method")?.Trim();
 
             var query = new List<string>();
             void Add(string name, string value)
@@ -49,6 +49,10 @@ namespace OpenLoop.Service.Web
 
             string route;
             string body = null;
+            string self = AgentIdentity.Id;
+            // 私信（say 带 to）投递用：目标与原文，投递在写板成功之后
+            string recipient = null;
+            string saidText = null;
             switch (action)
             {
                 case "registry":
@@ -72,11 +76,11 @@ namespace OpenLoop.Service.Web
                     Add("path", path);
                     break;
                 case "invoke":
-                    if (string.IsNullOrWhiteSpace(instance) || string.IsNullOrWhiteSpace(method))
+                    if (string.IsNullOrWhiteSpace(instance) || string.IsNullOrWhiteSpace(args.Str("method")?.Trim()))
                         return AgentToolResult.Failure("invoke 需要 instance 和 method");
                     route = "/agent/invoke";
                     Add("name", instance);
-                    Add("method", method);
+                    Add("method", args.Str("method")?.Trim());
                     body = RawJson(args.Raw.TryGetValue("args", out var v) ? v : null);
                     break;
                 case "chat":
@@ -92,13 +96,16 @@ namespace OpenLoop.Service.Web
                     break;
                 case "say":
                     {
-                        string self = AgentIdentity.Id;
                         if (string.IsNullOrWhiteSpace(self))
                             return AgentToolResult.Failure("当前会话没有留言板身份，不能发言");
-                        string text = args.Str("text") ?? args.Str("message");
-                        if (string.IsNullOrWhiteSpace(text)) return AgentToolResult.Failure("say 需要 text");
+                        saidText = args.Str("text") ?? args.Str("message");
+                        if (string.IsNullOrWhiteSpace(saidText)) return AgentToolResult.Failure("say 需要 text");
+                        // 定向：to 显式给，或在正文里 @ 了同工作区会话（@A-xxxx / @I-xxxx / @前缀）；
+                        // 两者都没有就是广播（要对方自己来读板）。
+                        recipient = PeerDelivery.MentionOf(saidText, args.Str("to"));
+                        if (string.Equals(recipient, self, StringComparison.OrdinalIgnoreCase)) recipient = null;
                         route = "/agent/book/heartbeat";
-                        body = JsonSerializer.Serialize(new { id = self, say = text, sayTo = args.Str("to") });
+                        body = JsonSerializer.Serialize(new { id = self, say = saidText, sayTo = recipient });
                         break;
                     }
                 default:
@@ -106,7 +113,7 @@ namespace OpenLoop.Service.Web
             }
 
             // 留言板在 A 的 Puppet 实例上：壳里的 Loop 会话固定走 a，A 里的 Worker 会话走 self。
-            if ((action is "chat" or "say" or "book") && !string.IsNullOrWhiteSpace(AgentIdentity.Id))
+            if ((action is "chat" or "say" or "book") && !string.IsNullOrWhiteSpace(self))
                 target = AgentIdentity.BoardTarget;
 
             string urlPath = query.Count == 0 ? route : route + "?" + string.Join("&", query);
@@ -114,7 +121,7 @@ namespace OpenLoop.Service.Web
             bool board = action is "chat" or "say" or "book";
 
             // 留言板在 A 上；A 掉线时同一个会话继续用 I（再不行用本进程兜底）。
-            string[] candidates = board && !string.IsNullOrWhiteSpace(AgentIdentity.Id)
+            string[] candidates = board && !string.IsNullOrWhiteSpace(self)
                 ? (target == "a" ? new[] { "a", "i", "self" } : new[] { target, "self" })
                 : new[] { target };
 
@@ -131,7 +138,7 @@ namespace OpenLoop.Service.Web
                         var response = post
                             ? await hub.PostAsync(urlPath, body: doc.RootElement)
                             : await hub.GetAsync(urlPath);
-                        return Result(response.Status, response.Body);
+                        return await FinishAsync(response.Status, response.Body, action, recipient, self, saidText, ct);
                     }
                     catch (Exception ex)
                     {
@@ -164,7 +171,7 @@ namespace OpenLoop.Service.Web
 
                     using var response = await Http.SendAsync(request, ct);
                     string text = await response.Content.ReadAsStringAsync(ct);
-                    return Result((int)response.StatusCode, text);
+                    return await FinishAsync((int)response.StatusCode, text, action, recipient, self, saidText, ct);
                 }
                 catch (Exception ex)
                 {
@@ -175,6 +182,28 @@ namespace OpenLoop.Service.Web
             if (lastTarget == null)
                 return AgentToolResult.Failure($"找不到 target={target} 的 Puppet 端点（壳未写发现文件 / 对端未启动）");
             return AgentToolResult.Failure($"Puppet 接口调用失败（{lastTarget}）：{lastError?.Message}");
+        }
+
+        /// <summary>
+        /// 收尾：私信（say 带 to）在写板成功后主动投递到目标会话的队列；
+        /// 读板结果按「私信只有发送方与目标可见」过滤掉别人的私信。
+        /// </summary>
+        private static async Task<AgentToolResult> FinishAsync(int status, string body, string action,
+            string recipient, string self, string saidText, CancellationToken ct)
+        {
+            bool board = action is "say" or "chat" or "book";
+            string text = board && !string.IsNullOrWhiteSpace(self)
+                ? BoardPrivacy.Filter(body, self)
+                : body;
+            var result = Result(status, text);
+            if (!result.Ok || string.IsNullOrWhiteSpace(recipient)) return result;
+
+            string delivery = await PeerDelivery.DeliverAsync(self, recipient, saidText, ct)
+                .ConfigureAwait(false);
+            string note = string.IsNullOrWhiteSpace(delivery)
+                ? $"（已作为私信投递到 {recipient} 的输入队列）"
+                : delivery;
+            return AgentToolResult.Success((result.Data ?? "") + "\n" + note);
         }
 
         private static string SelfEndpoint()

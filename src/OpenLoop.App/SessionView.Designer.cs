@@ -23,8 +23,10 @@ namespace OpenLoop.App
         private FlowLayoutPanel _detailFlow;
         private SideWorkView _sideBtw;
         private FilePreviewView _fileView;
+        private PuppetActionView _puppetView;
         private BrowserView _browser;
         private AntdUI.Button _btnOpenLoop;
+        private AntdUI.Button _btnOpenWorkspace;
         private System.Windows.Forms.Label _lblDModel;
         private AntdUI.Label _lblDEffort;
         private AntdUI.Label _lblDCtx;
@@ -94,6 +96,7 @@ namespace OpenLoop.App
             _btnPendingSurveys = new AntdUI.Button();
             _detailFlow = new FlowLayoutPanel();
             _btnOpenLoop = new AntdUI.Button();
+            _btnOpenWorkspace = new AntdUI.Button();
             _lblDModel = new System.Windows.Forms.Label();
             _lblDEffort = new AntdUI.Label();
             _lblDCtx = new AntdUI.Label();
@@ -250,6 +253,7 @@ namespace OpenLoop.App
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Loop" });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabDetail") });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "旁路" });
+            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Puppet" });
             // 「网页」页不预置：只有 Agent 打开浏览器时才插入，用户点不出一个空 WebView
             _sideTabs.SelectIndex = 0;
             _sideTabs.SelectIndexChanged += OnSidePageChanged;
@@ -262,15 +266,18 @@ namespace OpenLoop.App
             _loopFlow.FlowDirection = FlowDirection.TopDown;
             _loopFlow.WrapContents = false;
             _loopFlow.AutoScroll = true;
+            _loopFlow.Layout += OnFlowLayout;
 
             _detailFlow.Dock = DockStyle.Fill;
             _detailFlow.FlowDirection = FlowDirection.TopDown;
             _detailFlow.WrapContents = false;
             _detailFlow.AutoScroll = true;
+            _detailFlow.Layout += OnFlowLayout;
             _detailFlow.Visible = false;
 
             _sideBtw = new SideWorkView { Dock = DockStyle.Fill, Visible = false };
             _fileView = new FilePreviewView { Dock = DockStyle.Fill, Visible = false };
+            _puppetView = new PuppetActionView { Dock = DockStyle.Fill, Visible = false };
 
             _lblDef.AutoSize = true;
             _lblDef.MaximumSize = new Size(260, 0);
@@ -315,8 +322,12 @@ namespace OpenLoop.App
             _lblStatus.ForeColor = UiStyle.Text;
             _lblStatus.Margin = new Padding(0, 0, 0, 16);
 
-            _lblEvolveHint.AutoSize = true;
-            _lblEvolveHint.MaximumSize = new Size(236, 0);
+            // 多行说明：AntdUI.Label 的 AutoSize 只按单行量高度，长句会被裁成一行；
+            // 宽高改由 FitLoopLabels 按换行重算（与 trace 标签同一套做法）
+            _lblEvolveHint.AutoSize = false;
+            _lblEvolveHint.TextMultiLine = true;
+            _lblEvolveHint.Width = 236;
+            _lblEvolveHint.Height = 60;
             _lblEvolveHint.Text = "演进只改当前工作区的激活集：护栏开关、阈值、规则与技能顺序；"
                 + "不改代码/工具/提示词，其它工作区不受影响；考核题 A/B 更好才采纳。";
             _lblEvolveHint.Font = new Font("Segoe UI", 8F);
@@ -422,6 +433,15 @@ namespace OpenLoop.App
             _btnPendingSurveys.Visible = false;
             _btnPendingSurveys.Click += OnOpenPendingSurveys;
 
+            _btnOpenWorkspace.Name = "btnOpenWorkspace";
+            _btnOpenWorkspace.Text = Localization.T("OpenWorkspace");
+            _btnOpenWorkspace.Radius = 8;
+            _btnOpenWorkspace.Height = 34;
+            _btnOpenWorkspace.Width = 236;
+            _btnOpenWorkspace.IconSvg = UiIcons.Of(UiIcons.Folder, UiStyle.Text);
+            _btnOpenWorkspace.Margin = new Padding(0, 4, 0, 8);
+            _btnOpenWorkspace.Click += OnOpenWorkspace;
+
             _loopFlow.Controls.Add(_btnPendingSurveys);
             _loopFlow.Controls.Add(_lblDef);
             _loopFlow.Controls.Add(_lblTasks);
@@ -442,11 +462,13 @@ namespace OpenLoop.App
             _detailFlow.Controls.Add(_lblDCtx);
             _detailFlow.Controls.Add(_lblDCost);
             _detailFlow.Controls.Add(_lblDStatus);
+            _detailFlow.Controls.Add(_btnOpenWorkspace);
 
             _sideHost.Controls.Add(_loopFlow);
             _sideHost.Controls.Add(_detailFlow);
             _sideHost.Controls.Add(_sideBtw);
             _sideHost.Controls.Add(_fileView);
+            _sideHost.Controls.Add(_puppetView);
             _side.Controls.Add(_sideTabs, 0, 0);
             _side.Controls.Add(_sideHost, 0, 1);
             _upperSplit.Panel2.Controls.Add(_side);

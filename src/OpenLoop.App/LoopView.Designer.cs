@@ -21,6 +21,7 @@ namespace OpenLoop.App
         private SideWorkView _sideBtw;
         private BrowserView _browser;
         private FilePreviewView _fileView;
+        private PuppetActionView _puppetView;
         private System.Windows.Forms.Label _lblDModel;
         private AntdUI.Label _lblDEffort;
         private AntdUI.Label _lblDCtx;
@@ -49,6 +50,7 @@ namespace OpenLoop.App
         private AntdUI.Button _btnCommit;
         private AntdUI.Button _btnPush;
         private AntdUI.Button _btnRollback;
+        private AntdUI.Button _btnOpenWorkspace;
         private AntdUI.Label _lblStatus;
         private ToolTip _tips;
 
@@ -108,6 +110,7 @@ namespace OpenLoop.App
             _btnCommit = new AntdUI.Button();
             _btnPush = new AntdUI.Button();
             _btnRollback = new AntdUI.Button();
+            _btnOpenWorkspace = new AntdUI.Button();
             _lblStatus = new AntdUI.Label();
 
             SuspendLayout();
@@ -211,6 +214,7 @@ namespace OpenLoop.App
             _sideTabs.Margin = new Padding(0);
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabDetail") });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "旁路" });
+            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Puppet" });
             // 「网页」页不预置：只有 Agent 打开浏览器时才插入，用户点不出一个空 WebView
             _sideTabs.SelectIndex = 0;
             _sideTabs.SelectIndexChanged += OnSidePageChanged;
@@ -223,8 +227,10 @@ namespace OpenLoop.App
             _detailFlow.FlowDirection = FlowDirection.TopDown;
             _detailFlow.WrapContents = false;
             _detailFlow.AutoScroll = true;
+            _detailFlow.Layout += OnFlowLayout;
 
             _sideBtw = new SideWorkView { Dock = DockStyle.Fill, Visible = false };
+            _puppetView = new PuppetActionView { Dock = DockStyle.Fill, Visible = false };
             _fileView.Dock = DockStyle.Fill;
             _fileView.Visible = false;
 
@@ -282,10 +288,12 @@ namespace OpenLoop.App
             _detailFlow.Controls.Add(_btnCommit);
             _detailFlow.Controls.Add(_btnPush);
             _detailFlow.Controls.Add(_btnRollback);
+            _detailFlow.Controls.Add(_btnOpenWorkspace);
 
             _sideHost.Controls.Add(_detailFlow);
             _sideHost.Controls.Add(_sideBtw);
             _sideHost.Controls.Add(_fileView);
+            _sideHost.Controls.Add(_puppetView);
             _side.Controls.Add(_sideTabs, 0, 0);
             _side.Controls.Add(_sideHost, 0, 1);
             _upperSplit.Panel2.Controls.Add(_side);
@@ -489,6 +497,15 @@ namespace OpenLoop.App
             _btnRollback.Enabled = false;
             _btnRollback.Margin = new Padding(0, 0, 0, 6);
             _btnRollback.Click += OnRollbackClick;
+
+            _btnOpenWorkspace.Name = "btnOpenWorkspace";
+            _btnOpenWorkspace.Text = Localization.T("OpenWorkspace");
+            _btnOpenWorkspace.Radius = 8;
+            _btnOpenWorkspace.Height = 34;
+            _btnOpenWorkspace.Width = 236;
+            _btnOpenWorkspace.IconSvg = UiIcons.Of(UiIcons.Folder, UiStyle.Text);
+            _btnOpenWorkspace.Margin = new Padding(0, 4, 0, 8);
+            _btnOpenWorkspace.Click += OnOpenWorkspace;
 
             _lblStatus.AutoSize = true;
             _lblStatus.Text = "";

@@ -20,12 +20,24 @@ namespace OpenLoop.Service.Storage
         public int Steps { get; set; }
         public long Ms { get; set; }
 
+        /// <summary>协作提示（agent 自动插入的仿用户消息）：界面折叠成一行、淡黄底；旧文件没有该字段。</summary>
+        public bool Notice { get; set; }
+
+        /// <summary>自动提示的来源（collab / mention / puppet）；旧文件没有该字段。</summary>
+        public string NoticeKind { get; set; }
+
         /// <summary>写这份 transcript 时用的模型；旧文件没有该字段（null = 未知）。</summary>
         public string Model { get; set; }
 
         /// <summary>同一份 transcript 的推理力度；旧文件没有该字段（null = 未知）。</summary>
         public string Effort { get; set; }
         public List<ChatMessageEntry> Messages { get; set; }
+
+        /// <summary>
+        /// 写这份文件时这一轮还在跑（中途快照）。读回来据此认出「进程崩了、这一轮没跑完」：
+        /// 正文为空时按 <see cref="ChatHistory.AssistantFor"/> 补一句可操作的说明。旧文件没有该字段。
+        /// </summary>
+        public bool Streaming { get; set; }
     }
 
     public sealed class ChatMessageEntry
@@ -56,6 +68,58 @@ namespace OpenLoop.Service.Storage
         };
 
         public static string Root { get; set; }
+
+        /// <summary>
+        /// 中途快照的默认节流间隔：整轮跑十几二十分钟时按它落一次盘，崩溃最多丢这一段进度。
+        /// Worker（A 写）与 Loop（壳写）共用这一套口径。
+        /// </summary>
+        public static TimeSpan DefaultCheckpointInterval { get; set; } = TimeSpan.FromMinutes(1);
+
+        /// <summary>
+        /// 这个工作区的快照节流间隔：读账本 <c>limit.checkpoint_interval</c>（秒），读不到用默认值。
+        /// 夹在 5 秒到 10 分钟之间——太短白写盘，太长丢的进度太多。
+        /// </summary>
+        public static TimeSpan CheckpointIntervalOf(string workspace)
+        {
+            var fallback = DefaultCheckpointInterval;
+            if (string.IsNullOrWhiteSpace(workspace)) return fallback;
+
+            int seconds = -1;
+            try
+            {
+                var ledger = OpenLoop.Core.Store.Ledger.Open(workspace);
+                if (ledger.Current != null)
+                    seconds = OpenLoop.Core.Store.FeatureCatalog.ValueOf(
+                        ledger.Current, ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal),
+                        OpenLoop.Core.Store.FeatureCatalog.CheckpointInterval, -1);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("读取账本数值失败（limit.checkpoint_interval）：" + ex.Message);
+            }
+
+            // 账本里没有这一项（老工作区还没演进到它）= 用默认值；有就夹在 5 秒到 10 分钟之间
+            if (seconds <= 0) return fallback;
+            return TimeSpan.FromSeconds(Math.Clamp(seconds, 5, 600));
+        }
+
+        /// <summary>
+        /// 一轮要落盘的正文，两端同一口径：已结束却什么都没留下时补一句可操作的说明
+        /// （否则重新打开是一条「静默中断」，既看不出跑了什么，也没法判断要不要继续）。
+        /// <paramref name="interrupted"/> = 落盘时这一轮还在跑（进程随后崩了）：正文前面标出来，
+        /// 这句以 ServerNotice.Interrupted 开头，拼下一轮上下文时会被剔掉，不会当成模型说过的话。
+        /// </summary>
+        public static string AssistantFor(string assistant, int steps, bool interrupted = false)
+        {
+            if (!string.IsNullOrWhiteSpace(assistant))
+                return interrupted
+                    ? OpenLoop.Core.Messages.ServerNotice.Interrupted + "，下面是中断前已经产出的内容）\n\n" + assistant
+                    : assistant;
+            string head = interrupted
+                ? OpenLoop.Core.Messages.ServerNotice.Interrupted
+                : OpenLoop.Core.Messages.ServerNotice.BlankTurn;
+            return head + (steps > 0 ? $"，已执行 {steps} 步；说「继续」会接着做。）" : "；说「继续」会重新开一轮。）");
+        }
 
         public static string Dir => Root ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenLoop", "chats");
@@ -98,6 +162,9 @@ namespace OpenLoop.Service.Storage
             return (null, null);
         }
 
+        /// <summary>同一进程内的写盘串行：中途快照与收尾保存可能同时在跑，别互相顶掉临时文件。</summary>
+        private static readonly object WriteGate = new();
+
         public static void Write(string workspace, string kind, IEnumerable<ChatEntry> entries)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return;
@@ -110,12 +177,30 @@ namespace OpenLoop.Service.Storage
                     Delete(workspace, kind);
                     return;
                 }
-                CarryTranscripts(workspace, kind, list);
-                Directory.CreateDirectory(Dir);
-                string path = PathFor(workspace, kind);
-                string temp = path + ".tmp";
-                File.WriteAllText(temp, JsonSerializer.Serialize(list, Json), new UTF8Encoding(false));
-                File.Move(temp, path, true);
+                lock (WriteGate)
+                {
+                    CarryTranscripts(workspace, kind, list);
+                    Directory.CreateDirectory(Dir);
+                    string path = PathFor(workspace, kind);
+                    // 临时名带进程号与随机段：A 与壳会同时写同一份会话（中途快照 + 界面保存），
+                    // 共用一个 .tmp 会互相顶掉（会话索引用共用临时名时实测丢过 40 多条）。
+                    string temp = $"{path}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
+                    try
+                    {
+                        File.WriteAllText(temp, JsonSerializer.Serialize(list, Json), new UTF8Encoding(false));
+                        File.Move(temp, path, true);
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            if (File.Exists(temp)) File.Delete(temp);
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
             }
             catch
             {
@@ -146,9 +231,12 @@ namespace OpenLoop.Service.Storage
             if (string.IsNullOrWhiteSpace(workspace)) return;
             try
             {
-                string path = PathFor(workspace, kind);
-                if (File.Exists(path)) File.Delete(path);
-                if (!string.IsNullOrWhiteSpace(kind)) Forget(kind);
+                lock (WriteGate)
+                {
+                    string path = PathFor(workspace, kind);
+                    if (File.Exists(path)) File.Delete(path);
+                    if (!string.IsNullOrWhiteSpace(kind)) Forget(kind);
+                }
             }
             catch
             {
@@ -184,7 +272,9 @@ namespace OpenLoop.Service.Storage
             }
         }
 
-        public static void Touch(string workspace, string kind, string title = null, int? steps = null)
+        /// <param name="manual">标题是否由用户手动改的（true=不再自动覆盖）；null = 不动这一位。</param>
+        public static void Touch(string workspace, string kind, string title = null, int? steps = null,
+            bool? manual = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(kind)) return;
             string full = Path.GetFullPath(workspace.Trim());
@@ -198,6 +288,7 @@ namespace OpenLoop.Service.Storage
                         Id = kind,
                         Workspace = full,
                         Title = title ?? "",
+                        TitleManual = manual ?? false,
                         Steps = steps ?? 0,
                         CreatedAt = DateTime.UtcNow
                     });
@@ -209,6 +300,7 @@ namespace OpenLoop.Service.Storage
                     if (item.CreatedAt == default) item.CreatedAt = item.UpdatedAt;
                     item.UpdatedAt = DateTime.UtcNow;
                     if (title != null) item.Title = title;
+                    if (manual.HasValue) item.TitleManual = manual.Value;
                     // 改名等调用不带步数：别把索引里的步数抹成 0
                     if (steps.HasValue) item.Steps = steps.Value;
                 }
@@ -329,6 +421,9 @@ namespace OpenLoop.Service.Storage
         public string Id { get; set; }
         public string Workspace { get; set; }
         public string Title { get; set; }
+
+        /// <summary>标题是用户手动改的：自动总结（首轮/结束时）不再覆盖；旧索引没有这一项 = false。</summary>
+        public bool TitleManual { get; set; }
 
         /// <summary>最后一轮的步数（与界面一致）：会话列表在冷启动时不读 30MB 的对话文件也能显示步数。</summary>
         public int Steps { get; set; }

@@ -10,7 +10,6 @@ namespace OpenLoop.Core.Agent
     public static class AgentContext
     {
         public const int DefaultContextLimit = 32768;
-        public const double CompressThreshold = 0.8;
         public const int KeepRecentMessages = 6;
 
         /// <summary>
@@ -19,11 +18,11 @@ namespace OpenLoop.Core.Agent
         /// </summary>
         public const int KeepRecentTokens = 8000;
 
-        /// <summary>上下文窗口对应的尾部预算：窗口小就少留点，至少 256。</summary>
-        public static int TailTokenBudget(int contextLimit)
+        /// <summary>上下文窗口对应的尾部预算：窗口小就少留点，至少 256；keepTokens 是账本给的上限。</summary>
+        public static int TailTokenBudget(int contextLimit, int keepTokens = KeepRecentTokens)
             => contextLimit <= 0
-                ? KeepRecentTokens
-                : Math.Min(KeepRecentTokens, Math.Max(256, contextLimit / 4));
+                ? keepTokens
+                : Math.Min(keepTokens, Math.Max(256, contextLimit / 4));
 
         public const string SummaryPrefix = "【此前对话摘要（系统自动压缩）】\n";
 

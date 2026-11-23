@@ -12,6 +12,9 @@ namespace OpenLoop.Core.Messages
         /// <summary>没有正文的轮次在界面上留下的说明（壳补的，不是模型说的话）。</summary>
         public const string BlankTurn = "（本轮没有产出正文";
 
+        /// <summary>落盘时这一轮还在跑、进程随后崩掉：读回来标出「没跑完」，别当成完整回答。</summary>
+        public const string Interrupted = "（进程中断，这一轮没有跑完";
+
         /// <summary>护栏柔性收尾的答复前缀：用户看得见进度，但不是模型说的话，不回灌上下文。</summary>
         public const string GuardStopped = "（本轮提前收尾）";
 
@@ -20,6 +23,7 @@ namespace OpenLoop.Core.Messages
                && (text.StartsWith(FailedPrefix, StringComparison.Ordinal)
                    || text.StartsWith(Stopped, StringComparison.Ordinal)
                    || text.StartsWith(BlankTurn, StringComparison.Ordinal)
+                   || text.StartsWith(Interrupted, StringComparison.Ordinal)
                    || text.StartsWith(GuardStopped, StringComparison.Ordinal));
 
         /// <summary>额度/限流类失败的常见信号：各家没有统一错误码，只能靠错误文本启发式。</summary>

@@ -69,6 +69,14 @@ body ::-webkit-scrollbar-track { background: transparent; }
   max-height: 260px; overflow: auto;
 }
 
+/* 协作提示（agent 自动插入的仿用户消息）：淡黄底 + 默认收起，只留一行标题 */
+.ol-turn .ol-notice {
+  margin-top: 0; padding: 6px 10px; background: #ffffe0;
+  border: 1px solid #f0e6b0; border-radius: 8px;
+}
+.ol-turn .ol-notice > summary { color: #614a00; }
+.ol-turn .ol-notice pre { background: rgba(255, 255, 255, .6); color: #614a00; }
+
 /* 审批与排队 */
 .ol-prompt {
   display: flex; gap: 10px; align-items: center;
@@ -85,10 +93,8 @@ body ::-webkit-scrollbar-track { background: transparent; }
 .ol-pending-row.ol-pending-auto {
   background: #f0f5ff; border: 1px solid #adc6ff; border-radius: 6px; padding: 0 6px;
 }
-.ol-pending-tag {
-  font-size: 11px; color: #2f54eb; background: #d6e4ff;
-  border-radius: 4px; padding: 0 4px; line-height: 16px;
-}
+/* agent 插入的图标：与队列里的文字同一行高，左侧对齐 */
+.ol-pending-icon { flex: none; font-size: 13px; line-height: 16px; }
 
 .ol-section-title { font-size: 12px; color: #8c8c8c; margin: 12px 0 6px; }
 .ol-section-title:first-child { margin-top: 0; }

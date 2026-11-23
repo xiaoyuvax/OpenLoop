@@ -20,6 +20,9 @@ namespace OpenLoop.App
             browser.StateProvider = () => new LoopAppSessionState(
                 Busy, Model, Session.Title, _queue.Count);
             browser.StopHandler = Stop;
+            // 任务做完收起（LoopApp 自己按内容决定停靠/独立窗口）；收起的实例闲置到点才销毁
+            browser.CollapseRequested = CollapseBrowserPage;
+            browser.IdleExpired = CloseBrowserPage;
             // 页面点按钮 = 用户点发送：默认等本轮，不打断 agent 正在做的事
             browser.SubmitHandler = text => SubmitFromPage(text, immediate: false);
         }

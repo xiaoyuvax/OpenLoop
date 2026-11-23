@@ -410,6 +410,9 @@ Allow?</value>
   <data name="ReportsEmpty" xml:space="preserve">
     <value>No reports yet. Run an evolution round to create one.</value>
   </data>
+  <data name="OpenWorkspace" xml:space="preserve">
+    <value>Open workspace</value>
+  </data>
   <data name="OpenFolder" xml:space="preserve">
     <value>Open report folder</value>
   </data>

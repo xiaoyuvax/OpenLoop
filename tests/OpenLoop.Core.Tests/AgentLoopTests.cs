@@ -595,5 +595,63 @@ namespace OpenLoop.Core.Tests
             Assert.Equal(2, tool.Calls);
             Assert.Equal(1, result.Guards.PromiseNudges);
         }
+
+        [Fact]
+        public async Task Compression_failure_does_not_block_the_turn()
+        {
+            // 实测：摘要调用失败（额度/网络/模型报错）时自动压缩把异常吞成 null，
+            // 手动 /compact 也因此一律误报「上下文太短」。现在 CompressAsync 向上抛，
+            // 自动压缩按「压不动」跳过，正常轮次不被摘要通道的故障拦住。
+            var history = Enumerable.Range(0, 12)
+                .Select(i => new OpenLoop.Core.Messages.LlmMessage(
+                    i % 2 == 0 ? "user" : "assistant", new string('話', 200)))
+                .ToList();
+            // 第一次（摘要）成功但摘要比原文长 → 触发不了压缩重入；
+            // 这里要的是「摘要调用抛异常」：第一次调用就抛。
+            var reasoner = new OverflowThenThrowReasoner(
+                new InvalidOperationException("摘要通道炸了"));
+            var loop = Loops.Build(new FakeTool(), reasoner, new AgentPolicy { CompressAt = 0.25 });
+
+            var result = await loop.RunAsync(history, "hi", contextLimit: 4000);
+
+            Assert.Equal("完成", result.FinalAnswer);
+            Assert.Equal(0, result.Guards.Compressions);
+        }
+
+        [Fact]
+        public async Task Context_overflow_is_kept_when_the_summary_call_fails()
+        {
+            // 溢出后摘要调用又失败：交出去的必须是原始的上下文溢出错误，不能被摘要故障顶替。
+            var history = Enumerable.Range(0, 8)
+                .Select(i => new OpenLoop.Core.Messages.LlmMessage(
+                    i % 2 == 0 ? "user" : "assistant", "内容" + i))
+                .ToList();
+            var reasoner = new OverflowThenThrowReasoner(
+                new InvalidOperationException("模型接口返回 400：This model's maximum context length is 1000 tokens"),
+                new InvalidOperationException("摘要通道炸了"));
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => loop.RunAsync(history, "hi"));
+            Assert.Contains("maximum context length", ex.Message);
+        }
+    }
+
+    /// <summary>按脚本依次抛异常：第 N 次调用抛第 N 个异常；脚本用尽后返回「完成」。
+    /// 用于验证自动压缩失败不拦路、溢出根因不被摘要故障顶替。</summary>
+    internal sealed class OverflowThenThrowReasoner(params Exception[] script) : IReasoner
+    {
+        private int _calls;
+
+        public Task<CompletionResult> CompleteAsync(
+            IReadOnlyList<OpenLoop.Core.Messages.LlmMessage> messages, CancellationToken ct = default)
+        {
+            if (_calls < script.Length)
+            {
+                _calls++;
+                throw script[_calls - 1];
+            }
+            return Task.FromResult(new CompletionResult { Content = "完成" });
+        }
     }
 }

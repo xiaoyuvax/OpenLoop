@@ -20,7 +20,10 @@
 
 - 构建：`dotnet build OpenLoop.slnx`
 - Core 测试：`dotnet test tests\OpenLoop.Core.Tests`
-- ChatFlow 测试：`dotnet test ..\..\..\ChatFlow\ChatFlow.Tests`（跨仓库引用）
+- ChatFlow 测试：`dotnet test ..\ChatFlow\ChatFlow.Tests`（跨仓库引用）。同级组件检出在 `..\<组件>`（= `src\<组件>`），不是 `D:\PUB\<组件>`；改了组件源码（`ProjectReference` 走源码）要一起编消费方（`src\OpenLoop.App`/`src\OpenLoop.Service`），只编组件不算验证接口。
+- ChatFlow 多目标框架（net7~net10）：构建不要带 `-f`，否则 `net7.0` 的 `#if` 分支漏编。
+- `dotnet build`/`dotnet test` 的 stdout 在中文 Windows 是本地码页（工具里看是乱码）：判成败只看退出码。
+- Web 壳前端改完跑 `node --check src\OpenLoop.Service\wwwroot\app.js`。
 - 无独立 lint；Release 编译即类型检查。
 - 不要用 `dotnet build -t:Compile` 做语法检查（跳过资源生成，之后的增量构建会复用坏产物）；若用过必须 `dotnet build --no-incremental` 重建。
 - 运行前先结束旧进程（`OpenLoop.exe` 文件锁）：`Stop-Process -Name OpenLoop -Force`
@@ -33,6 +36,7 @@
 - **壳的操作面按 Action 范式写**：`public` 实例方法返回 `OperationResult`/`bool`（= 成败可观察）即自动进 B 的 manifest；`string`/`string[]` 查询方法只属于 A/内部，不要为了 B 去改它们的返回形状。新增操作时同步考虑两面，别写两份。
 - 常用 B 动作：`OpenSession` → `SetComposerText` → `Send`（空闲=发送 / 运行中=立即发送（软打断本轮，收尾后先发；`immediate:false` 等本轮返回）/ 运行中且输入框为空=停止）；`StopSession` 硬停当前轮、`InterruptSession` 软打断（下一 step 前收尾）；`EnqueuePending`/`SendPendingNow`/`RetractPending`/`RemovePending` 管排队；`OpenLoop`/`SendLoop`（同样收 `immediate`）/`StopLoop` 管 Loop 会话；`DeleteSessions`/`RemoveProject` 是不可恢复的 High 风险动作。
 - **右侧栏「网页」页是内嵌 WebView2 浏览器**（`BrowserView`）：**按需创建**——侧栏默认没有这一页，只有 Agent 调浏览器动作时才插入并选中（用户点不出空 WebView，避免白占内存），右键页签可「关闭网页」销毁实例。默认锁定，只有 Agent 能操作；`OpenBrowser(url)`/`NavigateBrowser(url)`/`EvalBrowserScript(js)`/`BrowserScreenshot()` 驱动它（后三个在没有该页时也会自动打开），`SetBrowserInteract(true)` 解锁给用户点按，`UndockBrowser`/`DockBrowser` 在独立窗口与侧栏之间搬。状态看 `BrowserState`/`BrowserUrl`。`EvalBrowserScript` 返回 WebView2 的 JSON 结果（字符串结果带引号）。**`BrowserScreenshot` 需要「网页」页已激活**，否则 `CapturePreviewAsync` 失败且只报「截图超时」；`NavigateBrowser` 异步返回（`data` 是导航前的旧 URL），取页面内容前先轮询 `EvalBrowserScript("document.readyState")`，并检查 `location.href` 不是 `chrome-error://`（DNS/网络失败时 `NavigateBrowser` 仍回成功）；`BrowserScreenshot` 的 PNG 走 `asset` 链接（`/appagent/assets/<id>`）下载。侧栏最窄 360 DIP；再窄时工具栏按「系统浏览器 → 刷新 → 前进 → 独立窗口」收起按钮，保住地址栏。
+- **LoopApp 的呈现方式与收尾**：右侧栏是竖版窄栏，只适合小表单/单列列表。`LoopApp(open)` 后壳在导航完成时量一次 DOM（元素数、表格列数、宽块、页高、横向溢出），内容多就自动搬进独立窗口，少就留在侧栏（判定与阈值在 `LoopAppLayout`，纯函数有单测）。`app.json` 的 `window: dock|float` 与 `size: [w,h]` 优先于实测；用户自己关掉独立窗口后本次不再自动浮出。任务做完（页面 `ui.submit` 过、本轮收尾）自动收起：隐藏页面 → 关独立窗口 → 摘掉「网页」标签，实例留着；收起且闲置超过账本 `limit.browser_idle` 分钟（默认 30，按工作区可配可演化）才销毁 WebView2。`LoopApp(close)` 可手动走同一条路。
 - **B 面按实例强制串行**（并发 409 `instance-busy`），读类端点（manifest/state）不加锁；B 也认 `agentId`/`site` 协商参数。
 - **窗口几何两套动作，单位不同**：`MoveAction`/`ResizeAction`/`SetBoundsAction` 收**物理像素**（WinForms `Bounds`）；DIP 版本由 Puppet 框架统一提供（`MoveDipAction`/`ResizeDipAction`/`SetBoundsDipAction`，x/y 相对目标屏工作区左上角，`screen` 选屏）。跨屏 DPI 不同时必须用 DIP 版本；各屏缩放比看 `Screens` 状态里的 `scale=`。窗体最小尺寸会钳制宽高（返回里会说明），核对用 `WindowBounds`（物理矩形 + 屏 + dpi）。
 - **进程是 `SystemAware`**：窗口矩形能按目标屏换算正确，但内容仍按系统 DPI 渲染，跨到别的 DPI 屏会由 DWM 呈缩放画面（偏大/模糊都在这一层）。要彻底对齐得改 `ApplicationHighDpiMode=PerMonitorV2`，会动全局布局，需单独验证。
@@ -65,8 +69,10 @@
 
 - 设置页「协作」打开后，Worker 与 Loop 会话都多三个工具：`CollabStart`（分解任务并起若干**同工作区、平级**的协作会话）、`CollabMonitor`（交出会话 id，开始后台轮询）、`ReadSession`（读协作会话的轮次与当前状态：进行中 / 已正常结束 / 异常结束及错误信息）。两侧语义一致：Worker 的协作会话是同工作区的其他 Worker 会话（A 侧落盘，A 重启后探活接管），Loop 的协作会话是同工作区的其他 Loop 会话（壳内视图，壳重启后由发起方重新 `CollabMonitor`）。
 - 发起方启动协作后不再自己动手，只做分解、监测与协调；协作会话不是子 agent，没有父子调用栈，只在同一工作区各干一段。
-- 监测汇报经 `WorkerSessionHost.EnqueueAuto` 作为仿用户消息插进发起方队列，`WorkerSessionSnapshot.PendingAuto` 标出哪几条是自动插入的；WinForms 队列栏与 Web 都用特殊底色 +「自动」标签区分。
+- 监测汇报经 `WorkerSessionHost.EnqueueAuto` 作为仿用户消息插进发起方队列，`WorkerSessionSnapshot.PendingAuto` 标出哪几条是自动插入的；自动消息一律按「立即」入队（当前轮在下一个 step 前收尾后先发，不等整轮跑完），WinForms 队列栏与 Web 都用特殊底色 + 自动图标区分。
 - 协作会话默认沿用发起方已完成的轮次（同模型才复用前缀缓存），也可由发起方用 `context` 另给上下文；轮询间隔见设置页「协作」（`CollabPollSeconds`）。全部会话结束或不可恢复地中止后监测自动停止，协作登记随 `.json` 落盘（A 重启后探活接管）。暂不支持跨工作区。
+- **留言板私信（`say` 带 `to`）只对发送方与目标可见，并会主动投递**：`Puppet(target=.., action="say", text=.., to="A-xxxx")` 写板成功后，`PeerDelivery` 把这条以「会话私信」的协作提示正文推进目标队列（A 会话走 `WorkerApiClient.NoticeAsync(..., "mention")`，壳里的 Loop 会话说 `MainForm.DeliverNotice`；本进程能直投走 `PeerDelivery.Local`），目标不必来读板。只投同工作区的会话（`PeerDelivery.Resolve` 按 `AgentIdentity.Workspace` 比对留言板上的 Purpose，`to` 也可只写前缀）；别的会话不投，工具结果里会说明「只留在留言板上」。省略 `to` 才是广播——广播要对方主动读，没读到就错过。
+- **私信可见性在会话侧过滤**：留言板宿主按 `to` 记账，但读接口不按观看者裁剪，所以 Agent 走 `Puppet` 工具 `chat`/`book`/`say` 时，`BoardPrivacy.Filter` 会摘掉不是我的私信（含 peer 的「最后一句」与最近一条 chat）。用户自己看的 `[Puppet]` 页不过滤。新增读板路径时同样要过这一层，别把别人的私信漏出去。
 
 ## 免费额度自愈（ConnMan）
 
@@ -84,6 +90,7 @@
 ## UI 规则
 
 - Worker（`WorkerSessionHost`）与 Loop、旁路的会话展示保持一致：流式正文一律用 `AgentToolCallParser.CutToolCallText` 截掉协议片段（不只判「整段以 marker 开头」，否则协议原文会先闪现再被收尾清掉），不要各写一份判据。
+- 工具闪现区（`ChatFlow`）：没有正文、也没有正在执行的工具行时，按节拍把思维链**尾部半行**（`ChatFlowControl.TailHalfLine`，按真实排版宽度截到半行宽）刷进正文 FCTB，让用户看到模型还在动；正文出来或工具有行就立刻让位，回合结束清空。节拍取账本 `limit.flash_interval`（毫秒，300–5000，默认 1000，`SessionView.FlashIntervalMs` 读、`ChatFlowControl.FlashInterval` 注入），Worker / Loop / 旁路三处绑定时都要设。
 - 仓库采用 AntdUI（2.4.15）；`AntdUI.xml` 是 API 事实来源，不猜属性。
 - 本机 250% DPI：
   - 设计器里的尺寸会自动缩放；**运行时算出来的像素必须 `DeviceDpi/96` 缩放**。
@@ -91,6 +98,7 @@
   - `SplitContainer.SplitterDistance`、`TabControl.ItemSize` 不自动缩放。
 - 字体以“点”为单位，像素盒必须一起缩放，否则 250% 下文字被裁切（ChatFlow 即因此修复）。
 - `AntdUI.Menu` 竖向模式的 `SubText` 会被裁切 → 项目列表用单行 `Text`，路径另放标签。
+- `AntdUI.Button` 放进 `TableLayoutPanel` 时必须显式给 `Height`（或 `Dock=Fill`）：不给高度会算成 0，控件树里可见、画面上完全没有（Puppet 页的发送按钮就这样丢过）。
 - `AntdUI.Label` 带 `PrefixSvg` 时默认 `IconGap=0`，会与文字重叠，显式设 `IconGap`。
 - 大量模型（399 个）时 `Select` 只放过滤后的列表；免费模型用绿点 + “免费”副标题标识。
 - 新增 `ChatFlowControl` 必须在 `InitializeComponent()` 后、`Bind` 前显式设 `ChatFont`——它不是 `Control.Font`，字体遍历/`Font` 赋值不会自动覆盖。

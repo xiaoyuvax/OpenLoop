@@ -5,6 +5,9 @@ namespace OpenLoop.App
 {
     internal static class Program
     {
+        /// <summary>壳异常退出前的兜底保存；MainForm 建好后挂上来（没挂就是空操作）。</summary>
+        internal static Action EmergencySave { get; set; }
+
         [STAThread]
         private static void Main(string[] args)
         {
@@ -24,6 +27,8 @@ namespace OpenLoop.App
 
             Application.ThreadException += (_, e) =>
             {
+                // 先把界面里跑着的会话落一次盘：A 只保 Worker 的历史，Loop 的正文没有别人替它保存
+                try { EmergencySave?.Invoke(); } catch { }
                 AppLog.Error("未处理的界面异常", e.Exception);
                 ExitTrace.Write("未处理的界面异常：" + e.Exception);
             };

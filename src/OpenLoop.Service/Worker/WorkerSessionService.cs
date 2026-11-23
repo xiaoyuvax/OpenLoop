@@ -28,6 +28,9 @@ namespace OpenLoop.Service.Worker
         public string Tag { get; set; } = "task";
         public string Text { get; set; }
 
+        /// <summary>只给模型看的补充上下文（@ 引用的其他会话），不写进界面上的用户消息。</summary>
+        public string Context { get; set; }
+
         /// <summary>用户选择的生图模型（工具栏）；为空时工具用可用清单里的第一个。</summary>
         public string ImageModel { get; set; }
 
@@ -120,7 +123,7 @@ namespace OpenLoop.Service.Worker
             if (request == null) throw new ArgumentNullException(nameof(request));
             using var identity = string.IsNullOrWhiteSpace(request.SessionId)
                 ? null
-                : AgentIdentity.Begin(AgentIdentity.IdFor("A", request.SessionId), "self");
+                : AgentIdentity.Begin(AgentIdentity.IdFor("A", request.SessionId), "self", request.Workspace);
             var settings = request.Settings ?? new AppSettings();
             string workspace = request.Workspace?.Trim() ?? "";
             bool fullAccess = settings.FullAccess;
@@ -229,6 +232,9 @@ namespace OpenLoop.Service.Worker
 
             request.Started?.Invoke(ctx);
             trace.Message("user", $"[{request.Tag}] {request.Text}");
+            string prompt = string.IsNullOrWhiteSpace(request.Context)
+                ? request.Text
+                : request.Text + "\n\n" + request.Context;
 
             var result = new WorkerRunResult { TraceDirectory = trace.DirectoryPath };
             string outcome = "error";
@@ -237,7 +243,7 @@ namespace OpenLoop.Service.Worker
             {
                 int contextLimit = ModelCatalog.ContextLimit(request.Model, request.Settings);
                 var run = await Task.Run(
-                    () => loop.RunAsync(request.History, request.Text, ct, contextLimit,
+                    () => loop.RunAsync(request.History, prompt, ct, contextLimit,
                         () => ct.IsCancellationRequested || (request.ShouldStop?.Invoke() ?? false),
                         request.Delta, request.Reasoning, request.ResetStream,
                         (messages, tokens) =>

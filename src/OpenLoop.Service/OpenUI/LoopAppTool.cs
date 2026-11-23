@@ -28,11 +28,13 @@ namespace OpenLoop.Service.OpenUI
         public string Description =>
             "在壳的内嵌浏览器里即时生成/迭代界面（LoopApp）。create 建目录并复制运行时、open 打开、" +
             "eval 在页面里执行 JS、reload 重新加载（改完文件用这个，不要用 location.reload()）、shot 截图、drain 取页面攒下的事件、" +
-            "list 列已有应用。页面用 ui.submit 把数据作为一条用户消息送回本会话。" +
+            "list 列已有应用。页面用 ui.submit 把数据作为一条用户消息送回本会话；" +
+            "任务做完就 close（隐藏页面并收起「网页」标签，实例闲置到点自动销毁）。" +
+            "停靠还是独立窗口由页面内容自动决定（也可在 app.json 用 window: dock|float 覆盖）。" +
             "只在需要用户填表/看表/反复调视觉时用；一次问答用 AskUser。";
 
         public string ParamsSchema =>
-            "action: create|open|eval|reload|shot|drain|state|list|undock|dock|interact（必填）; " +
+            "action: create|open|eval|reload|shot|drain|state|list|close|undock|dock|interact（必填）; " +
             "name: string（应用名，create/open 必填）; title?: string（显示标题）; " +
             "js?: string（eval 必填）; enabled?: bool（interact，默认 true）";
 
@@ -64,10 +66,11 @@ namespace OpenLoop.Service.OpenUI
                     case "shot": return Ok(await _host.ShotAsync(_owner, ct));
                     case "undock": return Ok(await _host.UndockAsync(_owner, ct));
                     case "dock": return Ok(await _host.DockAsync(_owner, ct));
+                    case "close": return Ok(await _host.CloseAsync(_owner, ct));
                     case "interact": return Ok(await _host.InteractAsync(_owner, args.Str("enabled") != "false", ct));
                     default:
                         return AgentToolResult.Failure(
-                            $"未知 action：{action}（create/open/eval/reload/shot/drain/state/list/undock/dock/interact）");
+                            $"未知 action：{action}（create/open/eval/reload/shot/drain/state/list/close/undock/dock/interact）");
                 }
             }
             catch (Exception ex)

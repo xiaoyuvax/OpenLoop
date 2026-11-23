@@ -25,8 +25,8 @@ namespace OpenLoop.App
         public static Color Loop { get; private set; } = Color.FromArgb(114, 46, 209);
         public static Color Puppet { get; private set; } = Color.FromArgb(19, 194, 194);
 
-        /// <summary>agent 自动插入的排队消息底色（协作监测汇报），与用户敲的区分。</summary>
-        public static Color AutoInsertBack { get; private set; } = Color.FromArgb(240, 245, 255);
+        /// <summary>agent 自动插入的提示（协作提示 / 协作监测汇报）底色：Windows 标准色 LightYellow。</summary>
+        public static Color AutoInsertBack { get; private set; } = Color.FromArgb(255, 255, 224);
 
         public static AppTheme Theme { get; private set; } = AppTheme.Light;
 
@@ -64,7 +64,7 @@ namespace OpenLoop.App
                     Error = Color.FromArgb(255, 120, 117);
                     Loop = Color.FromArgb(179, 127, 235);
                     Puppet = Color.FromArgb(94, 219, 219);
-                    AutoInsertBack = Color.FromArgb(31, 42, 68);
+                    AutoInsertBack = Color.FromArgb(70, 62, 24);
                     break;
                 case AppTheme.GrayBlue:
                     Accent = Color.FromArgb(59, 110, 165);
@@ -79,7 +79,7 @@ namespace OpenLoop.App
                     Error = Color.FromArgb(220, 60, 60);
                     Loop = Color.FromArgb(124, 107, 176);
                     Puppet = Color.FromArgb(38, 166, 154);
-                    AutoInsertBack = Color.FromArgb(234, 241, 248);
+                    AutoInsertBack = Color.FromArgb(255, 253, 224);
                     break;
                 default:
                     Accent = Color.FromArgb(22, 119, 255);
@@ -94,7 +94,7 @@ namespace OpenLoop.App
                     Error = Color.FromArgb(255, 77, 79);
                     Loop = Color.FromArgb(114, 46, 209);
                     Puppet = Color.FromArgb(19, 194, 194);
-                    AutoInsertBack = Color.FromArgb(240, 245, 255);
+                    AutoInsertBack = Color.FromArgb(255, 255, 224);
                     break;
             }
 
@@ -119,7 +119,9 @@ namespace OpenLoop.App
                 InputBack = Surface,
                 InputFore = Text,
                 ChatFore = Text,
-                ChatThinkingFore = Muted
+                ChatThinkingFore = Muted,
+                // 协作提示底色：Window 标准色 LightYellow；深色主题压暗一档，否则亮黄在暗底上刺眼
+                NoticeBack = dark ? Color.FromArgb(70, 62, 24) : Color.FromArgb(255, 255, 224)
             });
         }
     }

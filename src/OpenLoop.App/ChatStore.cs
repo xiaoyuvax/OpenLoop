@@ -41,13 +41,20 @@ namespace OpenLoop.App
                 var turn = new ChatTurn
                 {
                     User = new ChatMessage("user", entry.User ?? ""),
-                    Assistant = new ChatMessage("assistant", entry.Assistant ?? ""),
+                    // 空白正文（中途崩掉的轮次）读回来补一句可操作的说明，与 Worker 侧同一口径；
+                    // 一律按「已结束」显示，不能把崩溃的轮次恢复成「还在跑」。
+                    Assistant = new ChatMessage("assistant",
+                        OpenLoop.Service.Storage.ChatHistory.AssistantFor(entry.Assistant, entry.Steps,
+                            entry.Streaming)),
                     ReasoningText = entry.Reasoning ?? "",
                     ToolCallLines = entry.ToolLines ?? "",
                     ToolTraceText = entry.ToolLines ?? "",
                     TimelineText = entry.Timeline ?? "",
                     ToolStepCount = entry.Steps,
-                    ToolTotalMs = entry.Ms
+                    ToolTotalMs = entry.Ms,
+                    // 协作提示：读回来仍是折叠的一行（旧文件没有这个字段，按普通消息显示）
+                    Notice = entry.Notice,
+                    NoticeKind = entry.NoticeKind ?? ""
                 };
                 if (entry.Phases is { Count: > 0 })
                     foreach (var phase in entry.Phases)
@@ -66,38 +73,38 @@ namespace OpenLoop.App
             string model = null, string effort = null)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return;
-            var entries = (turns ?? []).Select(t => new ChatEntry
+            ChatHistory.Write(workspace, kind, Entries(turns, model, effort));
+        }
+
+        /// <summary>
+        /// 把轮次投影成落盘条目（纯内存，不碰磁盘）：要在别的线程写盘时先在这边拍快照，
+        /// 流式中的字段不会在写盘途中被界面改掉。
+        /// </summary>
+        public static List<ChatEntry> Entries(IEnumerable<ChatTurn> turns, string model = null, string effort = null)
+            => (turns ?? []).Select(t => new ChatEntry
             {
                 User = t.UserText,
-                // 已结束的轮次不许落盘成空白：重新打开会话时那会变成一条「静默中断」，
-                // 既看不出跑了什么，也没法判断要不要继续。
-                Assistant = AssistantOf(t),
+                // 已结束的轮次不许落盘成空白：重新打开会变成一条「静默中断」。补法在 ChatHistory.AssistantFor
+                // 里，与 Worker（A 的 Persist）同一口径，别在这里再写一份。
+                Assistant = t.Streaming
+                    ? t.AssistantText
+                    : OpenLoop.Service.Storage.ChatHistory.AssistantFor(t.AssistantText, t.ToolStepCount),
                 Reasoning = t.ReasoningText,
                 ToolLines = t.ToolCallLines,
                 Timeline = t.TimelineText,
                 Phases = t.Phases.Select(p => new ChatPhaseEntry { Thinking = p.Thinking, Answer = p.Answer }).ToList(),
                 Steps = t.ToolStepCount,
                 Ms = t.ToolTotalMs,
+                Notice = t.Notice,
+                NoticeKind = t.NoticeKind,
                 Model = model,
                 Effort = effort,
+                // 中途快照：这一轮还在跑，读回来要能认出来（Loop 的流式轮次靠它区分「跑到一半」与「空轮」）
+                Streaming = t.Streaming,
                 Messages = Transcripts.TryGetValue(t, out var transcript)
                     ? transcript.Select(m => new ChatMessageEntry { Role = m.Role, Content = m.Content }).ToList()
                     : null
             }).ToList();
-
-            ChatHistory.Write(workspace, kind, entries);
-        }
-
-        /// <summary>这一轮要落盘的正文；已结束却什么都没留下时补一句可操作的说明。</summary>
-        private static string AssistantOf(ChatTurn turn)
-        {
-            string text = turn.AssistantText;
-            if (!string.IsNullOrWhiteSpace(text)) return text;
-            if (turn.Streaming) return text;   // 正在跑的轮次照旧留空，收尾时会再存一次
-            int steps = turn.ToolStepCount;
-            return OpenLoop.Core.Messages.ServerNotice.BlankTurn
-                   + (steps > 0 ? $"，已执行 {steps} 步；说「继续」会接着做。）" : "；说「继续」会重新开一轮。）");
-        }
 
         /// <summary>
         /// 下一轮要带的上下文：以最近一份 transcript 为准（与 Worker 一致），
@@ -181,8 +188,9 @@ namespace OpenLoop.App
         /// 每轮落盘由 A 自己登记（<c>WorkerSessionHost.Persist</c>）；壳只在改名、
         /// 以及「A 不知道的会话」（关窗时被淘汰的侧线对话）落盘时写，别在存对话时顺手写。
         /// </summary>
-        public static void Touch(string workspace, string sessionId, string title = null, int? steps = null)
-            => ChatHistory.Touch(workspace, sessionId, title, steps);
+        public static void Touch(string workspace, string sessionId, string title = null, int? steps = null,
+            bool? manual = null)
+            => ChatHistory.Touch(workspace, sessionId, title, steps, manual);
 
         /// <summary>旧索引没有步数：读一次对话文件补齐（不动最后活动时间），返回 id → 步数。</summary>
         public static Dictionary<string, int> BackfillSteps() => ChatHistory.BackfillSteps();
@@ -207,7 +215,7 @@ namespace OpenLoop.App
                     // 旧索引没有 CreatedAt：退回 UpdatedAt（至少不是重启时刻）
                     var created = item.CreatedAt == default ? item.UpdatedAt : item.CreatedAt;
                     result.Add(new SavedSession(item.Id, item.Workspace, item.Title ?? "",
-                        created.ToLocalTime(), item.UpdatedAt.ToLocalTime(), item.Steps));
+                        created.ToLocalTime(), item.UpdatedAt.ToLocalTime(), item.Steps, item.TitleManual));
                 }
             }
             catch
@@ -217,6 +225,7 @@ namespace OpenLoop.App
         }
 
         internal sealed record SavedSession(
-            string Id, string Workspace, string Title, DateTime StartedAt, DateTime LastActiveAt, int Steps);
+            string Id, string Workspace, string Title, DateTime StartedAt, DateTime LastActiveAt, int Steps,
+            bool TitleManual = false);
     }
 }

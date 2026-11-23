@@ -27,6 +27,7 @@ namespace OpenLoop.App
                 var undocked = _undocked;
                 _undocked = null;
                 if (undocked != null && !undocked.IsDisposed) undocked.Dispose();
+                StopIdleTimer();
                 if (components != null) components.Dispose();
             }
             base.Dispose(disposing);

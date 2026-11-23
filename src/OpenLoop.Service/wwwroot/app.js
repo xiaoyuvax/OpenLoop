@@ -176,8 +176,13 @@ function OverviewPage({ sessions, project, setProject, onOpen, onNew, onDelete, 
 function Turn({ turn, bodyRef }) {
   // 角色靠左右位置区分（用户靠右、宽度封顶一半；助手贴左占满），不再显示「你 / OpenLoop」标注。
   return h('div', { className: 'ol-turn' },
-    turn.user ? h('div', { className: 'ol-msg ol-msg-user' },
-      h('div', { className: 'ol-body' }, turn.user)) : null,
+    // 协作提示（agent 自动插入的仿用户消息）：折叠成一行标题 + 淡黄底，详情点开看
+    turn.notice ? h('div', { className: 'ol-turn' },
+      h('details', { className: 'ol-details ol-notice' },
+        h('summary', null, (turn.noticeKind === 'mention' ? '会话私信' : turn.noticeKind === 'puppet' ? 'Puppet 动作' : '协作提示')
+          + ' · ' + (turn.user || '').split('\n')[0]),
+        h('pre', null, turn.user || ''))) : (turn.user ? h('div', { className: 'ol-msg ol-msg-user' },
+      h('div', { className: 'ol-body' }, turn.user)) : null),
     h('div', { className: 'ol-msg ol-msg-ai' + (turn.user ? ' ol-msg-next' : '') },
       h('div', { ref: bodyRef, className: 'ol-body' }, turn.assistant || ''),
       turn.streaming ? h('div', { className: 'ol-streaming' }, '输出中…') : null,
@@ -365,10 +370,12 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
                 return message.success('已复制工作区');
               }
               if (key === 'compact') {
+                const hide = message.loading('正在压缩上下文，最长约 2 分钟…', 0);
                 post(`/api/sessions/${activeId}/compact`, {}).then(r => {
+                  hide();
                   if (r?.ok) message.success(`已压缩上下文：${r.before} → ${r.after} tokens`);
                   else message.warning(r?.error || '没有可压缩的上下文');
-                }).catch(e => message.error('压缩失败：' + e.message));
+                }).catch(e => { hide(); message.error('压缩失败：' + e.message); });
                 return;
               }
               act(key, null, '已执行');
@@ -406,9 +413,9 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
           // agent 自动插入的（协作监测汇报）用特殊底色标出，用户敲的仍是普通底色
           const auto = (snapshot.pendingAuto || [])[i] === true
           return h('div', { key: i, className: 'ol-pending-row' + (auto ? ' ol-pending-auto' : '') },
-            auto ? h('span', { className: 'ol-pending-tag', style: { flex: 'none' } }, '自动') : null,
+            auto ? h('span', { className: 'ol-pending-icon', title: '自动：agent 插入（立即发送）' }, '🤖') : null,
             h('span', { title: item, style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, item),
-            h(Button, { size: 'small', type: 'link', onClick: () => act('pending', { index: i, action: 'now' }) }, '立即'),
+            auto ? null : h(Button, { size: 'small', type: 'link', onClick: () => act('pending', { index: i, action: 'now' }) }, '立即'),
             h(Button, { size: 'small', type: 'link', danger: true, onClick: () => act('pending', { index: i, action: 'remove' }) }, '撤回'))
         }))
     : null;

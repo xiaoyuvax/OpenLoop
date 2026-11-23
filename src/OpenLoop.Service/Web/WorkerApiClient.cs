@@ -14,7 +14,7 @@ namespace OpenLoop.Service.Web
     {
         private readonly HttpClient _http;
 
-        /// <summary>手动压缩要等一次模型摘要（几十秒），不能沿用轮询用的 30 秒超时。</summary>
+        /// <summary>手动压缩要等一次模型摘要（服务端兜底 120 秒 + 传输余量），不能沿用轮询用的 30 秒超时。</summary>
         private readonly HttpClient _long;
 
         public WorkerApiClient(string endpoint = null, string key = null)
@@ -23,7 +23,7 @@ namespace OpenLoop.Service.Web
             string actual = key ?? KeyFile.ReadOrCreate(AppPaths.BusKeyPath);
             // loopback：系统代理就是 VPN 自己，走代理会把本地请求发到隧道外
             _http = Create(TimeSpan.FromSeconds(30), actual);
-            _long = Create(TimeSpan.FromMinutes(3), actual);
+            _long = Create(TimeSpan.FromMinutes(5), actual);
         }
 
         private HttpClient Create(TimeSpan timeout, string key)
@@ -93,9 +93,18 @@ namespace OpenLoop.Service.Web
 
         public async Task<WorkerSessionSnapshot> SendAsync(string id, string tag, string text,
             CancellationToken ct = default, string imageModel = null,
-            IReadOnlyList<Media.AttachmentPayload> attachments = null, IReadOnlyList<string> paths = null)
+            IReadOnlyList<Media.AttachmentPayload> attachments = null, IReadOnlyList<string> paths = null,
+            string context = null)
             => await PostAsync(Path(id) + "/messages",
-                new { tag, text, imageModel, attachments = attachments ?? [], paths = paths ?? [] }, ct);
+                new { tag, text, context, imageModel, attachments = attachments ?? [], paths = paths ?? [] }, ct);
+
+        /// <summary>
+        /// 以「协作提示」身份给会话插一条消息（agent 自动塞的仿用户消息）：空闲直接开跑，运行中插到队首、
+        /// 当前轮在下一个 step 前收尾后先发它；界面折叠成一行、淡黄底，不冒充用户输入。
+        /// </summary>
+        public async Task<WorkerSessionSnapshot> NoticeAsync(string id, string text, string tag = "puppet",
+            CancellationToken ct = default)
+            => await PostAsync(Path(id) + "/notice", new { text, tag }, ct);
 
         public async Task<WorkerSessionSnapshot> StopAsync(string id, CancellationToken ct = default)
             => await PostAsync(Path(id) + "/stop", new { }, ct);

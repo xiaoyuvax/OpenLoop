@@ -10,6 +10,7 @@ namespace OpenLoop.Core.Agent
         {
             public string Id;
             public string BoardTarget;
+            public string Workspace;
         }
 
         private static readonly AsyncLocal<Frame> Current = new();
@@ -20,12 +21,15 @@ namespace OpenLoop.Core.Agent
         /// <summary>留言板所在的 Puppet 目标：A 进程内为 self，壳里的 Loop 会话为 a。</summary>
         public static string BoardTarget => Current.Value?.BoardTarget ?? "self";
 
+        /// <summary>本会话的工作区：定向留言只投给同工作区的会话。</summary>
+        public static string Workspace => Current.Value?.Workspace;
+
         public static string IdFor(string role, string sessionId) => role + "-" + sessionId;
 
-        public static IDisposable Begin(string id, string boardTarget)
+        public static IDisposable Begin(string id, string boardTarget, string workspace = null)
         {
             var previous = Current.Value;
-            Current.Value = new Frame { Id = id, BoardTarget = boardTarget };
+            Current.Value = new Frame { Id = id, BoardTarget = boardTarget, Workspace = workspace };
             return new Scope(previous);
         }
 

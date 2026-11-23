@@ -68,6 +68,9 @@ namespace OpenLoop.Core.Loop
                     case FeatureCatalog.MalformedRetry:
                         CheckNumber(problems, reference, feature, "max", 0, 5);
                         break;
+                    case FeatureCatalog.Promise:
+                        CheckNumber(problems, reference, feature, "max", 0, 10);
+                        break;
                     case FeatureCatalog.MaxSteps:
                         CheckNumber(problems, reference, feature, "value", 0, 100);
                         break;
@@ -80,17 +83,53 @@ namespace OpenLoop.Core.Loop
                     case FeatureCatalog.OutputTokenRatio:
                         CheckNumber(problems, reference, feature, "value", 1, 64);
                         break;
+                    case FeatureCatalog.DebugTurns:
+                        CheckNumber(problems, reference, feature, "value", 0, 50);
+                        break;
+                    case FeatureCatalog.MentionTurns:
+                        CheckNumber(problems, reference, feature, "value", 0, 50);
+                        break;
+                    case FeatureCatalog.BrowserIdle:
+                        CheckNumber(problems, reference, feature, "value", 1, 1440);
+                        break;
+                    case FeatureCatalog.FlashInterval:
+                        CheckNumber(problems, reference, feature, "value", 300, 5000);
+                        break;
+                    case FeatureCatalog.CheckpointInterval:
+                        CheckNumber(problems, reference, feature, "value", 5, 600);
+                        break;
+                    case FeatureCatalog.Poll:
+                        CheckNumber(problems, reference, feature, "max", 1, 100);
+                        CheckNumber(problems, reference, feature, "total", 1, 500);
+                        break;
+                    case FeatureCatalog.BudgetExtend:
+                        CheckNumber(problems, reference, feature, "steps", 1, 50);
+                        CheckNumber(problems, reference, feature, "max", 0, 20);
+                        break;
+                    case FeatureCatalog.CompressKeep:
+                        CheckNumber(problems, reference, feature, "messages", 1, 50);
+                        CheckNumber(problems, reference, feature, "tokens", 256, 100_000);
+                        break;
+                    case FeatureCatalog.CompressRetry:
+                        CheckNumber(problems, reference, feature, "max", 0, 5);
+                        break;
                 }
             }
             return problems;
         }
 
-        private static string[] AllowedKeys(string id) => id switch
+        internal static string[] AllowedKeys(string id) => id switch
         {
             FeatureCatalog.RepeatCall or FeatureCatalog.Exploration or FeatureCatalog.MalformedRetry
+                or FeatureCatalog.Promise
                 => ["enabled", "max"],
+            FeatureCatalog.Poll => ["max", "total"],
+            FeatureCatalog.BudgetExtend => ["steps", "max"],
+            FeatureCatalog.CompressKeep => ["messages", "tokens"],
+            FeatureCatalog.CompressRetry => ["max"],
             FeatureCatalog.MaxSteps or FeatureCatalog.ToolResultLimit or FeatureCatalog.CompressAt
-                or FeatureCatalog.OutputTokenRatio
+                or FeatureCatalog.OutputTokenRatio or FeatureCatalog.DebugTurns or FeatureCatalog.MentionTurns
+                or FeatureCatalog.FlashInterval or FeatureCatalog.BrowserIdle or FeatureCatalog.CheckpointInterval
                 => ["value"],
             _ => ["enabled"]
         };

@@ -31,6 +31,9 @@ namespace OpenLoop.App
         private bool _menuBusy;
         private AntdUI.TabPage _newPage;
         private AntdUI.TabPage _loopPage;
+        /// <summary>「平铺视图」页与它里面的方块（关闭/拖出/删会话时同步收起）。</summary>
+        private TiledView _tiled;
+        private AntdUI.TabPage _tiledPage;
         private LoopView _loopView;
         private readonly Dictionary<string, (LoopView View, AntdUI.TabPage Page)> _loops = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, (PuppetView View, AntdUI.TabPage Page)> _puppets = new(StringComparer.Ordinal);
@@ -48,6 +51,10 @@ namespace OpenLoop.App
             SurveyStore.Answered += OnSurveyAnswered;
             InitializeComponent();
             Icon = UiIcons.App;
+            // 本进程的 Loop 会话直收留言板私信（PeerDelivery 先试这里，失败再走 Puppet 端口）
+            global::OpenLoop.Service.Web.PeerDelivery.Local = (id, text, tag) => DeliverNotice("I-" + id, text, tag).Ok;
+            // 异常退出前的兜底：Loop 的正文只有壳自己写（A 的 Persist 只管 Worker 会话）
+            Program.EmergencySave = EmergencySave;
             _tabPulse.Tick += OnTabPulseTick;
         }
 
@@ -515,6 +522,28 @@ namespace OpenLoop.App
             return OperationResult.Success(_loopView.Send(text, immediate));
         }
 
+        /// <summary>
+        /// 留言板私信（别的会话 say 带 to）投到某个 Loop 会话的队列：与协作提示同一形状，
+        /// 运行中当前轮在下一个 step 前收尾后先发它；找不到视图就报失败，调用方据此说明对方没收到。
+        /// </summary>
+        [PuppetAction(Desc = "把一条私信（留言板 say 带 to）投进某个 Loop 会话的队列，走协作提示样式")]
+        public OperationResult DeliverNotice(string agentId, string text, string tag = "mention")
+        {
+            if (string.IsNullOrWhiteSpace(agentId)) return OperationResult.Failure("agentId 为空");
+            if (string.IsNullOrWhiteSpace(text)) return OperationResult.Failure("text 为空");
+            string id = agentId.Trim();
+            if (id.StartsWith("I-", StringComparison.OrdinalIgnoreCase)) id = id[2..];
+            return OnUi(() =>
+            {
+                // 关掉的标签页只是从标签栏移除，会话与视图继续存活（_loops 里保留条目），这里照样投得到
+                var view = _loops.Values.Select(e => e.View)
+                    .FirstOrDefault(v => v != null && (string.Equals(v.BoardIdValue, id, StringComparison.OrdinalIgnoreCase) || string.Equals(v.BoardIdValue, agentId.Trim(), StringComparison.OrdinalIgnoreCase)));
+                if (view == null || view.IsDisposed) return OperationResult.Failure($"没有打开的 Loop 会话：{agentId}（壳里没有这个会话的页面，私信只留在留言板上）");
+                view.EnqueueAuto(text, tag);
+                return OperationResult.Success($"已投递到 {agentId} 的队列");
+            });
+        }
+
         [PuppetAction(Desc = "停止 Loop 当前轮")]
         public OperationResult StopLoop()
         {
@@ -625,7 +654,7 @@ namespace OpenLoop.App
         }
 
         /// <summary>
-        /// /complain：每条反馈独立起一个 Loop 会话，不并到最近的会话里；不抢当前标签页。
+        /// /complain、/debug：每条反馈独立起一个 Loop 会话，不并到最近的会话里；不抢当前标签页。
         /// 新会话沿用来源 Worker 会话的模型与强度（视图没建过就取它落盘的记录）。
         /// </summary>
         private void OnComplaint(Session session, string text)
@@ -669,6 +698,7 @@ namespace OpenLoop.App
             string key = LoopKey(target, id);
             if (_loops.TryGetValue(key, out var existing))
             {
+                DetachFromTiled(existing.View);
                 // 关掉的标签页只是从标签栏移除：会话与视图继续存活，这里把页面挂回去
                 if (existing.Page.Parent == null) _tabs.Pages.Add(existing.Page);
                 if (select) _tabs.SelectTab(existing.Page);
@@ -682,6 +712,8 @@ namespace OpenLoop.App
             if (title != null) LoopIndex.Rename(target, id, title);
 
             var view = new LoopView { Dock = DockStyle.Fill };
+            // 没选中的 Loop 页先暂停渲染：Initialize 读历史的那次全量构建也不要白做（与 EnsureView 同口径）
+            view.SetActive(select);
             view.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
             view.Sessions = () => _sessions;
             view.Iterate = () => ShowIterationAsync(target);
@@ -708,7 +740,7 @@ namespace OpenLoop.App
                 .Where(v => v != null && Paths.Same(v.Workspace, target))
                 .ToList());
             view.Initialize(target, () => _settings, id);
-            // 来源会话（/complain、/fork、转交、协作）带过来的模型与强度：新会话按它起步
+            // 来源会话（/complain、/debug、/fork、转交、协作）带过来的模型与强度：新会话按它起步
             if (!string.IsNullOrWhiteSpace(model)) view.AdoptParameters(model, effort);
             var page = new AntdUI.TabPage
             {
@@ -730,10 +762,18 @@ namespace OpenLoop.App
                 page.Text = text;
                 RefreshOverview();
             };
+            // Loop 通知上的「打开会话」：页签关掉了就重新挂上再选中
+            view.ActivatePage = () =>
+            {
+                if (page.Parent == null) _tabs.Pages.Add(page);
+                _tabs.SelectTab(page);
+                return true;
+            };
             _tabs.Pages.Add(page);
-            // 新建页面不主动跳转：/complain 只让它出现在标签栏，用户自己去点
-            if (select) _tabs.SelectTab(page);
+            // 先登记再选中：OnSelectedTabChanged 按 _loops 逐个设激活态，晚登记会让新页漏在暂停态
             _loops[key] = (view, page);
+            // 新建页面不主动跳转：/complain、/debug 只让它出现在标签栏，用户自己去点
+            if (select) _tabs.SelectTab(page);
             _loopView = view;
             _loopPage = page;
             SaveOpenTabs();
@@ -774,8 +814,9 @@ namespace OpenLoop.App
             }
 
             var view = new PuppetView { Dock = DockStyle.Fill };
-            view.ComplaintRequested += text =>
-                PostComplaint(_lastSession?.Workspace ?? SourceSync.InstallRoot, text);
+            string FeedbackWorkspace() => _lastSession?.Workspace ?? SourceSync.InstallRoot;
+            view.ComplaintRequested += text => PostComplaint(FeedbackWorkspace(), text);
+            view.FeedbackTurns = () => SessionView.DebugTurns(FeedbackWorkspace());
             var page = new AntdUI.TabPage
             {
                 Text = "Puppet · " + (string.IsNullOrWhiteSpace(agentId) ? host : agentId),
@@ -1366,9 +1407,34 @@ namespace OpenLoop.App
                 Text = $"OpenLoop · Puppet {PuppetHost.Endpoint}";
         }
 
+        /// <summary>
+        /// 异常退出前的兜底落盘：A 只保 Worker 的历史，Loop 的正文全靠壳自己。
+        /// 未处理的界面异常还在 UI 线程上，轮次仍可读，立刻各写一次（不等中途快照的节流）。
+        /// </summary>
+        internal void EmergencySave()
+        {
+            foreach (var loop in _loops.Values)
+            {
+                try
+                {
+                    loop.View.FlushNow();
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warn("异常退出前保存 Loop 会话失败：" + ex.Message);
+                }
+            }
+        }
+
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
             _closing = true;
+            // 末次标题：会话结束时用整段对话再总结一次（自动更新只有首轮与这里）。后台跑，最后等有限几秒
+            var finalTitles = new List<Task>();
+            foreach (var session in _sessions)
+                if (session.View?.TryFinalizeTitleAsync() is { } task) finalTitles.Add(task);
+            foreach (var loop in _loops.Values)
+                if (loop.View.TryFinalizeTitleAsync() is { } task) finalTitles.Add(task);
             _workerSync.Stop();
             _workerSync.Dispose();
             _tabPulse.Stop();
@@ -1383,7 +1449,12 @@ namespace OpenLoop.App
             foreach (var loop in _loops.Values) loop.View.Shutdown();
             foreach (var puppet in _puppets.Values) puppet.View.Shutdown();
             _workerClient?.Dispose();
+            global::OpenLoop.Service.Web.PeerDelivery.Local = null;
             PuppetHost.Stop();
+            // 标题模型是网络调用：等够就收工，没回来就算了（不能为它拖住关闭）
+            if (finalTitles.Count > 0)
+                try { Task.WaitAll(finalTitles.ToArray(), TimeSpan.FromSeconds(5)); }
+                catch (Exception ex) { AppLog.Warn("关闭时更新标题失败：" + ex.Message); }
         }
 
         private async Task RefreshCatalogAsync()
@@ -1402,7 +1473,7 @@ namespace OpenLoop.App
         }
 
         private Session CreateSession(string workspace, string sessionId = null, string title = null,
-            DateTime? startedAt = null, DateTime? lastActiveAt = null, int steps = 0)
+            DateTime? startedAt = null, DateTime? lastActiveAt = null, int steps = 0, bool titleManual = false)
         {
             workspace = Paths.Normalize(workspace);
             //同一目录的不同写法（盘符大小写、斜杠、尾分隔符）算同一个项目：复用既有写法，不再新增一条
@@ -1429,7 +1500,8 @@ namespace OpenLoop.App
                 Id = string.IsNullOrWhiteSpace(sessionId) ? Guid.NewGuid().ToString("N")[..8] : sessionId,
                 StartedAt = startedAt ?? DateTime.Now,
                 LastActiveAt = lastActiveAt ?? startedAt ?? DateTime.Now,
-                Steps = steps
+                Steps = steps,
+                ManualTitle = titleManual
             };
             session.CustomTitle = title;
             session.Page = new AntdUI.TabPage
@@ -1457,6 +1529,11 @@ namespace OpenLoop.App
             // 没选中的会话页先暂停渲染：初始化读历史的那次全量构建也不要白做
             view.SetActive(session.Page == _tabs.SelectedTab);
             view.Initialize(session, () => _settings);
+            view.Sessions = () => _sessions;
+            view.MentionPeers = () => OnUi(() => _loops.Values
+                .Select(e => e.View)
+                .Where(v => v != null)
+                .ToList());
             view.StateChanged += OnSessionStateChanged;
             view.OpenLoopRequested += workspace => OpenLoop(workspace);
             view.ComplaintRequested += OnComplaint;
@@ -1466,6 +1543,12 @@ namespace OpenLoop.App
                 view.Model, view.Effort);
             view.TitleChanged += OnSessionTitleChanged;
             view.SideWorkEvicted += OnSideWorkEvicted;
+            // 会话通知上的「打开会话」：页签关掉了就重新挂上再选中
+            view.ActivatePage = () =>
+            {
+                ShowSession(session);
+                return true;
+            };
             session.Page?.Controls.Add(view);
             return view;
         }
@@ -1499,7 +1582,7 @@ namespace OpenLoop.App
                     if (_sessions.Any(s => s.Id == saved.Id)) continue;
                     if (!Directory.Exists(saved.Workspace)) continue;
                     CreateSession(saved.Workspace, saved.Id, saved.Title, saved.StartedAt, saved.LastActiveAt,
-                        saved.Steps);
+                        saved.Steps, saved.TitleManual);
                 }
             }
             catch (Exception ex)
@@ -1577,25 +1660,38 @@ namespace OpenLoop.App
             {
                 switch (page.Tag)
                 {
-                    case Session session: tabs.Add("w|" + session.Id); break;
+                    case Session session: tabs.Add(SavedKey(session)); break;
                     case LoopView loop when !string.IsNullOrWhiteSpace(loop.Workspace):
                         tabs.Add("l|" + loop.Workspace + "|" + loop.SessionId); break;
+                    // 平铺视图页不落盘：里面的会话按普通标签页记，重启后各自摆回来
+                    case TiledView tiled:
+                        tabs.AddRange(tiled.Items.Select(i => SavedKey(i.Owner)).Where(k => k.Length > 0));
+                        break;
                 }
             }
 
             string active = _tabs.SelectedTab switch
             {
-                var page when page?.Tag is Session session => "w|" + session.Id,
+                var page when page?.Tag is Session session => SavedKey(session),
                 var page when page?.Tag is LoopView loop && !string.IsNullOrWhiteSpace(loop.Workspace)
                     => "l|" + loop.Workspace + "|" + loop.SessionId,
                 _ => ""
             };
+            if (active.Length == 0 && _tabs.SelectedTab?.Tag is TiledView activeTiled && activeTiled.Items.Count > 0)
+                active = SavedKey(activeTiled.Items[0].Owner);
 
             if (active == _settings.ActiveTab && tabs.SequenceEqual(_settings.OpenTabs)) return;
             _settings.OpenTabs = tabs;
             _settings.ActiveTab = active;
             try { _settings.Save(); } catch (Exception ex) { AppLog.Warn("保存标签页失败：" + ex.Message); }
         }
+
+        private static string SavedKey(object owner) => owner switch
+        {
+            Session session => "w|" + session.Id,
+            LoopView loop when !string.IsNullOrWhiteSpace(loop.Workspace) => "l|" + loop.Workspace + "|" + loop.SessionId,
+            _ => ""
+        };
 
         /// <summary>
         /// 旧索引没有「最后一轮步数」：后台把缺步数的会话各读一次对话文件补上，补完刷新列表。
@@ -1638,7 +1734,8 @@ namespace OpenLoop.App
                 foreach (var item in saved)
                 {
                     if (_sessions.Any(s => s.Id == item.Id) || !Directory.Exists(item.Workspace)) continue;
-                    CreateSession(item.Workspace, item.Id, item.Title, item.StartedAt, item.LastActiveAt, item.Steps);
+                    CreateSession(item.Workspace, item.Id, item.Title, item.StartedAt, item.LastActiveAt, item.Steps,
+                        item.TitleManual);
                     created = true;
                 }
 
@@ -1746,6 +1843,7 @@ namespace OpenLoop.App
         private void ShowSession(Session session)
         {
             if (session == null) return;
+            if (session.Page != null) DetachFromTiled(session);
             _lastSession = session;
             EnsureView(session);
             if (session.Page.Parent == null) _tabs.Pages.Add(session.Page);
@@ -1898,6 +1996,7 @@ namespace OpenLoop.App
             string key = LoopKey(workspace, sessionId);
             if (_loops.TryGetValue(key, out var entry))
             {
+                DetachFromTiled(entry.View);
                 if (_tabs.Pages.Contains(entry.Page)) CloseTab(entry.Page);
                 entry.View.Shutdown();
                 _loops.Remove(key);
@@ -1968,8 +2067,133 @@ namespace OpenLoop.App
             return targets.Count;
         }
 
+        /// <summary>
+        /// 「平铺视图」：把所有打开的会话收进一个页面按 n×m 铺开，其它标签页关掉（会话不停）。
+        /// 已经在平铺视图里就只切过去。
+        /// </summary>
+        private void OpenTiledView()
+        {
+            if (_tiledPage != null)
+            {
+                _tabs.SelectTab(_tiledPage);
+                return;
+            }
+
+            var items = new List<TiledItem>();
+            foreach (var tabPage in _tabs.Pages)
+            {
+                switch (tabPage.Tag)
+                {
+                    case Session session:
+                        items.Add(new TiledItem
+                        {
+                            Owner = session, Page = tabPage, Book = session.Book,
+                            Title = () => tabPage.Text, Icon = () => tabPage.IconSvg
+                        });
+                        break;
+                    case LoopView loop:
+                        items.Add(new TiledItem
+                        {
+                            Owner = loop, Page = tabPage, Book = loop.Book,
+                            Title = () => tabPage.Text, Icon = () => tabPage.IconSvg
+                        });
+                        break;
+                }
+            }
+            if (items.Count == 0) return;
+
+            var view = new TiledView { Dock = DockStyle.Fill };
+            view.DetachRequested += OnTiledDetach;
+            view.Emptied += OnTiledEmptied;
+            var page = new AntdUI.TabPage
+            {
+                Text = "平铺视图",
+                IconSvg = UiIcons.Of(UiIcons.List, UiStyle.Muted),
+                ReadOnly = false,
+                Tag = view,
+                Dock = DockStyle.Fill
+            };
+            page.Controls.Add(view);
+
+            // 先收走原来的会话页（CloseTab 只摘页面，会话与视图继续活着），再挂平铺页
+            foreach (var other in _tabs.Pages.ToList())
+                if (other.Tag is Session or LoopView or PuppetView or NewSessionView) CloseTab(other);
+
+            _tiled = view;
+            _tiledPage = page;
+            _tabs.Pages.Add(page);
+            view.SetItems(items);
+            _tabs.SelectTab(page);
+            SaveOpenTabs();
+        }
+
+        private void OnTiledEmptied()
+        {
+            if (_tiledPage != null) CloseTab(_tiledPage);
+        }
+
+        /// <summary>方块拖出视图：落在标签页头才脱离（开回普通标签页），否则方块不动。</summary>
+        private void OnTiledDetach(TiledItem item, Point screen)
+        {
+            if (_tiled == null || !IsTabHeaderPoint(screen)) return;
+            _tiled.Remove(item);
+            switch (item.Owner)
+            {
+                case Session session: ShowSession(session); break;
+                case LoopView loop: EnsureLoop(loop.Workspace, select: true, sessionId: loop.SessionId); break;
+            }
+        }
+
+        /// <summary>落点在标签页头（选中页内容区之上）才算「拖到标签栏」。</summary>
+        private bool IsTabHeaderPoint(Point screen)
+        {
+            if (!_tabs.RectangleToScreen(_tabs.ClientRectangle).Contains(screen)) return false;
+            var page = _tabs.SelectedTab;
+            return page != null && screen.Y < page.PointToScreen(Point.Empty).Y;
+        }
+
+        /// <summary>某个会话又被当成普通标签打开：先从平铺视图里摘掉，免得同一个会话出现两次。</summary>
+        private void DetachFromTiled(object owner)
+        {
+            if (_tiled == null) return;
+            var item = _tiled.Items.FirstOrDefault(i => ReferenceEquals(i.Owner, owner));
+            if (item != null) _tiled.Remove(item);
+        }
+
+        /// <summary>关平铺视图时把方块还原成普通标签页；会话本身早就在跑，只补页面。</summary>
+        private void ReopenTiledItem(TiledItem item)
+        {
+            switch (item.Owner)
+            {
+                case Session session:
+                    EnsureView(session);
+                    if (session.Page.Parent == null) _tabs.Pages.Add(session.Page);
+                    UpdateTabIcon(session.Page);
+                    break;
+                case LoopView loop:
+                    EnsureLoop(loop.Workspace, select: false, sessionId: loop.SessionId);
+                    break;
+            }
+        }
+
         private void CloseTab(AntdUI.TabPage page)
         {
+            // 关平铺视图 = 把里面的会话还原成普通标签页
+            if (page.Tag is TiledView tiled)
+            {
+                var items = tiled.Items.ToList();
+                if (_tiledPage == page) _tiledPage = null;
+                if (_tiled == tiled) _tiled = null;
+                bool wasSelected = _tabs.SelectedTab == page;
+                _tabs.Pages.Remove(page);
+                tiled.Dispose();
+                foreach (var item in items) ReopenTiledItem(item);
+                if (wasSelected) _tabs.SelectTab(_overviewPage);
+                RefreshOverview();
+                SaveOpenTabs();
+                return;
+            }
+
             bool selected = _tabs.SelectedTab == page;
             _tabs.Pages.Remove(page);
             if (page == _newPage) _newPage = null;
@@ -2013,6 +2237,7 @@ namespace OpenLoop.App
             }
             items.Add(new AntdUI.ContextMenuStripItem("打开所有活动会话") { ID = "openactive" });
             items.Add(new AntdUI.ContextMenuStripItem("关闭所有非活动会话") { ID = "closenactive" });
+            items.Add(new AntdUI.ContextMenuStripItem("平铺视图") { ID = "tile" });
             items.Add(new AntdUI.ContextMenuStripItemDivider());
             if (!global)
             {
@@ -2035,6 +2260,7 @@ namespace OpenLoop.App
                 case "rename": RenameTab(target); break;
                 case "openactive": OpenActiveTabs(); break;
                 case "closenactive": CloseTabsWhere(page => IsSessionTab(page) && !IsActiveTab(page)); break;
+                case "tile": OpenTiledView(); break;
                 case "right": CloseRange(target, 1); break;
                 case "left": CloseRange(target, -1); break;
                 case "closeworker": CloseTabsWhere(page => page.Tag is Session); break;
@@ -2091,7 +2317,8 @@ namespace OpenLoop.App
             if (session != null)
             {
                 session.CustomTitle = name;
-                ChatStore.Touch(session.Workspace, session.Id, name);
+                session.ManualTitle = true;
+                ChatStore.Touch(session.Workspace, session.Id, name, manual: true);
                 page.Text = session.Title;
             }
             else
@@ -2128,6 +2355,8 @@ namespace OpenLoop.App
             var selected = _tabs.SelectedTab;
             foreach (var session in _sessions)
                 session.View?.SetActive(session.Page == selected);
+            foreach (var loop in _loops.Values)
+                loop.View.SetActive(loop.Page == selected);
             if (selected == _overviewPage) _overview.FocusProject(_lastSession?.Workspace);
             RefreshOverview();
             SaveOpenTabs();

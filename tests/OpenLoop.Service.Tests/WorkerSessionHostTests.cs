@@ -396,6 +396,22 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public async Task A_running_turn_is_on_disk_before_it_finishes()
+        {
+            var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var host = NewHost((_, _) => gate.Task);
+            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "sess-run");
+
+            host.Send(session.Id, "task", "半路崩掉也不能丢");
+            // 开轮即落盘：还没跑完，盘上就该有这一轮的用户请求（壳崩了 A 只活 1 秒）
+            await WaitAsync(() => ChatHistory.Read("C:/work", "sess-run").Any(e => e.User == "半路崩掉也不能丢"));
+            Assert.True(ChatHistory.Read("C:/work", "sess-run").Single().Streaming);
+
+            gate.SetResult(new WorkerRunResult { Outcome = "ok" });
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+        }
+
+        [Fact]
         public async Task Truncating_every_turn_removes_the_saved_session()
         {
             var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult
@@ -577,6 +593,104 @@ namespace OpenLoop.Service.Tests
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
             Assert.Equal(1001, host.Get(session.Id).ContextTokens);
         }
+        [Fact]
+        public async Task The_turn_is_persisted_before_it_finishes()
+        {
+            // 开轮即落盘（与 Loop 侧同一口径）：进程中途崩了也要在历史里留下这条需求
+            var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var host = NewHost((request, ct) => gate.Task);
+            var session = NewSession(host);
+
+            host.Send(session.Id, "task", "把这轮需求留下来");
+            await WaitAsync(() => File.Exists(ChatHistory.PathFor(session.Workspace, session.Id)));
+
+            var entry = Assert.Single(ChatHistory.Read(session.Workspace, session.Id));
+            Assert.Equal("把这轮需求留下来", entry.User);
+            Assert.True(entry.Streaming);   // 收尾前这一轮还是「在跑」，读回来据此补说明
+
+            gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
+            await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+        }
+
+        [Fact]
+        public async Task Mid_run_steps_are_checkpointed()
+        {
+            // 流式期间按账本间隔落盘：这里把间隔设成 0，验证每一步都会写出去
+            var previous = ChatHistory.DefaultCheckpointInterval;
+            ChatHistory.DefaultCheckpointInterval = TimeSpan.Zero;
+            var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var host = NewHost(async (request, ct) =>
+            {
+                request.Delta?.Invoke("写到一半");
+                request.Step?.Invoke(new OpenLoop.Core.Agent.AgentStepRecord
+                {
+                    Index = 1, Tool = "ReadFile", ArgsSummary = "path=a.cs", Ok = true, DurationMs = 5
+                });
+                await gate.Task.WaitAsync(ct);
+                return new WorkerRunResult { Outcome = "ok", FinalAnswer = "done", Steps = 1 };
+            });
+            try
+            {
+                var session = NewSession(host);
+                host.Send(session.Id, "task", "hi");
+
+                // 还没收尾，磁盘上就已经有这一步的工具行与正文
+                await WaitAsync(() =>
+                {
+                    var stored = ChatHistory.Read(session.Workspace, session.Id);
+                    return stored.Count == 1 && stored[0].Steps >= 1;
+                });
+                var entry = Assert.Single(ChatHistory.Read(session.Workspace, session.Id));
+                Assert.Contains("ReadFile", entry.ToolLines);
+                Assert.Equal("写到一半", entry.Assistant);
+                Assert.True(entry.Streaming);
+                Assert.Equal(WorkerSessionHost.Running, host.Get(session.Id).State);
+
+                gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done", Steps = 1 });
+                await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+                Assert.False(Assert.Single(ChatHistory.Read(session.Workspace, session.Id)).Streaming);
+            }
+            finally
+            {
+                ChatHistory.DefaultCheckpointInterval = previous;
+            }
+        }
+
+        [Fact]
+        public void A_crashed_blank_turn_reads_back_with_an_actionable_notice()
+        {
+            // 中途快照留下的「还在跑 + 正文为空」，重开会话时要能看出这一轮断在哪，而不是一条静默空白
+            ChatHistory.Write("C:/work", "crash1",
+                [new ChatEntry { User = "做一半", Assistant = "", Steps = 12, Streaming = true }]);
+            ChatHistory.Touch("C:/work", "crash1");
+
+            var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }));
+            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "crash1");
+
+            var turn = Assert.Single(session.Turns);
+            Assert.StartsWith(ServerNotice.Interrupted, turn.Assistant);
+            Assert.Contains("12", turn.Assistant);
+            Assert.False(turn.Streaming);
+        }
+
+        [Fact]
+        public void A_crashed_turn_with_partial_text_keeps_the_text_under_the_notice()
+        {
+            // 崩溃前已经产出了一部分正文：读回来要保留内容，但顶上标明「没跑完」，
+            // 这句以 ServerNotice.Interrupted 开头，拼上下文时会被剔掉（不当成模型说过的话）
+            ChatHistory.Write("C:/work", "crash2",
+                [new ChatEntry { User = "做一半", Assistant = "已改到一半", Steps = 7, Streaming = true }]);
+            ChatHistory.Touch("C:/work", "crash2");
+
+            var host = NewHost((request, ct) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }));
+            var session = host.Create("C:/work", "m", "", () => new AppSettings(), "crash2");
+
+            var turn = Assert.Single(session.Turns);
+            Assert.StartsWith(ServerNotice.Interrupted, turn.Assistant);
+            Assert.Contains("已改到一半", turn.Assistant);
+            Assert.True(ServerNotice.IsNotice(turn.Assistant));
+        }
+
         [Fact]
         public async Task Send_carries_attachments_and_image_model()
         {

@@ -107,9 +107,9 @@ namespace OpenLoop.Service.Worker
         }
 
         /// <summary>
-        /// agent 自动插入一条消息（协作监测汇报）：空闲直接开跑，运行中进队列并标记 Auto，
-        /// 界面据此用特殊底色区分用户敲的与 agent 塞的。已停止（暂停）的会话只排队，
-        /// 不因监测汇报自己动起来。
+        /// agent 自动插入一条消息（协作监测汇报）：空闲直接开跑，运行中插到队首并标记 Auto，
+        /// 当前轮在下一个 step 前收尾后先发它（汇报不该等整轮跑完）。界面据此用特殊底色区分
+        /// 用户敲的与 agent 塞的。已停止（暂停）的会话只排队，不因监测汇报自己动起来。
         /// </summary>
         public bool EnqueueAuto(string id, string text, string tag = "collab")
         {
@@ -119,9 +119,12 @@ namespace OpenLoop.Service.Worker
                 if (!_sessions.TryGetValue(id ?? "", out var session)) return false;
                 session.Revision++;
                 if (session.State == Running || session.Paused)
-                    session.Pending.Add(new PendingSend { Text = text, Tag = tag ?? "collab", Auto = true });
+                    session.Pending.Insert(0, new PendingSend
+                    {
+                        Text = text, Tag = tag ?? "collab", Auto = true, Immediate = true
+                    });
                 else
-                    Start(session, tag ?? "collab", text);
+                    Start(session, tag ?? "collab", text, noticeKind: tag ?? "collab");
             }
 
             Changed?.Invoke(id);

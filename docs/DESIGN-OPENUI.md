@@ -91,6 +91,7 @@ LoopApp(action, name?, js?, url?, dock?)
   eval    js        → 执行并回 JSON
   shot              → PNG 产物
   drain             → 取走页面攒下的事件（页面没走推送时的兜底）
+  close             → 隐藏页面 → 关独立窗口 → 收起「网页」标签（实例留着）
   undock / dock / interact(bool) / state / list
 ```
 
@@ -99,7 +100,7 @@ LoopApp(action, name?, js?, url?, dock?)
 宿主抽象：
 
 ```csharp
-public interface ILoopAppHost { Open; Eval; Shot; State; Undock; Dock; Interact; }   // 全部 async + ct
+public interface ILoopAppHost { Open; Eval; Shot; State; Close; Undock; Dock; Interact; }   // 全部 async + ct
 ```
 
 实现只有一份 `ShellLoopAppHost`：它把动作发到壳的 `MainForm.LoopApp*For(sessionId, ...)`。
@@ -108,6 +109,26 @@ public interface ILoopAppHost { Open; Eval; Shot; State; Undock; Dock; Interact;
 为什么不是直接调会话级实例 `LoopApp-<id>`：那个实例只在「网页」页建出来之后才存在，而 agent 的第一次 `open` 恰恰发生在页面还不存在的时候——先有实例才能建页，鸡生蛋。所以壳上多一层 `LoopApp*For`：按 id 找到会话 → 建页（`SessionView.ShowBrowser` 顺手接线）→ 转给那个会话自己的 `BrowserView`。`sessionId` 由工具构造时注入，不是模型参数（§9.2）。
 
 与 `CollabTools.For(host)` 同一模式，不新增架构概念。
+
+## 5.1 停靠还是独立窗口（按内容判定）
+
+右侧栏是竖版窄栏，只适合小表单/单列列表；把一张宽表塞进去只会挤成一条缝。所以 `open` 之后由壳决定放哪：
+
+- 导航完成（`NavigationCompleted`）时量一次 DOM：元素数、表格最大列数、宽块（`.grid.c3/.c4`、`table.wide`）、正文高度、横向溢出。
+- 任一条超阈值 → 搬进独立窗口；都没超 → 留在右侧栏。
+- `app.json` 的 `window: float|dock` 与 `size: [w,h]` 优先于实测：agent 明确要求就照办，关窗尺寸也用它。
+- 用户自己关掉独立窗口 = 他要停靠：本次 LoopApp 期间不再自动浮出（再 `open` 时重置）。
+
+阈值与判定收在 `OpenLoop.Service/OpenUI/LoopAppLayout.cs`（纯函数 + 单测 `LoopAppLayoutTests`），壳只负责量。改成"量不到内容就不弹窗"是有意的：`ui.ready` 可能晚于导航完成，宁可留在侧栏也不要莫名抢焦点。
+
+## 5.2 收尾与闲置回收
+
+任务做完（页面 `ui.submit` 过、这一轮收尾）不该继续占着侧栏：
+
+- 壳在会话轮收尾时看到「这一页交过数据」，就走收起：导航到 `about:blank` → 关掉独立窗口 → 摘掉「网页」标签。实例留着（不销毁），所以再 `open` 只是把标签插回去。
+- 收起的实例由 `BrowserView.Layout` 的计时器盯着：看不见（且不在独立窗口）超过限定分钟就 `IdleExpired` → 宿主走与右键「关闭网页」同一条路销毁。
+- 限定分钟数来自本工作区账本的 `limit.browser_idle`（默认 30，可配可演化；读不到就用默认，回收策略不该把界面带崩）。
+- `LoopApp(close)` 可以主动走同一条收起路径。
 
 ## 6. 迭代循环
 

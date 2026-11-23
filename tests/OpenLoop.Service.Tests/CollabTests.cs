@@ -98,22 +98,40 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
-        public async Task Auto_message_waits_in_queue_and_is_flagged()
+        public async Task Auto_message_jumps_the_queue_and_is_flagged()
         {
             var gate = new TaskCompletionSource<WorkerRunResult>();
-            var host = new WorkerSessionHost((request, ct) => gate.Task);
+            var texts = new List<string>();
+            var host = new WorkerSessionHost((request, ct) =>
+            {
+                lock (texts) texts.Add(request.Text);
+                return gate.Task;
+            });
             var session = host.Create("C:/work", "openrouter/free", "", () => new AppSettings());
 
             host.Send(session.Id, "task", "先跑一段");
             await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Running);
 
             Assert.True(host.EnqueueAuto(session.Id, "[协作监测] 有会话仍在进行"));
+            host.Send(session.Id, "task", "用户排队的");
+            // 队列里可能还有别的测试留下的「协作提示」，只看这两条的先后与标记
             var snapshot = host.Get(session.Id);
-            Assert.Equal(["[协作监测] 有会话仍在进行"], snapshot.Pending);
-            Assert.Equal([true], snapshot.PendingAuto);
+            int autoAt = snapshot.Pending.IndexOf("[协作监测] 有会话仍在进行");
+            int userAt = snapshot.Pending.IndexOf("用户排队的");
+            Assert.True(autoAt >= 0 && autoAt < userAt, "自动消息应排在用户排队消息之前");
+            Assert.True(snapshot.PendingAuto[autoAt]);
+            Assert.False(snapshot.PendingAuto[userAt]);
 
             gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
             await WaitAsync(() => host.Get(session.Id).Pending.Count == 0);
+            // 自动消息按「立即」入队：下一轮先发它，用户排队的后发
+            await WaitAsync(() => { lock (texts) return texts.Any(t => t.Contains("用户排队的")); });
+            lock (texts)
+            {
+                int auto = texts.FindIndex(t => t.Contains("[协作监测] 有会话仍在进行"));
+                int user = texts.FindIndex(t => t.Contains("用户排队的"));
+                Assert.True(auto >= 0 && auto < user, "自动消息应先于用户排队消息发出");
+            }
         }
     }
 }

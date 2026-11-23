@@ -106,6 +106,7 @@ namespace OpenLoop.Service.Tests
             public Task<string> UndockAsync(string o, CancellationToken c) => Task.FromResult("");
             public Task<string> DockAsync(string o, CancellationToken c) => Task.FromResult("");
             public Task<string> InteractAsync(string o, bool e, CancellationToken c) => Task.FromResult("");
+            public Task<string> CloseAsync(string o, CancellationToken c) => Task.FromResult("");
         }
         [Fact]
         public void List_does_not_create_the_directory()

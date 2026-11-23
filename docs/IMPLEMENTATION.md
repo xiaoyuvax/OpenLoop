@@ -418,7 +418,7 @@ public sealed class AgentPolicy
 
 - `Store\Records`：`FeatureRecord` / `FeatureRef` / `ActivationRecord` / `VerdictRecord` / `RunRecord`
 - `Store\Ledger`：append-only `.openloop/ledger.jsonl` + 一次写定的 `.openloop/defs/vN.json` + `eval\` 目录
-- `Store\FeatureCatalog`：12 条种子特征（9 护栏/阈值 + 3 规则），激活记录 → `AgentPolicy` / 规则文本
+- `Store\FeatureCatalog`：16 条种子特征（13 护栏/阈值 + 3 规则），激活记录 → `AgentPolicy` / 规则文本
 - `AgentPolicy` 从当前激活加载；**未出现在激活里的护栏默认关闭**——这就是"收窄"
 - 规则按激活顺序进 `SystemPromptBuilder` 的「经验规则」段
 - 每次运行写一条 `run` 证据（版本、结果、步数、成本、trace 指针）

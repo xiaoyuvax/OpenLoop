@@ -88,7 +88,21 @@ namespace OpenLoop.App
             var handler = SubmitHandler;
             if (handler == null) return OperationResult.Failure("这个浏览器没有绑定会话");
             string message = handler(text.Trim());
+            Submitted = true;
             return OperationResult.Success(message ?? "已提交", new { accepted = true });
+        }
+
+        /// <summary>
+        /// 页面提交过数据（LoopApp 的任务做完了）：宿主在本轮收尾时收起网页页。
+        /// 下一次 LoopAppOpen 会清掉它——新一轮任务又从这里开始。
+        /// </summary>
+        [PuppetIgnore] public bool Submitted { get; private set; }
+
+        /// <summary>新一轮任务开始（打开 LoopApp）：清掉上一轮的提交标记与「用户已停靠」的意愿。</summary>
+        private void ResetSubmitted()
+        {
+            Submitted = false;
+            _userDocked = false;
         }
 
         /// <summary>停止本会话当前轮。</summary>
@@ -114,6 +128,7 @@ namespace OpenLoop.App
                 return OperationResult.Failure($"还没有这个 LoopApp：{slug}");
 
             string url = $"https://{VirtualHost}/{slug}/index.html";
+            ResetSubmitted();
             if (!Navigate(url, out string error)) return OperationResult.Failure(error);
             // LoopApp 是给人点的：打开即解锁（普通网页仍按原语义锁着）
             SetInteract(true);

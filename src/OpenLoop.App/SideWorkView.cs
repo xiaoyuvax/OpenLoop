@@ -49,6 +49,13 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string Effort => _effort;
 
+        /// <summary>宿主注入：点通知回到旁路所属的会话页面（Worker/Loop 各自由自己的视图接上）。</summary>
+        internal Func<bool> ActivatePage { get; set; }
+
+        /// <summary>侧栏切到别的页时暂停渲染（旁路照常跑，数据照常写；切回来按最新数据重建）。
+        /// 与 SessionView / LoopView 的 SetActive 同一口径。</summary>
+        internal void SetActive(bool active) => _chat.SuspendRendering = !active;
+
         internal void Initialize(string workspace, Func<AppSettings> settings)
         {
             _workspace = workspace ?? "";
@@ -58,6 +65,9 @@ namespace OpenLoop.App
             _effort = current.ReasoningEffort ?? "";
             _lblStatus.Text = "只读 · 尚未运行";
             _chat.PlaceholderText = "在输入框里用 /btw <请求> 跑一个只读的旁路任务";
+            _chat.FlashInterval = SessionView.FlashIntervalMs(_workspace);   // 工具闪现区节拍（账本可演化）
+            // 侧栏默认不在「旁路」页：先暂停，摆到前台时由宿主 SetActive 恢复
+            _chat.SuspendRendering = !Visible;
             _chat.Bind(_book);
         }
 
@@ -364,7 +374,7 @@ namespace OpenLoop.App
                 AppLog.Error("旁路任务失败", ex);
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
-                turn.AssistantText = LoopView.FailedText(turn, ex.Message);
+                turn.AssistantText = LoopView.FailedText(ex.Message);
                 trace.Finish("error", turn.AssistantText);
                 _lblStatus.Text = "只读 · error";
                 Notify("旁路执行失败", ex.Message, error: true);
@@ -453,10 +463,17 @@ namespace OpenLoop.App
             if (form == null) return;
             title = Localization.Translate(title);
             text = Localization.Translate(text);
-            if (error)
-                AntdUI.Notification.error(form, title, text, AntdUI.TAlignFrom.TR, null, 5);
-            else
-                AntdUI.Notification.info(form, title, text, AntdUI.TAlignFrom.TR, null, 3);
+            // 与所属会话同一口径：留久一点，并给一键回到该会话的入口
+            var config = new AntdUI.Notification.Config(form, title, text,
+                error ? AntdUI.TType.Error : AntdUI.TType.Info, AntdUI.TAlignFrom.TR,
+                null, error ? 12 : 10);
+            if (ActivatePage != null)
+                config.Link = new AntdUI.Notification.ConfigLink("打开会话", () =>
+                {
+                    ActivatePage();
+                    return false;
+                });
+            AntdUI.Notification.open(config);
         }
     }
 }

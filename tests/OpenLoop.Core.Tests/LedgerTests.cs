@@ -31,12 +31,13 @@ public sealed class LedgerTests : IDisposable
         var ledger = NewLedger();
 
         Assert.True(File.Exists(ledger.LedgerPath));
-        Assert.Equal(13, ledger.Features().Count);
+        // 种子条数跟着 FeatureCatalog 走：新增默认特征（如 limit.checkpoint_interval）不该逼着改这里
+        Assert.Equal(FeatureCatalog.SeedFeatures().Count, ledger.Features().Count);
 
         var current = ledger.Current;
         Assert.NotNull(current);
         Assert.Equal(1, current.Version);
-        Assert.Equal(13, current.Features.Count);
+        Assert.Equal(FeatureCatalog.SeedFeatures().Count, current.Features.Count);
 
         var policy = FeatureCatalog.PolicyFrom(current, Map(ledger));
         Assert.True(policy.RepeatCallGuard);
@@ -46,6 +47,22 @@ public sealed class LedgerTests : IDisposable
         Assert.Equal(6000, policy.ToolResultLimit);
         Assert.Equal(8, policy.OutputTokenRatio);
         Assert.Equal(3, FeatureCatalog.RulesFrom(current, Map(ledger)).Count);
+        Assert.Equal(2, policy.MaxPromiseNudges);
+        Assert.Equal(10, policy.MaxPollRepeats);
+        Assert.Equal(20, policy.MaxPollTotal);
+        Assert.Equal(10, policy.BudgetExtendSteps);
+        Assert.Equal(3, policy.MaxBudgetExtensions);
+        Assert.Equal(AgentContext.KeepRecentMessages, policy.CompressKeepMessages);
+        Assert.Equal(AgentContext.KeepRecentTokens, policy.CompressKeepTokens);
+        Assert.Equal(2, policy.CompressRetries);
+        Assert.Equal(FeatureCatalog.DefaultDebugTurns,
+            FeatureCatalog.ValueOf(current, Map(ledger), FeatureCatalog.DebugTurns, 0));
+        Assert.Equal(FeatureCatalog.DefaultMentionTurns,
+            FeatureCatalog.ValueOf(current, Map(ledger), FeatureCatalog.MentionTurns, 0));
+        Assert.Equal(FeatureCatalog.DefaultBrowserIdleMinutes,
+            FeatureCatalog.ValueOf(current, Map(ledger), FeatureCatalog.BrowserIdle, 0));
+        Assert.Equal(FeatureCatalog.DefaultFlashInterval,
+            FeatureCatalog.ValueOf(current, Map(ledger), FeatureCatalog.FlashInterval, 0));
     }
 
     [Fact]
@@ -65,7 +82,8 @@ public sealed class LedgerTests : IDisposable
 
         var edited = ledger.AddRule("先读再写", "修改前先读文件，再写。");
         Assert.NotEqual(feature.Id, edited.Id);
-        Assert.Equal(15, ledger.Features().Count);
+        // 种子 + 两条新规则（首次与改过内容的那条；同文重复不新增）
+        Assert.Equal(FeatureCatalog.SeedFeatures().Count + 2, ledger.Features().Count);
     }
 
     [Fact]

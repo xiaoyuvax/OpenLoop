@@ -112,7 +112,8 @@ namespace OpenLoop.Service.Web
                         ? Media.Attachments.SaveFiles(current.Workspace, id, body.Paths, limit, out string attachmentError)
                         : Media.Attachments.Save(current.Workspace, id, body.Attachments, limit, out attachmentError);
                     if (saved == null) return Json(req, new { ok = false, error = attachmentError }, 400);
-                    return _host.Send(id, body.Tag, body.Text, body.Immediate, body.ImageModel, saved)
+                    return _host.Send(id, body.Tag, body.Text, body.Immediate, body.ImageModel, saved,
+                            body.Context)
                         ? Json(req, _host.Get(id))
                         : NotFound(req);
                 }
@@ -124,6 +125,17 @@ namespace OpenLoop.Service.Web
                         ? _host.SendNow(id, body.Index)
                         : _host.RemovePending(id, body.Index);
                     return ok ? Json(req, _host.Get(id)) : NotFound(req);
+                }
+                // 别的会话/壳推进来的自动提示（私信、Puppet 动作）：以仿用户消息入队，
+                // 界面折成一行、淡黄底；tag 决定折叠头的来源标签。
+                case "notice":
+                {
+                    var body = ReadBody<NoticeRequest>(req);
+                    if (body == null || string.IsNullOrWhiteSpace(body.Text))
+                        return Json(req, new { ok = false, error = "invalid body" }, 400);
+                    return _host.EnqueueAuto(id, body.Text, body.Tag ?? "mention")
+                        ? Json(req, _host.Get(id))
+                        : NotFound(req);
                 }
                 case "stop":
                     return _host.Stop(id) ? Json(req, _host.Get(id)) : NotFound(req);
@@ -144,7 +156,8 @@ namespace OpenLoop.Service.Web
                 }
                 case "compact":
                 {
-                    var compact = _host.Compact(id);
+                    // Wima 管道是同步的：压缩是真异步（不占线程），这里只能同步等它完成。
+                    var compact = _host.Compact(id).GetAwaiter().GetResult();
                     return compact == null ? NotFound(req) : Json(req, compact);
                 }
                 case "model":
@@ -231,6 +244,9 @@ namespace OpenLoop.Service.Web
             public string Text { get; set; }
             public string Tag { get; set; }
 
+            /// <summary>只给模型看的补充上下文（@ 引用的其他会话），不写进界面上的用户消息。</summary>
+            public string Context { get; set; }
+
             /// <summary>运行中为 true：打断本轮，收尾后先发这一条（Enter 的语义）。</summary>
             public bool Immediate { get; set; }
 
@@ -239,6 +255,12 @@ namespace OpenLoop.Service.Web
 
             /// <summary>壳已复制进工作区的附件路径（本机壳走这条，省掉 base64 与请求体上限）。</summary>
             public List<string> Paths { get; set; }
+        }
+
+        private sealed class NoticeRequest
+        {
+            public string Text { get; set; }
+            public string Tag { get; set; }
         }
 
         private sealed class PendingRequest

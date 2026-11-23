@@ -52,10 +52,12 @@ namespace OpenLoop.Core.Loop
             }
             sb.AppendLine();
 
-            sb.AppendLine("# 特征目录（id · 它解决什么问题）");
+            sb.AppendLine("# 特征目录（id · 它解决什么问题 · 可用参数）");
             foreach (var feature in features)
             {
                 sb.Append("- ").Append(feature.Id).Append(" · ").AppendLine(feature.Problem);
+                if (feature.Kind != "rule")
+                    sb.Append("  参数：").AppendLine(string.Join("、", CandidateValidator.AllowedKeys(feature.Id)));
                 if (feature.Kind == "rule" && feature.Payload.ValueKind == JsonValueKind.String)
                     sb.Append("  规则正文：").AppendLine(Trim(feature.Payload.GetString(), 400));
             }
@@ -91,7 +93,7 @@ namespace OpenLoop.Core.Loop
             sb.AppendLine("# 输出格式");
             sb.AppendLine("只输出一个 JSON 对象，不要解释：");
             sb.AppendLine("{\"note\":\"一句话说明这轮想改善什么\",\"features\":[{\"id\":\"...\",\"params\":{\"enabled\":true}}]}");
-            sb.AppendLine("参数只认：guard 特征 enabled（部分可加 max），limit 特征只有 value；规则不带 params。");
+            sb.AppendLine("参数只认特征目录里列出的键（limit 特征不一定叫 value）；规则不带 params。");
             sb.AppendLine("features 是**完整快照**：要启用的全部列出；没列出的即停用。");
             sb.AppendLine("一个都不改就等于没有候选，这轮什么也不会发生。");
             return sb.ToString();

@@ -52,6 +52,15 @@ namespace OpenLoop.Core.Agent
         /// </summary>
         public double OutputTokenRatio { get; set; } = 8;
 
+        /// <summary>压缩时保留最近的条数：留多少条原文给模型。</summary>
+        public int CompressKeepMessages { get; set; } = AgentContext.KeepRecentMessages;
+
+        /// <summary>压缩时尾部保留的估算 token 预算（还要按窗口大小钳制，见 TailTokenBudget）。</summary>
+        public int CompressKeepTokens { get; set; } = AgentContext.KeepRecentTokens;
+
+        /// <summary>服务端报上下文超限后「压缩再试」的次数；0 表示不重试。</summary>
+        public int CompressRetries { get; set; } = 2;
+
         /// <summary>按上下文窗口算出单次任务的输出 token 预算；&lt;=0 表示不限。</summary>
         public int OutputTokenBudgetFor(int contextLimit)
         {

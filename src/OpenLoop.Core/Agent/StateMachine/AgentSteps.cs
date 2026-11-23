@@ -33,8 +33,20 @@ namespace OpenLoop.Core.Agent
             if (before < context.ContextLimit * context.Policy.CompressAt)
                 return AgentStepResult.Pass;
 
-            var compressed = await CompressAsync(state.Messages, context.Reasoner, ct,
-                AgentContext.TailTokenBudget(context.ContextLimit));
+            List<LlmMessage> compressed;
+            try
+            {
+                compressed = await CompressAsync(state.Messages, context.Reasoner, ct,
+                    AgentContext.TailTokenBudget(context.ContextLimit, context.Policy.CompressKeepTokens),
+                    context.Policy.CompressKeepMessages);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch
+            {
+                // 自动压缩失败不拦路：按「压不动」处理，让推理拿原始上下文继续；
+                // 真要溢出会在 InferenceStep 的溢出处理里把原始接口错误交给用户。
+                compressed = null;
+            }
 
             // 尾部（最近几条）自己就超过阈值时，压缩只会把中间换成「摘要的摘要」、长度不再下降；
             // 没有这道闸，RunAsync 会一直重入本步，每圈打一次模型，永不结束。
@@ -45,27 +57,23 @@ namespace OpenLoop.Core.Agent
             return AgentStepResult.Continue(new ReplaceMessagesEffect(compressed));
         }
 
-        /// <summary>把中间消息换成模型摘要（自动压缩与手动 /compact 共用）；没有可压缩的中间段返回 null。</summary>
+        /// <summary>
+        /// 把中间消息换成模型摘要（自动压缩与手动 /compact 共用）；没有可压缩的中间段返回 null。
+        /// 摘要调用失败向上抛：手动 /compact 要把真实原因给用户（之前一律吞掉、被误报成「上下文太短」）；
+        /// 自动压缩调用方各自兜底（压缩步失败按「压不动」跳过，溢出重试失败保留原始溢出错误）。
+        /// </summary>
         public static async Task<List<LlmMessage>> CompressAsync(
-            IReadOnlyList<LlmMessage> messages, IReasoner reasoner, CancellationToken ct, int tailTokens = 0)
+            IReadOnlyList<LlmMessage> messages, IReasoner reasoner, CancellationToken ct,
+            int tailTokens = 0, int keepMessages = 0)
         {
             var (head, middle, tail) = AgentContext.SplitForCompression(
-                messages, AgentContext.KeepRecentMessages,
+                messages, keepMessages > 0 ? keepMessages : AgentContext.KeepRecentMessages,
                 tailTokens > 0 ? tailTokens : AgentContext.KeepRecentTokens);
             if (middle.Count == 0) return null;
 
-            string summary;
-            try
-            {
-                var completion = await reasoner.CompleteAsync(
-                    [new LlmMessage("user", AgentContext.SummaryInstruction + AgentContext.RenderForSummary(middle))], ct);
-                summary = completion?.Content?.Trim();
-            }
-            catch
-            {
-                return null;
-            }
-
+            var completion = await reasoner.CompleteAsync(
+                [new LlmMessage("user", AgentContext.SummaryInstruction + AgentContext.RenderForSummary(middle))], ct);
+            string summary = completion?.Content?.Trim();
             if (string.IsNullOrWhiteSpace(summary)) return null;
 
             var rebuilt = new List<LlmMessage>(head)
@@ -79,8 +87,6 @@ namespace OpenLoop.Core.Agent
 
     internal sealed class InferenceStep : IAgentStep
     {
-        private const int MaxContextOverflowRetries = 2;
-
         public string Name => "inference";
 
         public async Task<AgentStepResult> RunAsync(
@@ -122,14 +128,24 @@ namespace OpenLoop.Core.Agent
                     ? await streaming.StreamAsync(state.Messages, context.OnDelta, ct, context.OnReasoning, context.OnRestart)
                     : await context.Reasoner.CompleteAsync(state.Messages, ct);
             }
-            catch (Exception ex) when (state.ContextOverflows < MaxContextOverflowRetries
+            catch (Exception ex) when (state.ContextOverflows < context.Policy.CompressRetries
                                        && AgentContext.IsContextOverflow(ex.Message))
             {
                 // 服务端真实上限可能低于配置值：按报错压缩一次再重试，不要直接判任务失败。
                 state.ContextOverflows++;
                 context.OnRestart?.Invoke();
-                var compressed = await CompressionStep.CompressAsync(state.Messages, context.Reasoner, ct,
-                    AgentContext.TailTokenBudget(context.ContextLimit));
+                List<LlmMessage> compressed;
+                try
+                {
+                    compressed = await CompressionStep.CompressAsync(state.Messages, context.Reasoner, ct,
+                        AgentContext.TailTokenBudget(context.ContextLimit, context.Policy.CompressKeepTokens),
+                        context.Policy.CompressKeepMessages);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch
+                {
+                    compressed = null; // 摘要通道自身失败：把原始的上下文溢出错误交出去，别让它顶替根因
+                }
                 if (compressed == null) throw;
                 state.Result.Guards.Compressions++;
                 return AgentStepResult.Continue(new ReplaceMessagesEffect(compressed));

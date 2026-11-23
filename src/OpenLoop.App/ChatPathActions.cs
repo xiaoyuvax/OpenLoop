@@ -37,6 +37,10 @@ namespace OpenLoop.App
             Shell(owner, full, "打开文件");
         }
 
+        /// <summary>用资源管理器打开一个目录（不存在时提示并问是否复制路径）。</summary>
+        internal static void OpenFolder(IWin32Window owner, string folder)
+            => HandleClick(owner, folder, folder);
+
         private static string Resolve(string target, string workspace)
         {
             try

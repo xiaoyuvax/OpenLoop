@@ -151,6 +151,9 @@ namespace OpenLoop.App
                     if (IsDisposed) return;
                     _host.Controls.Add(_web);
                     _web.Dock = DockStyle.Fill;
+                    // 用户自己关窗 = 他要停靠：本次 LoopApp 期间不再按内容自动浮出去
+                    _userDocked = true;
+                    _autoUndocked = false;
                 };
                 _undocked = form;
                 form.Show();
@@ -177,6 +180,7 @@ namespace OpenLoop.App
                     ApplyVirtualHost();
                 _web.CoreWebView2.Navigate(target);
                 _txtUrl.Text = target;
+                Touch();
                 return new CallResult(true, target, null);
             }
             catch (Exception ex)
@@ -193,6 +197,7 @@ namespace OpenLoop.App
             {
                 var task = _web.CoreWebView2.ExecuteScriptAsync(script);
                 if (!Pump(task)) return new CallResult(false, null, "执行脚本超时");
+                Touch();
                 return new CallResult(true, task.Result, null);
             }
             catch (Exception ex)
@@ -213,6 +218,7 @@ namespace OpenLoop.App
                         CoreWebView2CapturePreviewImageFormat.Png, stream);
                     if (!Pump(task)) return new CallResult(false, null, "截图超时");
                 }
+                Touch();
                 return new CallResult(true, Convert.ToBase64String(File.ReadAllBytes(file)), null);
             }
             catch (Exception ex)
@@ -244,6 +250,7 @@ namespace OpenLoop.App
 
                 var core = _web.CoreWebView2;
                 core.SourceChanged += (s, e) => _txtUrl.Text = core.Source;
+                core.NavigationCompleted += (s, e) => OnNavigationCompleted();
                 // 站内 target=_blank 一律在本面板打开，免得弹出没有归属的窗口
                 core.NewWindowRequested += (s, e) =>
                 {

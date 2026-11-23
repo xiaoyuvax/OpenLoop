@@ -113,7 +113,7 @@ namespace OpenLoop.App
             return sb.ToString();
         }
 
-        /// <summary>agent 自动插入的一行：特殊底色 + 「自动」标签，没有操作按钮。</summary>
+        /// <summary>agent 自动插入的一行：特殊底色 + 自动图标，没有操作按钮。</summary>
         private Control CreateNoteRow(string text)
         {
             var row = new TableLayoutPanel
@@ -129,15 +129,7 @@ namespace OpenLoop.App
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             row.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            var tag = new AntdUI.Label
-            {
-                Text = "自动",
-                ForeColor = UiStyle.Accent,
-                Font = new Font("Segoe UI", 8F),
-                AutoSize = true,
-                Margin = new Padding(0, 0, Dip(6), 0),
-                TextAlign = ContentAlignment.MiddleLeft
-            };
+            var tag = AutoIcon();
 
             string line = (text ?? "").Replace("\r", " ").Replace("\n", " ");
             var label = new AntdUI.Label
@@ -195,18 +187,8 @@ namespace OpenLoop.App
                 ? "立即：插到下一步（当前轮在下一个 step 前收尾）"
                 : "等本轮：等这一轮返回（Ctrl+Enter 发送）");
 
-            // 自动插入的条目没有「立即/等本轮」的选择：位置上放「自动」标签，说明这条不是用户敲的
-            Control lead = item.Auto
-                ? new AntdUI.Label
-                {
-                    Text = "自动",
-                    ForeColor = UiStyle.Accent,
-                    Font = new Font("Segoe UI", 8F),
-                    AutoSize = true,
-                    Margin = new Padding(0, 0, Dip(6), 0),
-                    TextAlign = ContentAlignment.MiddleLeft
-                }
-                : mode;
+            // 自动插入的条目没有「立即/等本轮」的选择：位置上放自动图标，说明这条不是用户敲的
+            Control lead = item.Auto ? AutoIcon() : mode;
 
             string line = item.Text.Length > 0 ? item.Text : "📎 附件";
             var text = new AntdUI.Label
@@ -232,16 +214,21 @@ namespace OpenLoop.App
                 Margin = new Padding(0)
             };
 
-            var now = RowButton("立即", primary: item.Immediate);
             var remove = RowButton("删除");
             var edit = RowButton("编辑");
 
-            now.Click += (_, _) =>
+            // 自动插入的已经是「立即」，不给切换按钮（与 Web 一致）
+            if (!item.Auto)
             {
-                if (_queue?.Toggle(item) == null) return;
-                Sync();
-                ImmediateRequested?.Invoke(item);
-            };
+                var now = RowButton("立即", primary: item.Immediate);
+                now.Click += (_, _) =>
+                {
+                    if (_queue?.Toggle(item) == null) return;
+                    Sync();
+                    ImmediateRequested?.Invoke(item);
+                };
+                actions.Controls.Add(now);
+            }
             remove.Click += (_, _) =>
             {
                 if (_queue?.Remove(item) != true) return;
@@ -250,7 +237,6 @@ namespace OpenLoop.App
             };
             edit.Click += (_, _) => EditRequested?.Invoke(item);
 
-            actions.Controls.Add(now);
             actions.Controls.Add(remove);
             actions.Controls.Add(edit);
 
@@ -258,6 +244,24 @@ namespace OpenLoop.App
             row.Controls.Add(text, 1, 0);
             row.Controls.Add(actions, 2, 0);
             return row;
+        }
+
+        /// <summary>自动插入消息的图标：与「立即/等本轮」的图标同一尺寸，左侧对齐。</summary>
+        private AntdUI.Button AutoIcon()
+        {
+            var icon = new AntdUI.Button
+            {
+                IconSvg = UiIcons.Of(UiIcons.Auto, UiStyle.Accent),
+                Ghost = true,
+                Type = AntdUI.TTypeMini.Default,
+                TabStop = false,
+                Radius = 6,
+                Width = Dip(26),
+                Height = Dip(22),
+                Margin = new Padding(0, 0, Dip(6), 0)
+            };
+            _tips.SetToolTip(icon, "自动：agent 插入（立即发送）");
+            return icon;
         }
 
         private AntdUI.Button RowButton(string text, bool primary = false)

@@ -368,6 +368,9 @@
   <data name="ReportsEmpty" xml:space="preserve">
     <value>还没有评估报告。跑一轮演进后生成。</value>
   </data>
+  <data name="OpenWorkspace" xml:space="preserve">
+    <value>打开工作区</value>
+  </data>
   <data name="OpenFolder" xml:space="preserve">
     <value>打开报告目录</value>
   </data>

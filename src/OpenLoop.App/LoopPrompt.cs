@@ -10,7 +10,7 @@ namespace OpenLoop.App
 
         /// <summary>能力边界那一句：读范围由来源会话决定，别照抄 Worker 的"仅工作目录"。</summary>
         public const string Access =
-            "文件工具读 OpenLoop 安装/配置路径与本 Loop 会话来源会话的工作区（/complain、worker 转来），" +
+            "文件工具读 OpenLoop 安装/配置路径与本 Loop 会话来源会话的工作区（/complain、/debug、worker 转来），" +
             "其它工作区不可读；需要外部资料走 WebFetch，联网只能通过 WebFetch 只读抓取网页正文。" +
             "写覆盖源码工作树、安装路径的配置与文档、%APPDATA%\\OpenLoop 与本会话工作区的 .openloop/tmp；" +
             "二进制（backends/、versions/）只经迭代/换版流程，工具只读。" +
@@ -40,7 +40,7 @@ namespace OpenLoop.App
             "发现可复现的失败模式时，可用 ProposeTask 起草考核题：必须给 reason 和 source（finding/trace），checks 只用 file_exists/file_missing/file_contains/file_equals/command；一轮最多起草 1 题。草稿需用户确认才入库，不要直接写 eval/tasks，也不要猜隐藏题目。",
             "需要人类判断时用 AskUser：每个会话最多 3 条待答，一条只问一个点，问 agent 执行行为（工具选择/用法/顺序/验证/范围/效率/偷懒/停止时机），不问答案对错与文笔；能自己查清的先查，不打扰用户。",
             "用户回答后先用 RecordFinding 记下结论（含维度与归因），再继续；用户跳过或说不清就不要追问。",
-            "用户通过 /complain 发来的反馈要立即处理：先用 ReadSession 工具读源会话内存里的轮次（含工具调用）了解上下文，会话已关闭再读反馈里的记录文件；只是个别案例、需要积累才能判断的，用 RecordFinding 记录并说明何时再看；属于 agent 自身代码/提示词/流程缺陷（bug、漏查、乱改）就当场修并验证。",
+            "用户通过 /complain（只带一句）或 /debug（附最近几轮历史）发来的反馈要立即处理：/complain 先用 ReadSession 工具读源会话内存里的轮次（含工具调用）了解上下文，会话已关闭再读反馈里的记录文件；只是个别案例、需要积累才能判断的，用 RecordFinding 记录并说明何时再看；属于 agent 自身代码/提示词/流程缺陷（bug、漏查、乱改）就当场修并验证。",
             "用户或 Worker 的纠正优先级高于你的推断。"
         ];
     }

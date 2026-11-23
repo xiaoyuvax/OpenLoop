@@ -40,6 +40,9 @@ namespace OpenLoop.Service.OpenUI
         public Task<string> InteractAsync(string owner, bool enabled, CancellationToken ct)
             => CallAsync("LoopAppInteractFor", ct, _owner, enabled ? "true" : "false");
 
+        public Task<string> CloseAsync(string owner, CancellationToken ct)
+            => CallAsync("LoopAppCloseFor", ct, _owner);
+
         /// <summary>会话级实例名（页面直接调的 <c>LoopApp-&lt;owner&gt;</c>）；这里保留给状态核对用。</summary>
         public static string InstanceName(string owner)
             => "LoopApp-" + (string.IsNullOrWhiteSpace(owner) ? "unknown" : owner.Trim());

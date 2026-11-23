@@ -46,6 +46,9 @@ namespace OpenLoop.App
         // 上下文占比的实时估算：本轮请求的 prompt + 已生成内容（按增量累加）
         private int _promptTokens, _liveTokens;
         private bool _running;
+
+        /// <summary>上一次自动总结标题时的轮数：会话结束时只在首轮之后又聊过才再更新一次。</summary>
+        private int _titleTurnCount;
         private bool _filling;
         private bool _fillingProviders;
         private bool _iterating;
@@ -53,6 +56,13 @@ namespace OpenLoop.App
         private bool _hasChanges;
         private bool _hasRollback;
         private bool _layoutReady;
+        private DateTime _lastCheckpointUtc;
+
+        /// <summary>落盘队列：中途快照与收尾保存串行写，保证最后落盘的是最新那份。</summary>
+        private Task _chatWrite = Task.CompletedTask;
+
+        /// <summary>中途快照的节流间隔（账本 limit.checkpoint_interval，开轮时读一次；与 Worker 同源）。</summary>
+        private TimeSpan _checkpointEvery = OpenLoop.Service.Storage.ChatHistory.DefaultCheckpointInterval;
 
         /// <summary>「文件」页在侧栏标签里的下标；第一次点文件路径时才加出来（-1 = 还没有）。</summary>
         private int _filePage = -1;
@@ -121,10 +131,21 @@ namespace OpenLoop.App
             UpdateSideVisibility(index);
         }
 
-        private const int BrowserPage = 2;
+        /// <summary>只有选中的标签页持续渲染：切走暂停（Loop 轮照常写数据，切回滚到底再按最新数据重建）。
+        /// 与 Worker 的 SessionView.SetActive 同一口径。</summary>
+        internal void SetActive(bool active) => _chat.SuspendRendering = !active;
+
+        private const int BrowserPage = 3;
+
+        /// <summary>「Puppet」页在侧栏标签里的固定下标（Action 清单，/puppet 打开）。</summary>
+        private const int PuppetPage = 2;
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public BrowserView Browser => _browser;
+
+        /// <summary>「网页」页现在是不是摆在侧栏里（收起后实例还在，但标签摘了）。</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool BrowserVisible => _browser != null && !_browserTabHidden;
 
         /// <summary>展开右侧栏并切到「网页」页（Agent 用内嵌浏览器时的入口）；页被关掉时重新建。</summary>
         public void ShowBrowser()
@@ -138,6 +159,13 @@ namespace OpenLoop.App
                 _sideTabs.Items.Insert(BrowserPage, new AntdUI.SegmentedItem { Text = "网页" });
                 if (_filePage >= BrowserPage) _filePage++;
             }
+            else if (_browserTabHidden)
+            {
+                // 收起来过：实例还在，把标签插回原位就是（不重建 WebView2）
+                _sideTabs.Items.Insert(BrowserPage, new AntdUI.SegmentedItem { Text = "网页" });
+                if (_filePage >= BrowserPage) _filePage++;
+                _browserTabHidden = false;
+            }
             ShowSidePage(BrowserPage);
         }
 
@@ -146,12 +174,14 @@ namespace OpenLoop.App
         {
             if (_browser == null) return;
             int selected = _sideTabs.SelectIndex;
-            _sideTabs.Items.RemoveAt(BrowserPage);
+            // 标签已经被收起（实例还留着）时不再摘一次，否则删掉的是别人
+            if (_sideTabs.Items.Count > BrowserPage) _sideTabs.Items.RemoveAt(BrowserPage);
             if (_filePage > BrowserPage) _filePage--;
             var browser = _browser;
             _browser = null;
             _sideHost.Controls.Remove(browser);
             browser.Dispose();
+            _browserTabHidden = false;
             // 关掉的不是当前页就停在原页（下标可能前移一位）
             ShowSidePage(selected == BrowserPage ? 0 : Math.Max(0, selected > BrowserPage ? selected - 1 : selected));
         }
@@ -234,6 +264,9 @@ namespace OpenLoop.App
         internal SessionState State { get; private set; }
 
         internal IReadOnlyList<ChatTurn> Turns => _book.Turns;
+
+        /// <summary>平铺视图只读最新一轮用；与会话的 Session.Book 同形。</summary>
+        internal ChatTurnBook Book => _book;
 
         /// <summary>
         /// 后台线程（协作监测）读轮次用：切回界面线程拍一份快照，避免与界面的增删撞车。
@@ -318,15 +351,27 @@ namespace OpenLoop.App
             {
                 if (_chkSelect.Checked != _chat.ShowSelection) _chkSelect.Checked = _chat.ShowSelection;
             };
+            _chat.FlashInterval = SessionView.FlashIntervalMs(_workspace);   // 工具闪现区节拍（账本可演化）
             _chat.Bind(_book);
             _tips.SetToolTip(_btnSummary, "用当前模型重新总结会话标题");
             string savedTitle = LoopIndex.Title(_workspace, _sessionId);
             // 标题格式与 Worker 对齐（工作区文件夹名 · 内容简述），Loop 身份靠页头图标与颜色
             _lblTitle.Text = Session.ComposeTitle(_workspace, savedTitle);
+            // 已有标题（历史）：末次更新只在这次之后又聊过才做
+            if (!string.IsNullOrWhiteSpace(savedTitle)) _titleTurnCount = _book.Turns.Count;
             _chat.ScrollToEnd();
 
             _lblStatus.TextChanged += (_, _) => ApplyDetail();
             _sideBtw.Initialize(_workspace, settings);
+            // Puppet Action 清单页：双击一行把「/puppet <action> 」填回输入框
+            _puppetView.CommandRequested += command =>
+            {
+                _txtInput.Text = command;
+                _txtInput.SelectionStart = _txtInput.Text.Length;
+                _txtInput.Focus();
+            };
+            _puppetView.Initialize();
+            _sideBtw.ActivatePage = () => ActivatePage?.Invoke() ?? false;
             ApplyDetail();
             UpdateSendButton();
             _ = RefreshRepoActionsAsync();
@@ -347,32 +392,48 @@ namespace OpenLoop.App
             var turns = _book.Turns;
             if (turns.Count == 0) return;
 
-            string model = _model?.Trim() ?? "";
-            var (baseUrl, _) = _settings().EndpointFor(model);
-            if (baseUrl?.Trim().Length == 0 || model.Length == 0) return;
-
-            var messages = new List<LlmMessage>
-            {
-                new("system", "你给对话起标题。只输出标题本身：不超过 12 个汉字，不加引号、不加句号、不解释。"),
-                new("user", SessionView.TitleInput(turns))
-            };
+            string previous = LoopIndex.Title(_workspace, _sessionId);
             try
             {
-                var reasoner = Reasoners.Create(_settings(), model, "", _workspace);
-                var completion = await reasoner.CompleteAsync(messages, CancellationToken.None);
-                string title = SessionView.CleanTitle(completion?.Content);
+                string title = await SessionView.AskTitleAsync(_settings(), _workspace, _model,
+                    SessionView.TitleInput(turns), CancellationToken.None);
                 if (title.Length == 0) return;
-                bool same = string.Equals(LoopIndex.Title(_workspace, _sessionId), title, StringComparison.Ordinal);
+                _titleTurnCount = turns.Count;
                 LoopIndex.Rename(_workspace, _sessionId, title);
                 _lblTitle.Text = Session.ComposeTitle(_workspace, title);
                 TitleChanged?.Invoke(_lblTitle.Text);
-                if (notify) Notify(same ? "标题未变化" : "标题已更新", _lblTitle.Text);
+                if (notify) Notify(string.Equals(previous, title, StringComparison.Ordinal) ? "标题未变化" : "标题已更新", _lblTitle.Text);
             }
             catch (Exception ex)
             {
                 AppLog.Warn("生成 Loop 标题失败：" + ex.Message);
                 if (notify) Notify("总结失败", ex.Message, error: true);
             }
+        }
+
+        /// <summary>
+        /// 会话结束时的末次标题：整段对话再总结一次（自动更新只发生在首轮与这里）；没活可干返回 null。
+        /// 只写 loops.json、不碰控件——关窗流程会在后台线程上等它。
+        /// </summary>
+        internal Task TryFinalizeTitleAsync()
+        {
+            if (_book.Turns.Count <= _titleTurnCount) return null;
+            string workspace = _workspace, sessionId = _sessionId, model = _model;
+            string input = SessionView.TitleInput(_book.Turns);
+            var settings = _settings;
+            return Task.Run(async () =>
+            {
+                try
+                {
+                    string title = await SessionView.AskTitleAsync(settings(), workspace, model, input,
+                        CancellationToken.None);
+                    if (title.Length > 0) LoopIndex.Rename(workspace, sessionId, title);
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warn("会话结束时总结 Loop 标题失败：" + ex.Message);
+                }
+            });
         }
 
         public void SetModel(string model)
@@ -456,6 +517,9 @@ namespace OpenLoop.App
         internal bool Running => _running;
         internal string Title => LoopIndex.Title(_workspace, _sessionId);
 
+        /// <summary>宿主注入：点会话通知回到本 Loop 会话的页面（页签已关掉就重新挂上）。</summary>
+        internal Func<bool> ActivatePage { get; set; }
+
         /// <summary>协作会话的打开方式（宿主注入）：同工作区新起一个 Loop 会话并返回视图。</summary>
         internal Func<CollabTask, LoopView> CollabOpen { get; set; }
 
@@ -468,22 +532,24 @@ namespace OpenLoop.App
 
         /// <summary>
         /// agent 自动插入一条消息（协作监测汇报）：与 Worker 侧 EnqueueAuto 同语义——
-        /// 进本会话队列并标 Auto，队列栏用特殊底色区分；已停止（暂停）时只排队，不自己动起来。
+        /// 以「立即」进本会话队列并标 Auto，运行中让当前轮在下一个 step 前收尾后先发它；
+        /// 队列栏用特殊底色区分；已停止（暂停）时只排队，不自己动起来。
         /// 监测循环在线程池线程上跑，这里负责切回界面线程。
         /// </summary>
-        internal void EnqueueAuto(string text)
+        internal void EnqueueAuto(string text, string kind = "collab")
         {
             if (string.IsNullOrWhiteSpace(text) || IsDisposed) return;
             if (InvokeRequired)
             {
-                try { BeginInvoke(new Action(() => EnqueueAuto(text))); }
+                try { BeginInvoke(new Action(() => EnqueueAuto(text, kind))); }
                 catch (InvalidOperationException) { }
                 return;
             }
 
-            _queue.Add(text, "collab", PendingMode.AfterTurn, auto: true);
+            _queue.Add(text, kind ?? "collab", PendingMode.NextStep, auto: true);
             _pending.Sync();
-            DrainQueue();
+            if (_running) SyncInterrupt();
+            else DrainQueue();
         }
 
         /// <summary>当前轮结束后调用：优先「立即」，其次按入队顺序。</summary>
@@ -497,6 +563,9 @@ namespace OpenLoop.App
             string merged = batch.Count == 1
                 ? batch[0].Text
                 : string.Join("\n\n", batch.Select((b, i) => $"{i + 1}. {b.Text}"));
+            // 整批都是 agent 自动塞的（协作提示 / 私信 / Puppet 动作）：记下来，界面上折成一行、淡黄底
+            _noticeBatch = batch.All(b => b.Auto);
+            _noticeKind = _noticeBatch ? batch[0].Tag : null;
             var files = batch.SelectMany(b => b.Attachments ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             SendAsync(merged, files.Count > 0 ? files : null);
         }
@@ -519,7 +588,20 @@ namespace OpenLoop.App
             _sideBtw.Shutdown();
             CloseBrowserPage();
             SaveLoopChat();
+            // 最后那份写盘在后台：等它落地再返回，否则关窗/删除会把刚写的文件丢掉或复活已删的会话
+            _chatWrite.Wait(TimeSpan.FromSeconds(5));
         }
+
+        /// <summary>崩溃兜底：不管节流间隔，立刻把当前轮次落一次并等写盘落地（异常退出路径调用）。</summary>
+        internal void FlushNow()
+        {
+            if (_book.Turns.Count == 0) return;
+            SaveLoopChat();
+            _chatWrite.Wait(TimeSpan.FromSeconds(3));
+        }
+
+        /// <summary>留言板身份（I-会话id）：壳按它把别的会话的私信投进本会话队列。</summary>
+        internal string BoardIdValue => BoardId();
 
         /// <summary>留言板身份与 Worker 一致（A-会话id / I-会话id）：去掉 "loop-" 前缀；老的单例会话 id 是固定的 "loop"，用工作区散列区分。</summary>
         private string BoardId()
@@ -549,12 +631,36 @@ namespace OpenLoop.App
             // 一句都没聊过：关窗不该把空会话留在列表里
             if (_book.Turns.Count == 0)
             {
+                _chatWrite.Wait(TimeSpan.FromSeconds(3));
                 ChatStore.Delete(_workspace, _sessionId);
                 LoopIndex.Remove(_workspace, _sessionId);
                 return;
             }
-            ChatStore.Save(_workspace, _book.Turns, _sessionId, _model, _effort);
-            LoopIndex.Touch(_workspace, _sessionId, _book.Turns.LastOrDefault()?.ToolStepCount);
+            _lastCheckpointUtc = DateTime.UtcNow;
+            // 序列化在 UI 线程拍快照（流式字段不会在写盘途中被界面改掉），文件 IO 交给后台——
+            // 与 Worker 的 Persist（跑在 A 的后台线程）同一口径，几十 MB 的历史不该卡住界面。
+            var entries = ChatStore.Entries(_book.Turns, _model, _effort);
+            // 步数取「上一轮」与「正在跑的这轮」的较大者，与 Worker 的 Persist 同口径
+            int steps = Math.Max(_book.Turns.LastOrDefault()?.ToolStepCount ?? 0,
+                _book.Turns.Count > 1 ? _book.Turns[^2].ToolStepCount : 0);
+            string workspace = _workspace, sessionId = _sessionId;
+            // 索引文件很小，留在 UI 线程写（它没有跨线程锁，别和界面的改名/删除抢读-改-写）
+            LoopIndex.Touch(workspace, sessionId, steps);
+            _chatWrite = _chatWrite.ContinueWith(_ =>
+                OpenLoop.Service.Storage.ChatHistory.Write(workspace, sessionId, entries),
+                CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        }
+
+        /// <summary>
+        /// 流式期间的中途快照：整轮要跑十几二十分钟，只在收尾落盘的话中途崩溃就整段丢失。
+        /// 节流间隔与 Worker 同源（账本 limit.checkpoint_interval，开轮时读一次）：
+        /// 对话文件可能几十 MB，每一步都写会拖慢界面。
+        /// </summary>
+        private void CheckpointLoopChat()
+        {
+            if (_book.Turns.Count == 0) return;
+            if (DateTime.UtcNow - _lastCheckpointUtc < _checkpointEvery) return;
+            SaveLoopChat();
         }
 
         private void OnViewLoad(object sender, EventArgs e)
@@ -581,6 +687,10 @@ namespace OpenLoop.App
             bool fromComposer = files == null;
             var pendingFiles = (files ?? _attachments).ToList();
             if (text.Length == 0 && pendingFiles.Count == 0) return;
+            bool notice = _noticeBatch;
+            string noticeKind = _noticeKind;
+            _noticeBatch = false;
+            _noticeKind = null;
             if (!Directory.Exists(_workspace))
             {
                 Notify("项目不可用", "工作区目录不存在：" + _workspace, error: true);
@@ -616,7 +726,7 @@ namespace OpenLoop.App
             }
 
             // 本会话在留言板上的身份（I-会话id）：提示词、技能与 Puppet 工具都靠它识别自己。
-            using var identity = AgentIdentity.Begin(BoardId(), "a");
+            using var identity = AgentIdentity.Begin(BoardId(), "a", _workspace);
             OpenLoop.Service.Web.SessionBoard.Opening(
                 agentId: BoardId(), role: "Loop",
                 workspace: _workspace, model: model, task: text, remote: true);
@@ -629,10 +739,16 @@ namespace OpenLoop.App
             {
                 User = new ChatMessage("user", text),
                 Assistant = new ChatMessage("assistant", ""),
+                Notice = notice,
+                NoticeKind = noticeKind ?? "",
                 Streaming = true,
                 ThinkingExpanded = _settings().ThinkingExpandedByDefault
             };
             _book.AddTurn(turn);
+            // 先把用户这条请求落盘（与 Worker 侧开轮即 Persist 同一口径）：整轮要跑十几二十分钟，
+            // 中途崩溃时历史里至少留得下这条需求；节流间隔开轮时从账本读一次
+            _checkpointEvery = OpenLoop.Service.Storage.ChatHistory.CheckpointIntervalOf(_workspace);
+            SaveLoopChat();
             if (fromInput) _txtInput.Clear();
             _queue.Paused = false;   // 用户又发了一条：停止留下的暂停到此为止，本轮收尾后队列照常续发
             SetRunning(true);
@@ -706,7 +822,7 @@ namespace OpenLoop.App
                 AppLog.Error("Loop 准备失败", ex);
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
-                turn.AssistantText = FailedText(turn, ex.Message);
+                turn.AssistantText = FailedText(ex.Message);
                 _cts?.Dispose();
                 _cts = null;
                 SetRunning(false);
@@ -822,6 +938,7 @@ namespace OpenLoop.App
                         lock (timeline) SyncPhases(turn, timeline);
                         turn.ToolsFinished();
                         RefreshChat();
+                        CheckpointLoopChat();
                     });
                     trace.Step(step);
                     string note = step.DisplayLine.Replace(" >> ", "");
@@ -860,11 +977,14 @@ namespace OpenLoop.App
 
             _interrupt = false;
             string outcome = "error";
+            // @ 引用的会话上下文只进模型输入：界面上用户那条消息保持原样（@标题）
+            string context = MentionPicker.Context(text, MentionTargets(), SessionView.MentionTurns(_workspace));
+            string prompt = context.Length == 0 ? text : text + "\n\n" + context;
 
             try
             {
                 var result = await Task.Run(
-                    () => loop.RunAsync(history, text, ct, ModelChoices.ContextLimit(model, settings),
+                    () => loop.RunAsync(history, prompt, ct, ModelChoices.ContextLimit(model, settings),
                         () => ct.IsCancellationRequested || _interrupt, onDelta, onReasoning, ResetStream,
                         (messages, tokens) =>
                         {
@@ -917,7 +1037,7 @@ namespace OpenLoop.App
                 AppLog.Error("Loop 会话失败", ex);
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
-                turn.AssistantText = FailedText(turn, ex.Message);
+                turn.AssistantText = FailedText(ex.Message);
                 trace.Finish("error", turn.AssistantText);
                 _lblStatus.Text = "状态: error";
                 SetState(SessionState.Interrupted);
@@ -953,24 +1073,16 @@ namespace OpenLoop.App
                     _ = SummarizeTitleAsync(notify: false);
                 // 排队文本：当前轮收尾后再发，避免重入；失败轮不续发，等新的输入激活会话
                 // 正常收尾就是轮后：上一轮「停止」留下的暂停不该再挡住队列；失败轮照旧等新输入
+                // 页面交回数据了：这一轮就是那个 LoopApp 的任务，收尾时把网页页收起来
+                CollapseBrowserIfDone();
                 if (outcome is "ok" or "budget") _queue.Paused = false;
                 if (outcome != "error" && !IsDisposed && IsHandleCreated) BeginInvoke(new Action(DrainQueue));
             }
         }
 
-        /// <summary>
-        /// 失败轮的正文：先交代这一轮已经做了什么，再写失败原因。
-        /// 只留一句错误信息时，几十步的进展在界面上等于凭空消失。
-        /// </summary>
-        internal static string FailedText(ChatTurn turn, string error)
-        {
-            string head = OpenLoop.Core.Messages.ServerNotice.FailedPrefix + error;
-            string tools = turn?.ToolCallLines?.Trim();
-            if (string.IsNullOrEmpty(tools)) return head;
-            var lines = tools.Split('\n');
-            var tail = lines.Length <= 6 ? lines : lines[(lines.Length - 6)..];
-            return head + "\n\n本轮已执行 " + lines.Length + " 步，最近几步：\n" + string.Join("\n", tail);
-        }
+        /// <summary>失败轮的正文：只写失败原因，跑了几步看思维链区。</summary>
+        internal static string FailedText(string error)
+            => OpenLoop.Core.Messages.ServerNotice.FailedPrefix + error;
 
         /// <summary>把时间线的分段同步进回话数据；分段正文过一遍安全行清洗，与正文区一致。</summary>
         private static void SyncPhases(ChatTurn turn, RunTimeline timeline)
@@ -1191,6 +1303,8 @@ namespace OpenLoop.App
             _btnPanel.IconSvg = UiIcons.Of(
                 _upperSplit.Panel2Collapsed ? UiIcons.PanelOpen : UiIcons.PanelClose, UiStyle.Text);
             if (!_upperSplit.Panel2Collapsed) ApplyLayout();
+            // 侧栏整体收起：旁路页即便仍停在那一项也看不到，跟着停渲染
+            _sideBtw.SetActive(!_upperSplit.Panel2Collapsed && _sideTabs.SelectIndex == 1);
             if (!_upperSplit.Panel2Collapsed) _ = RefreshRepoActionsAsync();
         }
 
@@ -1220,12 +1334,19 @@ namespace OpenLoop.App
         {
             _detailFlow.Visible = index == 0;
             _sideBtw.Visible = index == 1;
+            _sideBtw.SetActive(index == 1);   // 没摆在前台的旁路页不渲染
             if (_browser != null)
             {
                 _browser.Visible = index == BrowserPage;
-                if (index == BrowserPage) _browser.EnsureLoaded();
+                if (index == BrowserPage)
+                {
+                    _browser.EnsureLoaded();
+                    _browser.MarkShown();
+                }
             }
             _fileView.Visible = index >= 0 && index == _filePage;
+            _puppetView.Visible = index == PuppetPage;
+            if (index == PuppetPage) _puppetView.Reload();
             if (index == 0)
             {
                 ApplyDetail();
@@ -1300,6 +1421,14 @@ namespace OpenLoop.App
             _sideBtw.Run(request, BuildHistory());
         }
 
+        /// <summary>侧栏按钮组水平居中：FlowLayoutPanel 只按 Margin 摆放，宽度变化后重算左右留白。</summary>
+        private void OnFlowLayout(object sender, LayoutEventArgs e)
+            => FlowButtons.Center(sender as FlowLayoutPanel);
+
+        /// <summary>详情页的「打开工作区」：用资源管理器打开本 Loop 会话的工作区。</summary>
+        private void OnOpenWorkspace(object sender, EventArgs e)
+            => ChatPathActions.OpenFolder(this, _workspace);
+
         private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
 
         private void ApplyLayout()
@@ -1347,7 +1476,8 @@ namespace OpenLoop.App
             }
             //命令写了但没写请求：只提示，不要把「/btw」本身当任务发出去
             if (SessionView.IsCommand(text, "/btw") || SessionView.IsCommand(text, "/complain")
-                || SessionView.IsCommand(text, "/fork")) return;
+                || SessionView.IsCommand(text, "/debug") || SessionView.IsCommand(text, "/fork")
+                || SessionView.IsCommand(text, "/review") || SessionView.IsCommand(text, "/optimize")) return;
 
             //「/技能名 请求…」展开成让 Worker 先读技能再执行的任务，后面按普通输入发送/排队
             text = SlashCommands.SkillTask(text, _skillCommands) ?? text;
@@ -1381,6 +1511,39 @@ namespace OpenLoop.App
             SendAsync(null);
         }
 
+        /// <summary>展开右侧栏并切到「Puppet」页（Action 清单）。</summary>
+        public void ShowPuppetActions()
+        {
+            if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
+            ShowSidePage(PuppetPage);
+            _puppetView.Reload();
+        }
+
+        /// <summary>
+        /// /puppet &lt;action&gt; &lt;参数…&gt;：作为「协作提示」插进本 Loop 会话队列（淡黄底），
+        /// 由本会话的 agent 用 Puppet 工具执行并回报结果；Loop 会话就在壳进程里，target=self。
+        /// </summary>
+        private async Task RunPuppetActionAsync(string request)
+        {
+            try
+            {
+                var sheet = await PuppetActions.LoadAsync();
+                EnqueueAuto(PuppetActions.NoticeText(sheet, request, "self"), "puppet");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("执行 Puppet action 失败", ex);
+                Notify("未执行", ex.Message, error: true);
+            }
+        }
+
+        /// <summary>反馈里的会话名：标题为空时用会话 id。</summary>
+        private string FeedbackTitle()
+        {
+            string title = LoopIndex.Title(_workspace, _sessionId);
+            return string.IsNullOrWhiteSpace(title) ? _sessionId : title;
+        }
+
         /// <summary>识别 /btw、/fork；返回 true 表示这条输入已被命令消费。</summary>
         private bool TryRunCommand(string text)
         {
@@ -1398,17 +1561,39 @@ namespace OpenLoop.App
 
             if (SessionView.IsCommand(text, "/complain"))
             {
+                string title = FeedbackTitle();
                 string complaint = text[9..].Trim();
                 if (complaint.Length == 0)
                 {
                     Notify("缺少内容", "/complain 后面要写具体不满，例如：/complain 它没看证据就下了结论。", error: true);
                     return false;
                 }
-                string title = LoopIndex.Title(_workspace, _sessionId);
-                if (string.IsNullOrWhiteSpace(title)) title = _sessionId;
-                ComplaintRequested?.Invoke(
-                    SessionView.ComposeComplaint("Loop", title, _book.Turns, complaint,
-                        ChatHistory.PathFor(_workspace, _sessionId)));
+                ComplaintRequested?.Invoke(SessionView.ComposeComplaint(
+                    "Loop", title, null, complaint, ChatHistory.PathFor(_workspace, _sessionId),
+                    _workspace));
+                return true;
+            }
+
+            if (SessionView.IsCommand(text, "/debug"))
+            {
+                string title = FeedbackTitle();
+                string complaint = text[6..].Trim();
+                if (complaint.Length == 0)
+                {
+                    Notify("缺少内容", "/debug 后面要写具体问题，例如：/debug 它没看证据就下了结论。", error: true);
+                    return false;
+                }
+                ComplaintRequested?.Invoke(SessionView.ComposeComplaint(
+                    "Loop", title, _book.Turns, complaint, ChatHistory.PathFor(_workspace, _sessionId),
+                    _workspace, SessionView.DebugTurns(_workspace)));
+                return true;
+            }
+
+            if (SessionView.IsCommand(text, "/puppet"))
+            {
+                string request = text[7..].Trim();
+                ShowPuppetActions();
+                if (request.Length > 0) _ = RunPuppetActionAsync(request);
                 return true;
             }
 
@@ -1417,6 +1602,11 @@ namespace OpenLoop.App
                 if (_running)
                 {
                     Notify("正在运行", "请先停止当前任务，再压缩上下文。", error: true);
+                    return true;
+                }
+                if (_compacting)
+                {
+                    Notify("正在压缩", "上一次压缩还没结束，请稍候。", error: true);
                     return true;
                 }
                 _ = CompactContextAsync();
@@ -1446,11 +1636,68 @@ namespace OpenLoop.App
                 return true;
             }
 
+            bool review = SessionView.IsCommand(text, "/review");
+            if (review || SessionView.IsCommand(text, "/optimize"))
+            {
+                string prompt = ComposeReview(FeedbackTitle(),
+                    ChatHistory.PathFor(_workspace, _sessionId), _workspace, !review,
+                    text[(review ? 7 : 9)..].Trim());
+                // /review 新开一个会话只做盘点并切过去等确认；/optimize 留在本会话、盘点完直接改
+                if (review) NewSessionRequested?.Invoke(this, prompt);
+                else Post(prompt);
+                return true;
+            }
+
             return false;
         }
 
+        /// <summary>
+        /// /review、/optimize 的任务：先盘点来源会话里的问题再动手。清单只写问题与需求
+        /// （现象/复现条件/影响面/证据），解法留给确认之后或实施时，免得还没对齐就大改。
+        /// </summary>
+        private static string ComposeReview(string title, string historyPath, string workspace,
+            bool implement, string hint)
+        {
+            var sb = new StringBuilder();
+            sb.Append("[审查] 先盘点 Loop 会话「").Append(title).AppendLine("」里的问题与需求，再决定改动。");
+            sb.Append("来源会话记录（每轮正文、工具调用与回复都在里面，先用 ReadSession 读内存会话，读不到再读文件）：")
+                .AppendLine(historyPath);
+            if (!string.IsNullOrWhiteSpace(workspace))
+                sb.Append("来源会话工作区：").AppendLine(workspace);
+            if (!string.IsNullOrWhiteSpace(hint))
+                sb.Append("用户补充的关注点：").AppendLine(hint);
+            sb.AppendLine("汇总两类内容：");
+            sb.AppendLine("- 避坑经验：来源会话里走过的弯路、被用户纠正的地方、重复出现的失败模式。");
+            sb.AppendLine("- OpenLoop 各组件的优化点：Core/Service、Worker（A）、Loop（I）、壳（App）、Web 壳与可迭代组件。");
+            sb.AppendLine("每条写清：现象、复现条件（哪一轮、哪个工具调用）、影响面、证据位置（文件:行号或 trace 路径）。没有证据的、凑数的不提。");
+            sb.AppendLine(implement
+                ? "只写问题与需求，不写解法；盘点完直接按优先级实施，改完跑构建与测试，最后交代改了什么、验证结果。"
+                : "这一轮只输出问题与需求清单，不要写解法也不要改代码；等我确认后再实施。");
+            return sb.ToString().TrimEnd();
+        }
+
+        /// <summary>下一轮 SendAsync 是否算「协作提示」（agent 自动塞进队列的整批消息）：界面折成一行、淡黄底。</summary>
+        private bool _noticeBatch;
+        private string _noticeKind;
+
+        private bool _compacting;
+
         /// <summary>/compact：把较早的消息换成摘要并挂到最近一轮的 transcript；下一轮起按压缩后的历史发。</summary>
         private async Task CompactContextAsync()
+        {
+            if (_compacting) return;
+            _compacting = true;
+            try
+            {
+                await CompactContextCoreAsync();
+            }
+            finally
+            {
+                _compacting = false;
+            }
+        }
+
+        private async Task CompactContextCoreAsync()
         {
             var history = BuildHistory();
             if (history.Count == 0)
@@ -1472,11 +1719,13 @@ namespace OpenLoop.App
             {
                 var settings = _settings();
                 int before = AgentContext.EstimateTokens(history);
+                var policy = FeatureCatalog.PolicyOf(_workspace);
                 var compacted = await Task.Run(async () =>
                 {
                     var reasoner = Reasoners.Create(settings, model, _effort, _workspace, AskApproval);
                     return await CompressionStep.CompressAsync(history, reasoner, CancellationToken.None,
-                        AgentContext.TailTokenBudget(ModelChoices.ContextLimit(model, settings)));
+                        AgentContext.TailTokenBudget(ModelChoices.ContextLimit(model, settings),
+                            policy.CompressKeepTokens), policy.CompressKeepMessages);
                 });
                 if (compacted == null)
                 {
@@ -1506,15 +1755,21 @@ namespace OpenLoop.App
         private static readonly (string Command, string Description)[] Commands =
         {
             ("/btw", "在右侧栏用当前上下文跑一个只读旁路任务"),
-            ("/complain", "把对 Loop 表现的不满发给 Loop 立即处理"),
+            ("/complain", "把对 Loop 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）"),
+            ("/debug", "把对 Loop 的问题连同最近几轮对话发给 Loop"),
             ("/compact", "把较早的对话压缩成摘要，省下上下文"),
             ("/fork", "复制当前上下文开一个新的 Loop 会话（可继续对话）并跳转"),
+            ("/puppet", "打开右侧 Puppet Action 清单；/puppet <action> <参数> 直接执行"),
+            ("/review", "盘点来源会话的避坑经验与各组件优化点，新开 Loop 会话等确认后实施"),
+            ("/optimize", "盘点同上并直接实施（不切会话）"),
             ("/new", "开一个新的 Loop 会话，沿用当前的模型与强度")
         };
 
         private readonly List<(string Command, string Description)> _cmdMatches = [];
         private IReadOnlyList<(string Command, string Description)> _skillCommands = [];
         private DateTime _skillsAt;
+        /// <summary>浮层当前列的是 @ 会话（否则是 / 命令）：选中后替换 @token 而不是整段输入。</summary>
+        private bool _mentionMode;
 
         /// <summary>启用中的技能也进「/」列表；30 秒内复用上次结果，避免每敲一个字都去问 I。</summary>
         private void EnsureSkillCommands()
@@ -1540,12 +1795,13 @@ namespace OpenLoop.App
             });
         }
 
-        /// <summary>输入以 / 开头且还没写参数时，弹出可用命令的联想列表。</summary>
+        /// <summary>输入以 / 开头且还没写参数时列命令；末尾是 @token 时列同工作区其他会话。</summary>
         private void UpdateCommandPopup()
         {
             string text = _txtInput.Text ?? "";
             bool want = text.StartsWith('/') && !text.Contains(' ') && !text.Contains('\n');
             _cmdMatches.Clear();
+            _mentionMode = false;
             if (want)
             {
                 EnsureSkillCommands();
@@ -1557,9 +1813,15 @@ namespace OpenLoop.App
                         && command.Command.StartsWith(text, StringComparison.OrdinalIgnoreCase))
                         _cmdMatches.Add(command);
             }
+            else if (MentionPicker.Detect(text) is { } mention)
+            {
+                _mentionMode = true;
+                _cmdMatches.AddRange(MentionPicker.Items(MentionTargets(), mention.Query));
+            }
 
             if (_cmdMatches.Count == 0)
             {
+                _mentionMode = false;
                 _cmdPopup.Close();
                 return;
             }
@@ -1568,10 +1830,46 @@ namespace OpenLoop.App
             _cmdPopup.PlaceAbove(_inputArea);
         }
 
-        /// <summary>选中命令：补进输入框，光标停在参数位。</summary>
+        /// <summary>@ 可引用的会话：同工作区的 Worker 会话与其他 Loop 会话（都不含自己）。</summary>
+        private List<MentionTarget> MentionTargets()
+        {
+            var targets = new List<MentionTarget>();
+            foreach (var session in Sessions?.Invoke() ?? [])
+            {
+                if (session == null || !Paths.Same(session.Workspace, _workspace)) continue;
+                targets.Add(new MentionTarget
+                {
+                    Title = session.Title,
+                    Id = session.Id,
+                    Turns = session.Book.Turns.Count,
+                    State = session.State,
+                    Read = () => session.Book.Turns.Count > 0
+                        ? session.Book.Turns
+                        : ChatStore.Load(session.Workspace, session.Id)
+                });
+            }
+            foreach (var peer in CollabPeers?.Invoke() ?? [])
+            {
+                if (peer == null || ReferenceEquals(peer, this) || !Paths.Same(peer.Workspace, _workspace)) continue;
+                targets.Add(new MentionTarget
+                {
+                    Title = peer.Title,
+                    Id = peer.SessionId,
+                    Turns = peer.Turns.Count,
+                    State = peer.State,
+                    Read = () => peer.Turns
+                });
+            }
+            return targets;
+        }
+
+        /// <summary>选中命令/会话：命令整段替换，@ 只替换末尾那个 token。</summary>
         private void OnCommandAccepted(string command)
         {
-            _txtInput.Text = command + " ";
+            string text = _mentionMode ? _txtInput.Text ?? "" : "";
+            if (_mentionMode && MentionPicker.Detect(text) is { } mention) text = text[..mention.Start];
+            _mentionMode = false;
+            _txtInput.Text = text + command + " ";
             _txtInput.SelectionStart = _txtInput.Text.Length;
             _txtInput.Focus();
         }
@@ -1587,6 +1885,8 @@ namespace OpenLoop.App
 
         private void OnSendClick(object sender, EventArgs e)
         {
+            // 联想浮层开着时点发送等同回车：先选中，不把「@…」「/…」当正文发出去
+            if (_cmdPopup.IsOpen) { _cmdPopup.Accept(); return; }
             // 免费额度撞墙后按钮是「继续」：输入框为空时点它就把继续发出去
             if (_txtInput.Text.Trim().Length == 0 && _attachments.Count == 0 && !_running && QuotaOnLastTurn)
             {
@@ -2098,10 +2398,17 @@ namespace OpenLoop.App
             if (form == null) return;
             title = Localization.Translate(title);
             text = Localization.Translate(text);
-            if (error)
-                AntdUI.Notification.error(form, title, text, AntdUI.TAlignFrom.TR, null, 5);
-            else
-                AntdUI.Notification.info(form, title, text, AntdUI.TAlignFrom.TR, null, 3);
+            // 与 Worker 会话同一口径：留久一点，并给一键回到本会话的入口
+            var config = new AntdUI.Notification.Config(form, title, text,
+                error ? AntdUI.TType.Error : AntdUI.TType.Info, AntdUI.TAlignFrom.TR,
+                null, error ? 12 : 10);
+            if (ActivatePage != null)
+                config.Link = new AntdUI.Notification.ConfigLink("打开会话", () =>
+                {
+                    ActivatePage();
+                    return false;
+                });
+            AntdUI.Notification.open(config);
         }
     }
 }

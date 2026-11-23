@@ -229,6 +229,46 @@ public sealed class GateTests : IDisposable
         };
         Assert.Contains(CandidateValidator.Validate(badRange, features), p => p.Contains("超出允许范围"));
 
+        // 闪现节拍只接受 300–5000 毫秒：太快白刷界面，太慢用户以为卡住
+        var tooFast = new ActivationRecord
+        {
+            Features =
+            [
+                new FeatureRef
+                {
+                    Id = FeatureCatalog.FlashInterval,
+                    Params = new() { ["value"] = JsonSerializer.SerializeToElement(100) }
+                }
+            ]
+        };
+        Assert.Contains(CandidateValidator.Validate(tooFast, features), p => p.Contains("超出允许范围"));
+
+        var tooSlow = new ActivationRecord
+        {
+            Features =
+            [
+                new FeatureRef
+                {
+                    Id = FeatureCatalog.FlashInterval,
+                    Params = new() { ["value"] = JsonSerializer.SerializeToElement(9000) }
+                }
+            ]
+        };
+        Assert.Contains(CandidateValidator.Validate(tooSlow, features), p => p.Contains("超出允许范围"));
+
+        var flashOk = new ActivationRecord
+        {
+            Features =
+            [
+                new FeatureRef
+                {
+                    Id = FeatureCatalog.FlashInterval,
+                    Params = new() { ["value"] = JsonSerializer.SerializeToElement(1500) }
+                }
+            ]
+        };
+        Assert.Empty(CandidateValidator.Validate(flashOk, features));
+
         var badKey = new ActivationRecord
         {
             Features =

@@ -15,5 +15,6 @@ namespace OpenLoop.Service.OpenUI
         Task<string> UndockAsync(string owner, CancellationToken ct);
         Task<string> DockAsync(string owner, CancellationToken ct);
         Task<string> InteractAsync(string owner, bool enabled, CancellationToken ct);
+        Task<string> CloseAsync(string owner, CancellationToken ct);
     }
 }

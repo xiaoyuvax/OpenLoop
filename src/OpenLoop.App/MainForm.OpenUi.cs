@@ -53,6 +53,14 @@ namespace OpenLoop.App
         public OperationResult LoopAppInteractFor(string sessionId, bool enabled)
             => OnLoopAppBrowser(sessionId, browser => browser.LoopAppInteract(enabled));
 
+        /// <summary>收起某个会话自己的 LoopApp：隐藏页面 → 关掉独立窗口 → 收起「网页」标签。</summary>
+        [PuppetAction(Desc = "收起某个会话自己的 LoopApp（任务做完就收，实例闲置到点再销毁）；sessionId 为空=当前会话")]
+        public OperationResult LoopAppCloseFor(string sessionId)
+        {
+            var browser = FindBrowserById(sessionId, create: false);
+            return browser?.LoopAppClose() ?? OperationResult.Success("没有打开的网页页");
+        }
+
         /// <summary>某个会话的 LoopApp 状态：锁定/浮动/地址。</summary>
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string LoopAppStateFor(string sessionId)
@@ -86,7 +94,7 @@ namespace OpenLoop.App
             {
                 var current = Current?.View;
                 if (current == null) return null;
-                if (create && current.Browser == null) current.ShowBrowser();
+                if (create && !current.BrowserVisible) current.ShowBrowser();
                 return current.Browser;
             }
 
@@ -96,7 +104,7 @@ namespace OpenLoop.App
             {
                 var view = EnsureView(session);
                 if (view == null) return null;
-                if (create && view.Browser == null) view.ShowBrowser();
+                if (create && !view.BrowserVisible) view.ShowBrowser();
                 return view.Browser;
             }
 
@@ -104,7 +112,7 @@ namespace OpenLoop.App
             var loop = _loops.Values.FirstOrDefault(e =>
                 string.Equals(e.View.SessionId, sessionId, StringComparison.OrdinalIgnoreCase));
             if (loop.View == null) return null;
-            if (create && loop.View.Browser == null) loop.View.ShowBrowser();
+            if (create && !loop.View.BrowserVisible) loop.View.ShowBrowser();
             return loop.View.Browser;
         }
     }

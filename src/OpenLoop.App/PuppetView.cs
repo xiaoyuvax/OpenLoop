@@ -1,18 +1,20 @@
 using System.Text;
 using ChatFlow;
+using OpenLoop.Core.Store;
 using OpenLoop.Service.Web;
 
 namespace OpenLoop.App
 {
     /// <summary>
     /// [Puppet] 页打开的会话视图：内容来自 @A / @I 的留言板（只读合并，外加用户以 U 身份参与）。
-    /// 这些会话没有主 agent 驱动、也没有模型选择；谁在板上说话就显示谁，工具只有 /complain。
+    /// 这些会话没有主 agent 驱动、也没有模型选择；谁在板上说话就显示谁，工具只有 /complain 与 /debug。
     /// </summary>
     public partial class PuppetView : UserControl
     {
         private static readonly (string Command, string Description)[] Commands =
         {
-            ("/complain", "把 Puppet 交谈中的问题发给 Loop 立即处理")
+            ("/complain", "把 Puppet 交谈中的问题发给 Loop（不附上下文）"),
+            ("/debug", "把问题连同最近几条留言发给 Loop")
         };
 
         private readonly ChatTurnBook _book = new();
@@ -30,8 +32,11 @@ namespace OpenLoop.App
             InitializeComponent();
         }
 
-        /// <summary>用户在当前会话里用 /complain 报告问题：正文已带上最近几条留言。</summary>
+        /// <summary>用户在当前会话里用 /complain、/debug 报告问题；投递内容由本视图按命令拼好。</summary>
         internal event Action<string> ComplaintRequested;
+
+        /// <summary>/debug 附带几条留言：由宿主按账本 limit.debug_turns 解析。</summary>
+        internal Func<int> FeedbackTurns { get; set; } = () => FeatureCatalog.DefaultDebugTurns;
 
         internal string Host => _host;
         internal string Agent => _agent;
@@ -133,11 +138,23 @@ namespace OpenLoop.App
                 string complaint = text[9..].Trim();
                 if (complaint.Length == 0)
                 {
-                    if (FindForm() is { } form)
-                        AntdUI.Notification.warn(form, "缺少内容", "/complain 后面要写具体问题。", AntdUI.TAlignFrom.TR, null, 3);
+                    WarnMissing("/complain 后面要写具体问题。");
                     return;
                 }
-                ComplaintRequested?.Invoke(ComplaintText(complaint));
+                ComplaintRequested?.Invoke(ComplaintText(complaint, debug: false));
+                return;
+            }
+
+            if (text.StartsWith("/debug", StringComparison.OrdinalIgnoreCase)
+                && (text.Length == 6 || char.IsWhiteSpace(text[6])))
+            {
+                string complaint = text[6..].Trim();
+                if (complaint.Length == 0)
+                {
+                    WarnMissing("/debug 后面要写具体问题。");
+                    return;
+                }
+                ComplaintRequested?.Invoke(ComplaintText(complaint, debug: true));
                 return;
             }
 
@@ -146,19 +163,29 @@ namespace OpenLoop.App
             Refresh();
         }
 
-        /// <summary>把当前板的最近几条留言一起交给 Loop，免得它不知道指的是哪段交谈。</summary>
-        private string ComplaintText(string complaint)
+        private void WarnMissing(string message)
+        {
+            if (FindForm() is { } form)
+                AntdUI.Notification.warn(form, "缺少内容", message, AntdUI.TAlignFrom.TR, null, 3);
+        }
+
+        /// <summary>/complain 只带一句与读板入口，/debug 另附账本配置的最近几条留言。</summary>
+        private string ComplaintText(string complaint, bool debug)
         {
             var sb = new StringBuilder();
             sb.Append("[用户反馈] 对 Puppet 会话 ").Append(_host).Append(' ').Append(_agent)
               .Append(" 中的问题：").AppendLine(complaint);
-            foreach (var turn in _book.Turns.TakeLast(6))
+            if (debug)
             {
-                if (!string.IsNullOrWhiteSpace(turn.UserText))
-                    sb.Append("U: ").AppendLine(Clip(turn.UserText, 300));
-                if (!string.IsNullOrWhiteSpace(turn.AssistantText))
-                    sb.AppendLine(Clip(turn.AssistantText, 300));
+                foreach (var turn in _book.Turns.TakeLast(Math.Max(0, FeedbackTurns())))
+                {
+                    if (!string.IsNullOrWhiteSpace(turn.UserText))
+                        sb.Append("U: ").AppendLine(Clip(turn.UserText, 300));
+                    if (!string.IsNullOrWhiteSpace(turn.AssistantText))
+                        sb.AppendLine(Clip(turn.AssistantText, 300));
+                }
             }
+            sb.Append("需要上下文时用 Puppet 工具读留言板（action=\"chat\"）。");
             return sb.ToString().TrimEnd();
         }
 
