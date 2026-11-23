@@ -625,6 +625,8 @@ namespace OpenLoop.App
                 // 再预摆分隔条（挂起重绘一次到位，见 ApplySplit）：展开即最终布局，无中间帧。
                 ApplySplit(_upperSplit, vertical: true,
                     panel1Min: Dip(400), panel2Min: Dip(360), targetPanel2: Dip(400));
+                // 翻开前先把详情页字段刷好（LoopView 同口径）：别让用户先看到空字段再逐项填充。
+                ApplyDetail();
             }
             _upperSplit.Panel2Collapsed = !opening;
             _btnPanel.IconSvg = UiIcons.Of(

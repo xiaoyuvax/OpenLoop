@@ -1319,6 +1319,7 @@ namespace OpenLoop.App
             FillModels();
         }
 
+
         private void OnToggleSide(object sender, EventArgs e)
         {
             bool opening = _upperSplit.Panel2Collapsed;
@@ -1330,6 +1331,10 @@ namespace OpenLoop.App
                 // 再预摆分隔条（挂起重绘一次到位，见 ApplySplit）：展开即最终布局，无中间帧。
                 SessionView.ApplySplit(_upperSplit, vertical: true,
                     panel1Min: Dip(400), panel2Min: Dip(360), targetPanel2: Dip(400));
+                // 翻开前先把前台页准备好：详情页字段就绪、git 状态的异步查询现在发起——
+                // 等展开后才做这些，用户会先看到一块没有内容/按钮全灰的侧栏，再逐项刷新（绘制慢的观感）。
+                ApplyDetail();
+                _ = RefreshRepoActionsAsync();
             }
             _upperSplit.Panel2Collapsed = !opening;
             _btnPanel.IconSvg = UiIcons.Of(
@@ -1337,7 +1342,6 @@ namespace OpenLoop.App
             if (opening) ApplyLayout();
             // 侧栏整体收起：旁路页即便仍停在那一项也看不到，跟着停渲染
             _sideBtw.SetActive(!_upperSplit.Panel2Collapsed && _sideTabs.SelectIndex == 1);
-            if (opening) _ = RefreshRepoActionsAsync();
         }
 
         /// <summary>工具条纵向居中：FlowLayoutPanel 不会替子控件做垂直对齐，按当前行高等分上下留白。</summary>
