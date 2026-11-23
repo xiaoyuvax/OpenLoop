@@ -618,10 +618,14 @@ namespace OpenLoop.App
         {
             bool opening = _upperSplit.Panel2Collapsed;
             if (opening)
-                // 展开前先把分隔条摆到最终位置：先展开再调 SplitterDistance 会多一次整树布局，
-                // 侧栏先以收起期间被 resize 改乱的尺寸画出来再跳到最终尺寸（视觉抖动）。
+            {
+                // 侧栏本体先长到目标宽度：展开瞬间 Panel2 就接近最终尺寸，SplitterDistance 只需微调，
+                // resize 的重画面积最小（折叠态下 Panel2 是一个没有内容的 Dock=Fill 容器，改宽不闪）。
+                if (_side.Width < Dip(360)) _side.Width = Dip(360);
+                // 再预摆分隔条（挂起重绘一次到位，见 ApplySplit）：展开即最终布局，无中间帧。
                 ApplySplit(_upperSplit, vertical: true,
                     panel1Min: Dip(400), panel2Min: Dip(360), targetPanel2: Dip(400));
+            }
             _upperSplit.Panel2Collapsed = !opening;
             _btnPanel.IconSvg = UiIcons.Of(
                 _upperSplit.Panel2Collapsed ? UiIcons.PanelOpen : UiIcons.PanelClose, UiStyle.Text);
