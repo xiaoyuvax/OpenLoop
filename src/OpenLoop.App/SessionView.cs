@@ -586,10 +586,16 @@ namespace OpenLoop.App
 
         private void OnToggleSide(object sender, EventArgs e)
         {
-            _upperSplit.Panel2Collapsed = !_upperSplit.Panel2Collapsed;
+            bool opening = _upperSplit.Panel2Collapsed;
+            if (opening)
+                // 展开前先把分隔条摆到最终位置：先展开再调 SplitterDistance 会多一次整树布局，
+                // 侧栏先以收起期间被 resize 改乱的尺寸画出来再跳到最终尺寸（视觉抖动）。
+                ApplySplit(_upperSplit, vertical: true,
+                    panel1Min: Dip(400), panel2Min: Dip(360), targetPanel2: Dip(400));
+            _upperSplit.Panel2Collapsed = !opening;
             _btnPanel.IconSvg = UiIcons.Of(
                 _upperSplit.Panel2Collapsed ? UiIcons.PanelOpen : UiIcons.PanelClose, UiStyle.Text);
-            if (!_upperSplit.Panel2Collapsed) ApplyLayout();
+            if (opening) ApplyLayout();
             // 侧栏整体收起：旁路页即便仍停在那一项也看不到，跟着停渲染
             _sideBtw.SetActive(!_upperSplit.Panel2Collapsed && _sideTabs.SelectIndex == 1);
         }
