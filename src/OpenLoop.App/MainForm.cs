@@ -56,6 +56,7 @@ namespace OpenLoop.App
             // 异常退出前的兜底：Loop 的正文只有壳自己写（A 的 Persist 只管 Worker 会话）
             Program.EmergencySave = EmergencySave;
             _tabPulse.Tick += OnTabPulseTick;
+            UiHeartbeat.Start();   // UI 线程心跳：卡死留痕
         }
 
         [PuppetIgnore] string IPuppet.AgentAccessKey => PuppetKeyVault.GlobalKey;
@@ -740,6 +741,9 @@ namespace OpenLoop.App
                 .Where(v => v != null && Paths.Same(v.Workspace, target))
                 .ToList());
             view.Initialize(target, () => _settings, id);
+            // 同 SessionView：transcript 延迟回读在后台预热，别让第一次 checkpoint 在 UI 线程踩回读
+            if (view.Book.Turns.Count > 0)
+                _ = Task.Run(() => ChatStore.WarmTranscripts(view.Book.Turns));
             // 来源会话（/complain、/debug、/fork、转交、协作）带过来的模型与强度：新会话按它起步
             if (!string.IsNullOrWhiteSpace(model)) view.AdoptParameters(model, effort);
             var page = new AntdUI.TabPage
@@ -1439,6 +1443,7 @@ namespace OpenLoop.App
             _workerSync.Dispose();
             _tabPulse.Stop();
             _tabPulse.Dispose();
+            UiHeartbeat.Stop();
             SaveWindowBounds();
             SaveOpenTabs();
             foreach (var session in _sessions)
@@ -1549,6 +1554,10 @@ namespace OpenLoop.App
                 return true;
             };
             session.Page?.Controls.Add(view);
+            // 大会话的 transcript 延迟回读别留给 UI 线程：后台把登记的轮次一次性预热，
+            // 之后 BuildHistory/Save 走 UI 线程时就不会再逐轮解析整份文件（AppHang 的主因之一）
+            if (session.Book.Turns.Count > 0)
+                _ = Task.Run(() => ChatStore.WarmTranscripts(session.Book.Turns));
             return view;
         }
 

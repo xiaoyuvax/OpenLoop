@@ -70,6 +70,27 @@ namespace OpenLoop.App
             }
         }
 
+        /// <summary>
+        /// 把登记了延迟回读的轮次在调用线程批量预热：整份文件每解析一遍就挂上所有对得上号的轮次，
+        /// 逐轮调 <see cref="Transcript"/> 触发的零散回读（每个登记轮次各解析一遍整份 JSON）就不再发生。
+        /// 打开大会话后先在后台调一次这个，SaveLoopChat/History 走 UI 线程时就不会再踩回读。
+        /// </summary>
+        public static int WarmTranscripts(IEnumerable<ChatTurn> turns)
+        {
+            if (turns == null) return 0;
+            int warmed = 0;
+            foreach (var turn in turns)
+            {
+                if (turn == null || !DeferredFiles.TryGetValue(turn, out var file)) continue;
+                LoadTranscriptsFor(turn, file);
+                warmed++;
+            }
+            return warmed;
+        }
+
+        /// <summary>还有多少轮挂着延迟回读（诊断用）。</summary>
+        internal static int DeferredCount => DeferredFiles.Count();
+
         public static List<ChatTurn> Load(string workspace, string kind = null)
         {
             var turns = new List<ChatTurn>();
@@ -258,15 +279,15 @@ namespace OpenLoop.App
             bool? manual = null)
             => ChatHistory.Touch(workspace, sessionId, title, steps, manual);
 
-        /// <summary>旧索引没有步数：读一次对话文件补齐（不动最后活动时间），返回 id → 步数。</summary>
+        /// <summary>旧索引没有步数：读一次会话文件补齐（不动最后活动时间），返回 id → 步数。</summary>
         public static Dictionary<string, int> BackfillSteps() => ChatHistory.BackfillSteps();
 
-        /// <summary>Loop 会话的 id：<c>loop-xxxxxxxx</c>，旧版是字面量 <c>loop</c>。</summary>
+        /// <summary>Loop 会话的 id？<c>loop-xxxxxxxx</c>，旧版是字面量 <c>loop</c>。</summary>
         internal static bool IsLoopSessionId(string id)
             => string.Equals(id, "loop", StringComparison.OrdinalIgnoreCase)
                || id?.StartsWith("loop-", StringComparison.OrdinalIgnoreCase) == true;
 
-        /// <summary>有对话文件的已存会话；最近活动的在前。开始时间与最后活动时间都取自索引。</summary>
+        /// <summary>有会话文件的已存会话；最近活动的在前。开始时间与最后活动时间都取自索引。</summary>
         public static List<SavedSession> SavedSessions()
         {
             var result = new List<SavedSession>();
@@ -275,10 +296,10 @@ namespace OpenLoop.App
                 foreach (var item in ChatHistory.Index().OrderByDescending(e => e.UpdatedAt))
                 {
                     if (item == null || string.IsNullOrEmpty(item.Id) || string.IsNullOrEmpty(item.Workspace)) continue;
-                    // Loop 会话归 loops.json 管；旧版「转交」误写进这份索引的 loop id 不再当 Worker 会话恢复
+                    // Loop 会话归 loops.json 管；旧版「转交」等写进这份索引的 loop id 不再当 Worker 会话恢复
                     if (IsLoopSessionId(item.Id)) continue;
                     if (!File.Exists(ChatHistory.PathFor(item.Workspace, item.Id))) continue;
-                    // 旧索引没有 CreatedAt：退回 UpdatedAt（至少不是重启时刻）
+                    // 旧索引没有 CreatedAt：退回 UpdatedAt（至少不是重复同一时刻）
                     var created = item.CreatedAt == default ? item.UpdatedAt : item.CreatedAt;
                     result.Add(new SavedSession(item.Id, item.Workspace, item.Title ?? "",
                         created.ToLocalTime(), item.UpdatedAt.ToLocalTime(), item.Steps, item.TitleManual));

@@ -102,7 +102,9 @@ namespace OpenLoop.App
 
             var current = settings();
             //重开会话按它上次用的模型/力度恢复；新会话用最近用过的第一条
-            var (savedModel, savedEffort) = ChatHistory.LastModel(session.Workspace, session.Id);
+            //模型恢复与历史加载共用同一份 entries：几十 MB 的 JSON 解析两遍，点开大会话就是秒级卡顿
+            var savedEntries = ChatHistory.Read(session.Workspace, session.Id);
+            var (savedModel, savedEffort) = ChatHistory.LastModelFrom(savedEntries);
             _model = !string.IsNullOrWhiteSpace(savedModel) ? savedModel : ModelCatalog.DefaultModel(current);
             if (string.IsNullOrWhiteSpace(_model)) _model = "openrouter/free";
             _effort = savedEffort ?? current.ReasoningEffort ?? "";
@@ -114,8 +116,9 @@ namespace OpenLoop.App
             _lblPath.Text = UiStyle.ShortPath(session.Workspace);
             _tips.SetToolTip(_lblPath, session.Workspace + "（点击在资源管理器中打开）");
             _chat.PlaceholderText = Localization.T("NoMessages");
-            //每轮都落过盘，但要在这里读回来，否则重启后会话是空的
-            var saved = ChatStore.Load(session.Workspace, session.Id);
+            //每轮都落过盘，但要在这里读回来，否则重启后会话是空的；
+            //不再重复读文件：Initialize 开头读的那份 entries 直接投影（transcript 走延迟回读）
+            var saved = ChatStore.Turns(savedEntries, ChatHistory.PathFor(session.Workspace, session.Id));
             if (saved.Count > 0)
             {
                 session.Book.ReplaceAll(saved, null);
