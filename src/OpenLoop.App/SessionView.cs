@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using ChatFlow;
@@ -562,21 +563,50 @@ namespace OpenLoop.App
             int splitter = split.SplitterWidth;
             if (total <= splitter + 2) return;
 
-            split.Panel1MinSize = 0;
-            split.Panel2MinSize = 0;
-
             int p1 = Math.Min(panel1Min, total - splitter - 1);
-            split.Panel1MinSize = p1;
-
             int p2 = Math.Min(panel2Min, total - splitter - p1 - 1);
-            split.Panel2MinSize = p2;
-
             int maxDistance = total - p2 - splitter;
             if (maxDistance <= p1) return;
 
             int desired = total - targetPanel2 - splitter;
-            split.SplitterDistance = Math.Max(p1, Math.Min(maxDistance, desired));
+            int distance = Math.Max(p1, Math.Min(maxDistance, desired));
+            if (split.Panel1MinSize == p1 && split.Panel2MinSize == p2 && split.SplitterDistance == distance)
+                return;
+
+            // 每个 MinSize/SplitterDistance 赋值都各自触发一次布局+重画：在可见状态下调用
+            // （展开侧栏前的预摆）中间帧就是「半个屏幕的灰白方块闪一下」。挂起重绘（WM_SETREDRAW）
+            // 一次摆完再恢复，全程只画最终那一帧。
+            split.SuspendLayout();
+            bool redrawOff = false;
+            try
+            {
+                if (split.IsHandleCreated)
+                {
+                    SendMessage(split.Handle, WM_SETREDRAW, 0, 0);
+                    redrawOff = true;
+                }
+                split.Panel1MinSize = 0;
+                split.Panel2MinSize = 0;
+                split.Panel1MinSize = p1;
+                split.Panel2MinSize = p2;
+                split.SplitterDistance = distance;
+            }
+            finally
+            {
+                if (redrawOff)
+                {
+                    SendMessage(split.Handle, WM_SETREDRAW, 1, 0);
+                    split.Invalidate(true);
+                }
+                split.ResumeLayout(false);
+                split.PerformLayout();
+            }
         }
+
+        private const int WM_SETREDRAW = 0x000B;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
         private void SetState(SessionState state)
         {
