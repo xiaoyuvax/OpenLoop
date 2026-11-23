@@ -402,9 +402,30 @@ namespace OpenLoop.Service.Loop
                 job.State.Report.Before ??= job.Before;
                 job.State.Report.Ok = job.State.Ok;
                 job.State.Report.Version = job.State.Version;
+                // 步骤行一直攒在 State.Steps（换 I 重建进程后 Report.Steps 已丢失）：
+                // 报告经壳落盘、重启后由 ReportText 逐条打印，不补这里用户只看到「步骤：」空标题。
+                if (job.State.Report.Steps.Count == 0 && job.State.Steps.Count > 0)
+                    job.State.Report.Steps.AddRange(job.State.Steps
+                        .Select(line => ParseStepLine(line))
+                        .Where(s => s != null));
                 job.State.ShellDir = state == "done" ? job.State.ShellDir : null;
                 Save(job);
             }
+        }
+
+        /// <summary>把步骤行（"OK 名字 详情" / "FAIL 名字 详情"）还原成 Step；不合格式的返回 null。</summary>
+        private static Iteration.Step ParseStepLine(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line)) return null;
+            bool ok;
+            string rest;
+            if (line.StartsWith("OK ", StringComparison.Ordinal)) { ok = true; rest = line[3..]; }
+            else if (line.StartsWith("FAIL ", StringComparison.Ordinal)) { ok = false; rest = line[5..]; }
+            else return null;
+            int space = rest.IndexOf(' ');
+            return space <= 0
+                ? new Iteration.Step(rest, ok, "")
+                : new Iteration.Step(rest[..space], ok, rest[(space + 1)..]);
         }
 
         private static IterationState Clone(IterationState state) => new()
