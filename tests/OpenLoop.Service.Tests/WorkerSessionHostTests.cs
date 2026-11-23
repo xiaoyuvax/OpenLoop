@@ -1,4 +1,4 @@
-﻿using OpenLoop.Core.Messages;
+using OpenLoop.Core.Messages;
 using OpenLoop.Core.Safety;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Storage;
@@ -384,9 +384,10 @@ namespace OpenLoop.Service.Tests
 
                 var session = host.Create(_workspace, "m", "", () => new AppSettings(), "sess01");
                 host.Send(session.Id, "task", "hi");
-                await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
-
-                Assert.True(File.Exists(ChatHistory.PathFor(_workspace, "sess01")));
+                // 收尾 Persist 在后台任务里排队（开轮即落盘的同一条链路），State=Done 时它可能还没写完盘：
+                // 等文件里出现「persisted」再重开，别赌调度顺序。
+                await WaitAsync(() => ChatHistory.Read(_workspace, "sess01")
+                    .Any(e => e.Assistant == "persisted"));
 
                 var reopened = NewHost((request, ct) => Task.FromResult(new WorkerRunResult { Outcome = "ok" }))
                     .Create(_workspace, "m", "", () => new AppSettings(), "sess01");
