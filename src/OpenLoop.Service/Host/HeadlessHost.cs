@@ -35,15 +35,27 @@ namespace OpenLoop.Service.Host
             using var watch = parent > 0
                 ? ParentWatch.Start(parent, () =>
                 {
-                    Console.WriteLine($"[{role}] 父进程 {parent} 已退出，随之退出");
+                    Say($"[{role}] 父进程 {parent} 已退出，随之退出");
                     host.Dispose();
                     Environment.Exit(0);
+                }, () =>
+                {
+                    // 只换壳：旧壳交代过由新壳接手，就不跟着退出，改守护新壳
+                    int next = ShellHandoff.NextShellPid(parent);
+                    if (next > 0) Say($"[{role}] 壳已重启，改守护新壳 pid {next}");
+                    return next;
                 })
                 : null;
             if (parent > 0) Console.WriteLine($"[{role}] 守护父进程 {parent}");
 
             stop.Wait();
             return 0;
+        }
+
+        /// <summary>父进程（壳）退出后标准输出已经断了：写不出来也不能让日志把进程带走。</summary>
+        private static void Say(string line)
+        {
+            try { Console.WriteLine(line); } catch { }
         }
 
         /// <summary>

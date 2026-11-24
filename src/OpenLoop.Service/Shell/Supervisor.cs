@@ -80,6 +80,7 @@ namespace OpenLoop.Service.Shell
             if (existing is { IsAlive: true })
             {
                 Log($"[shell] {role} 已在运行（pid {existing.Pid}，{existing.Bus}）");
+                Adopt(role, existing);
                 return existing;
             }
 
@@ -90,6 +91,14 @@ namespace OpenLoop.Service.Shell
         public void StopAll()
         {
             _stopping = true;
+
+            // 只换壳：旧壳退出前写过交接标记，A/I 留在原地等新壳接手（新壳启动时发布 pid，它们改守护它）
+            if (ShellHandoff.IsOwnedByCurrent())
+            {
+                Log("[shell] 壳交接重启：A/I 保持运行，等新壳接手");
+                lock (_lock) _children.Clear();
+                return;
+            }
 
             List<KeyValuePair<string, Process>> snapshot;
             lock (_lock) snapshot = _children.ToList();
@@ -123,6 +132,36 @@ namespace OpenLoop.Service.Shell
             }
 
             lock (_lock) _children.Clear();
+        }
+
+        /// <summary>
+        /// 接手上一个壳留下的 A/I（只换壳的交接）：它们还活着就直接用，但要补上退出监护，
+        /// 否则它们以后崩了没人重启。
+        /// </summary>
+        private void Adopt(string role, RuntimeInfo info)
+        {
+            lock (_lock)
+            {
+                if (_children.ContainsKey(role)) return;
+            }
+
+            string exe = _exePaths.TryGetValue(role, out var known) ? known : null;
+            try
+            {
+                var process = Process.GetProcessById(info.Pid);
+                process.EnableRaisingEvents = true;
+                process.Exited += (_, _) => OnExited(role, process, exe);
+                lock (_lock)
+                {
+                    _children[role] = process;
+                    _started[role] = process.StartTime.ToUniversalTime();
+                }
+                Log($"[shell] {role} 已接手（pid {info.Pid}）");
+            }
+            catch (Exception ex)
+            {
+                Log($"[shell] {role} 接手失败：{ex.Message}");
+            }
         }
 
         private RuntimeInfo Spawn(string role, string exePath, TimeSpan wait)

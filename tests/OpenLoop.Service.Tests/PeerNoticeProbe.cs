@@ -29,7 +29,7 @@ namespace OpenLoop.Service.Tests
             var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             try
             {
-                Puppet.Core.AgentBook.Heartbeat(peer, "Worker 会话 · " + _chats, "干活", 0, "openloop");
+                Puppet.Core.AgentBook.Heartbeat(peer, "Worker 会话 · " + _chats, "干活", OpenLoop.Service.Web.SessionBoard.RunningWaitSeconds, "openloop");
 
                 var host = new WorkerSessionHost((request, ct) => gate.Task);
                 var session = host.Create(_chats, "openrouter/free", "", () => new Config.AppSettings());

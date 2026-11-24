@@ -31,6 +31,44 @@ public sealed class PromptCatalogTests : IDisposable
     }
 
     [Fact]
+    public void Eval_mode_stages_candidate_and_only_commit_promotes_it()
+    {
+        Directory.CreateDirectory(_root);
+        PromptCatalog.EnsureFile(_root);
+        File.WriteAllText(PromptCatalog.FilePath(_root), "正式模板 {{role}}");
+        var ledger = Ledger.Open(_root);
+        PromptCatalog.Sync(ledger, _root);
+
+        HarnessMode.Set(_root, HarnessMode.Eval);
+        Assert.True(HarnessMode.IsEval(_root));
+
+        // 编辑面换成候选包（首次从正式文件播种），正式文件不动
+        string editing = PromptCatalog.EditingPath(_root, PromptCatalog.SystemKind);
+        Assert.Equal(PromptCatalog.CandidatePath(_root, PromptCatalog.SystemKind), editing);
+        Assert.Equal("正式模板 {{role}}", File.ReadAllText(editing).Trim());
+        Assert.Empty(PromptCatalog.PendingKinds(_root));
+
+        File.WriteAllText(editing, "候选模板 {{role}}");
+        Assert.Single(PromptCatalog.PendingKinds(_root));
+        // 未过考核：正式文件与当前生效模板都不变
+        Assert.Equal("正式模板 {{role}}", File.ReadAllText(PromptCatalog.FilePath(_root)).Trim());
+        Assert.Equal("正式模板 {{role}}", PromptCatalog.ActiveTemplate(_root));
+
+        // 候选包叠到候选激活集上，评测时按候选文本跑
+        var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
+        var candidate = PromptCatalog.OverlayPending(ledger, _root, ledger.Current, features);
+        Assert.Equal("候选模板 {{role}}", PromptCatalog.ResolveTemplate(_root, candidate, features));
+
+        PromptCatalog.CommitPending(_root);
+        Assert.Equal("候选模板 {{role}}", File.ReadAllText(PromptCatalog.FilePath(_root)).Trim());
+        Assert.Empty(PromptCatalog.PendingKinds(_root));
+
+        HarnessMode.Set(_root, HarnessMode.Direct);
+        Assert.Equal(PromptCatalog.FilePath(_root),
+            PromptCatalog.EditingPath(_root, PromptCatalog.SystemKind));
+    }
+
+    [Fact]
     public void Sync_registers_and_activates_once_per_content()
     {
         Directory.CreateDirectory(_root);

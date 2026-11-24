@@ -310,21 +310,43 @@ namespace OpenLoop.Service.Loop
                 var loopAgent = new LoopAgent(Reasoner(settings, model, effort, workspace));
                 var proposal = await loopAgent.ProposeAsync(
                     loopAgent.BuildPacket(ledger, findings: harnessFindings), baseline, features, ct);
+
+                // A/B 评测模式：Prompt / AGENTS.md 的改动暂存在候选包里，这里叠到候选激活集上一起考核。
+                var pending = PromptCatalog.PendingKinds(workspace);
+                ActivationRecord candidate;
                 if (proposal.Error != null)
                 {
-                    string problems = proposal.Problems.Count == 0 ? "" : "：" + string.Join("；", proposal.Problems);
-                    Finish(job, s =>
+                    if (pending.Count == 0)
                     {
-                        s.State = "error";
-                        s.Error = proposal.Error + problems;
-                    });
-                    return;
+                        string problems = proposal.Problems.Count == 0 ? "" : "：" + string.Join("；", proposal.Problems);
+                        Finish(job, s =>
+                        {
+                            s.State = "error";
+                            s.Error = proposal.Error + problems;
+                        });
+                        return;
+                    }
+                    candidate = new ActivationRecord
+                    {
+                        Version = baseline.Version + 1,
+                        At = DateTimeOffset.UtcNow.ToString("O"),
+                        By = "user",
+                        Note = "候选提示词包",
+                        Features = baseline.Features.ToList()
+                    };
                 }
+                else
+                {
+                    candidate = proposal.Candidate;
+                }
+                candidate = PromptCatalog.OverlayPending(ledger, workspace, candidate, features);
 
                 Update(job, s => s.Phase = "evaluating");
                 var runner = TaskRunner(settings, workspace, ledger, features, model, effort);
                 var report = await new Gate(ledger, tasks, features, runner).EvaluateAsync(
-                    baseline, proposal.Candidate, ct, harnessFindings.Select(f => f.Id).ToList());
+                    baseline, candidate, ct, harnessFindings.Select(f => f.Id).ToList());
+                if (report.Adopted && pending.Count > 0)
+                    PromptCatalog.CommitPending(workspace);
                 TriageAfterGate(workspace, batch, openFindings, report);
 
                 Finish(job, s =>

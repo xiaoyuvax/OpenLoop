@@ -176,6 +176,9 @@ Allow?</value>
   <data name="ColVersion" xml:space="preserve">
     <value>Version</value>
   </data>
+  <data name="TileInputHint" xml:space="preserve">
+    <value>Send to this session (Enter = jump the queue while running, otherwise enqueue)</value>
+  </data>
   <data name="ComposerHint" xml:space="preserve">
     <value>Describe a task (Enter=send after this step, Ctrl+Enter=send after this turn, Shift+Enter=soft newline)</value>
   </data>
@@ -345,7 +348,31 @@ Allow?</value>
     <value>Enabled ({0})</value>
   </data>
   <data name="HarnessHint" xml:space="preserve">
-    <value>Harness changes only this workspace's five evolvable object kinds (Prompt / Skill / Rule / Limit / Guard); other workspaces are unaffected. Edit the prompt and AGENTS.md through /prompt and /agents by talking to the model. A candidate is adopted only when its A/B eval is better.</value>
+    <value>Harness changes only this workspace's five evolvable object kinds (Prompt / Skill / Rule / Limit / Guard); other workspaces are unaffected. Edit the system prompt and AGENTS.md through /sysprompt and /agentsmd by talking to the model. A candidate is adopted only when its A/B eval is better.</value>
+  </data>
+  <data name="HarnessSystemPrompt" xml:space="preserve">
+    <value>System prompt</value>
+  </data>
+  <data name="HarnessModeDirect" xml:space="preserve">
+    <value>Mode: direct (applies to the next session)</value>
+  </data>
+  <data name="HarnessModeEval" xml:space="preserve">
+    <value>Mode: A/B eval (candidate applies only after it wins)</value>
+  </data>
+  <data name="HarnessCandidateNone" xml:space="preserve">
+    <value>Candidate: none</value>
+  </data>
+  <data name="HarnessCandidatePending" xml:space="preserve">
+    <value>Candidate pending eval: {0}</value>
+  </data>
+  <data name="HarnessModeTitle" xml:space="preserve">
+    <value>Harness mode</value>
+  </data>
+  <data name="HarnessSwitchedDirect" xml:space="preserve">
+    <value>Switched to direct mode: prompt edits apply to the next session.</value>
+  </data>
+  <data name="HarnessSwitchedEval" xml:space="preserve">
+    <value>Switched to A/B eval mode: prompt edits are staged as a candidate until the eval says they are better.</value>
   </data>
   <data name="HarnessKept" xml:space="preserve">
     <value>Kept</value>
@@ -1798,8 +1825,17 @@ Click Unlock above to use it yourself</value>
   <data name="PickAttachments" xml:space="preserve">
     <value>Pick attachments (up to {0})</value>
   </data>
-  <data name="AttachmentSummary" xml:space="preserve">
-    <value>📎 {0}/{1}: {2} (click to clear)</value>
+  <data name="AttachmentCount" xml:space="preserve">
+    <value>{0}/{1}</value>
+  </data>
+  <data name="添加附件…" xml:space="preserve">
+    <value>Add attachment…</value>
+  </data>
+  <data name="移除附件" xml:space="preserve">
+    <value>Remove attachment</value>
+  </data>
+  <data name="RemoveAttachmentAsk" xml:space="preserve">
+    <value>Remove attachment "{0}"?</value>
   </data>
   <data name="暂无对话" xml:space="preserve">
     <value>No conversation yet</value>
@@ -1921,6 +1957,9 @@ Click Unlock above to use it yourself</value>
   </data>
   <data name="未压缩" xml:space="preserve">
     <value>Not compacted</value>
+  </data>
+  <data name="正在压缩上下文…（最长约 2 分钟）" xml:space="preserve">
+    <value>Compacting context… (up to ~2 minutes)</value>
   </data>
   <data name="未执行" xml:space="preserve">
     <value>Not executed</value>
@@ -2241,7 +2280,7 @@ Restore failed</value>
     <value>Revert conversations</value>
   </data>
   <data name="HarnessPromptObject" xml:space="preserve">
-    <value>Edit prompt</value>
+    <value>Edit system prompt</value>
   </data>
   <data name="HarnessAgentsObject" xml:space="preserve">
     <value>Edit AGENTS.md</value>

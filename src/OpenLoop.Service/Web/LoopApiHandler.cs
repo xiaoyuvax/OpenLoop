@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Wima.Web;
 using OpenLoop.Service.Bus;
+using OpenLoop.Core.Store;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Loop;
 using OpenLoop.Service.Source;
@@ -155,6 +156,27 @@ namespace OpenLoop.Service.Web
                     if (method != "GET") return NotFound(req);
                     return Json(req, _loop.LoadActivation(Query(req, "workspace")));
 
+                case "mode":
+                {
+                    if (method == "GET")
+                    {
+                        string workspace = Query(req, "workspace").Trim();
+                        return Json(req, new
+                        {
+                            ok = true,
+                            mode = HarnessMode.Get(workspace),
+                            pending = workspace.Length == 0 ? [] : PromptCatalog.PendingKinds(workspace)
+                        });
+                    }
+
+                    if (method != "POST") return NotFound(req);
+                    var body = ReadBody<ModeRequest>(req);
+                    if (body == null || string.IsNullOrWhiteSpace(body.Workspace) || body.Mode == null)
+                        return Json(req, new { ok = false, error = "invalid body" }, 400);
+                    HarnessMode.Set(body.Workspace, body.Mode);
+                    return Json(req, new { ok = true, mode = HarnessMode.Get(body.Workspace) });
+                }
+
                 case "skills":
                 {
                     if (method != "POST") return NotFound(req);
@@ -252,6 +274,12 @@ namespace OpenLoop.Service.Web
             public string Workspace { get; set; }
             public string Name { get; set; }
             public bool Enabled { get; set; }
+        }
+
+        private sealed class ModeRequest
+        {
+            public string Workspace { get; set; }
+            public string Mode { get; set; }
         }
 
         private sealed class AutoRequest

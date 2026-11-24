@@ -89,12 +89,29 @@ namespace OpenLoop.App
             foreach (Control child in root.Controls) EnableDrop(child, onFiles);
         }
 
+        public const string AddAttachmentTag = "add-attachment";
+
+        /// <summary>附件按钮的下拉：第一项加附件，其余每项是一个待移除的附件。</summary>
+        public static void FillMenu(AntdUI.Dropdown menu, IReadOnlyList<string> paths)
+        {
+            menu.Items.Clear();
+            menu.Items.Add(new AntdUI.SelectItem(Localization.T("添加附件…")) { Tag = AddAttachmentTag });
+            foreach (string path in paths ?? []) menu.Items.Add(new AntdUI.SelectItem("✕ " + Path.GetFileName(path)) { Tag = path });
+        }
+
+        /// <summary>点下拉里的附件：问一句再移除。</summary>
+        public static void AskRemove(IWin32Window owner, List<string> paths, string path)
+        {
+            if (MessageBox.Show(owner, string.Format(Localization.T("RemoveAttachmentAsk"), Path.GetFileName(path)),
+                    Localization.T("移除附件"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+            paths.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        }
+
         public static string Label(IReadOnlyList<string> paths, int limit)
         {
             if (paths == null || paths.Count == 0) return "";
-            string names = string.Join("、", paths.Select(Path.GetFileName).Take(3));
-            if (paths.Count > 3) names += "…";
-            return string.Format(Localization.T("AttachmentSummary"), paths.Count, limit, names);
+            return string.Format(Localization.T("AttachmentCount"), paths.Count, limit);
         }
     }
 }

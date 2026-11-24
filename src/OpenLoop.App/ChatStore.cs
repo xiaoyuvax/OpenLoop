@@ -118,7 +118,8 @@ namespace OpenLoop.App
                     continue;
                 var turn = new ChatTurn
                 {
-                    User = new ChatMessage("user", entry.User ?? ""),
+                    // 空 user = 宿主消息（如压缩进度）：只给用户看，不当用户发过的话
+                    User = string.IsNullOrEmpty(entry.User) ? null : new ChatMessage("user", entry.User),
                     // 空白正文（中途崩掉的轮次）读回来补一句可操作的说明，与 Worker 侧同一口径；
                     // 一律按「已结束」显示，不能把崩溃的轮次恢复成「还在跑」。
                     Assistant = new ChatMessage("assistant",
@@ -220,7 +221,9 @@ namespace OpenLoop.App
 
         private static void AppendText(List<LlmMessage> list, ChatTurn turn)
         {
-            if (!string.IsNullOrWhiteSpace(turn?.UserText)) list.Add(new LlmMessage("user", turn.UserText));
+            // 宿主消息（/compact 进度之类，没有用户消息）不进模型上下文
+            if (turn?.User == null) return;
+            if (!string.IsNullOrWhiteSpace(turn.UserText)) list.Add(new LlmMessage("user", turn.UserText));
             // 失败轮的正文是接口报错/停止提示，不是模型说过的话
             if (!string.IsNullOrWhiteSpace(turn?.AssistantText) && !ServerNotice.IsNotice(turn.AssistantText))
                 list.Add(new LlmMessage("assistant", turn.AssistantText));

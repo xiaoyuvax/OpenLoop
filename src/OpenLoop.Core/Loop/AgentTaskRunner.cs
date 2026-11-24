@@ -71,10 +71,13 @@ namespace OpenLoop.Core.Loop
             var tools = ToolRegistry.Workspace(scope, null, skills, extra: _extraTools, webFetch: _webFetch);
             var loop = new AgentLoop(tools, _reasonerFor(dir),
                 FeatureCatalog.PolicyFrom(activation, _features), skills: skills);
+            // 基线/候选各用自己激活集里的 Prompt 与 AGENTS.md：A/B 才考得出候选文本的差别
+            string template = PromptCatalog.ResolveTemplate(_workspaceRoot, activation, _features);
+            string agents = PromptCatalog.ResolveAgents(_workspaceRoot, activation, _features);
             string systemPrompt = loop.BuildSystemPrompt(
                 null, FeatureCatalog.RulesFrom(activation, _features),
-                _useAgentsMd ? AgentsInstructions.Load(_workspaceRoot, _globalAgentsPath) : null,
-                _workspaceRoot);
+                _useAgentsMd ? AgentsInstructions.Load(_workspaceRoot, _globalAgentsPath, agents) : null,
+                _workspaceRoot, template: template);
             var history = new List<LlmMessage> { new("system", systemPrompt) };
 
             var result = (AgentRunResult)null;

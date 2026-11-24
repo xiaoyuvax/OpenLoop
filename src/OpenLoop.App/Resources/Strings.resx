@@ -176,6 +176,9 @@
   <data name="ColVersion" xml:space="preserve">
     <value>版本</value>
   </data>
+  <data name="TileInputHint" xml:space="preserve">
+    <value>发送到本会话（Enter=运行中插队，其余排入队列）</value>
+  </data>
   <data name="ComposerHint" xml:space="preserve">
     <value>描述任务（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）</value>
   </data>
@@ -345,7 +348,31 @@
     <value>已启用（{0}）</value>
   </data>
   <data name="HarnessHint" xml:space="preserve">
-    <value>Harness 只改当前工作区的五类可演进对象（Prompt / Skill / Rule / Limit / Guard），其它工作区不受影响；提示词与 AGENTS.md 用 /prompt、/agents 让模型改；演进按考核题 A/B，更好才采纳。</value>
+    <value>Harness 只改当前工作区的五类可演进对象（Prompt / Skill / Rule / Limit / Guard），其它工作区不受影响；提示词与 AGENTS.md 用 /sysprompt、/agentsmd 让模型改；演进按考核题 A/B，更好才采纳。</value>
+  </data>
+  <data name="HarnessSystemPrompt" xml:space="preserve">
+    <value>系统提示词</value>
+  </data>
+  <data name="HarnessModeDirect" xml:space="preserve">
+    <value>模式：直配（下一个会话生效）</value>
+  </data>
+  <data name="HarnessModeEval" xml:space="preserve">
+    <value>模式：A/B 评测（候选过考核才启用）</value>
+  </data>
+  <data name="HarnessCandidateNone" xml:space="preserve">
+    <value>候选包：无</value>
+  </data>
+  <data name="HarnessCandidatePending" xml:space="preserve">
+    <value>候选包待评估：{0}</value>
+  </data>
+  <data name="HarnessModeTitle" xml:space="preserve">
+    <value>Harness 模式</value>
+  </data>
+  <data name="HarnessSwitchedDirect" xml:space="preserve">
+    <value>已切到直配模式：Prompt 改动下一个会话直接生效。</value>
+  </data>
+  <data name="HarnessSwitchedEval" xml:space="preserve">
+    <value>已切到 A/B 评测模式：Prompt 改动先暂存为候选包，过考核题更好才启用。</value>
   </data>
   <data name="HarnessKept" xml:space="preserve">
     <value>未更替</value>
@@ -1798,8 +1825,17 @@
   <data name="PickAttachments" xml:space="preserve">
     <value>选择附件（最多 {0} 个）</value>
   </data>
-  <data name="AttachmentSummary" xml:space="preserve">
-    <value>📎 {0}/{1}：{2}（点此清空）</value>
+  <data name="AttachmentCount" xml:space="preserve">
+    <value>{0}/{1}</value>
+  </data>
+  <data name="添加附件…" xml:space="preserve">
+    <value>添加附件…</value>
+  </data>
+  <data name="移除附件" xml:space="preserve">
+    <value>移除附件</value>
+  </data>
+  <data name="RemoveAttachmentAsk" xml:space="preserve">
+    <value>移除附件「{0}」？</value>
   </data>
   <data name="暂无对话" xml:space="preserve">
     <value>暂无对话</value>
@@ -1921,6 +1957,9 @@
   </data>
   <data name="未压缩" xml:space="preserve">
     <value>未压缩</value>
+  </data>
+  <data name="正在压缩上下文…（最长约 2 分钟）" xml:space="preserve">
+    <value>正在压缩上下文…（最长约 2 分钟）</value>
   </data>
   <data name="未执行" xml:space="preserve">
     <value>未执行</value>
@@ -2241,7 +2280,7 @@
     <value>撤回对话</value>
   </data>
   <data name="HarnessPromptObject" xml:space="preserve">
-    <value>编辑提示词</value>
+    <value>编辑系统提示词</value>
   </data>
   <data name="HarnessAgentsObject" xml:space="preserve">
     <value>编辑 AGENTS.md</value>

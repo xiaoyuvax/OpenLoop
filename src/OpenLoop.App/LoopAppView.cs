@@ -115,14 +115,20 @@ namespace OpenLoop.App
             {
                 FlowDirection = FlowDirection.TopDown,
                 WrapContents = false,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Width = 320
+                AutoSize = false,
+                Padding = new Padding(0),
+                Margin = new Padding(0)
             };
             panel.Controls.Add(Caption(Localization.T("LoopAppNameLabel")));
             panel.Controls.Add(name);
             panel.Controls.Add(Caption(Localization.T("LoopAppUsageLabel")));
             panel.Controls.Add(usage);
+
+            // AutoSize 的 FlowLayoutPanel 没有句柄时 Height 还是默认值，弹框按它算高度就会压掉最后一个输入框；
+            // 这里显式给尺寸（96-DPI 单位，AntdUI Modal 会按 DPI 再缩放内容）
+            int height = 0;
+            foreach (Control child in panel.Controls) height += child.Height + child.Margin.Vertical;
+            panel.Size = new Size(320, height);
 
             var owner = FindForm();
             if (owner == null) return;
@@ -205,7 +211,9 @@ namespace OpenLoop.App
         private static AntdUI.Label Caption(string text) => new()
         {
             Text = text,
-            AutoSize = true,
+            AutoSize = false,
+            Width = 300,
+            Height = 22,
             Font = new Font("Segoe UI", 9F),
             ForeColor = UiStyle.Muted,
             Margin = new Padding(0, 0, 0, 6)

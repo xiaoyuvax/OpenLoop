@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using OpenLoop.Service.Runtime;
 
@@ -9,6 +10,9 @@ namespace OpenLoop.App
     internal sealed record LoopRef(string Workspace, DateTimeOffset UpdatedAt, string Id = null, string Title = null,
         int Steps = 0)
     {
+        /// <summary>标题只是建会话时的占位（「反馈 15:19」）：自动总结可以覆盖，不算已有标题。</summary>
+        public bool Seed { get; init; }
+
         public const string LegacyId = "loop";
 
         [System.Text.Json.Serialization.JsonIgnore]
@@ -33,7 +37,7 @@ namespace OpenLoop.App
                 var existing = items.FirstOrDefault(i => Same(i, workspace, id));
                 items = items.Where(i => !Same(i, workspace, id)).ToList();
                 items.Add(new LoopRef(workspace, DateTimeOffset.Now, id, existing?.Title,
-                    steps ?? existing?.Steps ?? 0));
+                    steps ?? existing?.Steps ?? 0) { Seed = existing?.Seed ?? false });
                 Write(items);
             }
             catch
@@ -67,7 +71,27 @@ namespace OpenLoop.App
             return List().FirstOrDefault(i => Same(i, workspace, id))?.Title;
         }
 
-        public static void Rename(string workspace, string sessionId, string title)
+        /// <summary>真正总结出来的标题：有它就不再自动覆盖（新会话开跑 5 秒那次除外）。</summary>
+        public static bool HasTitle(string workspace, string sessionId)
+        {
+            string title = Title(workspace, sessionId);
+            return !string.IsNullOrWhiteSpace(title) && !IsSeedTitle(workspace, sessionId);
+        }
+
+        /// <summary>标题是建会话时的占位（「反馈 15:19」「转交 09:05」）：自动总结可以盖掉它。</summary>
+        public static bool IsSeedTitle(string workspace, string sessionId)
+        {
+            string id = string.IsNullOrWhiteSpace(sessionId) ? LoopRef.LegacyId : sessionId;
+            var item = List().FirstOrDefault(i => Same(i, workspace, id));
+            return item != null && (item.Seed || LooksSeeded(item.Title));
+        }
+
+        /// <summary>旧账本没记 Seed：按形状认占位标题（短前缀 + 空格 + 时:分），只可能撞上真实标题的极小概率。</summary>
+        private static bool LooksSeeded(string title)
+            => title != null && title.Length > 6 && title[^6] == ' '
+               && DateTime.TryParseExact(title[^5..], "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
+
+        public static void Rename(string workspace, string sessionId, string title, bool seed = false)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return;
             string id = string.IsNullOrWhiteSpace(sessionId) ? LoopRef.LegacyId : sessionId;
@@ -77,11 +101,11 @@ namespace OpenLoop.App
                 var existing = items.FirstOrDefault(i => Same(i, workspace, id));
                 if (existing == null)
                 {
-                    items.Add(new LoopRef(workspace, DateTimeOffset.Now, id, title));
+                    items.Add(new LoopRef(workspace, DateTimeOffset.Now, id, title) { Seed = seed });
                 }
                 else
                 {
-                    items[items.IndexOf(existing)] = existing with { Title = title };
+                    items[items.IndexOf(existing)] = existing with { Title = title, Seed = seed };
                 }
                 Write(items);
             }

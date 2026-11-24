@@ -24,6 +24,13 @@ namespace OpenLoop.Service.Web
         /// <summary>每个会话最近一次写成功的宿主：遗言要回到有它历史的那个板上。</summary>
         private static readonly Dictionary<string, string> HostOf = new(StringComparer.Ordinal);
 
+        /// <summary>
+        /// 正在跑一轮时的 EstimatedWaitSeconds（非 0 = 留言板上 Status=Active）：
+        /// 同工作区的会话据此判断对方是不是还在干活，轮次收尾用 <see cref="Finished"/> 归零。
+        /// 会话在板上的登记要留 30 分钟，光看「还在不在」会把已停手的会话当成新会话播报。
+        /// </summary>
+        public const int RunningWaitSeconds = 60;
+
         /// <summary>一个可用的留言板宿主：@A / @I 走 HTTP，@Local 是本进程内存。</summary>
         public sealed class BoardHost
         {
@@ -70,7 +77,7 @@ namespace OpenLoop.Service.Web
             string say = first
                 ? $"我是 {agentId}（{role}，工作区 {workspace}，模型 {model}）：当前任务：{Clip(task, 200)}"
                 : null;
-            _ = Task.Run(() => Send(agentId, purpose, doing, say, remote));
+            _ = Task.Run(() => Send(agentId, purpose, doing, say, remote, RunningWaitSeconds));
         }
 
         /// <summary>会话关闭：清掉本会话之前的留言，只留最后一句遗言。</summary>
@@ -90,8 +97,24 @@ namespace OpenLoop.Service.Web
             string step = Clip(line.Trim(), 200);
             _ = Task.Run(() =>
             {
-                if (!remote || !PostAny("/agent/book/heartbeat", new { id = agentId, step }, out string host))
-                    AgentBook.Heartbeat(agentId, null, null, 0, "openloop", step: step);
+                if (!remote || !PostAny("/agent/book/heartbeat", new { id = agentId, step, waitEst = RunningWaitSeconds }, out string host))
+                    AgentBook.Heartbeat(agentId, null, null, RunningWaitSeconds, "openloop", step: step);
+                else
+                    lock (Gate) HostOf[agentId] = host;
+            });
+        }
+
+        /// <summary>
+        /// 一轮收尾（正常/停止/失败）：把本会话在留言板上改回空闲。别的会话开轮时就不会把
+        /// 已经停手的会话当成「新会话已启动」再播报一条协作提示。
+        /// </summary>
+        public static void Finished(string agentId, bool remote = false)
+        {
+            if (string.IsNullOrWhiteSpace(agentId)) return;
+            _ = Task.Run(() =>
+            {
+                if (!remote || !PostAny("/agent/book/heartbeat", new { id = agentId, waitEst = 0 }, out string host))
+                    AgentBook.Heartbeat(agentId, null, null, 0, "openloop");
                 else
                     lock (Gate) HostOf[agentId] = host;
             });
@@ -134,7 +157,8 @@ namespace OpenLoop.Service.Web
                         all.AddRange((book?.Agents ?? new List<BookAgent>()).Select(a => new PeerInfo
                         {
                             Id = a.Id, Purpose = a.Purpose, Doing = a.Operation,
-                            Steps = a.Steps?.ToArray() ?? [], IdleSeconds = a.IdleSeconds
+                            Steps = a.Steps?.ToArray() ?? [], IdleSeconds = a.IdleSeconds,
+                            Active = a.EstimatedWaitSeconds > 0
                         }));
                     }
                     catch
@@ -163,14 +187,15 @@ namespace OpenLoop.Service.Web
             {
                 Id = a.Id, Purpose = a.Purpose, Doing = a.Operation,
                 Steps = AgentBook.SnapshotSteps(a),
-                IdleSeconds = (int)Math.Max(0, (DateTime.Now - a.LastHeartbeatAt).TotalSeconds)
+                IdleSeconds = (int)Math.Max(0, (DateTime.Now - a.LastHeartbeatAt).TotalSeconds),
+                Active = a.EstimatedWaitSeconds > 0
             };
         }
 
-        private static void Send(string agentId, string purpose, string op, string say, bool remote)
+        private static void Send(string agentId, string purpose, string op, string say, bool remote, int waitEst = 0)
         {
-            if (!remote || !PostAny("/agent/book/heartbeat", new { id = agentId, purpose, op, say }, out string host))
-                AgentBook.Heartbeat(agentId, purpose, op, 0, "openloop", note: null, message: say);
+            if (!remote || !PostAny("/agent/book/heartbeat", new { id = agentId, purpose, op, say, waitEst }, out string host))
+                AgentBook.Heartbeat(agentId, purpose, op, waitEst, "openloop", note: null, message: say);
             else
                 lock (Gate) HostOf[agentId] = host;
         }
@@ -262,6 +287,7 @@ namespace OpenLoop.Service.Web
             public string Operation { get; set; }
             public List<string> Steps { get; set; }
             public int IdleSeconds { get; set; }
+            public int EstimatedWaitSeconds { get; set; }
         }
 
         private static string Clip(string text, int max)
@@ -278,6 +304,9 @@ namespace OpenLoop.Service.Web
 
         /// <summary>最近一次心跳距今的秒数（由留言板宿主统一计时，避免各会话时钟不一致）。</summary>
         public int IdleSeconds { get; set; }
+
+        /// <summary>是否正在跑一轮（留言板上 EstimatedWaitSeconds 非 0）：只有这类会话才值得播报。</summary>
+        public bool Active { get; set; }
 
         /// <summary>一行摘要：A-xxxx（空闲 42s；在做：…；最近：20:38:12 Edit[src/a.cs] → ok；…）</summary>
         public string Summary()

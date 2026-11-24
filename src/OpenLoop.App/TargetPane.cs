@@ -10,6 +10,9 @@ namespace OpenLoop.App
     /// </summary>
     internal sealed class TargetSpec
     {
+        internal const string PromptKind = PromptCatalog.SystemKind;
+        internal const string AgentsKind = PromptCatalog.AgentsKind;
+
         /// <summary>prompt | agents | …（以后：svg / gltf / web）。</summary>
         internal string Kind { get; init; }
         internal string Title { get; init; }
@@ -18,25 +21,33 @@ namespace OpenLoop.App
         /// <summary>「实际」形态（只读），没有就隐藏那一页。</summary>
         internal Func<string> Actual { get; init; }
 
+        /// <summary>编辑的是候选包（A/B 评测模式）：面板顶部浅黄底提示，别让人以为已生效。</summary>
+        internal bool Candidate { get; init; }
+
         internal static TargetSpec Prompt(string workspace)
         {
-            // 打开编辑器 = 显式写入口：没有模板文件时把内置默认落盘，agent 从这里改起
-            PromptCatalog.EnsureFile(workspace);
+            bool eval = HarnessMode.IsEval(workspace);
             return new()
             {
-                Kind = "prompt",
-                Title = "系统提示词模板",
-                Path = PromptCatalog.FilePath(workspace),
-                Actual = () => NewestTracePrompt(workspace)
+                Kind = PromptCatalog.SystemKind,
+                Title = eval ? "系统提示词模板（候选）" : "系统提示词模板",
+                Path = PromptCatalog.EditingPath(workspace, PromptCatalog.SystemKind),
+                Actual = () => NewestTracePrompt(workspace),
+                Candidate = eval
             };
         }
 
-        internal static TargetSpec Agents(string workspace) => new()
+        internal static TargetSpec Agents(string workspace)
         {
-            Kind = "agents",
-            Title = "AGENTS.md",
-            Path = PromptCatalog.AgentsPath(workspace)
-        };
+            bool eval = HarnessMode.IsEval(workspace);
+            return new()
+            {
+                Kind = PromptCatalog.AgentsKind,
+                Title = eval ? "AGENTS.md（候选）" : "AGENTS.md",
+                Path = PromptCatalog.EditingPath(workspace, PromptCatalog.AgentsKind),
+                Candidate = eval
+            };
+        }
 
         /// <summary>最近一次运行实际注入的系统提示词（trace 里落的 system.md）。</summary>
         internal static string NewestTracePrompt(string workspace)
@@ -78,6 +89,7 @@ namespace OpenLoop.App
             InitializeComponent();
             // 面板被拆掉（切会话、关窗）时把 watcher 与防抖 Timer 一起收掉，否则后台还在跑
             Disposed += (_, _) => Shutdown();
+            SizeChanged += (_, _) => FitBanner();
         }
 
         internal string Kind => _spec?.Kind ?? "";
@@ -99,8 +111,27 @@ namespace OpenLoop.App
             _actual = false;
             _segMode.SelectIndex = 0;
             _shown = null;
+            _banner.Visible = spec?.Candidate == true;
+            if (_banner.Visible) ShowBanner();
             Watch();
             Reload();
+        }
+
+        /// <summary>A/B 评测模式：改动只落候选包，用浅黄底提示，别让人以为已经生效。</summary>
+        private void ShowBanner()
+        {
+            _banner.Text = "A/B 评测模式：改动只写入候选包，考核题更好才启用；正式文件与当前生效内容不变。";
+            FitBanner();
+        }
+
+        /// <summary>面板是竖窄栏，提示按真实宽度折行量高度（与 HarnessView 同一做法）。</summary>
+        private void FitBanner()
+        {
+            if (!_banner.Visible) return;
+            int width = Math.Max(120, ClientSize.Width - _banner.Padding.Horizontal);
+            int height = TextRenderer.MeasureText(
+                _banner.Text, _banner.Font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak).Height;
+            _banner.Height = Math.Max(28, height + _banner.Padding.Vertical + 2);
         }
 
         /// <summary>重新读文件（watcher、以及每轮收尾都可以调）。</summary>
@@ -191,10 +222,18 @@ namespace OpenLoop.App
             Controls.Remove(_text);
             _text.Dock = DockStyle.Fill;
             form.Controls.Add(_text);
+            // 提示条跟着正文走：独立窗口也是编辑面，不能少了「这是候选包」这句
+            bool banner = _banner.Visible;
+            if (banner)
+            {
+                Controls.Remove(_banner);
+                form.Controls.Add(_banner);
+            }
             form.FormClosed += (_, _) =>
             {
                 _undocked = null;
                 if (IsDisposed) return;
+                if (banner) Controls.Add(_banner);
                 Controls.Add(_text);
                 Controls.SetChildIndex(_text, 0);
             };

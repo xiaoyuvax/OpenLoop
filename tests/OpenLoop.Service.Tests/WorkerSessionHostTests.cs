@@ -2,6 +2,7 @@ using OpenLoop.Core.Messages;
 using OpenLoop.Core.Safety;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Storage;
+using OpenLoop.Service.Web;
 using OpenLoop.Service.Worker;
 using Puppet.Core;
 using Xunit;
@@ -64,7 +65,7 @@ namespace OpenLoop.Service.Tests
         public async Task New_peer_in_the_same_workspace_queues_one_notice()
         {
             string peer = "A-peer" + Guid.NewGuid().ToString("N")[..8];
-            AgentBook.Heartbeat(peer, "Worker 会话 · " + _chats, "改 ChatFlow", 0, "openloop");
+            AgentBook.Heartbeat(peer, "Worker 会话 · " + _chats, "改 ChatFlow", SessionBoard.RunningWaitSeconds, "openloop");
             var gate = new TaskCompletionSource<WorkerRunResult>();
             try
             {
@@ -84,6 +85,33 @@ namespace OpenLoop.Service.Tests
             finally
             {
                 AgentBook.Release(peer);
+            }
+        }
+
+        [Fact]
+        public void Peer_that_already_finished_is_not_announced()
+        {
+            string peer = "A-peer" + Guid.NewGuid().ToString("N")[..8];
+            var gate = new TaskCompletionSource<WorkerRunResult>();
+            try
+            {
+                // 已停手的会话：登记还在板上（30 分钟保留期），但不在跑一轮
+                AgentBook.Heartbeat(peer, "Loop 会话 · " + _chats, "配置模型", 0, "openloop");
+
+                var host = NewHost((request, ct) => gate.Task);
+                var session = host.Create(_chats, "openrouter/free", "", () => new AppSettings());
+
+                host.Send(session.Id, "task", "先做我的");
+
+                Assert.DoesNotContain(host.Get(session.Id).Pending, t => t.Contains(peer));
+
+                gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
+                AgentBook.Release(peer);
+            }
+            finally
+            {
+                AgentBook.Release(peer);
+                gate.TrySetResult(new WorkerRunResult { Outcome = "ok" });
             }
         }
 

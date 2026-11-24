@@ -43,8 +43,10 @@ namespace OpenLoop.App
             _model = ModelCatalog.DefaultModel(settings);
             _effort = settings?.ReasoningEffort ?? "";
             _onlyFree = settings?.OnlyFreeModels ?? true;
-            _project = _projects.FirstOrDefault(p => Paths.Same(p, defaultWorkspace)) ??
-                _projects.FirstOrDefault() ?? "";
+            // 没有指定工作区（侧栏 + 号）时默认落在「新建项目」上
+            _project = string.IsNullOrWhiteSpace(defaultWorkspace)
+                ? ""
+                : _projects.FirstOrDefault(p => Paths.Same(p, defaultWorkspace)) ?? defaultWorkspace;
 
             _filling = true;
             try { _freeSwitch.Checked = _onlyFree; }
@@ -146,8 +148,19 @@ namespace OpenLoop.App
         {
             _projects.Clear();
             _projects.AddRange(Paths.Dedup(projects).OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
-            if (!_projects.Any(p => Paths.Same(p, _project)))
+            if (!string.IsNullOrWhiteSpace(_project) && !_projects.Any(p => Paths.Same(p, _project)))
                 _project = _projects.FirstOrDefault() ?? "";
+            FillProjects();
+        }
+
+        /// <summary>切到指定工作区；空字符串 = 落在「新建项目」上（侧栏 + 号）。</summary>
+        internal void SelectProject(string workspace)
+        {
+            if (!string.IsNullOrWhiteSpace(workspace) && !_projects.Any(p => Paths.Same(p, workspace)))
+                _projects.Add(workspace);
+            _project = string.IsNullOrWhiteSpace(workspace)
+                ? ""
+                : _projects.FirstOrDefault(p => Paths.Same(p, workspace)) ?? "";
             FillProjects();
         }
 
@@ -167,7 +180,8 @@ namespace OpenLoop.App
                     });
                 }
 
-                _selProject.SelectedValue = _projects.FirstOrDefault(p => Paths.Same(p, _project));
+                _selProject.SelectedValue =
+                    _projects.FirstOrDefault(p => Paths.Same(p, _project)) ?? NewProjectTag;
                 _lblPath.Text = _project;
             }
             finally

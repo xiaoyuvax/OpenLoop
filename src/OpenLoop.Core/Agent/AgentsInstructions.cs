@@ -10,10 +10,11 @@ namespace OpenLoop.Core.Agent
     {
         public const int MaxChars = 32000;
 
-        public static string Load(string workspace, string globalPath = null)
+        /// <param name="projectText">候选包里的 AGENTS.md 正文；null = 读工作区正式文件。</param>
+        public static string Load(string workspace, string globalPath = null, string projectText = null)
         {
             string global = ReadFile(globalPath);
-            string project = ReadWorkspaceFile(workspace);
+            string project = projectText != null ? Normalize(projectText) : ReadWorkspaceFile(workspace);
 
             string text = global != null && project != null
                 ? "## 全局约定\n" + global + "\n\n## 项目约定\n" + project
@@ -23,6 +24,13 @@ namespace OpenLoop.Core.Agent
             if (text.Length > MaxChars)
                 text = text[..MaxChars] + "\n\n（AGENTS.md 过长，已截断）";
             return text;
+        }
+
+        private static string Normalize(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            string trimmed = text.Trim();
+            return trimmed.Length == 0 ? null : trimmed;
         }
 
         private static string ReadWorkspaceFile(string workspace)

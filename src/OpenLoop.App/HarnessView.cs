@@ -35,6 +35,9 @@ namespace OpenLoop.App
         /// <summary>「Prompt」「AGENTS.md」按钮：宿主打开目标会话让模型改（用户不直接编辑文本）。</summary>
         internal event Action<string> EditTargetRequested;
 
+        /// <summary>切了直配 / A/B 模式：宿主据此重开左栏目标（编辑面从正式文件换成候选包，反之亦然）。</summary>
+        internal event Action ModeChanged;
+
         internal void Initialize(Func<string> workspace, Func<AppSettings> settings,
             Func<string> model, Func<string> effort, Action<string, string, bool> notify)
         {
@@ -43,10 +46,11 @@ namespace OpenLoop.App
             _model = model;
             _effort = effort;
             _notify = notify;
-            _flow.SizeChanged += (_, _) => FitHint();
+            _flow.SizeChanged += (_, _) => FitLabels();
+            _lblStatus.TextChanged += (_, _) => FitLabels();
             _tips.SetToolTip(_lblDef, Localization.T("HarnessTipDef"));
             _tips.SetToolTip(_lblTasks, Localization.T("HarnessTipTasks"));
-            FitHint();
+            FitLabels();
             Reload();
         }
 
@@ -66,6 +70,7 @@ namespace OpenLoop.App
             {
                 _lblDef.Text = "def: —";
                 _lblTasks.Text = Localization.T("Tasks") + ": —";
+                FitLabels();
                 UpdateEvolveEnabled();
                 return;
             }
@@ -92,7 +97,42 @@ namespace OpenLoop.App
                 _lblDef.Text = "def: " + ex.Message;
                 _lblTasks.Text = Localization.T("Tasks") + ": —";
             }
+            RefreshMode();
+            FitLabels();
             UpdateEvolveEnabled();
+        }
+
+        /// <summary>Harness 模式与候选包状态（直配 = 下一个会话直接生效；评测 = 先暂存候选包）。</summary>
+        private void RefreshMode()
+        {
+            string workspace = Workspace;
+            bool eval = HarnessMode.IsEval(workspace);
+            _btnMode.Text = Localization.T(eval ? "HarnessModeEval" : "HarnessModeDirect");
+            var pending = PromptCatalog.PendingKinds(workspace);
+            _lblCandidate.Text = pending.Count == 0
+                ? Localization.T("HarnessCandidateNone")
+                : Localization.T("HarnessCandidatePending").Replace("{0}",
+                    string.Join(" / ", pending.Select(DescribeKind)));
+        }
+
+        private static string DescribeKind(string kind)
+            => kind == PromptCatalog.AgentsKind ? "AGENTS.md" : Localization.T("HarnessSystemPrompt");
+
+        private void OnToggleMode(object sender, EventArgs e)
+        {
+            string workspace = Workspace;
+            if (!Directory.Exists(workspace))
+            {
+                Notify(Localization.T("PickWorkspace"), Localization.T("WorkspaceMissing") + workspace, error: true);
+                return;
+            }
+            bool eval = HarnessMode.IsEval(workspace);
+            HarnessMode.Set(workspace, eval ? HarnessMode.Direct : HarnessMode.Eval);
+            RefreshMode();
+            FitLabels();
+            Notify(Localization.T("HarnessModeTitle"),
+                Localization.T(eval ? "HarnessSwitchedDirect" : "HarnessSwitchedEval"));
+            ModeChanged?.Invoke();
         }
 
         private string Workspace => _workspace?.Invoke()?.Trim() ?? "";
@@ -114,17 +154,25 @@ namespace OpenLoop.App
         private void OnFlowLayout(object sender, LayoutEventArgs e)
             => FlowButtons.Center(sender as FlowLayoutPanel);
 
-        private void FitHint()
+        private void FitLabels()
         {
+            // 顶部的 def / 考核题 / 状态与候选包说明都会随账本变长：
+            // 只给固定宽度会被截断，按侧栏实际宽度重排并重新量高度（与 Worker 的 FitLoopLabels 同口径）。
             int width = Math.Max(120, _flow.ClientSize.Width - 28);
-            _lblHint.MaximumSize = new Size(width, 0);
-            _lblHint.Width = width;
+            foreach (var label in new[] { _lblDef, _lblTasks, _lblStatus, _lblCandidate, _lblHint })
+                FitWrapped(label, width);
+        }
+
+        private static void FitWrapped(AntdUI.Label label, int width)
+        {
+            label.MaximumSize = new Size(width, 0);
+            label.Width = width;
             int height = TextRenderer.MeasureText(
-                _lblHint.Text,
-                _lblHint.Font,
+                label.Text,
+                label.Font,
                 new Size(width, int.MaxValue),
                 TextFormatFlags.WordBreak).Height;
-            _lblHint.Height = Math.Max(18, height + 2);
+            label.Height = Math.Max(18, height + 2);
         }
 
         private void OnOpenDrafts(object sender, EventArgs e)

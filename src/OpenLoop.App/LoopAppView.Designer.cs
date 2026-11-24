@@ -63,8 +63,8 @@ namespace OpenLoop.App
             _table.ShowTip = true;
             _table.EmptyText = Localization.T("LoopAppEmpty");
             _table.Margin = new Padding(0);
-            _table.Columns.Add(new AntdUI.Column("Name", Localization.T("Name")) { Width = "110" });
-            _table.Columns.Add(new AntdUI.Column("Usage", Localization.T("LoopAppUsageLabel")) { Width = "120" });
+            _table.Columns.Add(new AntdUI.Column("Name", Localization.T("Name")));
+            _table.Columns.Add(new AntdUI.Column("Usage", Localization.T("LoopAppUsageLabel")));
             _table.Columns.Add(new AntdUI.Column("Path", Localization.T("LoopAppColPath")));
 
             _lblHint.Name = "lblLoopAppHint";

@@ -632,7 +632,9 @@ namespace OpenLoop.Service.Worker
             // 璋冪敤鏂规寔鏈?_lock
             var peers = OpenLoop.Service.Web.SessionBoard.Peers(
                 session.Workspace, AgentIdentity.IdFor("A", session.Id));
-            var fresh = peers.Where(p => session.PeersAnnounced.Add(p.Id)).ToList();
+            // 只播报正在跑一轮的会话：会话收尾后登记还要在板上留 30 分钟，
+            // 把已经停手的会话当成「新会话已启动」播报出去，别的会话会收到毫无用处的一条提示。
+            var fresh = peers.Where(p => p.Active).Where(p => session.PeersAnnounced.Add(p.Id)).ToList();
             if (fresh.Count == 0) return;
             // 协作提示与监测汇报同一时机：插到队首、标 Immediate，当前轮在下一个 step 前收尾后先发
             session.Pending.Insert(0, new PendingSend
@@ -950,6 +952,7 @@ namespace OpenLoop.Service.Worker
                 }
 
                 string failedModel = null;
+                bool startedNext = false;
                 lock (_lock)
                 {
                     turn.Streaming = false;
@@ -982,9 +985,17 @@ namespace OpenLoop.Service.Worker
                     if (result.Outcome != "error" && !session.Paused && session.Pending.Count > 0)
                     {
                         var batch = TakeBatch(session.Pending);
-                        if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch), MergeContexts(batch), batch[0].Auto ? batch[0].Tag ?? "collab" : null);
+                        if (batch.Count > 0)
+                        {
+                            startedNext = true;
+                            Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch), MergeContexts(batch), batch[0].Auto ? batch[0].Tag ?? "collab" : null);
+                        }
                     }
                 }
+
+                // 这一轮收尾了：在留言板上改回空闲（紧接着开了下一轮的话 Start 已重新标成运行中）
+                if (!startedNext)
+                    OpenLoop.Service.Web.SessionBoard.Finished(AgentIdentity.IdFor("A", session.Id));
 
                 Changed?.Invoke(id);
                 Persist(session);

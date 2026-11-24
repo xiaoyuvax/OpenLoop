@@ -18,7 +18,8 @@
 - **Harness 是工作区级的五类对象**：**Prompt**（系统提示词模板 + `AGENTS.md`）、**Skill**、**Rule**、**Limit**、**Guard**；Limit/Guard 含自愈参数（连接重试、免费额度恢复、退化输出、参数修复）。同一二进制在不同工作区可以是不同形态。
 - **演进 = 非即时集中分析**：findings 与运行证据先攒着，到点集中分诊一次，判 `harness / source / unknown`；harness 类出激活集候选并过 Gate，source 类写 `loop/dispatch/<batch>.md` 派单，状态记 `loop/triage.jsonl`（追加式，按 id 取最后一条）。`/report` 只落账、不触发演进。
 - **findings 只记「尚未处置、且能分派到某个对象」的观察**（当场修好的写进回复/提交）；用户入口是 `/report [harness|prompt|skill|rule|limit|guard|code] <观察>`，WinForms 与 Web 共用 `FindingTriage.Report`。
-- **TargetCentricSession**：会话可绑定一个唯一编辑目标（系统提示词模板 `prompts/system.md` 与 `AGENTS.md`；以后可扩到 SVG/网页等）。实现是 `TargetPane` + `TargetSpec`（Kind/Title/Path/Actual），左栏只读呈现、文件 watcher 驱动刷新、可 undock 成独立窗体；用户用聊天让模型改、模型落盘，用户不直接改文本。加新目标类型 = 新 Kind + 呈现控件 + Bind，不改会话主流程。入口 `/prompt`、`/agents`。系统提示词模板按内容哈希登记为账本 `kind=prompt` 特征，未登记的内容不采用。
+- **TargetCentricSession**：会话可绑定一个唯一编辑目标（系统提示词模板 `prompts/system.md` 与 `AGENTS.md`；以后可扩到 SVG/网页等）。实现是 `TargetPane` + `TargetSpec`（Kind/Title/Path/Actual），左栏只读呈现、文件 watcher 驱动刷新、可 undock 成独立窗体；用户用聊天让模型改、模型落盘，用户不直接改文本。加新目标类型 = 新 Kind + 呈现控件 + Bind，不改会话主流程。入口 `/sysprompt`、`/agentsmd`。系统提示词模板按内容哈希登记为账本 `kind=prompt` 特征，未登记的内容不采用。
+- **Harness 两种生效方式**（`HarnessMode`，`loop/harness.json` 存 mode，Harness 页与 Web 同一颗切换按钮）：`direct` = 用户直配，Prompt / `AGENTS.md` 改了下个会话直接生效；`eval` = A/B 评测，改动先落候选包 `.openloop/eval/candidates/pending/`（编辑面换成候选文件，左栏标题带「（候选）」），演进时叠到候选激活集上过考核题，严格更好才 `CommitPending` 覆盖正式文件。候选未采纳前正式文件与当前激活集都不变。
 
 ## 构建与验证
 
@@ -38,7 +39,7 @@
 
 - **A 面（`/agent/*`）**：开发期全反射调试，key 见下；**B 面（`/appagent/*`）**：用户 Agent 的具名 Action 通道，凭证在框架写的发现档案 `%LOCALAPPDATA%\Puppet.AppAgents\OpenLoop.<pid>.json`（`probe`/`help` 免凭证，其余带 `Authorization: Bearer <key>`）。两面调的是同一批公开方法，结果同源；区别只在 A 用位置参数、B 用按名参数（未知/缺必填直接 400）。
 - **壳的操作面按 Action 范式写**：`public` 实例方法返回 `OperationResult`/`bool`（= 成败可观察）即自动进 B 的 manifest；`string`/`string[]` 查询方法只属于 A/内部，不要为了 B 去改它们的返回形状。新增操作时同步考虑两面，别写两份。
-- **壳重启只走 `RestartShell` 动作**（`Puppet` target=shell）：它先起交接 helper、确认起来才退出；helper 等旧壳退出再拉起新壳，进到界面才算成功，失败重试 3 次；helper 没起来就留在当前壳。默认重启同一份二进制；`from` 给一个含 `OpenLoop.exe` 的目录则换到那一份（覆盖前备份、起不来回滚）——壳调试就按「编译/发布到临时目录 → RestartShell(from=目录)」走。**禁止用 Shell 杀进程/关窗口来「重启」**——那样壳直接消失、没人接手（2026-11-24 事故）。有会话在跑时该动作会拒绝，先 `StopSession`。
+- **壳重启只走 `RestartShell` 动作**（`Puppet` target=shell）：它先起交接 helper、确认起来才退出；helper 等旧壳退出再拉起新壳，进到界面才算成功，失败重试 3 次；helper 没起来就留在当前壳。默认重启同一份二进制；`from` 给一个含 `OpenLoop.exe` 的目录则换到那一份（覆盖前备份、起不来回滚）——壳调试就按「编译/发布到临时目录 → RestartShell(from=目录)」走。**禁止用 Shell 杀进程/关窗口来「重启」**——那样壳直接消失、没人接手（2026-11-24 事故）。**只换壳，不动 A/I**：旧壳退出前写 `runtime/shell-handoff.json`（`ShellHandoff.Begin`），`Supervisor.StopAll` 见到本壳的交接标记就不收 A/I；新壳启动先 `ShellHandoff.PublishShell` 发布自己的 pid，A/I 的 `ParentWatch` 改守护它、新壳 `Ensure` 接手，正在跑的 Worker 会话与标签页按落盘状态接回。只有壳自己进程里的 Loop 轮 / Worker 旁路会被中断，它们在跑时动作会拒绝（`BusyInShell`）。
 - 常用 B 动作：`OpenSession` → `SetComposerText` → `Send`（空闲=发送 / 运行中=立即发送（软打断本轮，收尾后先发；`immediate:false` 等本轮返回）/ 运行中且输入框为空=停止）；`StopSession` 硬停当前轮、`InterruptSession` 软打断（下一 step 前收尾）；`EnqueuePending`/`SendPendingNow`/`RetractPending`/`RemovePending` 管排队；`OpenLoop`/`SendLoop`（同样收 `immediate`）/`StopLoop` 管 Loop 会话；`DeleteSessions`/`RemoveProject` 是不可恢复的 High 风险动作。
 - **右侧栏「网页」页是内嵌 WebView2 浏览器**（`BrowserView`）：**按需创建**——侧栏默认没有这一页，只有 Agent 调浏览器动作时才插入并选中（用户点不出空 WebView，避免白占内存），右键页签可「关闭网页」销毁实例。默认锁定，只有 Agent 能操作；`OpenBrowser(url)`/`NavigateBrowser(url)`/`EvalBrowserScript(js)`/`BrowserScreenshot()` 驱动它（后三个在没有该页时也会自动打开），`SetBrowserInteract(true)` 解锁给用户点按，`UndockBrowser`/`DockBrowser` 在独立窗口与侧栏之间搬。状态看 `BrowserState`/`BrowserUrl`。`EvalBrowserScript` 返回 WebView2 的 JSON 结果（字符串结果带引号）。**`BrowserScreenshot` 需要「网页」页已激活**，否则 `CapturePreviewAsync` 失败且只报「截图超时」；`NavigateBrowser` 异步返回（`data` 是导航前的旧 URL），取页面内容前先轮询 `EvalBrowserScript("document.readyState")`，并检查 `location.href` 不是 `chrome-error://`（DNS/网络失败时 `NavigateBrowser` 仍回成功）；`BrowserScreenshot` 的 PNG 走 `asset` 链接（`/appagent/assets/<id>`）下载。侧栏最窄 360 DIP；再窄时工具栏按「系统浏览器 → 刷新 → 前进 → 独立窗口」收起按钮，保住地址栏。
 - **LoopApp 的呈现方式与收尾**：右侧栏是竖版窄栏，只适合小表单/单列列表。`LoopApp(open)` 后壳在导航完成时量一次 DOM（元素数、表格列数、宽块、页高、横向溢出），内容多就自动搬进独立窗口，少就留在侧栏（判定与阈值在 `LoopAppLayout`，纯函数有单测）。`app.json` 的 `window: dock|float` 与 `size: [w,h]` 优先于实测；用户自己关掉独立窗口后本次不再自动浮出。任务做完（页面 `ui.submit` 过、本轮收尾）自动收起：隐藏页面 → 关独立窗口 → 摘掉「网页」标签，实例留着；收起且闲置超过账本 `limit.browser_idle` 分钟（默认 30，按工作区可配可演化）才销毁 WebView2。`LoopApp(close)` 可手动走同一条路。
@@ -78,6 +79,7 @@
 - 协作会话默认沿用发起方已完成的轮次（同模型才复用前缀缓存），也可由发起方用 `context` 另给上下文；轮询间隔见设置页「协作」（`CollabPollSeconds`）。全部会话结束或不可恢复地中止后监测自动停止，协作登记随 `.json` 落盘（A 重启后探活接管）。暂不支持跨工作区。
 - **留言板私信（`say` 带 `to`）只对发送方与目标可见，并会主动投递**：`Puppet(target=.., action="say", text=.., to="A-xxxx")` 写板成功后，`PeerDelivery` 把这条以「会话私信」的协作提示正文推进目标队列（A 会话走 `WorkerApiClient.NoticeAsync(..., "mention")`，壳里的 Loop 会话说 `MainForm.DeliverNotice`；本进程能直投走 `PeerDelivery.Local`），目标不必来读板。只投同工作区的会话（`PeerDelivery.Resolve` 按 `AgentIdentity.Workspace` 比对留言板上的 Purpose，`to` 也可只写前缀）；别的会话不投，工具结果里会说明「只留在留言板上」。省略 `to` 才是广播——广播要对方主动读，没读到就错过。
 - **私信可见性在会话侧过滤**：留言板宿主按 `to` 记账，但读接口不按观看者裁剪，所以 Agent 走 `Puppet` 工具 `chat`/`book`/`say` 时，`BoardPrivacy.Filter` 会摘掉不是我的私信（含 peer 的「最后一句」与最近一条 chat）。用户自己看的 `[Puppet]` 页不过滤。新增读板路径时同样要过这一层，别把别人的私信漏出去。
+- **「同工作区新会话已启动」只播报正在跑一轮的会话**：开轮时 `SessionBoard.Opening` 把留言板上的 `EstimatedWaitSeconds` 标成非 0（`SessionBoard.RunningWaitSeconds`），轮次收尾（正常/停止/失败，含 Loop 的 `finally`）用 `SessionBoard.Finished` 归零；`AnnouncePeers` 只认 `PeerInfo.Active`。会话登记在板上要留 30 分钟，光看「还在不在」会把早就停手的会话当成新会话播报一条没用的协作提示。
 
 ## 免费额度自愈（ConnMan）
 
@@ -95,7 +97,7 @@
 ## UI 规则
 
 - Worker（`WorkerSessionHost`）与 Loop、旁路的会话展示保持一致：流式正文一律用 `AgentToolCallParser.CutToolCallText` 截掉协议片段（不只判「整段以 marker 开头」，否则协议原文会先闪现再被收尾清掉），不要各写一份判据。
-- 工具闪现区（`ChatFlow`）：没有正文、也没有正在执行的工具行时，按节拍把思维链**尾部半行**（`ChatFlowControl.TailHalfLine`，按真实排版宽度截到半行宽）刷进正文 FCTB，让用户看到模型还在动；正文出来或工具有行就立刻让位，回合结束清空。节拍取账本 `limit.flash_interval`（毫秒，300–5000，默认 1000，`SessionView.FlashIntervalMs` 读、`ChatFlowControl.FlashInterval` 注入），Worker / Loop / 旁路三处绑定时都要设。
+- 工具闪现区（`ChatFlow`）：没有正文、也没有正在执行的工具行时，按节拍把思维链**尾部半行**（`ChatFlowControl.TailHalfLine`，按真实排版宽度截到半行宽）刷进正文 FCTB，让用户看到模型还在动；正文出来或工具有行就立刻让位，回合结束清空。节拍取账本 `limit.flash_interval`（毫秒，300–5000，默认 500，`SessionView.FlashIntervalMs` 读、`ChatFlowControl.FlashInterval` 注入），Worker / Loop / 旁路三处绑定时都要设。
 - 仓库采用 AntdUI（2.4.15）；`AntdUI.xml` 是 API 事实来源，不猜属性。
 - 本机 250% DPI：
   - 设计器里的尺寸会自动缩放；**运行时算出来的像素必须 `DeviceDpi/96` 缩放**。
@@ -107,6 +109,7 @@
 - `AntdUI.Label` 带 `PrefixSvg` 时默认 `IconGap=0`，会与文字重叠，显式设 `IconGap`。
 - 大量模型（399 个）时 `Select` 只放过滤后的列表；免费模型用绿点 + “免费”副标题标识。
 - 新增 `ChatFlowControl` 必须在 `InitializeComponent()` 后、`Bind` 前显式设 `ChatFont`——它不是 `Control.Font`，字体遍历/`Font` 赋值不会自动覆盖。
+- 给 `FastColoredTextBox` 赋比例字体（雅黑/Segoe 等非等宽）前必须先设 `AllowProportionalFont = true`：FCTB 2.19.2 起构造期 `SetFont` 直接抛异常，整个视图构造失败（会话/Loop tab 打不开）；等宽代码场景（Consolas）不受影响。TargetPane 即因此炸掉两类会话页（2026-11-24）。
 - 新控件的颜色统一从 `UiStyle` 取，不写死 `Color.X`；自绘控件跟随主题。
 - 聊天区消息对齐（ChatFlow，Worker 与 Loop、WinForms 与 Web 同一套）：用户消息靠右、正文块宽度封顶行宽一半（文字在块内左对齐），助手消息贴左占满整行；行内不显示「用户 / AI」角色标注，靠左右位置区分。
 - 聊天区链接分流（`ChatPathActions` + 各视图 `OnChatLinkClicked`，Worker 与 Loop 一致）：网址 → 右侧「网页」内置浏览器；目录 → 直接用资源管理器打开；文本 → 右侧「文件」页（同一个页换内容，不叠 tab）；其余文件（二进制/过大/解码失败）→ 问一句再用系统默认程序打开。

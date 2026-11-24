@@ -39,7 +39,7 @@ namespace OpenLoop.App
         /// <summary>用户重命名或模型总结出来的内容简述；空值只显示工作目录名。</summary>
         public string CustomTitle { get; set; }
 
-        /// <summary>标题是用户手动改的：自动总结（首轮/结束时）不再覆盖。</summary>
+        /// <summary>标题是用户手动改的：自动总结（开跑 5 秒/轮次结束时）不再覆盖。</summary>
         public bool ManualTitle { get; set; }
 
         /// <summary>[Loop] 页的行：标题按 Loop 规格带前缀。</summary>

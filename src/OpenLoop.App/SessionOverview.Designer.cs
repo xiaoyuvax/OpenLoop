@@ -101,7 +101,7 @@ namespace OpenLoop.App
             _leftHeader.Margin = new Padding(0);
 
             _lblProjects.Dock = DockStyle.Fill;
-            _lblProjects.Text = Localization.T("Projects");
+            _lblProjects.Text = Localization.T("Workspace");
             _lblProjects.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
             _lblProjects.ForeColor = UiStyle.Muted;
             _lblProjects.TextAlign = ContentAlignment.MiddleLeft;

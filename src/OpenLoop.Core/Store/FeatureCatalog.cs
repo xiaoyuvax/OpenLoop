@@ -36,7 +36,7 @@ namespace OpenLoop.Core.Store
 
         public const int DefaultMentionTurns = 6;
         public const int DefaultBrowserIdleMinutes = 30;
-        public const int DefaultFlashInterval = 1000;
+        public const int DefaultFlashInterval = 500;
 
         /// <summary>中途快照的节流间隔（秒）：整轮跑很久时按它落一次盘，崩溃最多丢这一段进度。</summary>
         public const string CheckpointInterval = "limit.checkpoint_interval";

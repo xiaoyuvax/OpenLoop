@@ -40,7 +40,7 @@ namespace OpenLoop.App
         private AntdUI.Select _selModel;
         private AntdUI.Select _selProvider;
         private AntdUI.Select _selEffort;
-        private AntdUI.Button _btnAttach;
+        private AntdUI.Dropdown _btnAttach;
         private AntdUI.Label _lblAttach;
         private AntdUI.Select _selImage;
         private AntdUI.Button _btnImage;
@@ -102,7 +102,7 @@ namespace OpenLoop.App
             _selModel = new AntdUI.Select();
             _selProvider = new AntdUI.Select();
             _selEffort = new AntdUI.Select();
-            _btnAttach = new AntdUI.Button();
+            _btnAttach = new AntdUI.Dropdown();
             _lblAttach = new AntdUI.Label();
             _selImage = new AntdUI.Select();
             _btnImage = new AntdUI.Button();
@@ -339,6 +339,7 @@ namespace OpenLoop.App
             _txtInput.Name = "txtInput";
             _txtInput.Dock = DockStyle.Fill;
             _txtInput.Multiline = true;
+            _txtInput.AcceptsTab = true;
             _txtInput.Radius = 10;
             _txtInput.BorderWidth = 1;
             _txtInput.BackColor = UiStyle.Surface;
@@ -405,11 +406,12 @@ namespace OpenLoop.App
             _btnAttach.Radius = 8;
             _btnAttach.IconSvg = UiIcons.Of(UiIcons.Attach, UiStyle.Muted);
             _btnAttach.Margin = new Padding(4, 0, 4, 0);
-            _btnAttach.Click += OnAttachClick;
+            _btnAttach.MaxCount = 20;
+            _btnAttach.SelectedValueChanged += OnAttachMenu;
 
             _lblAttach.Name = "lblAttach";
             _lblAttach.AutoSize = false;
-            _lblAttach.Width = 280;
+            _lblAttach.Width = 56;
             _lblAttach.Height = 30;
             _lblAttach.Text = "";
             _lblAttach.Font = new Font("Segoe UI", 8.5F);
@@ -417,9 +419,7 @@ namespace OpenLoop.App
             _lblAttach.TextAlign = ContentAlignment.MiddleLeft;
             _lblAttach.AutoEllipsis = true;
             _lblAttach.Visible = false;
-            _lblAttach.Cursor = Cursors.Hand;
             _lblAttach.Margin = new Padding(0);
-            _lblAttach.Click += OnClearAttachments;
 
             _selEffort.Name = "selEffort";
             _selEffort.Width = 128;

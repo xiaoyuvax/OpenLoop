@@ -52,6 +52,8 @@ namespace OpenLoop.App
 
             // 壳只负责拉起 A（Worker）。界面是它的客户端，不再在自己的进程里跑 Agent。
             var store = new VersionStore();
+            // 只换壳的交接：公开本进程 pid，留在旧壳下的 A/I 认领后改守护这里，重启前后的会话不断
+            ShellHandoff.PublishShell();
             using var supervisor = new Supervisor(message => AppLog.Info(message), store);
             supervisor.PruneArchives();
             try

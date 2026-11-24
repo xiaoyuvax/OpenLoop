@@ -8,6 +8,7 @@ namespace OpenLoop.App
         private AntdUI.Segmented _segMode;
         private AntdUI.Button _btnUndock;
         private AntdUI.Button _btnClose;
+        private System.Windows.Forms.Label _banner;
         private FastColoredTextBoxNS.FastColoredTextBox _text;
 
         protected override void Dispose(bool disposing)
@@ -24,6 +25,7 @@ namespace OpenLoop.App
             _segMode = new AntdUI.Segmented();
             _btnUndock = new AntdUI.Button();
             _btnClose = new AntdUI.Button();
+            _banner = new System.Windows.Forms.Label();
             _text = new FastColoredTextBoxNS.FastColoredTextBox();
             _bar.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)_text).BeginInit();
@@ -75,6 +77,16 @@ namespace OpenLoop.App
             _btnClose.Margin = new System.Windows.Forms.Padding(4, 0, 0, 0);
             _btnClose.Click += (_, _) => CloseRequested?.Invoke();
 
+            _banner.Name = "targetBanner";
+            _banner.Dock = System.Windows.Forms.DockStyle.Top;
+            _banner.AutoSize = false;
+            _banner.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            _banner.Padding = new System.Windows.Forms.Padding(10, 6, 10, 6);
+            _banner.Margin = new System.Windows.Forms.Padding(0);
+            _banner.BackColor = UiStyle.AutoInsertBack;
+            _banner.ForeColor = UiStyle.Text;
+            _banner.Visible = false;
+
             _text.Name = "targetText";
             _text.Dock = System.Windows.Forms.DockStyle.Fill;
             _text.ReadOnly = true;
@@ -83,7 +95,9 @@ namespace OpenLoop.App
             _text.BorderStyle = System.Windows.Forms.BorderStyle.None;
             _text.BackColor = UiStyle.Surface;
             _text.ForeColor = UiStyle.Text;
-            _text.Font = new System.Drawing.Font("Consolas", 10F);
+            _text.AllowProportionalFont = true; // 目标正文用比例字体（FCTB 2.19.2 起必须显式开启，否则 SetFont 抛异常、整个会话页构造失败）
+            _text.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
+            _text.Paddings = new System.Windows.Forms.Padding(2);
 
             _bar.Controls.Add(_lblTitle, 0, 0);
             _bar.Controls.Add(_segMode, 1, 0);
@@ -91,6 +105,7 @@ namespace OpenLoop.App
             _bar.Controls.Add(_btnClose, 3, 0);
 
             Controls.Add(_text);
+            Controls.Add(_banner);
             Controls.Add(_bar);
             Name = "TargetPane";
             BackColor = UiStyle.Surface;

@@ -47,11 +47,13 @@ namespace OpenLoop.App
         private AntdUI.Button _btnRule;
         private AntdUI.Button _btnPrompt;
         private AntdUI.Button _btnAgents;
+        private AntdUI.Button _btnMode;
+        private AntdUI.Label _lblCandidate;
         private TableLayoutPanel _inputArea;
         private AntdUI.Input _txtInput;
         private TableLayoutPanel _toolbar;
         private FlowLayoutPanel _toolbarRight;
-        private AntdUI.Button _btnAttach;
+        private AntdUI.Dropdown _btnAttach;
         private AntdUI.Label _lblAttach;
         private AntdUI.Select _selImage;
         private AntdUI.Button _btnImage;
@@ -120,13 +122,15 @@ namespace OpenLoop.App
             _btnRule = new AntdUI.Button();
             _btnPrompt = new AntdUI.Button();
             _btnAgents = new AntdUI.Button();
+            _btnMode = new AntdUI.Button();
+            _lblCandidate = new AntdUI.Label();
             _inputArea = new TableLayoutPanel();
             _txtInput = new AntdUI.Input();
             _toolbar = new TableLayoutPanel();
             _toolbarRight = new FlowLayoutPanel();
             _selProvider = new AntdUI.Select();
             _selModel = new AntdUI.Select();
-            _btnAttach = new AntdUI.Button();
+            _btnAttach = new AntdUI.Dropdown();
             _lblAttach = new AntdUI.Label();
             _selImage = new AntdUI.Select();
             _btnImage = new AntdUI.Button();
@@ -360,6 +364,15 @@ namespace OpenLoop.App
             // 放在按钮组下方：与上方按钮留一段距离，别贴着
             _lblEvolveHint.Margin = new Padding(0, 12, 0, 0);
 
+            _btnMode.Name = "btnMode";
+            _btnMode.Text = Localization.T("HarnessModeDirect");
+            _btnMode.Radius = 8;
+            _btnMode.Height = 34;
+            _btnMode.Width = 236;
+            _btnMode.IconSvg = UiIcons.Of(UiIcons.Refresh, UiStyle.Text);
+            _btnMode.Margin = new Padding(0, 0, 0, 8);
+            _btnMode.Click += OnToggleMode;
+
             _btnDrafts.Name = "btnDrafts";
             _btnDrafts.Text = Localization.T("TaskDrafts");
             _btnDrafts.Radius = 8;
@@ -423,6 +436,15 @@ namespace OpenLoop.App
             _btnAgents.Margin = new Padding(0, 0, 0, 4);
             _btnAgents.Click += OnEditAgents;
 
+            _lblCandidate.AutoSize = false;
+            _lblCandidate.TextMultiLine = true;
+            _lblCandidate.Width = 236;
+            _lblCandidate.Height = 20;
+            _lblCandidate.Text = Localization.T("HarnessCandidateNone");
+            _lblCandidate.Font = new Font("Segoe UI", 8F);
+            _lblCandidate.ForeColor = UiStyle.Muted;
+            _lblCandidate.Margin = new Padding(0, 2, 0, 6);
+
             _lblDModel.AutoSize = true;
             _lblDModel.Text = Localization.T("Model") + ": —";
             _lblDModel.Font = new Font("Segoe UI", 9F);
@@ -482,6 +504,7 @@ namespace OpenLoop.App
             _loopFlow.Controls.Add(_lblTrace);
             _loopFlow.Controls.Add(_lblCost);
             _loopFlow.Controls.Add(_lblStatus);
+            _loopFlow.Controls.Add(_btnMode);
             _loopFlow.Controls.Add(_btnDrafts);
             _loopFlow.Controls.Add(_btnReport);
             _loopFlow.Controls.Add(_btnEvolve);
@@ -489,6 +512,7 @@ namespace OpenLoop.App
             _loopFlow.Controls.Add(_btnRule);
             _loopFlow.Controls.Add(_btnPrompt);
             _loopFlow.Controls.Add(_btnAgents);
+            _loopFlow.Controls.Add(_lblCandidate);
             // 说明文字放最后：所有按钮之下，占住底部空白区
             _loopFlow.Controls.Add(_lblEvolveHint);
 
@@ -523,6 +547,7 @@ namespace OpenLoop.App
             _txtInput.Name = "txtInput";
             _txtInput.Dock = DockStyle.Fill;
             _txtInput.Multiline = true;
+            _txtInput.AcceptsTab = true;
             _txtInput.Radius = 10;
             _txtInput.BorderWidth = 1;
             _txtInput.BackColor = UiStyle.Surface;
@@ -563,11 +588,12 @@ namespace OpenLoop.App
             _btnAttach.Radius = 8;
             _btnAttach.IconSvg = UiIcons.Of(UiIcons.Attach, UiStyle.Muted);
             _btnAttach.Margin = new Padding(4, 0, 4, 0);
-            _btnAttach.Click += OnAttachClick;
+            _btnAttach.MaxCount = 20;
+            _btnAttach.SelectedValueChanged += OnAttachMenu;
 
             _lblAttach.Name = "lblAttach";
             _lblAttach.AutoSize = false;
-            _lblAttach.Width = 300;
+            _lblAttach.Width = 56;
             _lblAttach.Height = 30;
             _lblAttach.Text = "";
             _lblAttach.Font = new Font("Segoe UI", 8.5F);
@@ -575,9 +601,7 @@ namespace OpenLoop.App
             _lblAttach.TextAlign = ContentAlignment.MiddleLeft;
             _lblAttach.AutoEllipsis = true;
             _lblAttach.Visible = false;
-            _lblAttach.Cursor = Cursors.Hand;
             _lblAttach.Margin = new Padding(0);
-            _lblAttach.Click += OnClearAttachments;
 
             _toolbarRight.Dock = DockStyle.Fill;
             _toolbarRight.FlowDirection = FlowDirection.RightToLeft;

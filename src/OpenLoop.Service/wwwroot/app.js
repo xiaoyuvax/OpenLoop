@@ -21,6 +21,7 @@ const TPL = {
   '已压缩上下文：{before} → {after} tokens': 'Context compacted: {before} → {after} tokens',
   '{command} 是 WinForms 壳的命令，Web 壳暂不支持；请在 WinForms 壳里用': '{command} is a WinForms shell command, not supported in the web shell; use it in the WinForms shell',
   '已选 {n}/8': 'Selected {n}/8',
+  '移除附件「{name}」？': 'Remove attachment "{name}"?',
   'v{version} · {features} 特征 · {rules} 规则': 'v{version} · {features} features · {rules} rules',
   '题目 {n}': '{n} tasks',
   '候选 {cp}/{n}，基线 {bp}/{n}': 'candidate {cp}/{n}, baseline {bp}/{n}',
@@ -110,6 +111,9 @@ const EN = {
   "停止": "Stop",
   "上传或粘贴文本/图片附件（最多 8 个）": "Upload or paste text/image attachments (up to 8)",
   "📎 附件": "📎 Attach",
+  "添加附件…": "Add attachment…",
+  "移除附件": "Remove attachment",
+  "移除": "Remove",
   "可上传或粘贴文本/图片": "Text or image files",
   "描述任务（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）": "Describe the task (Enter=send after this step, Ctrl+Enter=send after this turn, Shift+Enter=soft newline)",
   "待答 ": "Surveys ",
@@ -144,7 +148,7 @@ const EN = {
   "绝对路径": "Absolute path",
   "演进": "Evolve",
   "Harness 管当前工作区的五类对象：Prompt（系统提示词模板 + AGENTS.md）、Skill、Rule、Limit、Guard（含连接重试、免费额度恢复等自愈参数）；": "The Harness page manages this workspace's five object kinds: Prompt (system-prompt template + AGENTS.md), Skill, Rule, Limit and Guard (the guards carry connect retry, free-quota recovery and other self-healing parameters);",
-  "改提示词与 AGENTS.md 在桌面壳里用 /prompt、/agents 让模型改，用户不直接编辑文本。": "to change the prompt or AGENTS.md, use /prompt or /agents in the desktop shell and let the model edit it — you never edit the text yourself.",
+  "改提示词与 AGENTS.md 在桌面壳里用 /sysprompt、/agentsmd 让模型改，用户不直接编辑文本。": "to change the system prompt or AGENTS.md, use /sysprompt or /agentsmd in the desktop shell and let the model edit it — you never edit the text yourself.",
   "演进是攒够证据后的一次集中分诊：harness 类出候选并过考核题，源码类写派单，未知留到下一批。": "Evolution is one batched triage once enough evidence accumulated: harness items become candidates judged by the eval tasks, source items become a work order, unknown items wait for the next batch.",
   "观察用 /report <内容> 记入 findings，只落账、不立即处理。": "Record an observation with /report <text>; it only lands in findings and is not handled immediately.",
   "模型（留空用默认）": "Model (blank = default)",
@@ -352,7 +356,7 @@ const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(bo
 
 // 与 WinForms 的 SessionView.TryRunCommand 同一组命令：Web 只接自己能真正执行的，其余明确回绝，别把「/命令」当正文发给模型
 const WEB_COMMANDS = ['/compact'];
-const SHELL_COMMANDS = ['/btw', '/complain', '/fork', '/new', '/prompt', '/agents', '/puppet', '/review', '/optimize'];
+const SHELL_COMMANDS = ['/btw', '/complain', '/fork', '/new', '/sysprompt', '/agentsmd', '/puppet', '/review', '/optimize'];
 const commandOf = text => {
   const m = /^(\S+)(?:\s|$)/.exec(text || '');
   return m ? m[1].toLowerCase() : '';
@@ -447,7 +451,7 @@ function OverviewPage({ sessions, project, setProject, onOpen, onNew, onDelete, 
         display: 'flex', flexDirection: 'column', minHeight: 0
       }
     },
-      h('div', { style: { padding: '10px 12px 6px', fontSize: 12, color: '#8c8c8c' } }, t('项目')),
+      h('div', { style: { padding: '10px 12px 6px', fontSize: 12, color: '#8c8c8c' } }, t('工作区')),
       h('div', { className: 'ol-scroll', style: { flex: 1, minHeight: 0, padding: '0 8px' } },
         projects.map(p => h('div', {
           key: p.ws || '∅',
@@ -547,6 +551,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   const chatRef = useRef(null);
   const answerRef = useRef(null);
   const prevRun = useRef(null);   // 上一次快照的会话 id 与是否运行中：用来识别「本轮刚正常收尾」
+  const fileInput = useRef(null);
 
   useEffect(() => {
     setModel(snapshot?.model || '');
@@ -829,20 +834,32 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
       danger: running && !value, onClick: () => send(true)
     }, running ? (value ? t('发送') : t('停止')) : retry ? t('继续') : t('发送')));
 
+  const attachMenu = {
+    items: [
+      { key: 'add', label: t('添加附件…') },
+      ...files.map((file, i) => ({ key: 'f' + i, label: '✕ ' + file.name }))
+    ],
+    onClick: ({ key }) => {
+      if (key === 'add') { fileInput.current?.click(); return; }
+      const i = Number(key.slice(1));
+      const file = files[i];
+      if (!file) return;
+      Modal.confirm({
+        title: t('移除附件'),
+        content: tf('移除附件「{name}」？', { name: file.name }),
+        okText: t('移除'), cancelText: t('取消'),
+        onOk: () => setFiles(list => list.filter((_, j) => j !== i))
+      });
+    }
+  };
   const attachRow = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap', fontSize: 12 } },
-    h('label', {
-      style: { cursor: 'pointer', color: '#1677ff', flex: 'none' },
-      title: t('上传或粘贴文本/图片附件（最多 8 个）')
-    }, t('📎 附件'), h('input', {
-      type: 'file', multiple: true, style: { display: 'none' }, onChange: pickFiles
-    })),
-    h(Muted, { style: { flex: 'none' } }, files.length ? tf('已选 {n}/8', { n: files.length }) : t('可上传或粘贴文本/图片')),
-    files.map((file, i) => h('span', {
-      key: i, style: {
-        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px',
-        border: '1px solid #e5e5e5', borderRadius: 10, background: '#fafafa'
-      }
-    }, file.name, h('a', { style: { color: '#999' }, onClick: () => setFiles(list => list.filter((_, j) => j !== i)) }, '×'))));
+    h(Dropdown, { menu: attachMenu, trigger: ['click'], placement: 'topLeft' },
+      h('span', {
+        style: { cursor: 'pointer', color: '#1677ff', flex: 'none' },
+        title: t('上传或粘贴文本/图片附件（最多 8 个）')
+      }, t('📎 附件'))),
+    files.length ? h(Muted, { style: { flex: 'none' } }, files.length + '/8') : null,
+    h('input', { ref: fileInput, type: 'file', multiple: true, style: { display: 'none' }, onChange: pickFiles }));
 
   const composer = h('div', {
     style: { flex: 'none', padding: '4px 16px 8px', borderTop: pending ? '0' : '1px solid #f0f0f0' },
@@ -870,6 +887,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     toolbar);
 
   const loopSide = h('div', { style: { padding: 12, display: 'grid', gap: 8 } },
+    h(HarnessModeRow, { workspace: snapshot?.workspace || '' }),
     h(Button, { size: 'small' }, t('待答 ') + ((snapshot?.prompts || []).length)),
     h(Muted, null, 'def: —'),
     h(Muted, null, t('考核点: —')),
@@ -960,6 +978,48 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
 
 // ---------------- Loop ----------------
 
+/**
+ * Harness 生效方式（与 WinForms 的 Harness 页同一套语义）：
+ * 用户直配 = 改动下一个会话直接生效；A/B 评测 = Prompt / AGENTS.md 先暂存为候选包，
+ * 过考核题并严格更好才激活。workspace 变了才重新拉一次，避免每次输入都请求。
+ */
+function HarnessModeRow({ workspace }) {
+  const ws = (workspace || '').trim();
+  const [mode, setMode] = useState('direct');
+  const [pending, setPending] = useState([]);
+
+  const load = async () => {
+    if (!ws) { setMode('direct'); setPending([]); return; }
+    try {
+      const r = await api('/api/loop/mode?workspace=' + encodeURIComponent(ws));
+      setMode(r?.mode === 'eval' ? 'eval' : 'direct');
+      setPending(r?.pending || []);
+    } catch { /* 读不到就保持默认，不打扰用户 */ }
+  };
+  useEffect(() => { load(); }, [ws]);
+
+  const toggle = async () => {
+    if (!ws) return message.warning(t('先填工作目录'));
+    const next = mode === 'eval' ? 'direct' : 'eval';
+    try {
+      const r = await post('/api/loop/mode', { workspace: ws, mode: next });
+      setMode(r?.mode === 'eval' ? 'eval' : 'direct');
+      message.success(r?.mode === 'eval'
+        ? t('已切到 A/B 评测模式：Prompt 与 AGENTS.md 的改动先暂存为候选包')
+        : t('已切到用户直配模式：Prompt 与 AGENTS.md 的改动下一个会话直接生效'));
+      load();
+    } catch (e) { message.error(t('切换失败：') + e.message); }
+  };
+
+  return h('div', { style: { display: 'grid', gap: 6 } },
+    h(Button, { size: 'small', block: true, onClick: toggle },
+      mode === 'eval' ? t('模式：A/B 评测') : t('模式：用户直配')),
+    h(Muted, { style: { wordBreak: 'break-all' } },
+      pending.length
+        ? t('候选包待评估：') + pending.map(k => k === 'agents' ? 'AGENTS.md' : t('系统提示词')).join(' / ')
+        : t('没有待评估的候选包')));
+}
+
 function LoopPage({ defaultWorkspace, shot, setShot }) {
   const [workspace, setWorkspace] = useState(localStorage.getItem('openloop.workspace') || defaultWorkspace || '');
   const [ledger, setLedger] = useState('');
@@ -1049,12 +1109,13 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
         onPressEnter: () => { refresh(); pollEvolve(); pollIteration(); },
         onBlur: () => { refresh(); pollEvolve(); pollIteration(); }
       }),
-      h(Muted, { style: { display: 'block', margin: '6px 0 16px' } }, ledger || '—'),
+      h(Muted, { style: { display: 'block', margin: '6px 0 10px' } }, ledger || '—'),
+      h(HarnessModeRow, { workspace }),
 
-      h('div', { className: 'ol-section-title' }, t('演进')),
+      h('div', { className: 'ol-section-title', style: { marginTop: 16 } }, t('演进')),
       h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
         t('Harness 管当前工作区的五类对象：Prompt（系统提示词模板 + AGENTS.md）、Skill、Rule、Limit、Guard（含连接重试、免费额度恢复等自愈参数）；')
-        + t('改提示词与 AGENTS.md 在桌面壳里用 /prompt、/agents 让模型改，用户不直接编辑文本。')),
+        + t('改提示词与 AGENTS.md 在桌面壳里用 /sysprompt、/agentsmd 让模型改，用户不直接编辑文本。')),
       h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
         t('演进是攒够证据后的一次集中分诊：harness 类出候选并过考核题，源码类写派单，未知留到下一批。')
         + t('观察用 /report <内容> 记入 findings，只落账、不立即处理。')),

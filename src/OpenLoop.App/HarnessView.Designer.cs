@@ -15,6 +15,8 @@ namespace OpenLoop.App
         private AntdUI.Button _btnRule;
         private AntdUI.Button _btnPrompt;
         private AntdUI.Button _btnAgents;
+        private AntdUI.Button _btnMode;
+        private AntdUI.Label _lblCandidate;
         private AntdUI.Label _lblHint;
         private ToolTip _tips;
 
@@ -46,6 +48,8 @@ namespace OpenLoop.App
             _btnRule = new AntdUI.Button();
             _btnPrompt = new AntdUI.Button();
             _btnAgents = new AntdUI.Button();
+            _btnMode = new AntdUI.Button();
+            _lblCandidate = new AntdUI.Label();
             _lblHint = new AntdUI.Label();
 
             _flow.Dock = DockStyle.Fill;
@@ -54,8 +58,10 @@ namespace OpenLoop.App
             _flow.AutoScroll = true;
             _flow.Layout += OnFlowLayout;
 
-            _lblDef.AutoSize = true;
-            _lblDef.MaximumSize = new Size(260, 0);
+            _lblDef.AutoSize = false;
+            _lblDef.TextMultiLine = true;
+            _lblDef.Width = 236;
+            _lblDef.Height = 18;
             _lblDef.Text = "def: —";
             _lblDef.Font = new Font("Segoe UI", 9F);
             _lblDef.ForeColor = UiStyle.Muted;
@@ -63,8 +69,10 @@ namespace OpenLoop.App
             _lblDef.Cursor = Cursors.Hand;
             _lblDef.Click += OnShowDefinitions;
 
-            _lblTasks.AutoSize = true;
-            _lblTasks.MaximumSize = new Size(260, 0);
+            _lblTasks.AutoSize = false;
+            _lblTasks.TextMultiLine = true;
+            _lblTasks.Width = 236;
+            _lblTasks.Height = 18;
             _lblTasks.Text = Localization.T("Tasks") + ": —";
             _lblTasks.Font = new Font("Segoe UI", 9F);
             _lblTasks.ForeColor = UiStyle.Muted;
@@ -72,12 +80,23 @@ namespace OpenLoop.App
             _lblTasks.Cursor = Cursors.Hand;
             _lblTasks.Click += OnShowTasks;
 
-            _lblStatus.AutoSize = true;
-            _lblStatus.MaximumSize = new Size(260, 0);
+            _lblStatus.AutoSize = false;
+            _lblStatus.TextMultiLine = true;
+            _lblStatus.Width = 236;
+            _lblStatus.Height = 18;
             _lblStatus.Text = Localization.T("Status") + ": —";
             _lblStatus.Font = new Font("Segoe UI", 9F);
             _lblStatus.ForeColor = UiStyle.Text;
             _lblStatus.Margin = new Padding(0, 0, 0, 16);
+
+            _btnMode.Name = "btnMode";
+            _btnMode.Text = Localization.T("HarnessModeDirect");
+            _btnMode.Radius = 8;
+            _btnMode.Height = 34;
+            _btnMode.Width = 236;
+            _btnMode.IconSvg = UiIcons.Of(UiIcons.Refresh, UiStyle.Text);
+            _btnMode.Margin = new Padding(0, 0, 0, 8);
+            _btnMode.Click += OnToggleMode;
 
             _btnDrafts.Name = "btnDrafts";
             _btnDrafts.Text = Localization.T("TaskDrafts");
@@ -142,6 +161,15 @@ namespace OpenLoop.App
             _btnAgents.Margin = new Padding(0, 0, 0, 4);
             _btnAgents.Click += (_, _) => EditTargetRequested?.Invoke("agents");
 
+            _lblCandidate.AutoSize = false;
+            _lblCandidate.TextMultiLine = true;
+            _lblCandidate.Width = 236;
+            _lblCandidate.Height = 20;
+            _lblCandidate.Text = Localization.T("HarnessCandidateNone");
+            _lblCandidate.Font = new Font("Segoe UI", 8F);
+            _lblCandidate.ForeColor = UiStyle.Muted;
+            _lblCandidate.Margin = new Padding(0, 2, 0, 6);
+
             _lblHint.AutoSize = false;
             _lblHint.TextMultiLine = true;
             _lblHint.Width = 236;
@@ -154,6 +182,7 @@ namespace OpenLoop.App
             _flow.Controls.Add(_lblDef);
             _flow.Controls.Add(_lblTasks);
             _flow.Controls.Add(_lblStatus);
+            _flow.Controls.Add(_btnMode);
             _flow.Controls.Add(_btnDrafts);
             _flow.Controls.Add(_btnReport);
             _flow.Controls.Add(_btnEvolve);
@@ -161,6 +190,7 @@ namespace OpenLoop.App
             _flow.Controls.Add(_btnRule);
             _flow.Controls.Add(_btnPrompt);
             _flow.Controls.Add(_btnAgents);
+            _flow.Controls.Add(_lblCandidate);
             _flow.Controls.Add(_lblHint);
 
             AutoScaleDimensions = new SizeF(7F, 17F);

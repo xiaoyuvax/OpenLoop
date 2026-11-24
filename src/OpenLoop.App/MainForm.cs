@@ -668,7 +668,8 @@ namespace OpenLoop.App
 
         private void PostComplaint(string workspace, string text, string model = null, string effort = null)
             => EnsureLoop(workspace, select: false, sessionId: "",
-                title: Localization.T("反馈 ") + DateTime.Now.ToString("HH:mm"), model: model, effort: effort)?.Post(text, "feedback");
+                title: Localization.T("反馈 ") + DateTime.Now.ToString("HH:mm"), model: model, effort: effort,
+                seedTitle: true)?.Post(text, "feedback");
 
         /// <summary>
         /// 取（必要时创建）某个项目的 Loop 会话。历史按「项目 + 会话 id」分开存，
@@ -677,7 +678,7 @@ namespace OpenLoop.App
         /// <param name="sessionId">null = 该项目最近的 Loop 会话（没有就新建）；"" = 总是新建。</param>
         /// <param name="title">新建时的标题；null = 用索引里已有的标题。</param>
         private LoopView EnsureLoop(string workspace, bool select, string sessionId = null, string title = null,
-            string model = null, string effort = null)
+            string model = null, string effort = null, bool seedTitle = false)
         {
             string target = workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _lastSession?.Workspace;
@@ -710,7 +711,7 @@ namespace OpenLoop.App
                 return existing.View;
             }
 
-            if (title != null) LoopIndex.Rename(target, id, title);
+            if (title != null) LoopIndex.Rename(target, id, title, seed: seedTitle);
 
             var view = new LoopView { Dock = DockStyle.Fill };
             // 没选中的 Loop 页先暂停渲染：Initialize 读历史的那次全量构建也不要白做（与 EnsureView 同口径）
@@ -1123,7 +1124,7 @@ namespace OpenLoop.App
         /// 壳重启的内部工具（壳调试/迭代都走这一条）：先起交接 helper，确认它起来了才退出；
         /// helper 等本进程退出后再拉起新壳，进到界面才算成功（失败重试 3 次）。helper 没起来就留在当前壳。
         /// </summary>
-        [PuppetAction(Risk = "High", Desc = "重启壳：默认同一份二进制；from 给一个含 OpenLoop.exe 的目录则重启到那一份（先备份、失败回滚）。有会话在跑会拒绝")]
+        [PuppetAction(Risk = "High", Desc = "重启壳：默认同一份二进制；from 给一个含 OpenLoop.exe 的目录则重启到那一份（先备份、失败回滚）。只换壳，A/I 与正在跑的 Worker 会话不动")]
         public OperationResult RestartShell(string workspace = "", string from = "")
         {
             string target = workspace;
@@ -1131,9 +1132,9 @@ namespace OpenLoop.App
             if (string.IsNullOrWhiteSpace(target)) target = Workspace;
             if (string.IsNullOrWhiteSpace(target)) target = _settings.Workspace ?? "";
 
-            string busy = BusySessions();
+            string busy = BusyInShell();
             if (busy.Length > 0)
-                return OperationResult.Failure("还有会话在跑，先停止再重启壳：\n" + busy);
+                return OperationResult.Failure("壳自己进程里的活还在跑（重启会中断），先停下：\n" + busy);
             if (_iterationStatus is "running" or "restarting")
                 return OperationResult.Failure("迭代正在进行，等它自己重启壳");
 
@@ -1144,16 +1145,18 @@ namespace OpenLoop.App
             if (!started)
                 return OperationResult.Failure("交接 helper 没起来，壳保持运行；看 logs/iteration-restart.log");
 
+            // 交接标记：A/I 不随旧壳退出，等新壳发布 pid 后改守护它；新壳按落盘的标签页接回原会话
             // 让这次 Puppet 响应先写回去，再退出
             var exit = new System.Windows.Forms.Timer { Interval = 500 };
             exit.Tick += (_, _) =>
             {
                 exit.Stop();
                 exit.Dispose();
+                ShellHandoff.Begin();
                 Application.Exit();
             };
             exit.Start();
-            return OperationResult.Success("交接 helper 已起来，壳即将退出并由它拉起新壳");
+            return OperationResult.Success("交接 helper 已起来，壳即将退出并由它拉起新壳（A/I 与 Worker 会话保持运行）");
         }
 
         /// <summary>
@@ -1190,8 +1193,8 @@ namespace OpenLoop.App
             var form = new IterationForm(target, plan, summary, planned?.UpstreamNewer == true);
             form.ShellRestart = report =>
             {
-                // 壳重启会把 A/I 与本进程里的 Loop/旁路一起掐掉：还有会话在跑就先问一句
-                string busy = BusySessions();
+                // 壳重启只换壳：A/I 与 Worker 会话继续跑；只有壳自己进程里的 Loop 轮/旁路会被中断
+                string busy = BusyInShell();
                 if (busy.Length > 0 && MessageBox.Show(form,
                         Localization.T("SessionsStillRunning") + busy + Localization.T("ConfirmRestartBusy"),
                         Localization.T("还有会话在运行"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
@@ -1210,6 +1213,8 @@ namespace OpenLoop.App
                     AppLog.Error("壳重启没有启动起来，继续用当前壳：" + report.ShellDir);
                     return false;
                 }
+                // 交接标记：A/I 不随旧壳退出，新壳启动后接手；正在跑的 Worker 会话不断
+                ShellHandoff.Begin();
                 Application.Exit();
                 return true;
             };
@@ -1303,7 +1308,7 @@ namespace OpenLoop.App
             => new(area.X + Math.Max(0, (area.Width - size.Width) / 2),
                    area.Y + Math.Max(0, (area.Height - size.Height) / 2));
 
-        /// <summary>还在跑一轮的会话（Worker 轮 / Loop 轮 / 右侧旁路）：重启壳会把它们一起中断。</summary>
+        /// <summary>还在跑一轮的会话（Worker 轮 / Loop 轮 / 右侧旁路）：换 A/I 会把它们一起中断。</summary>
         private string BusySessions()
         {
             var running = new List<string>();
@@ -1311,6 +1316,24 @@ namespace OpenLoop.App
             {
                 if (session.View?.AnyBusy == true || session.State == SessionState.Running)
                     running.Add("Worker「" + session.Title + "」");
+            }
+            foreach (var loop in _loops.Values)
+            {
+                if (loop.View?.Busy == true) running.Add("Loop「" + loop.Page?.Text + "」");
+            }
+            return string.Join("\n", running);
+        }
+
+        /// <summary>
+        /// 壳自己进程里在跑的活（Loop 轮 / Worker 旁路）：重启壳会把它们一起中断。
+        /// Worker 主轮在 A 里，壳重启不动它，所以不在这里拦。
+        /// </summary>
+        private string BusyInShell()
+        {
+            var running = new List<string>();
+            foreach (var session in _sessions)
+            {
+                if (session.View?.SideBusy == true) running.Add("Worker「" + session.Title + "」的旁路");
             }
             foreach (var loop in _loops.Values)
             {
@@ -1993,7 +2016,7 @@ namespace OpenLoop.App
             // 沿用来源 Worker 会话的模型与强度：Loop 打开时按这份记录恢复
             ChatStore.Save(workspace, turns.Select(CloneTurn).ToList(), id, model, effort);
             // Loop 会话只登记在 loops.json：写 chats/index.json 会让它被当成 Worker 会话恢复出来
-            LoopIndex.Rename(workspace, id, title);
+            LoopIndex.Rename(workspace, id, title, seed: true);
             return EnsureLoop(workspace, true, id, model: model, effort: effort) != null;
         }
 
@@ -2153,6 +2176,7 @@ namespace OpenLoop.App
             var view = new TiledView { Dock = DockStyle.Fill };
             view.DetachRequested += OnTiledDetach;
             view.Emptied += OnTiledEmptied;
+            view.HostEnsureView = session => EnsureView(session);
             var page = new AntdUI.TabPage
             {
                 Text = Localization.T("平铺视图"),
@@ -2514,6 +2538,7 @@ namespace OpenLoop.App
         {
             if (_newPage != null)
             {
+                if (_newPage.Tag is NewSessionView open) open.SelectProject(workspace ?? "");
                 _tabs.SelectTab(_newPage);
                 return;
             }
@@ -2702,7 +2727,7 @@ namespace OpenLoop.App
                 ?? _settings.Projects.FirstOrDefault()
                 ?? global::OpenLoop.Service.Runtime.AppPaths.DataRoot;
             var view = EnsureLoop(workspace, select: true, sessionId: "",
-                title: Localization.T("配置 ") + DateTime.Now.ToString("HH:mm"));
+                title: Localization.T("配置 ") + DateTime.Now.ToString("HH:mm"), seedTitle: true);
             view?.Post(SettingsPrompt(page));
         }
 

@@ -213,7 +213,7 @@ namespace OpenLoop.App
             _projectRow.Margin = new Padding(0);
 
             _lblProject.AutoSize = true;
-            _lblProject.Text = Localization.T("Projects");
+            _lblProject.Text = Localization.T("Workspace");
             _lblProject.Font = new Font("Segoe UI", 9F);
             _lblProject.ForeColor = UiStyle.Muted;
             _lblProject.Margin = new Padding(2, 9, 10, 0);
