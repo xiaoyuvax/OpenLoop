@@ -167,7 +167,9 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("正例：tool-call: {\"tool\":\"ListDir\",\"args\":{\"path\":\".\",\"recursive\":false}}");
             sb.AppendLine("反例（都会被判为格式错误并回退纠正）：写在代码围栏里、前后带解释、JSON 用单引号、tool-call 不在行首。");
             sb.AppendLine("禁止输出模型原生的工具标记格式（XML 风格的特殊标签、特殊 token 包裹的调用块）；工具只能用单行 tool-call: {json} 协议。");
-            sb.AppendLine($"多个相互独立的只读调用可各占一行连续输出，一轮最多 {AgentPolicy.MaxParallelCalls} 个；一轮只调用一个工具的情形（含任何写操作）照旧单行。");
+            // 调度格式只在这里定义一次：模板正文只说「见协议一节」，不再重复写并行上限。
+            sb.AppendLine($"多个相互独立的只读调用可各占一行连续输出，一轮最多 {AgentPolicy.MaxParallelCalls} 个；含写操作的调用一轮只发一个——"
+                + "同一批里的写操作会串行执行，你在这一轮看不到前一次的结果，先做一步、看过结果再决定下一步。");
             sb.AppendLine("需要等待或轮询时（例如反复查看构建进度），在首次调用里加同级的 poll 声明：" +
                           "tool-call: {\"tool\":\"RunCommand\",\"args\":{...},\"poll\":{\"id\":\"build-1\",\"max\":8}}。" +
                           "宿主最多放行这么多次完全相同的重复调用（有上限），超过后按重复调用处理；换参数不算重复。不要用它包装失败重试。");
