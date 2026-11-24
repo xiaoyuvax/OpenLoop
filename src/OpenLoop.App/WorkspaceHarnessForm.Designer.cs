@@ -58,6 +58,7 @@ namespace OpenLoop.App
             _tabs.Dock = DockStyle.Fill;
             _tabs.Type = AntdUI.TabType.Line;
             _tabs.Gap = 18;
+            _tabs.Font = new Font("Microsoft YaHei UI", 8F);
             _tabs.Margin = new Padding(0);
 
             _pageSkills.Text = Localization.T("TabSkills");
@@ -71,7 +72,7 @@ namespace OpenLoop.App
 
             _lblPath.AutoSize = false;
             _lblPath.Dock = DockStyle.Fill;
-            _lblPath.Font = new Font("Segoe UI", 8.5F);
+            _lblPath.Font = new Font("Microsoft YaHei UI", 8F);
             _lblPath.ForeColor = UiStyle.Muted;
             _lblPath.TextAlign = ContentAlignment.MiddleLeft;
             _lblPath.AutoEllipsis = true;
@@ -80,7 +81,7 @@ namespace OpenLoop.App
 
             _lblStatus.AutoSize = false;
             _lblStatus.Dock = DockStyle.Fill;
-            _lblStatus.Font = new Font("Segoe UI", 8.5F);
+            _lblStatus.Font = new Font("Microsoft YaHei UI", 8F);
             _lblStatus.ForeColor = UiStyle.Text;
             _lblStatus.TextAlign = ContentAlignment.MiddleLeft;
             _lblStatus.AutoEllipsis = true;
@@ -93,6 +94,7 @@ namespace OpenLoop.App
 
             _btnClose.Text = Localization.T("Close");
             _btnClose.Radius = 8;
+            _btnClose.Font = new Font("Microsoft YaHei UI", 8F);
             _btnClose.Size = new Size(88, 34);
             _btnClose.Margin = new Padding(8, 6, 0, 6);
             _btnClose.Click += OnClose;
@@ -100,6 +102,7 @@ namespace OpenLoop.App
             //「让Agent辅助我配置」：和设置页同名同义——关了本窗体，把当前页交给 Loop 会话逐项问、逐项改
             _btnAiConfig.Text = Localization.T("AiConfig");
             _btnAiConfig.Radius = 8;
+            _btnAiConfig.Font = new Font("Microsoft YaHei UI", 8F);
             _btnAiConfig.Size = new Size(148, 34);
             _btnAiConfig.Margin = new Padding(0, 6, 8, 6);
             _btnAiConfig.Click += OnAiConfig;

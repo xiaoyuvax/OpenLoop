@@ -38,6 +38,9 @@ namespace OpenLoop.App
         /// <summary>拖出进行中：光标悬停的标签页（null = 标签栏外或平铺内）；宿主画高亮用。</summary>
         internal event Action<AntdUI.TabPage> DetachHoverChanged;
 
+        /// <summary>拖出进行中悬停的标签页：压住页签头 = 可脱离，指针切 Hand。</summary>
+        private AntdUI.TabPage _detachHover;
+
         /// <summary>宿主注入：按需建会话视图（平铺视图打开时页面被收走，队列管线可能还没建）。</summary>
         internal Func<Session, SessionView> HostEnsureView { get; set; }
 
@@ -229,6 +232,8 @@ namespace OpenLoop.App
             tile.Controls.Add(popup);
             tile.Controls.Add(input);
             tile.Controls.Add(bar);
+            tile.Controls.Add(tile.Overlay);   // 置顶：高亮画在最上层，Enabled=false 不吃命中
+            tile.Overlay.BringToFront();
             tile.Title = title;
             tile.Input = input;
             tile.Chat = chat;
@@ -242,12 +247,14 @@ namespace OpenLoop.App
             {
                 using var pen = new Pen(UiStyle.Border);
                 e.Graphics.DrawRectangle(pen, 0, 0, tile.Width - 1, tile.Height - 1);
-                // 拖动落点指示：目标方块外框高亮
-                if (ReferenceEquals(_dragTarget, tile))
-                {
-                    using var hot = new Pen(UiStyle.Accent, 2);
-                    e.Graphics.DrawRectangle(hot, 1, 1, tile.Width - 3, tile.Height - 3);
-                }
+            };
+            // 拖动落点指示画在置顶透明层上：正文 FCTB 是子控件，画在 tile 本体上会被盖住
+            tile.Overlay.Paint += (_, e) =>
+            {
+                if (!ReferenceEquals(_dragTarget, tile)) return;
+                using var hot = new Pen(UiStyle.Accent, Dip(3));
+                var r = new Rectangle(1, 1, tile.Width - 3, tile.Height - 3);
+                e.Graphics.DrawRectangle(hot, r);
             };
 
             // AntdUI 的 Enter 在 WM_KEYDOWN 里先被消化成换行（早于 KeyDown）：只能在这里拦。
@@ -416,7 +423,12 @@ namespace OpenLoop.App
             if (ReferenceEquals(box, _dragTarget))
             {
                 // 方块没变也可能在标签栏上换页签：悬停目标照样上报
-                if (!inside) DetachHoverChanged?.Invoke(MainForm.HoveredTabAt(screen));
+                if (!inside)
+                {
+                    _detachHover = MainForm.HoveredTabAt(screen);
+                    DetachHoverChanged?.Invoke(_detachHover);
+                    Cursor = _detachHover != null ? Cursors.Hand : Cursors.SizeAll;
+                }
                 return;
             }
             var old = _dragTarget;
@@ -424,8 +436,11 @@ namespace OpenLoop.App
             old?.Invalidate();
             box?.Invalidate();
             // 拖到视图外：目标方块不再高亮，标签栏落点交给宿主；拖回平铺内则取消指示
-            if (!inside) DetachHoverChanged?.Invoke(MainForm.HoveredTabAt(screen));
-            else DetachHoverChanged?.Invoke(null);
+            _detachHover = inside ? null : MainForm.HoveredTabAt(screen);
+            DetachHoverChanged?.Invoke(_detachHover);
+            // 指针由这里切（Capture 在本控件上，宿主改 Form.Cursor 不生效）：
+            // 压住页签头 = 可脱离（Hand），其余保持 SizeAll
+            Cursor = _detachHover != null ? Cursors.Hand : Cursors.SizeAll;
         }
 
         private void ClearDragTarget()
@@ -436,6 +451,7 @@ namespace OpenLoop.App
                 _dragTarget = null;
                 old.Invalidate();
             }
+            _detachHover = null;
             DetachHoverChanged?.Invoke(null);
         }
 
@@ -493,6 +509,19 @@ namespace OpenLoop.App
         private sealed class TileBox : Panel
         {
             public TiledItem Item { get; init; }
+            /// <summary>置顶透明层：拖放高亮画在这里，不会被正文 FCTB 等子控件盖住；
+            /// 命中测试放行（Enabled=false），输入照旧落到下面的控件。</summary>
+            public Panel Overlay { get; private set; }
+
+            public TileBox()
+            {
+                Overlay = new Panel
+                {
+                    Dock = DockStyle.Fill,
+                    Enabled = false,   // 命中放行：鼠标事件穿透到下面的输入框/正文
+                    BackColor = Color.Transparent
+                };
+            }
             public AntdUI.Label Title { get; set; }
             public AntdUI.Input Input { get; set; }
             public ChatFlowControl Chat { get; set; }

@@ -136,22 +136,26 @@ namespace OpenLoop.App
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, Dip(44)));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, Dip(40)));
 
             var table = new AntdUI.Table
             {
                 Dock = DockStyle.Fill,
                 Bordered = false,
                 VisibleHeader = true,
-                RowHeight = Dip(40),
+                // RowHeight 是物理像素：8pt 文字量出来 14 DIP 高，18 DIP 只剩上下各 2 DIP 的呼吸
+                // （原来 40 DIP 上下各留 13 DIP，就是用户看到的「行高太高、大量留白」）
+                RowHeight = Dip(18),
                 MultipleRows = true,
                 EmptyText = Localization.T("HarnessObjectsEmpty"),
-                Margin = new Padding(0, 0, 0, 4)
+                Margin = new Padding(0, 0, 0, 4),
+                // 与思考区同一字号（ChatFont 9pt - 1），表格里不需要更大的字
+                Font = new Font("Microsoft YaHei UI", 8F)
             };
-            table.Columns.Add(new AntdUI.Column("On", Localization.T("Status")) { Width = "80" });
-            table.Columns.Add(new AntdUI.Column("Name", Localization.T("HarnessColName")) { Width = "240" });
-            table.Columns.Add(new AntdUI.Column("Params", Localization.T("HarnessColParams")) { Width = "220" });
-            table.Columns.Add(new AntdUI.Column("Note", Localization.T("ColDescription")) { Width = "280", Ellipsis = true });
+            table.Columns.Add(new AntdUI.Column("On", Localization.T("Status")));
+            table.Columns.Add(new AntdUI.Column("Name", Localization.T("HarnessColName")));
+            table.Columns.Add(new AntdUI.Column("Params", Localization.T("HarnessColParams")));
+            table.Columns.Add(new AntdUI.Column("Note", Localization.T("ColDescription")) { Ellipsis = true });
             table.Columns[0].Render = (_, data, _) => Badge(data as ObjectRow);
             table.DataSource = _rows[kind] = [];
             table.SelectIndexChanged += (_, _) => UpdateButtons(kind);
@@ -200,7 +204,8 @@ namespace OpenLoop.App
             {
                 Text = text,
                 Radius = Dip(8),
-                Size = new Size(Dip(width), Dip(30)),
+                Size = new Size(Dip(width), Dip(28)),
+                Font = new Font("Microsoft YaHei UI", 8F),
                 IconSvg = UiIcons.Of(icon, UiStyle.Text),
                 Margin = new Padding(0, Dip(4), Dip(8), Dip(4))
             };
@@ -242,9 +247,58 @@ namespace OpenLoop.App
         private void Rebind(string kind)
         {
             var table = _tables[kind];
+            FitColumns(kind);
             table.DataSource = null;
             table.DataSource = _rows[kind];
             UpdateButtons(kind);
+        }
+
+        /// <summary>
+        /// 列宽按内容给：前几列取「表头 + 各单元格」的最大文字宽度加内边距，最后一列（说明）吃掉剩余宽度。
+        /// AntdUI 的 Width="auto" 是按可用宽度摊比例（会把大半屏给参数列），所以自己量。
+        /// 单位：Column.Width 是 DIP（框架内部再乘 Dpi），MeasureText 给的是物理像素，要先除回去。
+        /// 注意必须在绑定数据前设好列宽——Column.Width 是普通属性，改它不会触发重排。
+        /// </summary>
+        private void FitColumns(string kind)
+        {
+            if (!_tables.TryGetValue(kind, out var table) || table.Columns.Count < 4) return;
+            var font = table.Font;
+            float scale = DeviceDpi / 96f;
+
+            int Need(params string[] texts)
+            {
+                int width = 0;
+                foreach (string text in texts)
+                    if (!string.IsNullOrEmpty(text))
+                        width = Math.Max(width, TextRenderer.MeasureText(text, font).Width);
+                return (int)Math.Ceiling(width / scale) + 24;
+            }
+
+            var rows = _rows[kind];
+            // 先按内容定前三列，再把这不到的那部分让出去：说明列吃掉剩余宽度。
+            // 总宽严格等于可用宽度，否则会出现横向滚动条（AntdUI 不会自动收回超出的列）。
+            int available = (int)(table.ClientSize.Width / scale);
+            int on = Math.Clamp(Need(Localization.T("Status")), 72, 120);
+            int name = Math.Clamp(rows.Select(r => Need(r.Name, Localization.T("HarnessColName")))
+                .DefaultIfEmpty(96).Max(), 100, 260);
+            int parameters = Math.Clamp(rows.Select(r => Need(r.Params, Localization.T("HarnessColParams")))
+                .DefaultIfEmpty(96).Max(), 100, 340);
+
+            const int minNote = 160;
+            int slack = available - on - name - parameters - minNote;
+            if (slack < 0)
+            {
+                // 窗口太窄：先压参数列，再压对象名列，说明列保住下限
+                parameters = Math.Max(100, parameters + slack);
+                slack = available - on - name - parameters - minNote;
+                if (slack < 0) name = Math.Max(100, name + slack);
+            }
+            int note = Math.Max(minNote, available - on - name - parameters);
+
+            table.Columns[0].Width = on.ToString();
+            table.Columns[1].Width = name.ToString();
+            table.Columns[2].Width = parameters.ToString();
+            table.Columns[3].Width = note.ToString();
         }
 
         private List<ObjectRow> Selected(string kind)

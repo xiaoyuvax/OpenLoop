@@ -13,7 +13,8 @@
 - Loop 可以改自己的源码；I 的二进制换版由 A 在收到交接单后执行（I 不能换自己，也不能在运行中替换壳）。
 - **演进**是「非即时集中分析」：findings 与运行证据先攒着，到点（或用户触发）才集中分诊一次，把每条观察判成 **harness / source / unknown**，再分派——harness 类出激活集候选并过 Gate，source 类写派单给源码修复，unknown 留到下一批。**迭代**才换二进制。两条线互不触发。
 - **Harness = 工作区级的五个可演进对象**：**Prompt**（系统提示词模板 + `AGENTS.md`）、**Skill**、**Rule**、**Limit**、**Guard**（Limit/Guard 含自愈：连接重试、免费额度恢复、退化输出、参数修复等）。全部面向工作区，同一份二进制在不同工作区可以是不同形态。右侧栏 **Harness 页**是入口：看/改这五类对象、看考核题、触发演进与回滚。
-- **TargetCentricSession（目标中心会话）**：会话可以绑定一个「唯一编辑目标」（当前是系统提示词模板与 `AGENTS.md`，以后可扩到 SVG/网页等可呈现对象）。左栏只读呈现目标原文，用户通过聊天告诉模型怎么改，模型负责组织并落盘；文件一变左栏立刻刷新。用户不直接改文本。
+- **TargetCentricSession（目标中心会话）**：会话可以绑定一个「唯一编辑目标」（当前是系统提示词模板与 `AGENTS.md`，以后可扩到 SVG/网页等可呈现对象）。左栏呈现目标原文，用户通过聊天告诉模型怎么改，模型负责组织并落盘；文件一变左栏立刻刷新。用户不直接改文本。
+- **TargetCentricFacility（TCF）**：左栏编辑器这类「面向用户的文本多轮可视化编辑交互工具」的统称与扩展架构——性质类似内建 Tool 但不常设（内建于壳、特定任务才启用、不进提示词与常设工具表，未启用时 agent 不知道它存在）；agent 经 Puppet A/B 面的专用属性与 Action 操作编辑器本体（按区段读写/替换/插入/撤回/保存），编辑只在壳内存、实时可见，用户确认前不落盘，关闭=隐藏且有未保存内容时通知 agent 询问用户。一次性可视化交互建议走 openui 技能（LoopApp）；TCF 未启用时 LoopApp 也可承担多轮雕塑性任务，启用 TCF 后才由它接管。设计见 `docs/DESIGN-TCF.md`。
 
 ## 2. 权限边界
 
@@ -94,7 +95,7 @@ Loop 的**读**权限只限：
 - **findings 只记「还没处置、且能分派到某个对象」的观察**（source/target/object 三字段定性）；当场修好的问题写进回复或提交，不进 findings。用户可用 `/report [harness|prompt|skill|rule|limit|guard|code] <观察>` 直接投一条，只落账、不启动会话、不触发演进。
 - 处置状态记在 `loop/triage.jsonl`（追加式，按 id 取最后一条），一次演进对应一个批次。
 - `/debug` 已并入 `/complain`：同一条路径起 Loop 会话，Loop 用 `ReadSession`（会话关闭后读记录文件）自行取上下文，不再另附最近几轮。
-- 改系统提示词模板与 `AGENTS.md` 走 **TargetCentricSession**：`/sysprompt`、`/agentsmd` 打开目标模式，左栏只读呈现、聊天驱动模型落盘，模板变更登记进账本（`kind=prompt`，内容哈希为版本）。
+- 改系统提示词模板与 `AGENTS.md` 走 **TargetCentricSession**：`/sysprompt`、`/agentsmd` 打开目标模式，左栏呈现、聊天驱动模型落盘，模板变更登记进账本（`kind=prompt`，内容哈希为版本）。
 - Harness 有**两种生效方式**（`.openloop/loop/harness.json`，Harness 页一键切换）：
   - **用户直配**（默认）：Prompt / `AGENTS.md` 的改动下一个会话直接生效（登记即激活）。
   - **A/B 评测**：改动先暂存为候选包（`.openloop/eval/candidates/pending/`），过同一套考核题且严格更好才激活并覆盖正式文件；未采纳的候选包留着，可继续改或丢弃。左栏标题带「（候选）」。

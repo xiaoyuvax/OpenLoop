@@ -1,3 +1,4 @@
+using System.Text;
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Shell;
 using OpenLoop.Service.Source;
@@ -5,7 +6,8 @@ using OpenLoop.Service.Source;
 namespace OpenLoop.App
 {
     /// <summary>
-    /// 关于窗口：左侧程序图标（最大分辨率帧）与标题，右侧只读文本框列出各组件版本；
+    /// 关于窗口：左侧程序图标（最大分辨率帧）与标题，右侧只读文本框列出各组件版本
+    /// （迭代版本图里的节点都在列：外部组件、Core/Service、A/I、壳）；
     /// 下方「退回上一个版本」把 A/I 换回上一版本并重启（壳不动）——
     /// Loop 页打不开时从这里退，仍然走确认框 + 显式重启，不静默换版。
     /// </summary>
@@ -33,16 +35,48 @@ namespace OpenLoop.App
             SyncRollback();
         }
 
-        /// <summary>各组件版本行：壳取自身 exe，A/I 取运行中的 runtime/&lt;role&gt;.json，没跑就退回 exe。</summary>
-        internal static string[] VersionLines() =>
-        [
-            Localization.T("壳：") + OrUnknown(ExeVersion(Application.ExecutablePath)),
-            "Worker：" + OrUnknown(RoleVersion(BusRoles.A)),
-            "Loop：" + OrUnknown(RoleVersion(BusRoles.I))
-        ];
+        /// <summary>
+        /// 版本行 = 版本图里的全部节点：节点顺序与迭代列表一致（被引用的组件在前），
+        /// 号的取法与 <see cref="IterationRunner.CurrentVersion"/> 同口径——
+        /// A/I/壳看运行态，其余节点看 versions/state.json 基准，都读不到用源码声明号。
+        /// </summary>
+        internal static string[] VersionLines()
+        {
+            var state = VersionState.Read();
+            var lines = new List<string>();
+            foreach (var node in VersionScan.Nodes())
+            {
+                string version = node.Id switch
+                {
+                    BusRoles.A or BusRoles.I => RoleVersion(node.Id),
+                    "shell" => ExeVersion(Application.ExecutablePath),
+                    _ => state.TryGetValue(node.Id, out var entry) ? entry?.Version : ""
+                };
+                if (string.IsNullOrWhiteSpace(version))
+                    version = DeclaredVersion(node);
+                lines.Add($"{node.Label}：{OrUnknown(version)}");
+            }
+            return [.. lines];
+        }
 
         /// <summary>多行版本文本；MainForm.Versions（Puppet）仍用「 | 」连成一行。</summary>
         internal static string VersionSummary() => string.Join(Environment.NewLine, VersionLines());
+
+        /// <summary>源码里声明的版本号（VersionGraph 节点的 VersionFile），读不到返回空。</summary>
+        private static string DeclaredVersion(VersionNode node)
+        {
+            try
+            {
+                string path = Path.IsPathRooted(node.VersionFile)
+                    ? node.VersionFile
+                    : Path.Combine(node.RepoRoot, node.VersionFile);
+                return File.Exists(path) ? SourceSync.ParseVersion(File.ReadAllText(path, Encoding.UTF8)) : "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
 
         private static string RoleVersion(string role)
         {

@@ -2224,13 +2224,12 @@ namespace OpenLoop.App
         }
 
         /// <summary>平铺方块拖出中：悬停到哪个页签头就高亮哪个，离开标签栏就都取消。</summary>
+        /// <remarks>指针由 TiledView 自己切（它持有 Capture，窗体级 Cursor 不生效）。</remarks>
         private void OnTiledDetachHover(AntdUI.TabPage hover)
         {
             if (ReferenceEquals(_tabDropTarget, hover)) return;
             _tabDropTarget = hover;
             _tabs.Invalidate();
-            // 指针跟着可落点变：压住页签头（可脱离）是手型，其余保持 SizeAll
-            Cursor = hover != null ? Cursors.Hand : Cursors.SizeAll;
         }
 
         /// <summary>方块拖出视图：落在标签页头才脱离（开回普通标签页），否则方块不动。</summary>
