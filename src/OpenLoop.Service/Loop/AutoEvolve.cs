@@ -15,12 +15,12 @@ namespace OpenLoop.Service.Loop
         /// <summary>上次自动触发时间（O 格式）。</summary>
         public string At { get; set; }
 
-        /// <summary>上次触发时的运行记录条数，用来数「新证据」。</summary>
-        public int Runs { get; set; }
+        /// <summary>上次触发时的待分诊 findings 条数，用来数「新证据」。</summary>
+        public int Evidence { get; set; }
     }
 
     /// <summary>
-    /// 事件驱动：Worker 每跑完一轮就攒一条证据，够数且不在冷却/配额内就自己开一轮演进。
+    /// 事件驱动：Worker 每跑完一轮就检查一次，待分诊 findings 够数且不在冷却/配额内就自己开一轮演进。
     /// 判据是纯函数，好测；触发与落盘在 <see cref="LoopService"/>。
     /// </summary>
     public static class AutoEvolve
@@ -54,8 +54,8 @@ namespace OpenLoop.Service.Loop
 
         /// <summary>该不该开一轮；<paramref name="reason"/> 是没开时给人看的一句话。</summary>
         public static bool ShouldStart(
-            bool enabled, int minRuns, int cooldownMinutes, int perDay,
-            AutoEvolveState state, int runs, DateTimeOffset now, out string reason)
+            bool enabled, int minEvidence, int cooldownMinutes, int perDay,
+            AutoEvolveState state, int evidence, DateTimeOffset now, out string reason)
         {
             reason = null;
             if (!enabled) { reason = "自动演进未开启"; return false; }
@@ -81,10 +81,10 @@ namespace OpenLoop.Service.Loop
                 }
             }
 
-            int fresh = runs - state.Runs;
-            if (fresh < Math.Max(1, minRuns))
+            int fresh = evidence - state.Evidence;
+            if (fresh < Math.Max(1, minEvidence))
             {
-                reason = $"新证据 {Math.Max(0, fresh)}/{Math.Max(1, minRuns)} 条";
+                reason = $"待分诊观察 {Math.Max(0, fresh)}/{Math.Max(1, minEvidence)} 条";
                 return false;
             }
 

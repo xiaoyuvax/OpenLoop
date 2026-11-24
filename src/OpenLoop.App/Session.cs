@@ -53,7 +53,7 @@ namespace OpenLoop.App
             get
             {
                 string title = ComposeTitle(Workspace, CustomTitle, IsLoop);
-                return title.Length == 0 ? "新会话" : title;
+                return title.Length == 0 ? Localization.T("新会话") : title;
             }
         }
 
@@ -73,7 +73,7 @@ namespace OpenLoop.App
 
             string body = string.Join(" · ", new[] { folder, summary?.Trim() }
                 .Where(part => !string.IsNullOrEmpty(part)));
-            return loop ? "Loop工作区" + (body.Length == 0 ? "" : " · " + body) : body;
+            return loop ? Localization.T("Loop工作区") + (body.Length == 0 ? "" : " · " + body) : body;
         }
     }
 }

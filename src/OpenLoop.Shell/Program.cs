@@ -14,6 +14,8 @@ namespace OpenLoop.Shell
         {
             if (ShellUpdate.IsRequested(args))
                 return ShellUpdate.Run(args);
+            if (ShellUpdate.IsRestartRequested(args))
+                return ShellUpdate.Restart(args);
 
             // 更新过的版本记在 current.json：先看它，再看随包 backends/（与 Windows 壳一致）
             var store = new VersionStore();

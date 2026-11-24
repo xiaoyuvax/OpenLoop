@@ -3,14 +3,15 @@ using Xunit;
 
 namespace OpenLoop.Service.Tests
 {
-    /// <summary>自动演进的触发判据：开关、新证据条数、冷却、每日上限。</summary>
+    /// <summary>自动演进的触发判据：开关、待分诊观察条数、冷却、每日上限。</summary>
     public class AutoEvolveTests
     {
         private static readonly DateTimeOffset Now = new(2026, 11, 3, 12, 0, 0, TimeSpan.FromHours(8));
 
         private static bool Decide(
-            bool enabled, int minRuns, int cooldown, int perDay, AutoEvolveState state, int runs, out string reason)
-            => AutoEvolve.ShouldStart(enabled, minRuns, cooldown, perDay, state, runs, Now, out reason);
+            bool enabled, int minEvidence, int cooldown, int perDay,
+            AutoEvolveState state, int evidence, out string reason)
+            => AutoEvolve.ShouldStart(enabled, minEvidence, cooldown, perDay, state, evidence, Now, out reason);
 
         [Fact]
         public void Disabled_never_starts()
@@ -20,9 +21,9 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
-        public void Needs_enough_new_runs()
+        public void Needs_enough_new_evidence()
         {
-            var state = new AutoEvolveState { Runs = 3 };
+            var state = new AutoEvolveState { Evidence = 3 };
             Assert.False(Decide(true, 2, 0, 10, state, 4, out string reason));
             Assert.Contains("1/2", reason);
 
@@ -35,7 +36,7 @@ namespace OpenLoop.Service.Tests
         {
             var state = new AutoEvolveState
             {
-                Runs = 0,
+                Evidence = 0,
                 At = Now.AddMinutes(-30).ToString("O"),
                 Day = Now.ToString("yyyy-MM-dd"),
                 Count = 1
@@ -50,11 +51,11 @@ namespace OpenLoop.Service.Tests
         [Fact]
         public void Daily_cap_resets_on_a_new_day()
         {
-            var today = new AutoEvolveState { Day = Now.ToString("yyyy-MM-dd"), Count = 2, Runs = 0 };
+            var today = new AutoEvolveState { Day = Now.ToString("yyyy-MM-dd"), Count = 2, Evidence = 0 };
             Assert.False(Decide(true, 1, 0, 2, today, 9, out string reason));
             Assert.Contains("上限 2", reason);
 
-            var yesterday = new AutoEvolveState { Day = Now.AddDays(-1).ToString("yyyy-MM-dd"), Count = 2, Runs = 0 };
+            var yesterday = new AutoEvolveState { Day = Now.AddDays(-1).ToString("yyyy-MM-dd"), Count = 2, Evidence = 0 };
             Assert.True(Decide(true, 1, 0, 2, yesterday, 9, out _));
         }
 

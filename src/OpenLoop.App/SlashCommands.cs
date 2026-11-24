@@ -23,7 +23,7 @@ namespace OpenLoop.App
                 return catalog
                     .Where(s => enabled.Contains(s.Name))
                     .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
-                    .Select(s => ("/" + s.Name, "技能：" + s.Description))
+                    .Select(s => ("/" + s.Name, Localization.T("技能：") + s.Description))
                     .ToList();
             }
             catch (Exception ex)

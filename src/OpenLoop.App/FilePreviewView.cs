@@ -46,12 +46,12 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                error = "路径无效：" + ex.Message;
+                error = Localization.T("路径无效：") + ex.Message;
                 return false;
             }
             if (!File.Exists(full))
             {
-                error = "文件不存在：" + full;
+                error = Localization.T("文件不存在：") + full;
                 return false;
             }
 
@@ -59,17 +59,17 @@ namespace OpenLoop.App
             try { bytes = File.ReadAllBytes(full); }
             catch (Exception ex)
             {
-                error = "读取失败：" + ex.Message;
+                error = Localization.T("读取失败：") + ex.Message;
                 return false;
             }
             if (bytes.Length > MaxBytes)
             {
-                error = $"文件太大（{bytes.Length / 1024 / 1024.0:0.#} MB），不预览。";
+                error = string.Format(Localization.T("FileTooLarge"), bytes.Length / 1024 / 1024.0);
                 return false;
             }
             if (IsBinary(bytes))
             {
-                error = "这是二进制文件，不预览。";
+                error = Localization.T("这是二进制文件，不预览。");
                 return false;
             }
 
@@ -81,7 +81,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                error = "解码失败：" + ex.Message;
+                error = Localization.T("解码失败：") + ex.Message;
                 return false;
             }
 

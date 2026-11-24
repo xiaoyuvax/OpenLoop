@@ -55,8 +55,12 @@ public sealed class LedgerTests : IDisposable
         Assert.Equal(AgentContext.KeepRecentMessages, policy.CompressKeepMessages);
         Assert.Equal(AgentContext.KeepRecentTokens, policy.CompressKeepTokens);
         Assert.Equal(2, policy.CompressRetries);
-        Assert.Equal(FeatureCatalog.DefaultDebugTurns,
-            FeatureCatalog.ValueOf(current, Map(ledger), FeatureCatalog.DebugTurns, 0));
+        // 自愈类护栏也在激活集里：连接重试 / 免费额度恢复 / 退化输出
+        Assert.True(policy.ConnectRetry);
+        Assert.Equal(5, policy.ConnectRetryBaseSeconds);
+        Assert.Equal(300, policy.ConnectRetryMaxSeconds);
+        Assert.True(policy.FreeLimitRecovery);
+        Assert.Equal(2, policy.MaxDegenerateRetries);
         Assert.Equal(FeatureCatalog.DefaultMentionTurns,
             FeatureCatalog.ValueOf(current, Map(ledger), FeatureCatalog.MentionTurns, 0));
         Assert.Equal(FeatureCatalog.DefaultBrowserIdleMinutes,

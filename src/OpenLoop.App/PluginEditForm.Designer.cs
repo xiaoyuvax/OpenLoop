@@ -69,48 +69,48 @@ namespace OpenLoop.App
             _grid.BackColor = UiStyle.Surface;
             _grid.Padding = new Padding(16, 12, 16, 8);
 
-            ConfigureLabel(_lblId, "插件 id");
-            ConfigureLabel(_lblName, "名称");
+            ConfigureLabel(_lblId, Localization.T("PluginIdLabel"));
+            ConfigureLabel(_lblName, Localization.T("Name"));
             ConfigureLabel(_lblUrl, "BaseUrl");
             ConfigureLabel(_lblModelsUrl, "ModelsUrl");
-            ConfigureLabel(_lblPrefix, "模型前缀");
-            ConfigureLabel(_lblKey, "密钥");
+            ConfigureLabel(_lblPrefix, Localization.T("PluginPrefixLabel"));
+            ConfigureLabel(_lblKey, Localization.T("SettingsKey"));
 
             _txtId.Dock = DockStyle.Fill;
             _txtId.Radius = 8;
             _txtId.BorderWidth = 1;
-            _txtId.PlaceholderText = "目录名与清单 id，例如 agent2api";
+            _txtId.PlaceholderText = Localization.T("PluginIdPlaceholder");
             _txtId.Margin = new Padding(0, 5, 0, 5);
 
             _txtName.Dock = DockStyle.Fill;
             _txtName.Radius = 8;
             _txtName.BorderWidth = 1;
-            _txtName.PlaceholderText = "下拉里显示的名字；留空用 id";
+            _txtName.PlaceholderText = Localization.T("PluginNamePlaceholder");
             _txtName.Margin = new Padding(0, 5, 0, 5);
 
             _txtUrl.Dock = DockStyle.Fill;
             _txtUrl.Radius = 8;
             _txtUrl.BorderWidth = 1;
-            _txtUrl.PlaceholderText = "OpenAI 兼容根地址，例如 http://127.0.0.1:3065/v1";
+            _txtUrl.PlaceholderText = Localization.T("PluginUrlPlaceholder");
             _txtUrl.Margin = new Padding(0, 5, 0, 5);
 
             _txtModelsUrl.Dock = DockStyle.Fill;
             _txtModelsUrl.Radius = 8;
             _txtModelsUrl.BorderWidth = 1;
-            _txtModelsUrl.PlaceholderText = "可选：GET 这个地址取 data[].id 当模型清单";
+            _txtModelsUrl.PlaceholderText = Localization.T("PluginModelsUrlPlaceholder");
             _txtModelsUrl.Margin = new Padding(0, 5, 0, 5);
 
             _txtPrefix.Dock = DockStyle.Fill;
             _txtPrefix.Radius = 8;
             _txtPrefix.BorderWidth = 1;
-            _txtPrefix.PlaceholderText = "可选：界面上的模型前缀，发上游前会去掉，例如 a2a/";
+            _txtPrefix.PlaceholderText = Localization.T("PluginPrefixPlaceholder");
             _txtPrefix.Margin = new Padding(0, 5, 0, 5);
 
             _txtKey.Dock = DockStyle.Fill;
             _txtKey.Radius = 8;
             _txtKey.BorderWidth = 1;
             _txtKey.UseSystemPasswordChar = true;
-            _txtKey.PlaceholderText = "写入同目录 key.txt；留空表示不改动";
+            _txtKey.PlaceholderText = Localization.T("PluginKeyPlaceholder");
             _txtKey.Margin = new Padding(0, 5, 0, 5);
 
             _lblNote.AutoSize = false;
@@ -125,14 +125,14 @@ namespace OpenLoop.App
             _buttons.WrapContents = false;
             _buttons.Margin = new Padding(0);
 
-            _btnSave.Text = "保存";
+            _btnSave.Text = Localization.T("SettingsSave");
             _btnSave.Type = AntdUI.TTypeMini.Primary;
             _btnSave.Radius = 8;
             _btnSave.Size = new Size(92, 34);
             _btnSave.Margin = new Padding(8, 6, 0, 0);
             _btnSave.Click += OnSave;
 
-            _btnCancel.Text = "取消";
+            _btnCancel.Text = Localization.T("SettingsCancel");
             _btnCancel.Radius = 8;
             _btnCancel.Size = new Size(84, 34);
             _btnCancel.Margin = new Padding(8, 6, 0, 0);
@@ -168,7 +168,7 @@ namespace OpenLoop.App
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            Text = "编辑插件";
+            Text = Localization.T("PluginEditTitle");
             Controls.Add(_grid);
 
             ResumeLayout(false);

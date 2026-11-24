@@ -27,6 +27,14 @@ namespace OpenLoop.Service.Models
             string id = model?.Trim();
             if (string.IsNullOrEmpty(id)) return Core.Agent.AgentContext.DefaultContextLimit;
 
+            int limit = Declared(id, settings);
+            // 上游实际收得下的量只有挂过一次才知道（见 OpenCodeStallBudget）；学到的更小就按学到的压。
+            int learned = Core.OpenCode.OpenCodeStallBudget.Limit(id);
+            return learned > 0 && learned < limit ? learned : limit;
+        }
+
+        private static int Declared(string id, AppSettings settings)
+        {
             int overridden = settings?.PropsFor(id)?.ContextLimit ?? 0;
             if (overridden > 0) return overridden;
 

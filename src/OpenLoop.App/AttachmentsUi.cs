@@ -11,7 +11,7 @@ namespace OpenLoop.App
             var result = new List<string>(current ?? []);
             using var dialog = new OpenFileDialog
             {
-                Title = $"选择附件（最多 {limit} 个）",
+                Title = string.Format(Localization.T("PickAttachments"), limit),
                 Multiselect = true,
                 CheckFileExists = true
             };
@@ -94,7 +94,7 @@ namespace OpenLoop.App
             if (paths == null || paths.Count == 0) return "";
             string names = string.Join("、", paths.Select(Path.GetFileName).Take(3));
             if (paths.Count > 3) names += "…";
-            return $"📎 {paths.Count}/{limit}：{names}（点此清空）";
+            return string.Format(Localization.T("AttachmentSummary"), paths.Count, limit, names);
         }
     }
 }

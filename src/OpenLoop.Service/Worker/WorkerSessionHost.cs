@@ -991,7 +991,8 @@ namespace OpenLoop.Service.Worker
 
                 // 免费额度耗尽：让 ConnMan 换节点，就绪后由它回调这里给原会话发「继续」
                 if (result.Outcome == "error"
-                    && ServerNotice.IsQuotaFailure(ServerNotice.FailedPrefix + result.ErrorMessage))
+                    && ServerNotice.IsQuotaFailure(ServerNotice.FailedPrefix + result.ErrorMessage)
+                    && FeatureCatalog.PolicyOf(session.Workspace).FreeLimitRecovery)
                 {
                     FreeLimitRecovery.TryStart(id, failedModel, () => UserEpochOf(id), text => Send(id, "task", text));
                 }

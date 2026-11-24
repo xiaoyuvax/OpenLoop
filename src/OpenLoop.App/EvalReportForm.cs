@@ -51,22 +51,23 @@ namespace OpenLoop.App
         private static string Format(EvalReport report)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("报告: " + report.Id);
-            sb.AppendLine("时间: " + report.At);
+            sb.AppendLine(Localization.T("报告: ") + report.Id);
+            sb.AppendLine(Localization.T("时间: ") + report.At);
             sb.AppendLine(report.Adopted
-                ? $"结论: 采纳 v{report.CandidateVersion}"
-                : $"结论: 保留 v{report.BaselineVersion}");
-            sb.AppendLine($"通过: 基线 {report.BaselinePassed}/{report.Total}，候选 {report.CandidatePassed}/{report.Total}");
-            sb.AppendLine("理由: " + report.Reason);
+                ? string.Format(Localization.T("EvalVerdictAdopted"), report.CandidateVersion)
+                : string.Format(Localization.T("EvalVerdictKept"), report.BaselineVersion));
+            sb.AppendLine(string.Format(Localization.T("EvalPassedLine"),
+                report.BaselinePassed, report.Total, report.CandidatePassed, report.Total));
+            sb.AppendLine(Localization.T("理由: ") + report.Reason);
             sb.AppendLine();
             foreach (var task in report.Tasks)
             {
                 sb.Append("- ").Append(task.Id)
-                  .Append("：基线 ").Append(task.BaselinePassed ? "通过" : "失败")
-                  .Append("，候选 ").Append(task.CandidatePassed ? "通过" : "失败")
+                  .Append(Localization.T("：基线 ")).Append(task.BaselinePassed ? Localization.T("通过") : Localization.T("失败"))
+                  .Append(Localization.T("，候选 ")).Append(task.CandidatePassed ? Localization.T("通过") : Localization.T("失败"))
                   .AppendLine();
-                if (!string.IsNullOrWhiteSpace(task.BaselineDetail)) sb.Append("  基线: ").AppendLine(task.BaselineDetail);
-                if (!string.IsNullOrWhiteSpace(task.CandidateDetail)) sb.Append("  候选: ").AppendLine(task.CandidateDetail);
+                if (!string.IsNullOrWhiteSpace(task.BaselineDetail)) sb.Append(Localization.T("  基线: ")).AppendLine(task.BaselineDetail);
+                if (!string.IsNullOrWhiteSpace(task.CandidateDetail)) sb.Append(Localization.T("  候选: ")).AppendLine(task.CandidateDetail);
             }
             return sb.ToString();
         }
@@ -97,7 +98,7 @@ namespace OpenLoop.App
 
             public override string ToString()
             {
-                string verdict = Report.Adopted ? "采纳" : "保留";
+                string verdict = Report.Adopted ? Localization.T("采纳") : Localization.T("保留");
                 return $"{verdict} · v{Report.BaselineVersion}→v{Report.CandidateVersion?.ToString() ?? "-"}"
                      + $" · {Report.CandidatePassed}/{Report.Total} · {Short(Report.At)}";
             }

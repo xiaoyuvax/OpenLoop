@@ -54,6 +54,53 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task WriteAppendBuildsFileInSegments()
+        {
+            var scope = new WorkspaceScope(_root);
+            var write = new WriteFileTool(scope);
+
+            var first = await write.ExecuteAsync(
+                Args(("path", "big/out.txt"), ("content", "part1\n")), default);
+            var second = await write.ExecuteAsync(
+                Args(("path", "big/out.txt"), ("content", "part2\n"), ("mode", "append")), default);
+            var third = await write.ExecuteAsync(
+                Args(("path", "big/out.txt"), ("content", "part3"), ("mode", "APPEND")), default);
+
+            Assert.True(first.Ok, first.Error);
+            Assert.True(second.Ok, second.Error);
+            Assert.True(third.Ok, third.Error);
+            Assert.Equal("part1\npart2\npart3", await File.ReadAllTextAsync(Path.Combine(_root, "big/out.txt")));
+            Assert.Contains("已追加", second.Data);
+            Assert.Contains("已写入", first.Data);
+        }
+
+        [Fact]
+        public async Task WriteAppendToExistingFileKeepsOldContent()
+        {
+            var scope = new WorkspaceScope(_root);
+            string path = Path.Combine(_root, "log.txt");
+            await File.WriteAllTextAsync(path, "old\n");
+
+            var result = await new WriteFileTool(scope).ExecuteAsync(
+                Args(("path", "log.txt"), ("content", "new"), ("mode", "append")), default);
+
+            Assert.True(result.Ok, result.Error);
+            Assert.Equal("old\nnew", await File.ReadAllTextAsync(path));
+        }
+
+        [Fact]
+        public async Task WriteUnknownModeFailsWithHint()
+        {
+            var scope = new WorkspaceScope(_root);
+
+            var result = await new WriteFileTool(scope).ExecuteAsync(
+                Args(("path", "a.txt"), ("content", "x"), ("mode", "truncate")), default);
+
+            Assert.False(result.Ok);
+            Assert.Contains("mode", result.Error);
+        }
+
+        [Fact]
         public async Task ReadReportsActuallyReturnedLinesWhenCapped()
         {
             var scope = new WorkspaceScope(_root);

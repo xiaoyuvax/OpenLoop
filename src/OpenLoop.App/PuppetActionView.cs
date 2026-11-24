@@ -9,6 +9,8 @@ namespace OpenLoop.App
     public partial class PuppetActionView : UserControl
     {
         private readonly List<PuppetActionInfo> _rows = [];
+        private List<PuppetActionInfo> _view = [];
+        private string _status = "";
         private bool _loading;
 
         public PuppetActionView()
@@ -25,6 +27,7 @@ namespace OpenLoop.App
         internal void Initialize()
         {
             _btnRefresh.Click += (_, _) => _ = ReloadAsync(force: true);
+            _txtFilter.TextChanged += (_, _) => ApplyFilter();
             _table.CellDoubleClick += OnCellDoubleClick;
             _ = ReloadAsync(force: false);
         }
@@ -36,7 +39,7 @@ namespace OpenLoop.App
         {
             if (_loading || IsDisposed) return;
             _loading = true;
-            _lblHint.Text = "Puppet Action 清单 · 读取中…";
+            _lblHint.Text = Localization.T("PuppetListLoading");
             try
             {
                 var sheet = await PuppetActions.LoadAsync(force);
@@ -54,28 +57,46 @@ namespace OpenLoop.App
             _rows.Clear();
             _rows.AddRange(sheet?.Actions ?? []);
 
-            _table.DataSource = null;
-            _table.DataSource = _rows;
-
             if (!string.IsNullOrEmpty(sheet?.Error))
             {
-                _lblHint.Text = "读不到清单：" + sheet.Error;
+                _view = [];
+                _table.DataSource = null;
+                _status = "";
+                _lblHint.Text = Localization.T("PuppetUnreadable") + sheet.Error;
                 _lblHint.ForeColor = UiStyle.Error;
-                _lblUsage.Text = "壳启用 Puppet（B 面）后才能列出 action；清单来自本进程的 /appagent/manifest。";
+                _lblUsage.Text = Localization.T("PuppetShellDisabled");
                 return;
             }
 
             _lblHint.ForeColor = UiStyle.Muted;
-            _lblHint.Text = $"Puppet Action 清单 · 实例 {sheet?.Instance} · {_rows.Count} 个 action"
+            _status = string.Format(Localization.T("PuppetStatus"), sheet?.Instance, _rows.Count)
                 + (sheet == null ? "" : " · " + sheet.At.ToLocalTime().ToString("HH:mm:ss"));
-            _lblUsage.Text = "双击一行把这条命令填进输入框：/puppet <action> <参数…>（参数用自然语言写，模型自己对应）";
+            _lblUsage.Text = Localization.T("PuppetUsage");
+            ApplyFilter();
+        }
+
+        private void ApplyFilter()
+        {
+            string q = _txtFilter.Text?.Trim() ?? "";
+            _view = q.Length == 0
+                ? [.. _rows]
+                : _rows.Where(r =>
+                    r.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || r.ParamText.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || r.Desc.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            _table.DataSource = null;
+            _table.DataSource = _view;
+
+            if (string.IsNullOrEmpty(_status)) return;
+            _lblHint.Text = _view.Count == _rows.Count ? _status : _status + string.Format(Localization.T("PuppetFiltered"), _view.Count);
         }
 
         private void OnCellDoubleClick(object sender, AntdUI.TableClickEventArgs e)
         {
             int index = (e?.RowIndex ?? 0) - 1;
-            if (index < 0 || index >= _rows.Count) return;
-            CommandRequested?.Invoke("/puppet " + _rows[index].Name + " ");
+            if (index < 0 || index >= _view.Count) return;
+            CommandRequested?.Invoke("/puppet " + _view[index].Name + " ");
         }
     }
 }

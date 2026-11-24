@@ -17,7 +17,7 @@ namespace OpenLoop.App
 
         public string Name => "ReadSession";
         public string Description =>
-            "读内存里打开的会话（/complain、/debug 定位问题先用它了解上下文；协作时也用它读协作会话）：" +
+            "读内存里打开的会话（/complain 定位问题先用它了解上下文；协作时也用它读协作会话）：" +
             "不给 session 时列出打开的会话与各自当前状态（运行中 / 已正常结束 / 异常结束及错误信息）；" +
             "给了就按轮返回用户输入、工具调用与回复。会话已关闭时再用 ReadFile 读记录文件。";
         public string ParamsSchema =>

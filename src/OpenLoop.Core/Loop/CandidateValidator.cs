@@ -48,6 +48,13 @@ namespace OpenLoop.Core.Loop
                     continue;
                 }
 
+                if (feature.Kind == "prompt")
+                {
+                    if (reference.Params is { Count: > 0 })
+                        problems.Add($"{reference.Id} 是提示词模板，不接受参数");
+                    continue;
+                }
+
                 var allowed = AllowedKeys(reference.Id);
                 foreach (string key in reference.Params?.Keys ?? Enumerable.Empty<string>())
                     if (!allowed.Contains(key))
@@ -68,6 +75,13 @@ namespace OpenLoop.Core.Loop
                     case FeatureCatalog.MalformedRetry:
                         CheckNumber(problems, reference, feature, "max", 0, 5);
                         break;
+                    case FeatureCatalog.ConnectRetry:
+                        CheckNumber(problems, reference, feature, "base", 1, 60);
+                        CheckNumber(problems, reference, feature, "max", 5, 3600);
+                        break;
+                    case FeatureCatalog.Degenerate:
+                        CheckNumber(problems, reference, feature, "max", 0, 5);
+                        break;
                     case FeatureCatalog.Promise:
                         CheckNumber(problems, reference, feature, "max", 0, 10);
                         break;
@@ -82,9 +96,6 @@ namespace OpenLoop.Core.Loop
                         break;
                     case FeatureCatalog.OutputTokenRatio:
                         CheckNumber(problems, reference, feature, "value", 1, 64);
-                        break;
-                    case FeatureCatalog.DebugTurns:
-                        CheckNumber(problems, reference, feature, "value", 0, 50);
                         break;
                     case FeatureCatalog.MentionTurns:
                         CheckNumber(problems, reference, feature, "value", 0, 50);
@@ -121,14 +132,15 @@ namespace OpenLoop.Core.Loop
         internal static string[] AllowedKeys(string id) => id switch
         {
             FeatureCatalog.RepeatCall or FeatureCatalog.Exploration or FeatureCatalog.MalformedRetry
-                or FeatureCatalog.Promise
+                or FeatureCatalog.Promise or FeatureCatalog.Degenerate
                 => ["enabled", "max"],
+            FeatureCatalog.ConnectRetry => ["enabled", "base", "max"],
             FeatureCatalog.Poll => ["max", "total"],
             FeatureCatalog.BudgetExtend => ["steps", "max"],
             FeatureCatalog.CompressKeep => ["messages", "tokens"],
             FeatureCatalog.CompressRetry => ["max"],
             FeatureCatalog.MaxSteps or FeatureCatalog.ToolResultLimit or FeatureCatalog.CompressAt
-                or FeatureCatalog.OutputTokenRatio or FeatureCatalog.DebugTurns or FeatureCatalog.MentionTurns
+                or FeatureCatalog.OutputTokenRatio or FeatureCatalog.MentionTurns
                 or FeatureCatalog.FlashInterval or FeatureCatalog.BrowserIdle or FeatureCatalog.CheckpointInterval
                 => ["value"],
             _ => ["enabled"]

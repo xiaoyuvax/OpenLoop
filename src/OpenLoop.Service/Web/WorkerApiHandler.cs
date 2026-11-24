@@ -137,6 +137,15 @@ namespace OpenLoop.Service.Web
                         ? Json(req, _host.Get(id))
                         : NotFound(req);
                 }
+                // /report：只落 findings，不碰会话、不调模型、不触发演进
+                case "report":
+                {
+                    var body = ReadBody<NoticeRequest>(req);
+                    var current = _host.Get(id);
+                    if (body == null || current == null) return NotFound(req);
+                    var (ok, message) = Core.Store.FindingTriage.Report(current.Workspace, body.Text ?? "");
+                    return Json(req, new { ok, message }, ok ? 200 : 400);
+                }
                 case "stop":
                     return _host.Stop(id) ? Json(req, _host.Get(id)) : NotFound(req);
                 case "interrupt":

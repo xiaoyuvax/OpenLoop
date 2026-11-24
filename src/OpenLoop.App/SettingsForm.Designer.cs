@@ -143,10 +143,10 @@ namespace OpenLoop.App
             _selSkillScope = new AntdUI.Select();
             _lblSkillsPath = new AntdUI.Label();
             _tblSkills = new AntdUI.Table();
-            _colSkillOn = new AntdUI.Column("On", "状态");
-            _colSkillName = new AntdUI.Column("Name", "技能");
-            _colSkillFrom = new AntdUI.Column("From", "来源");
-            _colSkillDesc = new AntdUI.Column("Description", "说明");
+            _colSkillOn = new AntdUI.Column("On", Localization.T("Status"));
+            _colSkillName = new AntdUI.Column("Name", Localization.T("TabSkills"));
+            _colSkillFrom = new AntdUI.Column("From", Localization.T("ColFrom"));
+            _colSkillDesc = new AntdUI.Column("Description", Localization.T("ColDescription"));
             _lblSkillsHint = new AntdUI.Label();
             _skillActions = new FlowLayoutPanel();
             _btnSkillToggle = new AntdUI.Button();
@@ -256,11 +256,11 @@ namespace OpenLoop.App
             _tabs.Margin = new Padding(0);
             _tabs.Gap = 18;
 
-            _pageGeneral.Text = "普通";
+            _pageGeneral.Text = Localization.T("TabGeneral");
             _pageGeneral.ReadOnly = true;
             _pageGeneral.Dock = DockStyle.Fill;
 
-            _pageModels.Text = "模型";
+            _pageModels.Text = Localization.T("TabModels");
             _pageModels.ReadOnly = true;
             _pageModels.Dock = DockStyle.Fill;
 
@@ -268,19 +268,19 @@ namespace OpenLoop.App
             _pageOpenCode.ReadOnly = true;
             _pageOpenCode.Dock = DockStyle.Fill;
 
-            _pageTools.Text = "工具";
+            _pageTools.Text = Localization.T("TabTools");
             _pageTools.ReadOnly = true;
             _pageTools.Dock = DockStyle.Fill;
 
-            _pageSkills.Text = "技能";
+            _pageSkills.Text = Localization.T("TabSkills");
             _pageSkills.ReadOnly = true;
             _pageSkills.Dock = DockStyle.Fill;
 
-            _pagePlugins.Text = "插件";
+            _pagePlugins.Text = Localization.T("TabPlugins");
             _pagePlugins.ReadOnly = true;
             _pagePlugins.Dock = DockStyle.Fill;
 
-            _pageCollab.Text = "协作";
+            _pageCollab.Text = Localization.T("TabCollab");
             _pageCollab.ReadOnly = true;
             _pageCollab.Dock = DockStyle.Fill;
 
@@ -301,29 +301,29 @@ namespace OpenLoop.App
             _general.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _general.Padding = new Padding(8, 16, 8, 8);
 
-            ConfigureLabel(_lblLanguage, "语言");
-            ConfigureLabel(_lblTheme, "主题色");
-            ConfigureLabel(_lblFullAccess, "完全许可");
-            ConfigureLabel(_lblAutoApprove, "自动审批");
-            ConfigureLabel(_lblOpenCode, "权限审批");
+            ConfigureLabel(_lblLanguage, Localization.T("Language"));
+            ConfigureLabel(_lblTheme, Localization.T("ThemeAccent"));
+            ConfigureLabel(_lblFullAccess, Localization.T("FullAccess"));
+            ConfigureLabel(_lblAutoApprove, Localization.T("AutoApprove"));
+            ConfigureLabel(_lblOpenCode, Localization.T("OpenCodeApproval"));
             ConfigureLabel(_lblAgents, "AGENTS.md");
-            ConfigureLabel(_lblThinking, "思考过程");
-            ConfigureLabel(_lblAutoEvolve, "自动演进");
-            ConfigureLabel(_lblAutoIterate, "自动迭代");
+            ConfigureLabel(_lblThinking, Localization.T("Thinking"));
+            ConfigureLabel(_lblAutoEvolve, Localization.T("AutoEvolve"));
+            ConfigureLabel(_lblAutoIterate, Localization.T("AutoIterate"));
 
             _cboLanguage.Dock = DockStyle.Fill;
             _cboLanguage.Radius = 8;
             _cboLanguage.Margin = new Padding(0, 6, 240, 6);
-            _cboLanguage.Items.Add(new AntdUI.SelectItem("跟随系统") { Tag = "" });
-            _cboLanguage.Items.Add(new AntdUI.SelectItem("中文") { Tag = "zh" });
-            _cboLanguage.Items.Add(new AntdUI.SelectItem("English") { Tag = "en" });
+            _cboLanguage.Items.Add(new AntdUI.SelectItem(Localization.T("FollowSystem")) { Tag = "" });
+            _cboLanguage.Items.Add(new AntdUI.SelectItem(Localization.T("Zh")) { Tag = "zh" });
+            _cboLanguage.Items.Add(new AntdUI.SelectItem(Localization.T("En")) { Tag = "en" });
 
             _cboTheme.Dock = DockStyle.Fill;
             _cboTheme.Radius = 8;
             _cboTheme.Margin = new Padding(0, 6, 240, 6);
-            _cboTheme.Items.Add(new AntdUI.SelectItem("浅色") { Tag = "light" });
-            _cboTheme.Items.Add(new AntdUI.SelectItem("深色") { Tag = "dark" });
-            _cboTheme.Items.Add(new AntdUI.SelectItem("灰蓝") { Tag = "grayblue" });
+            _cboTheme.Items.Add(new AntdUI.SelectItem(Localization.T("ThemeLight")) { Tag = "light" });
+            _cboTheme.Items.Add(new AntdUI.SelectItem(Localization.T("ThemeDark")) { Tag = "dark" });
+            _cboTheme.Items.Add(new AntdUI.SelectItem(Localization.T("ThemeGrayBlue")) { Tag = "grayblue" });
 
             _fullFlow.Dock = DockStyle.Fill;
             _fullFlow.FlowDirection = FlowDirection.LeftToRight;
@@ -335,7 +335,7 @@ namespace OpenLoop.App
             _switchFullAccess.Margin = new Padding(0, 9, 8, 0);
 
             _lblFullAccessHint.AutoSize = true;
-            _lblFullAccessHint.Text = "关闭路径边界、命令审批与环境隔离，可直连网络";
+            _lblFullAccessHint.Text = Localization.T("FullAccessHint");
             _lblFullAccessHint.Font = new Font("Segoe UI", 8.5F);
             _lblFullAccessHint.ForeColor = UiStyle.Error;
             _lblFullAccessHint.Margin = new Padding(0, 11, 0, 0);
@@ -353,7 +353,7 @@ namespace OpenLoop.App
             _switchAutoApprove.Margin = new Padding(0, 9, 8, 0);
 
             _lblAutoApproveHint.AutoSize = true;
-            _lblAutoApproveHint.Text = "一切工具调用都无需审批（含工作区外访问与风险操作）";
+            _lblAutoApproveHint.Text = Localization.T("AutoApproveHint");
             _lblAutoApproveHint.Font = new Font("Segoe UI", 8.5F);
             _lblAutoApproveHint.ForeColor = UiStyle.Muted;
             _lblAutoApproveHint.Margin = new Padding(0, 11, 0, 0);
@@ -371,7 +371,7 @@ namespace OpenLoop.App
             _switchOpenCode.Margin = new Padding(0, 9, 8, 0);
 
             _lblOpenCodeHint.AutoSize = true;
-            _lblOpenCodeHint.Text = "委派给 OpenCode 时，每个动作都经本应用审批";
+            _lblOpenCodeHint.Text = Localization.T("OpenCodeHint");
             _lblOpenCodeHint.Font = new Font("Segoe UI", 8.5F);
             _lblOpenCodeHint.ForeColor = UiStyle.Muted;
             _lblOpenCodeHint.Margin = new Padding(0, 11, 0, 0);
@@ -390,7 +390,7 @@ namespace OpenLoop.App
             _switchAgents.Margin = new Padding(0, 9, 8, 0);
 
             _lblAgentsHint.AutoSize = true;
-            _lblAgentsHint.Text = "把全局与项目 AGENTS.md 注入系统提示词";
+            _lblAgentsHint.Text = Localization.T("AgentsHint");
             _lblAgentsHint.Font = new Font("Segoe UI", 8.5F);
             _lblAgentsHint.ForeColor = UiStyle.Muted;
             _lblAgentsHint.Margin = new Padding(0, 11, 0, 0);
@@ -408,7 +408,7 @@ namespace OpenLoop.App
             _switchThinking.Margin = new Padding(0, 9, 8, 0);
 
             _lblThinkingHint.AutoSize = true;
-            _lblThinkingHint.Text = "新回话默认展开「思考与工具过程」";
+            _lblThinkingHint.Text = Localization.T("ThinkingHint");
             _lblThinkingHint.Font = new Font("Segoe UI", 8.5F);
             _lblThinkingHint.ForeColor = UiStyle.Muted;
             _lblThinkingHint.Margin = new Padding(0, 11, 0, 0);
@@ -426,7 +426,7 @@ namespace OpenLoop.App
             _switchAutoEvolve.Margin = new Padding(0, 9, 8, 0);
 
             _lblAutoEvolveHint.AutoSize = true;
-            _lblAutoEvolveHint.Text = "改行为版本：护栏、阈值、规则与技能顺序，攒够证据自动跑考核";
+            _lblAutoEvolveHint.Text = Localization.T("AutoEvolveHint");
             _lblAutoEvolveHint.Font = new Font("Segoe UI", 8.5F);
             _lblAutoEvolveHint.ForeColor = UiStyle.Muted;
             _lblAutoEvolveHint.Margin = new Padding(0, 11, 0, 0);
@@ -444,7 +444,7 @@ namespace OpenLoop.App
             _switchAutoIterate.Margin = new Padding(0, 9, 8, 0);
 
             _lblAutoIterateHint.AutoSize = true;
-            _lblAutoIterateHint.Text = "源码攒够提交后自动升版换 A/I（有会话在跑会先问，默认关）";
+            _lblAutoIterateHint.Text = Localization.T("AutoIterateHint");
             _lblAutoIterateHint.Font = new Font("Segoe UI", 8.5F);
             _lblAutoIterateHint.ForeColor = UiStyle.Muted;
             _lblAutoIterateHint.Margin = new Padding(0, 11, 0, 0);
@@ -454,7 +454,7 @@ namespace OpenLoop.App
 
             _lblGeneralNote.AutoSize = false;
             _lblGeneralNote.Dock = DockStyle.Fill;
-            _lblGeneralNote.Text = "主题与语言在重启 OpenLoop 后生效；完全许可、自动审批、自动演进与自动迭代立即生效。";
+            _lblGeneralNote.Text = Localization.T("GeneralNote");
             _lblGeneralNote.Font = new Font("Segoe UI", 8.5F);
             _lblGeneralNote.ForeColor = UiStyle.Muted;
             _lblGeneralNote.TextAlign = ContentAlignment.TopLeft;
@@ -493,7 +493,7 @@ namespace OpenLoop.App
 
             _lblOpenCodeNote.AutoSize = false;
             _lblOpenCodeNote.Dock = DockStyle.Fill;
-            _lblOpenCodeNote.Text = "服务通过 ~/.local/state/opencode/service.json 自动发现；未就绪时不会出现在模型列表里。";
+            _lblOpenCodeNote.Text = Localization.T("OpenCodeNote");
             _lblOpenCodeNote.Font = new Font("Segoe UI", 8.5F);
             _lblOpenCodeNote.ForeColor = UiStyle.Muted;
             _lblOpenCodeNote.TextAlign = ContentAlignment.TopLeft;
@@ -521,19 +521,19 @@ namespace OpenLoop.App
             _cboWebFetch.Dock = DockStyle.Fill;
             _cboWebFetch.Radius = 8;
             _cboWebFetch.Margin = new Padding(0, 6, 240, 6);
-            _cboWebFetch.Items.Add(new AntdUI.SelectItem("免审批（默认）") { Tag = "allow" });
-            _cboWebFetch.Items.Add(new AntdUI.SelectItem("每次审批") { Tag = "ask" });
-            _cboWebFetch.Items.Add(new AntdUI.SelectItem("关闭") { Tag = "off" });
+            _cboWebFetch.Items.Add(new AntdUI.SelectItem(Localization.T("WebFetchAllow")) { Tag = "allow" });
+            _cboWebFetch.Items.Add(new AntdUI.SelectItem(Localization.T("WebFetchAsk")) { Tag = "ask" });
+            _cboWebFetch.Items.Add(new AntdUI.SelectItem(Localization.T("WebFetchOff")) { Tag = "off" });
 
             _lblWebFetchHint.AutoSize = true;
-            _lblWebFetchHint.Text = "只读抓取 http/https 网页正文并转纯文本；不执行 JavaScript，内容按不可信数据处理";
+            _lblWebFetchHint.Text = Localization.T("WebFetchHint");
             _lblWebFetchHint.Font = new Font("Segoe UI", 8.5F);
             _lblWebFetchHint.ForeColor = UiStyle.Muted;
             _lblWebFetchHint.Margin = new Padding(0, 11, 0, 0);
 
             _lblToolsNote.AutoSize = false;
             _lblToolsNote.Dock = DockStyle.Fill;
-            _lblToolsNote.Text = "内网与环回地址一律拒绝；只抓文本/HTML/JSON/XML，单页最多 2MB，结果默认 6000 字符。Worker 与 Loop 同时生效。";
+            _lblToolsNote.Text = Localization.T("ToolsNote");
             _lblToolsNote.Font = new Font("Segoe UI", 8.5F);
             _lblToolsNote.ForeColor = UiStyle.Muted;
             _lblToolsNote.TextAlign = ContentAlignment.TopLeft;
@@ -563,11 +563,11 @@ namespace OpenLoop.App
             _models.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _models.Padding = new Padding(8, 10, 8, 4);
 
-            ConfigureLabel(_lblProvider, "提供商");
-            ConfigureLabel(_lblName, "名称");
-            ConfigureLabel(_lblUrl, "接口地址");
-            ConfigureLabel(_lblKey, "密钥");
-            ConfigureLabel(_lblModels, "模型");
+            ConfigureLabel(_lblProvider, Localization.T("Provider"));
+            ConfigureLabel(_lblName, Localization.T("Name"));
+            ConfigureLabel(_lblUrl, Localization.T("SettingsBaseUrl"));
+            ConfigureLabel(_lblKey, Localization.T("SettingsKey"));
+            ConfigureLabel(_lblModels, Localization.T("SettingsModel"));
 
             _cboProvider.Dock = DockStyle.Fill;
             _cboProvider.Radius = 8;
@@ -580,14 +580,14 @@ namespace OpenLoop.App
             _providerButtons.AutoSize = true;
             _providerButtons.Margin = new Padding(0, 4, 0, 4);
 
-            _btnAddProvider.Text = "添加";
+            _btnAddProvider.Text = Localization.T("Add");
             _btnAddProvider.Radius = 8;
             _btnAddProvider.Size = new Size(72, 30);
             _btnAddProvider.Margin = new Padding(0, 0, 6, 0);
             _btnAddProvider.IconSvg = UiIcons.Of(UiIcons.Plus, UiStyle.Text);
             _btnAddProvider.Click += OnAddProvider;
 
-            _btnRemoveProvider.Text = "删除";
+            _btnRemoveProvider.Text = Localization.T("Remove");
             _btnRemoveProvider.Radius = 8;
             _btnRemoveProvider.Size = new Size(72, 30);
             _btnRemoveProvider.Margin = new Padding(0);
@@ -620,14 +620,14 @@ namespace OpenLoop.App
             _providerActions.AutoSize = true;
             _providerActions.Margin = new Padding(0, 3, 0, 3);
 
-            _btnFetch.Text = "拉取模型";
+            _btnFetch.Text = Localization.T("FetchModels");
             _btnFetch.Radius = 8;
             _btnFetch.Size = new Size(100, 30);
             _btnFetch.IconSvg = UiIcons.Of(UiIcons.Refresh, UiStyle.Text);
             _btnFetch.Margin = new Padding(0, 0, 6, 0);
             _btnFetch.Click += OnFetchModels;
 
-            _btnTest.Text = "测试连接";
+            _btnTest.Text = Localization.T("SettingsTest");
             _btnTest.Radius = 8;
             _btnTest.Size = new Size(100, 30);
             _btnTest.Margin = new Padding(0);
@@ -644,18 +644,18 @@ namespace OpenLoop.App
             _txtModelId.Width = 300;
             _txtModelId.Height = 30;
             _txtModelId.Radius = 8;
-            _txtModelId.PlaceholderText = "输入搜索模型；点添加加入列表";
+            _txtModelId.PlaceholderText = Localization.T("ModelSearchHint");
             _txtModelId.Margin = new Padding(0, 4, 8, 4);
             _txtModelId.KeyDown += OnModelKeyDown;
             _txtModelId.TextChanged += OnModelSearchChanged;
 
-            _btnAddModel.Text = "添加";
+            _btnAddModel.Text = Localization.T("Add");
             _btnAddModel.Radius = 8;
             _btnAddModel.Size = new Size(72, 30);
             _btnAddModel.Margin = new Padding(0, 0, 6, 0);
             _btnAddModel.Click += OnAddModel;
 
-            _btnClearModels.Text = "全部清除";
+            _btnClearModels.Text = Localization.T("ClearModels");
             _btnClearModels.Radius = 8;
             _btnClearModels.Size = new Size(96, 30);
             _btnClearModels.Margin = new Padding(0);
@@ -669,13 +669,13 @@ namespace OpenLoop.App
             _modelAdd.Controls.Add(_btnAddModel);
             _modelAdd.Controls.Add(_btnClearModels);
 
-            _btnRemoveModel.Text = "删除选中";
+            _btnRemoveModel.Text = Localization.T("RemoveSelected");
             _btnRemoveModel.Radius = 8;
             _btnRemoveModel.Size = new Size(100, 30);
             _btnRemoveModel.Margin = new Padding(0);
             _btnRemoveModel.Click += OnRemoveModel;
 
-            _btnModelProps.Text = "属性";
+            _btnModelProps.Text = Localization.T("Properties");
             _btnModelProps.Radius = 8;
             _btnModelProps.Size = new Size(72, 30);
             _btnModelProps.Margin = new Padding(0, 0, 6, 0);
@@ -745,8 +745,8 @@ namespace OpenLoop.App
             _selSkillScope.Dock = DockStyle.Fill;
             _selSkillScope.Radius = 8;
             _selSkillScope.Margin = new Padding(0, 6, 8, 6);
-            _selSkillScope.Items.Add(new AntdUI.SelectItem("全局") { Tag = "global" });
-            _selSkillScope.Items.Add(new AntdUI.SelectItem("项目") { Tag = "project" });
+            _selSkillScope.Items.Add(new AntdUI.SelectItem(Localization.T("ScopeGlobal")) { Tag = "global" });
+            _selSkillScope.Items.Add(new AntdUI.SelectItem(Localization.T("ScopeProject")) { Tag = "project" });
             _selSkillScope.SelectedValueChanged += OnSkillScopeChanged;
 
             _lblSkillsPath.Dock = DockStyle.Fill;
@@ -764,7 +764,7 @@ namespace OpenLoop.App
             _tblSkills.RowHeight = 40;
             _tblSkills.MultipleRows = true;
             _tblSkills.SelectIndexChanged += OnSkillSelectionChanged;
-            _tblSkills.EmptyText = "这个工作区还没有技能";
+            _tblSkills.EmptyText = Localization.T("SkillsEmptyProject");
             _tblSkills.Margin = new Padding(0, 4, 0, 4);
             _colSkillOn.Width = "90";
             _colSkillName.Width = "180";
@@ -781,27 +781,27 @@ namespace OpenLoop.App
             _lblSkillsHint.ForeColor = UiStyle.Muted;
             _lblSkillsHint.AutoEllipsis = true;
             _lblSkillsHint.Margin = new Padding(0, 4, 0, 0);
-            _lblSkillsHint.Text = "「全局」改 %APPDATA%\\OpenLoop\\skills，「项目」改 <工作区>/.openloop/skills（也读 OpenCode 的 <工作区>/.opencode/skills）；同名时 .openloop > .opencode > 全局，全局开关只影响项目里没配置过的技能。Ctrl/Shift 点行可多选，一起启用或停用。";
+            _lblSkillsHint.Text = Localization.T("SkillsHint");
 
             _skillActions.Dock = DockStyle.Fill;
             _skillActions.FlowDirection = FlowDirection.LeftToRight;
             _skillActions.WrapContents = false;
             _skillActions.Margin = new Padding(0);
 
-            _btnSkillToggle.Text = "启用/停用";
+            _btnSkillToggle.Text = Localization.T("SkillToggle");
             _btnSkillToggle.Type = AntdUI.TTypeMini.Primary;
             _btnSkillToggle.Radius = 8;
             _btnSkillToggle.Size = new Size(112, 30);
             _btnSkillToggle.Margin = new Padding(0, 2, 8, 0);
             _btnSkillToggle.Click += OnSkillToggle;
 
-            _btnSkillInstall.Text = "安装…";
+            _btnSkillInstall.Text = Localization.T("Install");
             _btnSkillInstall.Radius = 8;
             _btnSkillInstall.Size = new Size(88, 30);
             _btnSkillInstall.Margin = new Padding(0, 2, 8, 0);
             _btnSkillInstall.Click += OnSkillInstall;
 
-            _btnSkillUninstall.Text = "卸载";
+            _btnSkillUninstall.Text = Localization.T("Uninstall");
             _btnSkillUninstall.Radius = 8;
             _btnSkillUninstall.Size = new Size(88, 30);
             _btnSkillUninstall.Margin = new Padding(0, 2, 0, 0);
@@ -831,9 +831,9 @@ namespace OpenLoop.App
             _collab.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _collab.Padding = new Padding(8, 16, 8, 8);
 
-            ConfigureLabel(_lblEnableCollab, "启用协作");
-            ConfigureLabel(_lblCollabPoll, "监测间隔");
-            ConfigureLabel(_lblCollabReuse, "沿用上下文");
+            ConfigureLabel(_lblEnableCollab, Localization.T("EnableCollab"));
+            ConfigureLabel(_lblCollabPoll, Localization.T("CollabPoll"));
+            ConfigureLabel(_lblCollabReuse, Localization.T("CollabReuse"));
 
             _enableCollabFlow.Dock = DockStyle.Fill;
             _enableCollabFlow.FlowDirection = FlowDirection.LeftToRight;
@@ -845,7 +845,7 @@ namespace OpenLoop.App
             _switchEnableCollab.Margin = new Padding(0, 9, 8, 0);
 
             _lblEnableCollabHint.AutoSize = true;
-            _lblEnableCollabHint.Text = "给 Worker 与 Loop 会话挂 CollabStart / CollabMonitor / ReadSession";
+            _lblEnableCollabHint.Text = Localization.T("EnableCollabHint");
             _lblEnableCollabHint.Font = new Font("Segoe UI", 8.5F);
             _lblEnableCollabHint.ForeColor = UiStyle.Muted;
             _lblEnableCollabHint.Margin = new Padding(0, 11, 0, 0);
@@ -856,11 +856,11 @@ namespace OpenLoop.App
             _cboCollabPoll.Dock = DockStyle.Fill;
             _cboCollabPoll.Radius = 8;
             _cboCollabPoll.Margin = new Padding(0, 6, 240, 6);
-            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("10 秒") { Tag = 10 });
-            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("30 秒") { Tag = 30 });
-            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("1 分钟") { Tag = 60 });
-            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("2 分钟") { Tag = 120 });
-            _cboCollabPoll.Items.Add(new AntdUI.SelectItem("5 分钟") { Tag = 300 });
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem(string.Format(Localization.T("IntervalSeconds"), 10)) { Tag = 10 });
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem(string.Format(Localization.T("IntervalSeconds"), 30)) { Tag = 30 });
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem(string.Format(Localization.T("IntervalMinutes"), 1)) { Tag = 60 });
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem(string.Format(Localization.T("IntervalMinutes"), 2)) { Tag = 120 });
+            _cboCollabPoll.Items.Add(new AntdUI.SelectItem(string.Format(Localization.T("IntervalMinutes"), 5)) { Tag = 300 });
 
             _collabReuseFlow.Dock = DockStyle.Fill;
             _collabReuseFlow.FlowDirection = FlowDirection.LeftToRight;
@@ -873,7 +873,7 @@ namespace OpenLoop.App
             _switchCollabReuse.Margin = new Padding(0, 9, 8, 0);
 
             _lblCollabReuseHint.AutoSize = true;
-            _lblCollabReuseHint.Text = "协作会话带上发起方已完成的对话，复用前缀缓存（同模型才生效）";
+            _lblCollabReuseHint.Text = Localization.T("CollabReuseHint");
             _lblCollabReuseHint.Font = new Font("Segoe UI", 8.5F);
             _lblCollabReuseHint.ForeColor = UiStyle.Muted;
             _lblCollabReuseHint.Margin = new Padding(0, 11, 0, 0);
@@ -883,9 +883,7 @@ namespace OpenLoop.App
 
             _lblCollabNote.AutoSize = false;
             _lblCollabNote.Dock = DockStyle.Fill;
-            _lblCollabNote.Text = "协作会话是平级的独立会话，不是子 agent：它们不共享发起方的工具调用栈，只在同一工作区各干一段。" +
-                "发起方启动后不再自己动手，只做监测与协调；监测汇报以仿用户消息进入它的队列（队列里用特殊底色标出），" +
-                "全部会话结束或不可恢复地中止后自动停止。暂不支持跨工作区协作。";
+            _lblCollabNote.Text = Localization.T("CollabNote");
             _lblCollabNote.Font = new Font("Segoe UI", 8.5F);
             _lblCollabNote.ForeColor = UiStyle.Muted;
             _lblCollabNote.TextAlign = ContentAlignment.TopLeft;
@@ -915,21 +913,21 @@ namespace OpenLoop.App
             _buttons.WrapContents = false;
             _buttons.Margin = new Padding(0);
 
-            _btnSave.Text = "保存";
+            _btnSave.Text = Localization.T("SettingsSave");
             _btnSave.Type = AntdUI.TTypeMini.Primary;
             _btnSave.Radius = 8;
             _btnSave.Size = new Size(92, 34);
             _btnSave.Margin = new Padding(8, 6, 0, 6);
             _btnSave.Click += OnSave;
 
-            _btnCancel.Text = "取消";
+            _btnCancel.Text = Localization.T("SettingsCancel");
             _btnCancel.Radius = 8;
             _btnCancel.Size = new Size(84, 34);
             _btnCancel.Margin = new Padding(8, 6, 0, 6);
             _btnCancel.Click += OnCancel;
 
             //「让 AI 帮我配置」：关了设置页，把当前页交给 Loop 会话逐项问、逐项改
-            _btnAiConfig.Text = "让 AI 帮我配置";
+            _btnAiConfig.Text = Localization.T("AiConfig");
             _btnAiConfig.Radius = 8;
             _btnAiConfig.Size = new Size(148, 34);
             _btnAiConfig.Margin = new Padding(0, 6, 8, 6);
@@ -952,7 +950,7 @@ namespace OpenLoop.App
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            Text = "设置";
+            Text = Localization.T("SettingsTitle");
             Controls.Add(_root);
 
             ResumeLayout(false);

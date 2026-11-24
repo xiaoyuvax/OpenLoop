@@ -109,7 +109,7 @@ namespace OpenLoop.App
             _txtInput.BorderWidth = 1;
             _txtInput.BackColor = UiStyle.Surface;
             _txtInput.Font = new Font("Segoe UI", 10F);
-            _txtInput.PlaceholderText = "以用户身份在留言板上发言；输入 / 呼出工具";
+            _txtInput.PlaceholderText = Localization.T("PuppetInputHint");
 
             _toolbar.Dock = DockStyle.Fill;
             _toolbar.ColumnCount = 2;

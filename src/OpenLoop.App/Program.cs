@@ -17,6 +17,12 @@ namespace OpenLoop.App
                 ShellUpdate.Run(args);
                 return;
             }
+            // 同版本重启 helper：等旧壳退出再把安装目录里的壳拉起来
+            if (ShellUpdate.IsRestartRequested(args))
+            {
+                ShellUpdate.Restart(args);
+                return;
+            }
 
             ApplicationConfiguration.Initialize();
             Startup.Parse(args);

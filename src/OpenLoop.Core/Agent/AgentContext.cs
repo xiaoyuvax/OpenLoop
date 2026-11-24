@@ -124,6 +124,39 @@ namespace OpenLoop.Core.Agent
         public static bool IsToolResult(LlmMessage m)
             => m?.Content != null && m.Content.StartsWith("tool-result:", StringComparison.Ordinal);
 
+        public const string OmittedPrefix = "【较早的对话已省略：上游卡在压缩超长上下文，重试时只保留最近的内容】\n";
+        public const string CompactionPrefix = "【较早的对话已由上游压缩，摘要如下】\n";
+
+        /// <summary>
+        /// 用上游压好的摘要替换中间段：system 头 + 摘要（user）+ 最近尾部。
+        /// 比整段丢弃多留信息，也不必再调一次模型写摘要（那次调用同样可能卡住）。
+        /// 没有摘要或没有可压缩的中间段返回 null。
+        /// </summary>
+        public static List<LlmMessage> FromCompaction(
+            IReadOnlyList<LlmMessage> messages, string summary, int keepRecent, int keepTokens = 0)
+        {
+            if (string.IsNullOrWhiteSpace(summary)) return null;
+            var (head, middle, tail) = SplitForCompression(messages, keepRecent, keepTokens);
+            if (middle.Count == 0) return null;
+            var rebuilt = new List<LlmMessage>(head) { new("user", CompactionPrefix + summary.Trim()) };
+            rebuilt.AddRange(tail);
+            return rebuilt;
+        }
+
+        /// <summary>
+        /// 不调模型的确定性压缩：system 头 + 最近保留的尾部，中间整段丢掉（并留一行说明）。
+        /// 用于「上游卡在压超长上下文、写摘要也多半会卡」的场合；没有可丢的中间段返回 null。
+        /// </summary>
+        public static List<LlmMessage> DropMiddle(
+            IReadOnlyList<LlmMessage> messages, int keepRecent, int keepTokens = 0)
+        {
+            var (head, middle, tail) = SplitForCompression(messages, keepRecent, keepTokens);
+            if (middle.Count == 0) return null;
+            var rebuilt = new List<LlmMessage>(head) { new("user", OmittedPrefix) };
+            rebuilt.AddRange(tail);
+            return rebuilt;
+        }
+
         public static string RenderForSummary(IEnumerable<LlmMessage> messages)
         {
             var sb = new StringBuilder();

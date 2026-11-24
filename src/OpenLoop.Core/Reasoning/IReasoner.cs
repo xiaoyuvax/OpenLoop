@@ -35,6 +35,10 @@ namespace OpenLoop.Core.Reasoning
 
         /// <summary>本次调用里是否有原生工具成功执行（供「谎报完成」护栏与空正文判断使用）。</summary>
         public bool NativeToolSucceeded { get; init; }
+
+        /// <summary>推理通道自己压过上下文时给出的历史摘要（OpenCode 的 compaction 消息）。
+        /// 非空表示它可以替换更早的历史，宿主不必再调模型写摘要；null 表示本轮没压过。</summary>
+        public string Compaction { get; init; }
     }
 
     /// <summary>模型在推理通道里绕过宿主直接执行的一次工具调用（名字、入参原文、状态与结果）。</summary>

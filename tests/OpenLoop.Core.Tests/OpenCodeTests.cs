@@ -447,21 +447,84 @@ public sealed class OpenCodeTests
     [Fact]
     public async Task Turn_gives_up_when_nothing_moves_for_the_idle_window()
     {
+        var calls = new List<string>();
+        var handler = new StubHandler(request =>
+        {
+            calls.Add(request.Method.Method + " " + request.RequestUri.AbsolutePath);
+            return request.RequestUri.AbsolutePath switch
+            {
+                "/api/event" => Sse(""),
+                "/api/session" => Json("""{"data":{"id":"ses_stuck"}}"""),
+                "/api/session/ses_stuck" => Json("""{"data":{"time":{"created":1},"outcome":"","busy":1}}"""),
+                "/api/session/ses_stuck/message" => Json("""{"data":[]}"""),
+                "/api/session/ses_stuck/permission" => Json("""{"data":[]}"""),
+                _ => Json("{}")
+            };
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+
+        var ex = await Assert.ThrowsAsync<OpenCodeStalledException>(() => client.RunTurnAsync(
+            "hi", new OpenCodeModelRef("opencode", "m"), Path.GetTempPath(), timeoutSeconds: 5));
+
+        Assert.Contains("没有任何输出", ex.Message);
+        // 判定挂住时必须真打断会话，不能把它留在服务端继续占额度
+        Assert.Contains("POST /api/session/ses_stuck/interrupt", calls);
+        Assert.Contains("DELETE /api/session/ses_stuck", calls);
+    }
+
+    [Fact]
+    public async Task Turn_carries_the_upstream_compaction_summary_when_it_stalls()
+    {
+        const string messages = """
+        {"data":[
+          {"type":"user","id":"msg_u","time":{"created":1},"text":"hi"},
+          {"type":"compaction","id":"msg_c","time":{"created":2},"status":"completed","reason":"auto",
+           "summary":"## Objective\n- keep going"},
+          {"type":"assistant","id":"msg_a","time":{"created":3},"content":[{"type":"text","text":"半截回复"}]}
+        ]}
+        """;
         var handler = new StubHandler(request => request.RequestUri.AbsolutePath switch
         {
             "/api/event" => Sse(""),
             "/api/session" => Json("""{"data":{"id":"ses_stuck"}}"""),
-            "/api/session/ses_stuck" => Json("""{"data":{"time":{"created":1}}}"""),
-            "/api/session/ses_stuck/message" => Json("""{"data":[]}"""),
+            "/api/session/ses_stuck" => Json("""{"data":{"time":{"created":1},"outcome":"","busy":1}}"""),
+            "/api/session/ses_stuck/message" => Json(messages),
             "/api/session/ses_stuck/permission" => Json("""{"data":[]}"""),
             _ => Json("{}")
         });
         using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
 
-        var ex = await Assert.ThrowsAsync<TimeoutException>(() => client.RunTurnAsync(
+        var ex = await Assert.ThrowsAsync<OpenCodeStalledException>(() => client.RunTurnAsync(
             "hi", new OpenCodeModelRef("opencode", "m"), Path.GetTempPath(), timeoutSeconds: 5));
 
-        Assert.Contains("没有任何输出", ex.Message);
+        Assert.Contains("keep going", ex.Summary);
+    }
+
+    [Fact]
+    public async Task Turn_surfaces_upstream_compaction_after_a_normal_reply()
+    {
+        var handler = new StubHandler(request => request.RequestUri.AbsolutePath switch
+        {
+            "/api/event" => Sse(""),
+            "/api/session" => Json("""{"data":{"id":"ses_ok"}}"""),
+            "/api/session/ses_ok" => Json("""{"data":{"time":{"created":1,"idle":2},"outcome":"succeeded"}}"""),
+            "/api/session/ses_ok/message" => Json("""
+            {"data":[
+              {"type":"compaction","id":"msg_c","time":{"created":1},"status":"completed","reason":"auto",
+               "summary":"## Objective\n- 继续"},
+              {"type":"assistant","content":[{"type":"text","text":"正常答复"}]}
+            ]}
+            """),
+            "/api/session/ses_ok/permission" => Json("""{"data":[]}"""),
+            _ => Json("{}")
+        });
+        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
+        var reasoner = new OpenCodeReasoner(client, new OpenCodeModelRef("opencode", "m"), Path.GetTempPath());
+
+        var result = await reasoner.CompleteAsync([new LlmMessage("user", "hi")]);
+
+        Assert.Equal("正常答复", result.Content);
+        Assert.Contains("继续", result.Compaction);
     }
 
     [Fact]

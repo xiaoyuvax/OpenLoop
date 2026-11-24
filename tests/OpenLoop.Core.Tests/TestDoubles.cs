@@ -74,6 +74,44 @@ namespace OpenLoop.Core.Tests
         }
     }
 
+    /// <summary>首次补全抛「长时间无输出」（OpenCode 撞上限后自行压缩上下文时就是这样），之后正常返回。</summary>
+    internal sealed class StallOnceReasoner : IReasoner
+    {
+        private readonly string _summary;
+
+        public StallOnceReasoner(string summary = "") => _summary = summary;
+
+        public List<List<LlmMessage>> Calls { get; } = [];
+
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+        {
+            Calls.Add(messages.Select(m => new LlmMessage(m.Role, m.Content)).ToList());
+            if (Calls.Count == 1)
+                throw new OpenLoop.Core.OpenCode.OpenCodeStalledException("ses_t", 600, _summary);
+            return Task.FromResult(new CompletionResult { Content = "完成" });
+        }
+    }
+
+    /// <summary>首次补全带「上游已压好的摘要」，之后正常返回（正常跑完也要把摘要回灌历史）。</summary>
+    internal sealed class CompactingOnceReasoner : IReasoner
+    {
+        private readonly string _summary;
+
+        public CompactingOnceReasoner(string summary) => _summary = summary;
+
+        public List<List<LlmMessage>> Calls { get; } = [];
+
+        public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
+        {
+            Calls.Add(messages.Select(m => new LlmMessage(m.Role, m.Content)).ToList());
+            return Task.FromResult(new CompletionResult
+            {
+                Content = "完成",
+                Compaction = Calls.Count == 1 ? _summary : null
+            });
+        }
+    }
+
     /// <summary>首次补全报「输出退化」，之后正常返回（验证丢掉一次复读、重发而不是作废整轮）。</summary>
     internal sealed class DegenerateOnceReasoner : IReasoner
     {

@@ -5,6 +5,7 @@ using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.Reasoning;
 using OpenLoop.Core.Safety;
+using OpenLoop.Core.Store;
 
 namespace OpenLoop.Core.OpenCode
 {
@@ -20,6 +21,8 @@ namespace OpenLoop.Core.OpenCode
         private readonly string _workspace;
         private readonly Func<OpenCodePermission, bool> _decide;
         private readonly bool _keepTools;
+        /// <summary>连续多久没有新输出就判挂住；同模型挂过一次后按学到的更短上限起步。</summary>
+        private int _idleSeconds = 600;
 
         public OpenCodeReasoner(OpenCodeClient client, OpenCodeModelRef model, string workspace = null,
             ApprovalHandler approve = null, bool keepTools = false)
@@ -29,6 +32,8 @@ namespace OpenLoop.Core.OpenCode
             _workspace = string.IsNullOrWhiteSpace(workspace) ? Environment.CurrentDirectory : workspace;
             _decide = OpenCodePermissions.Decider(_workspace, approve);
             _keepTools = keepTools;
+            int learned = OpenCodeStallBudget.IdleSeconds(OpenCodeModelId.Format(model));
+            if (learned > 0) _idleSeconds = Math.Min(_idleSeconds, learned);
         }
 
         public Action<OpenAiCompatibleReasoner.ReasonerProgress> OnProgress { get; set; }
@@ -81,15 +86,31 @@ namespace OpenLoop.Core.OpenCode
                 native.Add(tool);
                 OnNativeTool?.Invoke(new NativeToolCall(tool.Name, tool.Input, tool.Ok, tool.Output, tool.Status, tool.DurationMs));
             };
-            var turn = await RetryConnectAsync(() => _client.RunTurnAsync(prompt, _model, _workspace, onDelta, onReasoning,
-                decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct, onNotice: OnNotice,
-                shouldStop: ShouldStop), ct, onRestart);
+            var turn = await Call(prompt);
             // 只调了原生工具、没有正文是免费模型的常态：有原生结果就不要再整轮重发一次。
             if (string.IsNullOrWhiteSpace(turn.Text) && string.IsNullOrWhiteSpace(turn.Reasoning)
                 && native.Count == 0 && ShouldStop?.Invoke() != true)
-                turn = await RetryConnectAsync(() => _client.RunTurnAsync(prompt + RetryHint, _model, _workspace, onDelta, onReasoning,
-                    decide: decide, keepTools: _keepTools, onNativeTool: nativeSink, ct: ct, onNotice: OnNotice,
-                    shouldStop: ShouldStop), ct, onRestart);
+                turn = await Call(prompt + RetryHint);
+
+            async Task<OpenCodeTurn> Call(string text)
+            {
+                try
+                {
+                    return await RetryConnectAsync(
+                        () => _client.RunTurnAsync(text, _model, _workspace, onDelta, onReasoning,
+                            timeoutSeconds: _idleSeconds, decide: decide, keepTools: _keepTools,
+                            onNativeTool: nativeSink, ct: ct, onNotice: OnNotice, shouldStop: ShouldStop),
+                        ct, onRestart);
+                }
+                catch (OpenCodeStalledException)
+                {
+                    // 撞过一次「无输出」就把空闲上限收紧：同一轮里后面的压缩与重试不该再各等十分钟才收场。
+                    _idleSeconds = Math.Min(_idleSeconds, OpenCodeStallBudget.StallIdleSeconds);
+                    // 多半是 prompt 超过上游实际收得下的量（自报窗口不作数）：记下来，本进程内同模型提前压缩。
+                    OpenCodeStallBudget.Learn(OpenCodeModelId.Format(_model), AgentContext.EstimateTokens(text));
+                    throw;
+                }
+            }
 
             return new CompletionResult
             {
@@ -99,6 +120,8 @@ namespace OpenLoop.Core.OpenCode
                 TokensIn = turn.TokensIn,
                 TokensOut = turn.TokensOut,
                 ExtraMessages = BuildExtraMessages(turn.Messages),
+                // 上游本轮自己压过上下文：摘要回灌给宿主替换更早的历史，否则下一轮又带着同样的超长前缀重发。
+                Compaction = OpenCodeClient.LastCompaction(turn.Messages),
                 NativeToolSucceeded = native.Any(tool => tool.Ok),
                 FinishReason = "stop"
             };
@@ -116,6 +139,7 @@ namespace OpenLoop.Core.OpenCode
         /// </summary>
         private async Task<OpenCodeTurn> RetryConnectAsync(Func<Task<OpenCodeTurn>> call, CancellationToken ct, Action onRestart)
         {
+            var policy = FeatureCatalog.PolicyOf(_workspace);
             bool retried = false;
             for (int attempt = 0; ; attempt++)
             {
@@ -127,13 +151,15 @@ namespace OpenLoop.Core.OpenCode
                 }
                 catch (Exception ex) when (IsConnectFailure(ex))
                 {
+                    if (!policy.ConnectRetry) throw;
                     if (ct.IsCancellationRequested || ShouldStop?.Invoke() == true)
                         throw new OperationCanceledException(ct);
 
                     retried = true;
                     // 断在半截的正文要清掉，重发后才不会出现两遍
                     onRestart?.Invoke();
-                    TimeSpan delay = RetryBackoff.Next(attempt);
+                    TimeSpan delay = RetryBackoff.Next(
+                        attempt, policy.ConnectRetryBaseSeconds, policy.ConnectRetryMaxSeconds);
                     OnNotice?.Invoke($"连接失败，{delay.TotalSeconds:0} 秒后重试（第 {attempt + 1} 次）");
                     var deadline = DateTime.UtcNow + delay;
                     while (DateTime.UtcNow < deadline)

@@ -32,6 +32,9 @@ namespace OpenLoop.App
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool EvolveEnabled => _btnEvolve.Enabled;
 
+        /// <summary>「Prompt」「AGENTS.md」按钮：宿主打开目标会话让模型改（用户不直接编辑文本）。</summary>
+        internal event Action<string> EditTargetRequested;
+
         internal void Initialize(Func<string> workspace, Func<AppSettings> settings,
             Func<string> model, Func<string> effort, Action<string, string, bool> notify)
         {
@@ -41,8 +44,8 @@ namespace OpenLoop.App
             _effort = effort;
             _notify = notify;
             _flow.SizeChanged += (_, _) => FitHint();
-            _tips.SetToolTip(_lblDef, "点击查看特征与规则");
-            _tips.SetToolTip(_lblTasks, "点击查看考核题");
+            _tips.SetToolTip(_lblDef, Localization.T("HarnessTipDef"));
+            _tips.SetToolTip(_lblTasks, Localization.T("HarnessTipTasks"));
             FitHint();
             Reload();
         }
@@ -51,6 +54,7 @@ namespace OpenLoop.App
         {
             _busy = busy;
             _btnDrafts.Enabled = _btnReport.Enabled = _btnRollback.Enabled = _btnRule.Enabled = !busy;
+            _btnPrompt.Enabled = _btnAgents.Enabled = !busy;
             UpdateEvolveEnabled();
         }
 
@@ -72,17 +76,12 @@ namespace OpenLoop.App
                 var current = ledger.Activations().LastOrDefault();
                 if (current == null)
                 {
-                    _lblDef.Text = "def: —（首次运行后初始化）";
+                    _lblDef.Text = "def: " + Localization.T("HarnessDefUninitialized");
                 }
                 else
                 {
                     var known = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
-                    int ruleCount = current.Features.Count(r => r?.Id != null
-                        && (known.TryGetValue(r.Id, out var f)
-                            ? f.Kind == "rule"
-                            : r.Id.StartsWith("rule.", StringComparison.Ordinal)));
-                    _lblDef.Text = $"def: v{current.Version} · {current.Features.Count} {Localization.T("Features")}"
-                        + $" · {ruleCount} {Localization.T("Rules")}  ›";
+                    _lblDef.Text = $"def: v{current.Version} · {ObjectSummary(current, known)}  ›";
                 }
 
                 _lblTasks.Text = Localization.T("Tasks")
@@ -133,7 +132,7 @@ namespace OpenLoop.App
             string workspace = Workspace;
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("PickWorkspace"), Localization.T("WorkspaceMissing") + workspace, error: true);
                 return;
             }
 
@@ -148,7 +147,7 @@ namespace OpenLoop.App
             string workspace = Workspace;
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("PickWorkspace"), Localization.T("WorkspaceMissing") + workspace, error: true);
                 return;
             }
 
@@ -165,12 +164,12 @@ namespace OpenLoop.App
             string model = Model;
             var (baseUrl, _) = settings.EndpointFor(model);
             if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model))
-                return "缺少接口配置，未试跑基线。";
+                return Localization.T("HarnessNoEndpointBaseline");
 
             var ledger = Ledger.Open(workspace);
             var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
             var activation = ledger.Current;
-            if (activation == null) return "没有激活版本，未试跑基线。";
+            if (activation == null) return Localization.T("HarnessNoActivationBaseline");
 
             var runner = new AgentTaskRunner(
                 _ => Reasoners.Create(settings, model, Effort, workspace),
@@ -190,14 +189,14 @@ namespace OpenLoop.App
             string workspace = Workspace;
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("PickWorkspace"), Localization.T("WorkspaceMissing") + workspace, error: true);
                 return;
             }
 
             string model = Model;
             if (model.Length == 0)
             {
-                Notify("缺少配置", "先在设置里选择模型。", error: true);
+                Notify(Localization.T("MissingConfig"), Localization.T("HarnessNoModel"), error: true);
                 return;
             }
 
@@ -205,7 +204,7 @@ namespace OpenLoop.App
             var cts = new CancellationTokenSource();
             _cts = cts;
             SetBusy(true);
-            _lblStatus.Text = Localization.T("Status") + ": 准备中…";
+            _lblStatus.Text = Localization.T("Status") + Localization.T("StatusPreparing");
 
             try
             {
@@ -220,33 +219,33 @@ namespace OpenLoop.App
                 }
 
                 if (state == null) return;
-                string score = $"候选 {state.CandidatePassed}/{state.TaskCount}，基线 {state.BaselinePassed}/{state.TaskCount}";
+                string score = string.Format(Localization.T("HarnessScore"), state.CandidatePassed, state.TaskCount, state.BaselinePassed, state.TaskCount);
                 switch (state.State)
                 {
                     case "done":
                         _lblStatus.Text = Localization.T("Status") +
-                                          (state.Adopted ? $": 已采纳 v{state.CandidateVersion}" : ": 保留旧版");
-                        Notify(state.Adopted ? "已更替" : "未更替",
+                                          (state.Adopted ? string.Format(Localization.T("StatusAdopted"), state.CandidateVersion) : Localization.T("StatusKeptOld"));
+                        Notify(state.Adopted ? Localization.T("HarnessAdopted") : Localization.T("HarnessKept"),
                             state.Detail == null ? score : score + "\n" + state.Detail, error: false);
                         break;
                     case "stopped":
-                        _lblStatus.Text = Localization.T("Status") + ": 已停止";
+                        _lblStatus.Text = Localization.T("Status") + Localization.T("StatusStopped");
                         break;
                     default:
                         _lblStatus.Text = Localization.T("Status") + ": " + Localization.T("StatusEvolveFailed");
-                        Notify("演进失败", state.Error ?? score, error: true);
+                        Notify(Localization.T("EvolveFailed"), state.Error ?? score, error: true);
                         break;
                 }
             }
             catch (OperationCanceledException)
             {
-                _lblStatus.Text = Localization.T("Status") + ": 已停止";
+                _lblStatus.Text = Localization.T("Status") + Localization.T("StatusStopped");
             }
             catch (Exception ex)
             {
-                AppLog.Error("演进失败", ex);
+                AppLog.Error(Localization.T("EvolveFailed"), ex);
                 _lblStatus.Text = Localization.T("Status") + ": " + Localization.T("StatusEvolveFailed");
-                Notify("演进失败", ex.Message, error: true);
+                Notify(Localization.T("EvolveFailed"), ex.Message, error: true);
             }
             finally
             {
@@ -263,8 +262,8 @@ namespace OpenLoop.App
         private static string PhaseText(LoopEvolveState state) => state.Phase switch
         {
             "evaluating" => string.Format(Localization.T("StatusReviewing"), state.TaskCount, state.TaskCount * 2),
-            "proposing" => "构思中…",
-            _ => "准备中…"
+            "proposing" => Localization.T("StatusProposingPhase"),
+            _ => Localization.T("StatusPreparingPhase")
         };
 
         private async void OnRollback(object sender, EventArgs e)
@@ -272,7 +271,7 @@ namespace OpenLoop.App
             string workspace = Workspace;
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("PickWorkspace"), Localization.T("WorkspaceMissing") + workspace, error: true);
                 return;
             }
 
@@ -282,21 +281,21 @@ namespace OpenLoop.App
                 var current = Ledger.Open(workspace).Current;
                 if (current == null || current.Version <= 1)
                 {
-                    Notify("没有更早的版本", "当前已是最早版本。");
+                    Notify(Localization.T("NoEarlierVersion"), Localization.T("AlreadyFirstVersion"));
                     return;
                 }
                 currentVersion = current.Version;
             }
             catch (Exception ex)
             {
-                Notify("读取账本失败", ex.Message, error: true);
+                Notify(Localization.T("LedgerReadFailed"), ex.Message, error: true);
                 return;
             }
 
             int target = currentVersion - 1;
             if (MessageBox.Show(FindForm(),
-                    $"退回 v{target}？会写成 v{currentVersion + 1}，旧版本文件不动。",
-                    "回滚", MessageBoxButtons.YesNo) != DialogResult.Yes)
+                    string.Format(Localization.T("HarnessRollbackAsk"), target, currentVersion + 1),
+                    Localization.T("HarnessRollbackTitle"), MessageBoxButtons.YesNo) != DialogResult.Yes)
                 return;
 
             try
@@ -304,13 +303,13 @@ namespace OpenLoop.App
                 using var loop = new LoopApiClient();
                 var version = await loop.RollbackAsync(workspace, target);
                 Reload();
-                _lblStatus.Text = Localization.T("Status") + $": 已退回 v{target}（新版本 v{version}）";
-                Notify("已回滚", $"当前版本 v{version}");
+                _lblStatus.Text = Localization.T("Status") + string.Format(Localization.T("StatusRolledBackTo"), target, version);
+                Notify(Localization.T("RolledBack"), string.Format(Localization.T("CurrentVersion"), version));
             }
             catch (Exception ex)
             {
-                AppLog.Error("回滚失败", ex);
-                Notify("回滚失败", ex.Message, error: true);
+                AppLog.Error(Localization.T("RollbackFailed"), ex);
+                Notify(Localization.T("RollbackFailed"), ex.Message, error: true);
             }
         }
 
@@ -319,7 +318,7 @@ namespace OpenLoop.App
             string workspace = Workspace;
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("PickWorkspace"), Localization.T("WorkspaceMissing") + workspace, error: true);
                 return;
             }
 
@@ -329,7 +328,7 @@ namespace OpenLoop.App
             baseUrl = baseUrl?.Trim() ?? "";
             if (baseUrl.Length == 0 || model.Length == 0)
             {
-                Notify("缺少配置", "先在设置里填写接口地址与模型。", error: true);
+                Notify(Localization.T("MissingConfig"), Localization.T("HarnessNeedEndpointAndModel"), error: true);
                 return;
             }
             using var form = new RuleForm((name, text, ct) =>
@@ -342,12 +341,12 @@ namespace OpenLoop.App
                 using var loop = new LoopApiClient();
                 var id = await loop.AddRuleAsync(workspace, form.RuleName, form.RuleText);
                 Reload();
-                Notify("规则已登记", $"{id}\n当前版本不变；下一轮演进时可被启用。");
+                Notify(Localization.T("RuleRegistered"), string.Format(Localization.T("RuleRegisteredBody"), id));
             }
             catch (Exception ex)
             {
-                AppLog.Error("登记规则失败", ex);
-                Notify("登记规则失败", ex.Message, error: true);
+                AppLog.Error(Localization.T("RuleRegisterFailed"), ex);
+                Notify(Localization.T("RuleRegisterFailed"), ex.Message, error: true);
             }
         }
 
@@ -356,7 +355,7 @@ namespace OpenLoop.App
             string workspace = Workspace;
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("PickWorkspace"), Localization.T("WorkspaceMissing") + workspace, error: true);
                 return;
             }
 
@@ -366,31 +365,41 @@ namespace OpenLoop.App
                 var current = ledger.Current;
                 if (current == null)
                 {
-                    Notify("暂无激活集", "先运行一次，账本初始化后再看。", error: true);
+                    Notify(Localization.T("HarnessNoActivation"), Localization.T("HarnessNoActivationBody"), error: true);
                     return;
                 }
 
                 var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
                 var active = current.Features.Select(r => r?.Id).Where(id => id != null).ToHashSet(StringComparer.Ordinal);
                 var sb = new StringBuilder();
-                sb.AppendLine($"当前版本 v{current.Version} · {current.At} · {current.By}");
+                sb.AppendLine(string.Format(Localization.T("HarnessCurrentHeader"), current.Version, current.At, current.By));
                 if (!string.IsNullOrWhiteSpace(current.Note)) sb.AppendLine(current.Note);
                 sb.AppendLine();
-                sb.AppendLine($"已启用（{current.Features.Count}）");
-                foreach (var reference in current.Features)
+                sb.AppendLine(string.Format(Localization.T("HarnessEnabled"), current.Features.Count));
+                foreach (string kind in ObjectKinds.Append("other"))
                 {
-                    if (reference?.Id == null) continue;
-                    features.TryGetValue(reference.Id, out var feature);
+                    var group = current.Features
+                        .Where(r => r?.Id != null
+                            && (features.TryGetValue(r.Id, out var f) ? f.Kind : "other")
+                            == (kind == "other" ? "other" : kind))
+                        .ToList();
+                    if (group.Count == 0) continue;
                     sb.AppendLine();
-                    sb.AppendLine($"[{feature?.Kind ?? "?"}] {reference.Id}");
-                    if (!string.IsNullOrWhiteSpace(feature?.Problem))
-                        sb.AppendLine("  问题：" + feature.Problem);
-                    string payload = PayloadText(feature);
-                    if (!string.IsNullOrWhiteSpace(payload))
-                        sb.AppendLine("  内容：" + payload);
-                    if (reference.Params is { Count: > 0 })
-                        sb.AppendLine("  参数：" + string.Join(", ",
-                            reference.Params.Select(p => $"{p.Key}={p.Value}")));
+                    sb.AppendLine($"## {ObjectName(kind)}（{group.Count}）");
+                    foreach (var reference in group)
+                    {
+                        features.TryGetValue(reference.Id, out var feature);
+                        sb.AppendLine();
+                        sb.AppendLine($"[{feature?.Kind ?? "?"}] {reference.Id}");
+                        if (!string.IsNullOrWhiteSpace(feature?.Problem))
+                            sb.AppendLine("  " + Localization.T("HarnessProblemLabel") + feature.Problem);
+                        string payload = PayloadText(feature);
+                        if (!string.IsNullOrWhiteSpace(payload))
+                            sb.AppendLine("  " + Localization.T("HarnessContentLabel") + payload);
+                        if (reference.Params is { Count: > 0 })
+                            sb.AppendLine("  " + Localization.T("HarnessParamsLabel") + string.Join(", ",
+                                reference.Params.Select(p => $"{p.Key}={p.Value}")));
+                    }
                 }
 
                 var dormant = features.Values
@@ -400,17 +409,17 @@ namespace OpenLoop.App
                 if (dormant.Count > 0)
                 {
                     sb.AppendLine();
-                    sb.AppendLine($"未启用（{dormant.Count}）");
+                    sb.AppendLine(string.Format(Localization.T("HarnessDormant"), dormant.Count));
                     foreach (var feature in dormant)
                         sb.AppendLine($"[{feature.Kind}] {feature.Id}");
                 }
 
-                ShowText("特征与规则", sb.ToString());
+                ShowText(Localization.T("HarnessDefsTitle"), sb.ToString());
             }
             catch (Exception ex)
             {
-                AppLog.Error("读取特征失败", ex);
-                Notify("读取失败", ex.Message, error: true);
+                AppLog.Error(Localization.T("HarnessReadFeaturesFailed"), ex);
+                Notify(Localization.T("HarnessReadFailed"), ex.Message, error: true);
             }
         }
 
@@ -419,7 +428,7 @@ namespace OpenLoop.App
             string workspace = Workspace;
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("PickWorkspace"), Localization.T("WorkspaceMissing") + workspace, error: true);
                 return;
             }
 
@@ -428,23 +437,49 @@ namespace OpenLoop.App
                 var ledger = Ledger.Open(workspace);
                 var tasks = TaskSet.Load(ledger.EvalDir);
                 var sb = new StringBuilder();
-                sb.AppendLine("目录：" + Path.Combine(ledger.EvalDir, "tasks"));
-                sb.AppendLine($"共 {tasks.Tasks.Count} 道");
+                sb.AppendLine(Localization.T("HarnessDirLabel") + Path.Combine(ledger.EvalDir, "tasks"));
+                sb.AppendLine(string.Format(Localization.T("HarnessTaskCount"), tasks.Tasks.Count));
                 foreach (var task in tasks.Tasks)
                 {
                     sb.AppendLine();
-                    sb.AppendLine($"{task.Id}  [{task.Source}]  检查 {task.Checks.Count} 项");
+                    sb.AppendLine(string.Format(Localization.T("HarnessTaskLine"), task.Id, task.Source, task.Checks.Count));
                     if (!string.IsNullOrWhiteSpace(task.Problem)) sb.AppendLine(task.Problem);
-                    if (!string.IsNullOrWhiteSpace(task.Prompt)) sb.AppendLine("提示：" + task.Prompt);
+                    if (!string.IsNullOrWhiteSpace(task.Prompt)) sb.AppendLine(Localization.T("HarnessPromptLabel") + task.Prompt);
                 }
 
-                ShowText("考核题", sb.ToString());
+                ShowText(Localization.T("HarnessTasksTitle"), sb.ToString());
             }
             catch (Exception ex)
             {
-                AppLog.Error("读取考核题失败", ex);
-                Notify("读取失败", ex.Message, error: true);
+                AppLog.Error(Localization.T("HarnessReadTasksFailed"), ex);
+                Notify(Localization.T("HarnessReadFailed"), ex.Message, error: true);
             }
+        }
+
+        private static readonly string[] ObjectKinds = ["prompt", "skill", "rule", "limit", "guard"];
+
+        private static string ObjectName(string kind) => kind switch
+        {
+            "prompt" => "Prompt",
+            "skill" => "Skill",
+            "rule" => "Rule",
+            "limit" => "Limit",
+            "guard" => "Guard",
+            _ => "Other"
+        };
+
+        /// <summary>激活集按五个对象计数：Prompt / Skill / Rule / Limit / Guard。</summary>
+        private static string ObjectSummary(
+            ActivationRecord activation, IReadOnlyDictionary<string, FeatureRecord> features)
+        {
+            var counts = ObjectKinds.ToDictionary(k => k, _ => 0);
+            foreach (var reference in activation.Features)
+            {
+                if (reference?.Id == null) continue;
+                string kind = features.TryGetValue(reference.Id, out var feature) ? feature.Kind : null;
+                if (kind != null && counts.ContainsKey(kind)) counts[kind]++;
+            }
+            return string.Join(" · ", ObjectKinds.Select(k => $"{ObjectName(k)} {counts[k]}"));
         }
 
         private static string PayloadText(FeatureRecord feature)

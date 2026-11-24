@@ -47,6 +47,19 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void LearnedStallBudgetCapsTheConfiguredWindow()
+        {
+            string model = "stall-clamp-" + System.Guid.NewGuid().ToString("N");
+            var settings = new AppSettings
+            {
+                ModelProps = { [model] = new ModelProps { ContextLimit = 400_000 } }
+            };
+            OpenLoop.Core.OpenCode.OpenCodeStallBudget.Learn(model, 200_000);
+
+            Assert.Equal(100_000, ModelCatalog.ContextLimit(model, settings));
+        }
+
+        [Fact]
         public void ModelPropsSurviveJsonRoundTrip()
         {
             var settings = new AppSettings

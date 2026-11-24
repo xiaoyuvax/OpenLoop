@@ -129,22 +129,44 @@ namespace OpenLoop.Core.Agent
                     : await context.Reasoner.CompleteAsync(state.Messages, ct);
             }
             catch (Exception ex) when (state.ContextOverflows < context.Policy.CompressRetries
-                                       && AgentContext.IsContextOverflow(ex.Message))
+                                       && (AgentContext.IsContextOverflow(ex.Message)
+                                           || ex is OpenLoop.Core.OpenCode.OpenCodeStalledException))
             {
                 // 服务端真实上限可能低于配置值：按报错压缩一次再重试，不要直接判任务失败。
+                // OpenCode 撞上限时不报错：它自己转去压上下文，然后长时间没有任何输出（见 OpenCodeStalledException），
+                // 所以「长时间无输出」也走这条压缩重试，而不是把一轮工作直接作废。
                 state.ContextOverflows++;
                 context.OnRestart?.Invoke();
-                List<LlmMessage> compressed;
-                try
+                int tailTokens = AgentContext.TailTokenBudget(
+                    context.ContextLimit, context.Policy.CompressKeepTokens);
+                int before = AgentContext.EstimateTokens(state.Messages);
+                List<LlmMessage> compressed = null;
+                // OpenCode 撞上限时自己会先压一次上下文（type=compaction 的消息里有摘要）。
+                // 有摘要就用它重建历史：信息比整段丢弃多，也不必再调一次模型写摘要（同样可能卡）。
+                // 没压完（压缩本身卡住）才退回确定性丢中间段。
+                if (ex is OpenLoop.Core.OpenCode.OpenCodeStalledException stalled)
                 {
-                    compressed = await CompressionStep.CompressAsync(state.Messages, context.Reasoner, ct,
-                        AgentContext.TailTokenBudget(context.ContextLimit, context.Policy.CompressKeepTokens),
-                        context.Policy.CompressKeepMessages);
+                    if (stalled.Summary.Length > 0)
+                        compressed = AgentContext.FromCompaction(state.Messages, stalled.Summary,
+                            context.Policy.CompressKeepMessages, tailTokens);
+                    if (compressed == null && before > AgentContext.DefaultContextLimit)
+                        compressed = AgentContext.DropMiddle(state.Messages,
+                            context.Policy.CompressKeepMessages, tailTokens);
+                    if (compressed != null && AgentContext.EstimateTokens(compressed) >= before)
+                        compressed = null;
                 }
-                catch (OperationCanceledException) { throw; }
-                catch
+                if (compressed == null)
                 {
-                    compressed = null; // 摘要通道自身失败：把原始的上下文溢出错误交出去，别让它顶替根因
+                    try
+                    {
+                        compressed = await CompressionStep.CompressAsync(state.Messages, context.Reasoner, ct,
+                            tailTokens, context.Policy.CompressKeepMessages);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch
+                    {
+                        compressed = null; // 摘要通道自身失败：把原始的上下文溢出错误交出去，别让它顶替根因
+                    }
                 }
                 if (compressed == null) throw;
                 state.Result.Guards.Compressions++;
@@ -156,7 +178,7 @@ namespace OpenLoop.Core.Agent
                 context.OnRestart?.Invoke();
                 // 复读多是网关把模板标记泄进正文，换一次采样常常就正常了；
                 // 整轮作废（几十步的进度全丢）代价远大于重发一次。
-                if (state.DegenerateRetries < 2)
+                if (state.DegenerateRetries < context.Policy.MaxDegenerateRetries)
                 {
                     state.DegenerateRetries++;
                     return AgentStepResult.Continue(new AppendMessageEffect("user", GuardStopText.DegenerateRetry()));
@@ -202,6 +224,20 @@ namespace OpenLoop.Core.Agent
             if (completion?.NativeToolSucceeded == true) state.AnyToolSucceeded = true;
 
             var effects = new List<IAgentEffect>();
+            // 上游本轮自己压过上下文（免费模型自报窗口虚高时常见）：用它的摘要换掉本地中段，
+            // 下一轮就不会再带着同一段超长前缀重发。摘要已是压好的结论，不必再调模型写一次。
+            if (completion?.Compaction is { Length: > 0 } compaction)
+            {
+                int before = AgentContext.EstimateTokens(state.Messages);
+                var replaced = AgentContext.FromCompaction(state.Messages, compaction,
+                    context.Policy.CompressKeepMessages,
+                    AgentContext.TailTokenBudget(context.ContextLimit, context.Policy.CompressKeepTokens));
+                if (replaced != null && AgentContext.EstimateTokens(replaced) < before)
+                {
+                    state.Result.Guards.Compressions++;
+                    effects.Add(new ReplaceMessagesEffect(replaced));
+                }
+            }
             // 推理通道内部发生的原生工具/中间正文：按时间顺序补在最终正文之前，下一轮才看得到。
             if (completion?.ExtraMessages is { Count: > 0 } extras)
                 foreach (var extra in extras)

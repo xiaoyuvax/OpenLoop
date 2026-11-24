@@ -44,13 +44,13 @@ namespace OpenLoop.App
 
             _lblTitle.Dock = DockStyle.Left;
             _lblTitle.Width = 60;
-            _lblTitle.Text = "旁路";
+            _lblTitle.Text = Localization.T("旁路");
             _lblTitle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
             _lblTitle.ForeColor = UiStyle.Text;
             _lblTitle.TextAlign = ContentAlignment.MiddleLeft;
 
             _lblStatus.Dock = DockStyle.Fill;
-            _lblStatus.Text = "只读";
+            _lblStatus.Text = Localization.T("只读");
             _lblStatus.Font = new Font("Segoe UI", 8.5F);
             _lblStatus.ForeColor = UiStyle.Muted;
             _lblStatus.TextAlign = ContentAlignment.MiddleRight;

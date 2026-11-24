@@ -85,7 +85,7 @@ namespace OpenLoop.Service.Loop
             var auto = AutoEvolve.Load(workspace);
             string day = DateTimeOffset.Now.ToString("yyyy-MM-dd");
             int today = auto.Day == day ? auto.Count : 0;
-            state.AutoHint = $"今日 {today}/{settings.AutoEvolvePerDay} 轮 · 每攒 {settings.AutoEvolveRuns} 条新证据触发 · 冷却 {settings.AutoEvolveCooldownMinutes} 分钟";
+            state.AutoHint = $"今日 {today}/{settings.AutoEvolvePerDay} 轮 · 每攒 {settings.AutoEvolveRuns} 条待分诊观察触发 · 冷却 {settings.AutoEvolveCooldownMinutes} 分钟";
         }
 
         /// <summary>有演进正在跑（/bus/restart 忙时拒绝）。</summary>
@@ -232,7 +232,7 @@ namespace OpenLoop.Service.Loop
                 }
 
                 var ledger = Ledger.Open(workspace);
-                int runs = ledger.Runs().Count;
+                int evidence = FindingTriage.OpenFindings(workspace).Count;
                 var state = AutoEvolve.Load(workspace);
                 var now = DateTimeOffset.Now;
 
@@ -245,7 +245,7 @@ namespace OpenLoop.Service.Loop
                 if (!AutoEvolve.ShouldStart(
                         settings.AutoEvolve, settings.AutoEvolveRuns,
                         settings.AutoEvolveCooldownMinutes, settings.AutoEvolvePerDay,
-                        state, runs, now, out string reason))
+                        state, evidence, now, out string reason))
                 {
                     AppLog.Info($"自动演进暂缓：{reason}");
                     return;
@@ -257,9 +257,9 @@ namespace OpenLoop.Service.Loop
                     Day = day,
                     Count = (state.Day == day ? state.Count : 0) + 1,
                     At = now.ToString("O"),
-                    Runs = runs
+                    Evidence = evidence
                 });
-                AppLog.Info($"自动演进启动：{workspace}（{runs} 条运行记录）");
+                AppLog.Info($"自动演进启动：{workspace}（{evidence} 条待分诊观察）");
                 StartEvolve(workspace, settings.Model, "");
             }
             catch (Exception ex)
@@ -290,6 +290,17 @@ namespace OpenLoop.Service.Loop
 
                 var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
                 var baseline = ledger.Current ?? throw new InvalidOperationException("账本还没有激活集");
+
+                // 演进是「非即时集中分析」：把还没处置的 findings 分诊成本轮依据。
+                // 幂等：本轮失败/未采纳时它们仍是 open，下一轮再来。
+                string batch = "B-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                var openFindings = FindingTriage.OpenFindings(workspace);
+                var harnessFindings = openFindings
+                    .Where(f => string.Equals(f.Target, FindingTriage.Harness, StringComparison.Ordinal))
+                    .ToList();
+                // 源码类与考核无关：先派单。候选失败也不该把源码待办一起卡住。
+                DispatchSourceFindings(workspace, batch, openFindings);
+
                 Update(job, s =>
                 {
                     s.TaskCount = tasks.Tasks.Count;
@@ -297,7 +308,8 @@ namespace OpenLoop.Service.Loop
                 });
 
                 var loopAgent = new LoopAgent(Reasoner(settings, model, effort, workspace));
-                var proposal = await loopAgent.ProposeAsync(loopAgent.BuildPacket(ledger), baseline, features, ct);
+                var proposal = await loopAgent.ProposeAsync(
+                    loopAgent.BuildPacket(ledger, findings: harnessFindings), baseline, features, ct);
                 if (proposal.Error != null)
                 {
                     string problems = proposal.Problems.Count == 0 ? "" : "：" + string.Join("；", proposal.Problems);
@@ -311,7 +323,9 @@ namespace OpenLoop.Service.Loop
 
                 Update(job, s => s.Phase = "evaluating");
                 var runner = TaskRunner(settings, workspace, ledger, features, model, effort);
-                var report = await new Gate(ledger, tasks, features, runner).EvaluateAsync(baseline, proposal.Candidate, ct);
+                var report = await new Gate(ledger, tasks, features, runner).EvaluateAsync(
+                    baseline, proposal.Candidate, ct, harnessFindings.Select(f => f.Id).ToList());
+                TriageAfterGate(workspace, batch, openFindings, report);
 
                 Finish(job, s =>
                 {
@@ -342,6 +356,40 @@ namespace OpenLoop.Service.Loop
                     s.State = "error";
                     s.Error = ex.Message;
                 });
+            }
+        }
+
+        /// <summary>
+        /// 源码类 findings 与考核无关：写成派单让下一次 Loop 会话处理，并标成 dispatched；
+        /// 派单只写一次（OpenFindings 不会再给已分诊的）。
+        /// </summary>
+        private static void DispatchSourceFindings(
+            string workspace, string batch, IReadOnlyList<FindingRecord> findings)
+        {
+            var source = findings
+                .Where(f => string.Equals(f.Target, FindingTriage.Source, StringComparison.Ordinal))
+                .ToList();
+            if (source.Count == 0) return;
+            if (FindingTriage.WriteDispatch(workspace, batch, source) == null) return;
+            foreach (var finding in source)
+                FindingTriage.Append(workspace, finding.Id, FindingTriage.Dispatched, batch, "已写源码待办");
+        }
+
+        /// <summary>
+        /// 门禁跑完后的分派：harness 类只有被采纳才算处置完（未采纳留在 open，下一批再试），
+        /// unknown 不动。
+        /// </summary>
+        private static void TriageAfterGate(
+            string workspace, string batch, IReadOnlyList<FindingRecord> findings, GateReport report)
+        {
+            if (!report.Adopted) return;
+            foreach (var finding in findings)
+            {
+                if (string.Equals(finding.Target, FindingTriage.Harness, StringComparison.Ordinal))
+                {
+                    FindingTriage.Append(workspace, finding.Id, FindingTriage.Done, batch,
+                        $"随 v{report.CandidateVersion} 采纳");
+                }
             }
         }
 

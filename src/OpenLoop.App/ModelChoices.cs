@@ -120,7 +120,7 @@ namespace OpenLoop.App
         {
             Tag = model.Id,
             IconSvg = model.IsFree ? UiIcons.Dot(UiStyle.Success) : null,
-            SubText = model.IsFree ? "免费" : null
+            SubText = model.IsFree ? Localization.T("免费") : null
         };
 
         /// <summary>分隔条不用文本行渲染，改画一条细线，占位保持一行高。</summary>

@@ -211,9 +211,9 @@ namespace OpenLoop.App
             bool loops = _project == LoopTag;
             bool puppets = _project == PuppetTag;
             _lblProjectPath.Text = loops
-                ? "Loop 会话（全部项目）· 关于OpenLoop自身迭代和演进的所有会话"
+                ? Localization.T("Loop 会话（全部项目）· 关于OpenLoop自身迭代和演进的所有会话")
                 : puppets
-                    ? "Puppet 是 OpenLoop 各组件内嵌自调试机制。OpenLoop 的主驱动服务：A(Worker) 和 I(Loop) 两个实例各有一个 Puppet 实例，均允许 Agent 连接交流。Puppet 留言板 · 各会话的 Agent 在同一块板上自行对话（默认 @A，A 不可达时转 @I），没有主 Agent 驱动"
+                    ? Localization.T("Puppet 是 OpenLoop 各组件内嵌自调试机制。OpenLoop 的主驱动服务：A(Worker) 和 I(Loop) 两个实例各有一个 Puppet 实例，均允许 Agent 连接交流。Puppet 留言板 · 各会话的 Agent 在同一块板上自行对话（默认 @A，A 不可达时转 @I），没有主 Agent 驱动")
                     : _project;
             // 行没变就别重置数据源：整表重绘还会把滚动位置拉回顶部
             bool same = _shownRows.Count == _rows.Count;
@@ -357,11 +357,11 @@ namespace OpenLoop.App
 
             var items = new AntdUI.IContextMenuStripItem[]
             {
-                new AntdUI.ContextMenuStripItem("打开工作区路径") { ID = "open" },
-                new AntdUI.ContextMenuStripItem("复制路径") { ID = "copy" },
-                new AntdUI.ContextMenuStripItem("新建会话") { ID = "new" },
+                new AntdUI.ContextMenuStripItem(Localization.T("打开工作区路径")) { ID = "open" },
+                new AntdUI.ContextMenuStripItem(Localization.T("复制路径")) { ID = "copy" },
+                new AntdUI.ContextMenuStripItem(Localization.T("新建会话")) { ID = "new" },
                 new AntdUI.ContextMenuStripItemDivider(),
-                new AntdUI.ContextMenuStripItem("删除项目") { ID = "delete" }
+                new AntdUI.ContextMenuStripItem(Localization.T("删除项目")) { ID = "delete" }
             };
             AntdUI.ContextMenuStrip.open(_menu, selected => OnProjectMenu(path, selected?.ID), items);
         }

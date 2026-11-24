@@ -198,7 +198,7 @@ namespace OpenLoop.App
 
             using var dialog = new FolderBrowserDialog
             {
-                Description = "选择作为新项目的工作区文件夹",
+                Description = Localization.T("选择作为新项目的工作区文件夹"),
                 SelectedPath = Directory.Exists(_project) ? _project : ""
             };
             if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -265,13 +265,13 @@ namespace OpenLoop.App
             string text = _txtInput.Text?.Trim() ?? "";
             if (text.Length == 0)
             {
-                Notify("请先描述任务", AntdUI.TState.Warn);
+                Notify(Localization.T("请先描述任务"), AntdUI.TState.Warn);
                 _txtInput.Focus();
                 return;
             }
             if (string.IsNullOrWhiteSpace(_project))
             {
-                Notify("请选择项目或新建项目", AntdUI.TState.Warn);
+                Notify(Localization.T("请选择项目或新建项目"), AntdUI.TState.Warn);
                 return;
             }
 
@@ -303,8 +303,8 @@ namespace OpenLoop.App
         {
             var form = FindForm();
             if (form == null) return;
-            if (state == AntdUI.TState.Warn) AntdUI.Notification.warn(form, "新建会话", text, AntdUI.TAlignFrom.TR, Font, 3);
-            else AntdUI.Notification.info(form, "新建会话", text, AntdUI.TAlignFrom.TR, Font, 3);
+            if (state == AntdUI.TState.Warn) AntdUI.Notification.warn(form, Localization.T("新建会话"), text, AntdUI.TAlignFrom.TR, Font, 3);
+            else AntdUI.Notification.info(form, Localization.T("新建会话"), text, AntdUI.TAlignFrom.TR, Font, 3);
         }
 
         private static string ProjectName(string path)

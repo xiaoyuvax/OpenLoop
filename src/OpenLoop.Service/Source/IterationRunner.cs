@@ -612,6 +612,32 @@ namespace OpenLoop.Service.Source
             }
         }
 
+        /// <summary>
+        /// 重启当前壳（同一份二进制，不换版本）：helper 就是安装目录里的这个 exe，先起它再退出。
+        /// 返回 false 表示 helper 没起来——调用方**不能**再退出，否则没人接手。
+        /// </summary>
+        public static bool LaunchShellRestart(string workspace)
+        {
+            string install = AppContext.BaseDirectory.TrimEnd('\\', '/');
+            try
+            {
+                var start = ShellUpdate.RestartStart(install, Environment.ProcessId, workspace);
+                if (!File.Exists(start.FileName))
+                {
+                    LogRestart("壳重启跳过：找不到 " + start.FileName);
+                    return false;
+                }
+                var helper = Process.Start(start);
+                LogRestart("壳重启 helper（同版本）已启动 pid=" + helper?.Id + " " + install);
+                return helper != null;
+            }
+            catch (Exception ex)
+            {
+                LogRestart("壳重启 helper 启动失败：" + ex.Message);
+                return false;
+            }
+        }
+
         /// <summary>重启链路的同步痕迹（WimaLogger 是异步的，退出时会把缓冲丢掉）。</summary>
         private static void LogRestart(string line)
         {

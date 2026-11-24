@@ -45,7 +45,8 @@ namespace OpenLoop.Core.Agent
 
         public string BuildSystemPrompt(string role = null, IReadOnlyList<string> rules = null, string instructions = null, string workspace = null, string access = null)
             => SystemPromptBuilder.Build(
-                _tools.Tools, _policy.MaxSteps, role, rules, instructions, _skills, workspace, access);
+                _tools.Tools, _policy.MaxSteps, role, rules, instructions, _skills, workspace, access,
+                Store.PromptCatalog.ActiveTemplate(workspace));
 
         public AgentStateMachine CreateMachine() => new(AgentPipeline.Create());
 

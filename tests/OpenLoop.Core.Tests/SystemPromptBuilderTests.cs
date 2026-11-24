@@ -30,5 +30,27 @@ namespace OpenLoop.Core.Tests
             string prompt = SystemPromptBuilder.Build([new NamedTool("ReadFile")], 10);
             Assert.DoesNotContain("# 进程与 Puppet", prompt);
         }
+
+        [Fact]
+        public void Default_template_fills_every_placeholder()
+        {
+            string prompt = SystemPromptBuilder.Build([new NamedTool("ReadFile")], 10, workspace: ".");
+
+            Assert.DoesNotContain("{{", prompt);
+            Assert.Contains("# 任务流程", prompt);
+            Assert.Contains("# 工具调用协议", prompt);
+            Assert.Contains("一轮最多 4 个", prompt);
+        }
+
+        [Fact]
+        public void Custom_template_that_drops_sections_still_gets_protocol_and_safety()
+        {
+            string prompt = SystemPromptBuilder.Build([new NamedTool("ReadFile")], 10,
+                template: "只写角色。\n\n{{role}}\n");
+
+            Assert.StartsWith("只写角色。", prompt);
+            Assert.Contains("# 工具调用协议", prompt);
+            Assert.Contains("# 安全与纪律", prompt);
+        }
     }
 }

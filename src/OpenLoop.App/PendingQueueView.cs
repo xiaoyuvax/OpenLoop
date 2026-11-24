@@ -76,7 +76,7 @@ namespace OpenLoop.App
                 }
 
                 int count = _queue?.Count ?? 0;
-                _lblCount.Text = $"待发送 {count}";
+                _lblCount.Text = string.Format(Localization.T("PendingCount"), count);
                 // agent 自动插入的排在前面：用户一眼看出哪些不是自己敲的
                 foreach (string note in _agentNotes)
                     _list.Controls.Add(CreateNoteRow(note));
@@ -184,13 +184,13 @@ namespace OpenLoop.App
                 Margin = new Padding(0, 0, Dip(6), 0)
             };
             _tips.SetToolTip(mode, item.Immediate
-                ? "立即：插到下一步（当前轮在下一个 step 前收尾）"
-                : "等本轮：等这一轮返回（Ctrl+Enter 发送）");
+                ? Localization.T("立即：插到下一步（当前轮在下一个 step 前收尾）")
+                : Localization.T("等本轮：等这一轮返回（Ctrl+Enter 发送）"));
 
             // 自动插入的条目没有「立即/等本轮」的选择：位置上放自动图标，说明这条不是用户敲的
             Control lead = item.Auto ? AutoIcon() : mode;
 
-            string line = item.Text.Length > 0 ? item.Text : "📎 附件";
+            string line = item.Text.Length > 0 ? item.Text : Localization.T("📎 附件");
             var text = new AntdUI.Label
             {
                 Dock = DockStyle.Fill,
@@ -214,13 +214,13 @@ namespace OpenLoop.App
                 Margin = new Padding(0)
             };
 
-            var remove = RowButton("删除");
-            var edit = RowButton("编辑");
+            var remove = RowButton(Localization.T("删除"));
+            var edit = RowButton(Localization.T("编辑"));
 
             // 自动插入的已经是「立即」，不给切换按钮（与 Web 一致）
             if (!item.Auto)
             {
-                var now = RowButton("立即", primary: item.Immediate);
+                var now = RowButton(Localization.T("立即"), primary: item.Immediate);
                 now.Click += (_, _) =>
                 {
                     if (_queue?.Toggle(item) == null) return;
@@ -260,7 +260,7 @@ namespace OpenLoop.App
                 Height = Dip(22),
                 Margin = new Padding(0, 0, Dip(6), 0)
             };
-            _tips.SetToolTip(icon, "自动：agent 插入（立即发送）");
+            _tips.SetToolTip(icon, Localization.T("自动：agent 插入（立即发送）"));
             return icon;
         }
 

@@ -111,6 +111,27 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Restart_flag_is_separate_from_the_update_flag()
+        {
+            Assert.True(ShellUpdate.IsRestartRequested([ShellUpdate.RestartFlag, @"C:\x"]));
+            Assert.False(ShellUpdate.IsRestartRequested([ShellUpdate.Flag, @"C:\x"]));
+            Assert.False(ShellUpdate.IsRequested([ShellUpdate.RestartFlag, @"C:\x"]));
+        }
+
+        [Fact]
+        public void Restart_helper_args_carry_install_pid_and_workspace()
+        {
+            string install = Path.Combine(Path.GetTempPath(), "ol-restart");
+            var start = ShellUpdate.RestartStart(install, 4321, " D:\\work ");
+
+            Assert.Equal(Path.Combine(install, OperatingSystem.IsWindows() ? "OpenLoop.exe" : "OpenLoop"), start.FileName);
+            Assert.Equal(install, start.WorkingDirectory);
+            Assert.Equal(
+                [ShellUpdate.RestartFlag, install, "--apply-shell-pid", "4321", "--apply-shell-workspace", "D:\\work"],
+                start.ArgumentList.ToArray());
+        }
+
+        [Fact]
         public void Decide_cold_start_trusts_the_binaries_that_report_the_declared_version()
         {
             var harness = new PlanHarness();                 // 没有基准 = 冷启动

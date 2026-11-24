@@ -217,7 +217,7 @@ namespace OpenLoop.App
             _txtSearch.TextChanged += OnSearchChanged;
 
             _btnDelete.Name = "btnDelete";
-            _btnDelete.Text = "删除选中";
+            _btnDelete.Text = Localization.T("删除选中");
             _btnDelete.Ghost = true;
             _btnDelete.Type = AntdUI.TTypeMini.Error;
             _btnDelete.Radius = 8;

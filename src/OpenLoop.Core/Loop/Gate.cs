@@ -78,7 +78,8 @@ namespace OpenLoop.Core.Loop
         }
 
         public async Task<GateReport> EvaluateAsync(
-            ActivationRecord baseline, ActivationRecord candidate, CancellationToken ct = default)
+            ActivationRecord baseline, ActivationRecord candidate, CancellationToken ct = default,
+            IReadOnlyList<string> extraEvidence = null)
         {
             var report = new GateReport { BaselineVersion = baseline.Version };
 
@@ -101,6 +102,7 @@ namespace OpenLoop.Core.Loop
 
             decimal? cost = 0;
             var evidence = new List<string>();
+            evidence.AddRange(extraEvidence?.Where(e => !string.IsNullOrWhiteSpace(e)) ?? []);
 
             foreach (var task in _tasks.Tasks)
             {

@@ -7,14 +7,13 @@ namespace OpenLoop.App
 {
     /// <summary>
     /// [Puppet] 页打开的会话视图：内容来自 @A / @I 的留言板（只读合并，外加用户以 U 身份参与）。
-    /// 这些会话没有主 agent 驱动、也没有模型选择；谁在板上说话就显示谁，工具只有 /complain 与 /debug。
+    /// 这些会话没有主 agent 驱动、也没有模型选择；谁在板上说话就显示谁，工具只有 /complain。
     /// </summary>
     public partial class PuppetView : UserControl
     {
         private static readonly (string Command, string Description)[] Commands =
         {
-            ("/complain", "把 Puppet 交谈中的问题发给 Loop（不附上下文）"),
-            ("/debug", "把问题连同最近几条留言发给 Loop")
+            ("/complain", Localization.T("PuppetCommandComplain"))
         };
 
         private readonly ChatTurnBook _book = new();
@@ -32,11 +31,8 @@ namespace OpenLoop.App
             InitializeComponent();
         }
 
-        /// <summary>用户在当前会话里用 /complain、/debug 报告问题；投递内容由本视图按命令拼好。</summary>
+        /// <summary>用户在当前会话里用 /complain 报告问题；投递内容由本视图按命令拼好。</summary>
         internal event Action<string> ComplaintRequested;
-
-        /// <summary>/debug 附带几条留言：由宿主按账本 limit.debug_turns 解析。</summary>
-        internal Func<int> FeedbackTurns { get; set; } = () => FeatureCatalog.DefaultDebugTurns;
 
         internal string Host => _host;
         internal string Agent => _agent;
@@ -50,7 +46,7 @@ namespace OpenLoop.App
             _host = string.IsNullOrWhiteSpace(host) ? "@A" : host;
             _agent = agentId ?? "";
             _lblTitle.Text = "Puppet · " + _host + (string.IsNullOrWhiteSpace(_agent) ? "" : " · " + _agent);
-            _chat.PlaceholderText = "Puppet 留言板：各会话的 agent 在这里自行对话；你也可以输入参与。";
+            _chat.PlaceholderText = Localization.T("PuppetChatHint");
             _chat.Bind(_book);
             _cmdPopup.Accepted += OnCommandAccepted;
             _txtInput.TextChanged += (_, _) => UpdateCommandPopup();
@@ -97,7 +93,8 @@ namespace OpenLoop.App
 
         private void Apply(IReadOnlyList<PuppetMessage> messages, string hosts)
         {
-            _lblStatus.Text = (hosts.Length == 0 ? "没有可用的留言板" : "在线 " + hosts) + $" · {messages.Count} 条留言";
+            _lblStatus.Text = (hosts.Length == 0 ? Localization.T("PuppetNoBoard") : string.Format(Localization.T("PuppetOnline"), hosts))
+                + string.Format(Localization.T("PuppetMessages"), messages.Count);
             string signature = string.Join(",", messages.Select(m => m.Host + "#" + m.Seq + "#" + m.At.Ticks));
             if (signature == _signature) return;
             bool first = _signature.Length == 0;
@@ -119,7 +116,7 @@ namespace OpenLoop.App
                 return new ChatTurn { User = new ChatMessage("user", message.Text ?? "") };
 
             string head = "**" + (message.AgentId ?? "") + "**"
-                + (string.IsNullOrEmpty(message.To) ? "（广播）" : " → " + message.To);
+                + (string.IsNullOrEmpty(message.To) ? Localization.T("PuppetBroadcast") : " → " + message.To);
             return new ChatTurn
             {
                 Assistant = new ChatMessage("assistant", head + "\n\n" + (message.Text ?? ""))
@@ -138,23 +135,10 @@ namespace OpenLoop.App
                 string complaint = text[9..].Trim();
                 if (complaint.Length == 0)
                 {
-                    WarnMissing("/complain 后面要写具体问题。");
+                    WarnMissing(Localization.T("PuppetComplainEmpty"));
                     return;
                 }
-                ComplaintRequested?.Invoke(ComplaintText(complaint, debug: false));
-                return;
-            }
-
-            if (text.StartsWith("/debug", StringComparison.OrdinalIgnoreCase)
-                && (text.Length == 6 || char.IsWhiteSpace(text[6])))
-            {
-                string complaint = text[6..].Trim();
-                if (complaint.Length == 0)
-                {
-                    WarnMissing("/debug 后面要写具体问题。");
-                    return;
-                }
-                ComplaintRequested?.Invoke(ComplaintText(complaint, debug: true));
+                ComplaintRequested?.Invoke(ComplaintText(complaint));
                 return;
             }
 
@@ -166,31 +150,18 @@ namespace OpenLoop.App
         private void WarnMissing(string message)
         {
             if (FindForm() is { } form)
-                AntdUI.Notification.warn(form, "缺少内容", message, AntdUI.TAlignFrom.TR, null, 3);
+                AntdUI.Notification.warn(form, Localization.T("PuppetMissingTitle"), message, AntdUI.TAlignFrom.TR, null, 3);
         }
 
-        /// <summary>/complain 只带一句与读板入口，/debug 另附账本配置的最近几条留言。</summary>
-        private string ComplaintText(string complaint, bool debug)
+        /// <summary>/complain 只带一句与读板入口；上下文由 Loop 按需读留言板。</summary>
+        private string ComplaintText(string complaint)
         {
             var sb = new StringBuilder();
             sb.Append("[用户反馈] 对 Puppet 会话 ").Append(_host).Append(' ').Append(_agent)
               .Append(" 中的问题：").AppendLine(complaint);
-            if (debug)
-            {
-                foreach (var turn in _book.Turns.TakeLast(Math.Max(0, FeedbackTurns())))
-                {
-                    if (!string.IsNullOrWhiteSpace(turn.UserText))
-                        sb.Append("U: ").AppendLine(Clip(turn.UserText, 300));
-                    if (!string.IsNullOrWhiteSpace(turn.AssistantText))
-                        sb.AppendLine(Clip(turn.AssistantText, 300));
-                }
-            }
             sb.Append("需要上下文时用 Puppet 工具读留言板（action=\"chat\"）。");
             return sb.ToString().TrimEnd();
         }
-
-        private static string Clip(string text, int max)
-            => string.IsNullOrEmpty(text) || text.Length <= max ? text ?? "" : text[..max] + "…";
 
         private void UpdateCommandPopup()
         {

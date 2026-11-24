@@ -50,14 +50,14 @@ namespace OpenLoop.App
             _root.BackColor = UiStyle.Surface;
             _root.Padding = new Padding(16, 12, 16, 8);
 
-            ConfigureLabel(_lblName, "规则名");
-            ConfigureLabel(_lblRule, "规则正文");
+            ConfigureLabel(_lblName, Localization.T("RuleNameLabel"));
+            ConfigureLabel(_lblRule, Localization.T("RuleBodyLabel"));
 
             _txtName.Name = "txtName";
             _txtName.Dock = DockStyle.Fill;
             _txtName.Radius = 8;
             _txtName.BorderWidth = 1;
-            _txtName.PlaceholderText = "可选，例如：先读再写";
+            _txtName.PlaceholderText = Localization.T("RuleNamePlaceholder");
             _txtName.Margin = new Padding(0, 6, 0, 6);
 
             _txtRule.Name = "txtRule";
@@ -65,12 +65,12 @@ namespace OpenLoop.App
             _txtRule.Radius = 8;
             _txtRule.BorderWidth = 1;
             _txtRule.Multiline = true;
-            _txtRule.PlaceholderText = "写给 Worker 的一条规则，例如：修改文件前先用 ReadFile 确认内容。";
+            _txtRule.PlaceholderText = Localization.T("RuleBodyPlaceholder");
             _txtRule.Margin = new Padding(0, 4, 0, 4);
 
             _lblHint.AutoSize = false;
             _lblHint.Dock = DockStyle.Fill;
-            _lblHint.Text = "登记后是休眠特征，下一轮演进可被启用；id 由名字 + 正文哈希生成，改字即新 id。";
+            _lblHint.Text = Localization.T("RuleHint");
             _lblHint.Font = new Font("Segoe UI", 8.5F);
             _lblHint.ForeColor = UiStyle.Muted;
             _lblHint.TextAlign = ContentAlignment.MiddleLeft;
@@ -82,7 +82,7 @@ namespace OpenLoop.App
             _buttons.Margin = new Padding(0);
 
             _btnSave.Name = "btnSave";
-            _btnSave.Text = "登记";
+            _btnSave.Text = Localization.T("RuleRegister");
             _btnSave.Type = AntdUI.TTypeMini.Primary;
             _btnSave.Radius = 8;
             _btnSave.Size = new Size(92, 34);
@@ -90,7 +90,7 @@ namespace OpenLoop.App
             _btnSave.Click += OnSave;
 
             _btnOptimize.Name = "btnOptimize";
-            _btnOptimize.Text = "AI 优化";
+            _btnOptimize.Text = Localization.T("RuleOptimize");
             _btnOptimize.Radius = 8;
             _btnOptimize.Size = new Size(100, 34);
             _btnOptimize.IconSvg = UiIcons.Of(UiIcons.Edit, UiStyle.Text);
@@ -98,7 +98,7 @@ namespace OpenLoop.App
             _btnOptimize.Click += OnOptimize;
 
             _btnCancel.Name = "btnCancel";
-            _btnCancel.Text = "取消";
+            _btnCancel.Text = Localization.T("SettingsCancel");
             _btnCancel.Radius = 8;
             _btnCancel.Size = new Size(84, 34);
             _btnCancel.Margin = new Padding(8, 6, 0, 0);
@@ -126,7 +126,7 @@ namespace OpenLoop.App
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            Text = "新增规则";
+            Text = Localization.T("RuleAddTitle");
             Controls.Add(_root);
 
             ResumeLayout(false);

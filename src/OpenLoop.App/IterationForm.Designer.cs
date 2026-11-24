@@ -85,7 +85,7 @@
             _planHost.Margin = new Padding(0);
 
             _lblSummary.AutoSize = true;
-            _lblSummary.Text = "变更内容";
+            _lblSummary.Text = Localization.T("IterSummary");
             _lblSummary.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
             _lblSummary.ForeColor = UiStyle.Text;
             _lblSummary.Margin = new Padding(0, 2, 0, 4);
@@ -100,7 +100,7 @@
             _txtSummary.Margin = new Padding(0, 0, 0, 8);
 
             _lblLog.AutoSize = true;
-            _lblLog.Text = "进度";
+            _lblLog.Text = Localization.T("IterLog");
             _lblLog.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
             _lblLog.ForeColor = UiStyle.Text;
             _lblLog.Margin = new Padding(0, 2, 0, 4);
@@ -127,16 +127,16 @@
             _modeRow.Margin = new Padding(0, 0, 0, 4);
 
             _lblMode.AutoSize = true;
-            _lblMode.Text = "发布形态";
+            _lblMode.Text = Localization.T("IterModeLabel");
             _lblMode.Font = new Font("Segoe UI", 9F);
             _lblMode.ForeColor = UiStyle.Text;
             _lblMode.Margin = new Padding(0, 8, 8, 0);
 
             _selMode.Width = 420;
             _selMode.Margin = new Padding(0, 4, 0, 0);
-            _selMode.Items.Add(new AntdUI.SelectItem("框架依赖：目标机需装 .NET 10，三个 exe 共享一份框架")
+            _selMode.Items.Add(new AntdUI.SelectItem(Localization.T("IterModeFramework"))
                 { Tag = global::OpenLoop.Service.Source.Iteration.FrameworkMode });
-            _selMode.Items.Add(new AntdUI.SelectItem("自带框架：每个 exe 各带运行时，目标机不用装 .NET")
+            _selMode.Items.Add(new AntdUI.SelectItem(Localization.T("IterModeSelfContained"))
                 { Tag = global::OpenLoop.Service.Source.Iteration.SelfContainedMode });
             _selMode.SelectedIndex = 0;
 
@@ -148,7 +148,7 @@
             _buttons.WrapContents = false;
             _buttons.Margin = new Padding(0);
 
-            _btnStart.Text = "开始迭代";
+            _btnStart.Text = Localization.T("IterStart");
             _btnStart.Type = AntdUI.TTypeMini.Primary;
             _btnStart.Radius = 8;
             _btnStart.Width = 108;
@@ -156,7 +156,7 @@
             _btnStart.Margin = new Padding(8, 0, 0, 0);
             _btnStart.Click += OnStart;
 
-            _btnRollback.Text = "退回上一版本";
+            _btnRollback.Text = Localization.T("IterRollback");
             _btnRollback.Ghost = true;
             _btnRollback.Radius = 8;
             _btnRollback.Width = 132;
@@ -165,7 +165,7 @@
             _btnRollback.Visible = false;
             _btnRollback.Click += OnRollback;
 
-            _btnCommit.Text = "仅提交";
+            _btnCommit.Text = Localization.T("IterCommitOnly");
             _btnCommit.Ghost = true;
             _btnCommit.Radius = 8;
             _btnCommit.Width = 96;
@@ -173,7 +173,7 @@
             _btnCommit.Margin = new Padding(8, 0, 0, 0);
             _btnCommit.Click += OnCommit;
 
-            _btnPush.Text = "提交并推送";
+            _btnPush.Text = Localization.T("IterCommitPush");
             _btnPush.Ghost = true;
             _btnPush.Radius = 8;
             _btnPush.Width = 120;
@@ -181,7 +181,7 @@
             _btnPush.Margin = new Padding(8, 0, 0, 0);
             _btnPush.Click += OnCommitPush;
 
-            _btnClose.Text = "取消";
+            _btnClose.Text = Localization.T("SettingsCancel");
             _btnClose.Ghost = true;
             _btnClose.Radius = 8;
             _btnClose.Width = 96;
@@ -212,7 +212,7 @@
             MinimumSize = new Size(700, 480);
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
-            Text = "迭代";
+            Text = Localization.T("IterTitle");
             Controls.Add(_root);
             ResumeLayout(false);
         }

@@ -115,7 +115,7 @@ namespace OpenLoop.App
             _btnGo.Dock = DockStyle.Fill;
             _btnGo.Margin = new Padding(0, 1, 1, 3);
             _btnGo.Click += OnGo;
-            _tips.SetToolTip(_btnGo, "前往");
+            _tips.SetToolTip(_btnGo, Localization.T("前往"));
 
             _btnInteract.Name = "btnInteract";
             _btnInteract.Ghost = true;
@@ -124,7 +124,7 @@ namespace OpenLoop.App
             _btnInteract.Dock = DockStyle.Fill;
             _btnInteract.Margin = new Padding(0, 1, 1, 3);
             _btnInteract.Click += OnToggleInteract;
-            _tips.SetToolTip(_btnInteract, "解锁：允许你自己点按网页");
+            _tips.SetToolTip(_btnInteract, Localization.T("解锁：允许你自己点按网页"));
 
             _btnUndock.Name = "btnUndock";
             _btnUndock.Ghost = true;
@@ -133,7 +133,7 @@ namespace OpenLoop.App
             _btnUndock.Dock = DockStyle.Fill;
             _btnUndock.Margin = new Padding(0, 1, 1, 3);
             _btnUndock.Click += OnUndock;
-            _tips.SetToolTip(_btnUndock, "独立窗口：把网页搬进独立窗口");
+            _tips.SetToolTip(_btnUndock, Localization.T("独立窗口：把网页搬进独立窗口"));
 
             _btnExternal.Name = "btnExternal";
             _btnExternal.Ghost = true;
@@ -142,7 +142,7 @@ namespace OpenLoop.App
             _btnExternal.Dock = DockStyle.Fill;
             _btnExternal.Margin = new Padding(0, 1, 0, 3);
             _btnExternal.Click += OnExternal;
-            _tips.SetToolTip(_btnExternal, "用系统默认浏览器打开");
+            _tips.SetToolTip(_btnExternal, Localization.T("用系统默认浏览器打开"));
 
             _bar.Controls.Add(_btnBack, 0, 0);
             _bar.Controls.Add(_btnForward, 1, 0);
@@ -169,7 +169,7 @@ namespace OpenLoop.App
             // 尺寸由 CenterOverlay 按面板宽度算（AutoSize=false，Label 自己按宽度换行）：侧栏很窄时换行，不裁字
             _overlay.Name = "browserOverlay";
             _overlay.AutoSize = false;
-            _overlay.Text = "已锁定：网页由 Agent 控制\r\n点上方「解锁」后可自行操作";
+            _overlay.Text = Localization.T("BrowserLockedOverlay");
             _overlay.TextAlign = ContentAlignment.MiddleCenter;
             _overlay.ForeColor = UiStyle.Muted;
             _overlay.BackColor = UiStyle.Surface;

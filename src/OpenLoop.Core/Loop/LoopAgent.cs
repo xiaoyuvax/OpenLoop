@@ -31,7 +31,7 @@ namespace OpenLoop.Core.Loop
         public LoopAgent(IReasoner reasoner)
             => _reasoner = reasoner ?? throw new ArgumentNullException(nameof(reasoner));
 
-        public string BuildPacket(Ledger ledger, int runLimit = 20)
+        public string BuildPacket(Ledger ledger, int runLimit = 20, IReadOnlyList<FindingRecord> findings = null)
         {
             var current = ledger.Current;
             var features = ledger.Features();
@@ -69,6 +69,21 @@ namespace OpenLoop.Core.Loop
             foreach (var feature in dormant)
                 sb.Append("- ").Append(feature.Id).AppendLine();
             sb.AppendLine();
+
+            if (findings is { Count: > 0 })
+            {
+                sb.AppendLine("# 本轮待处理的 harness 观察（findings，已经分诊到这里）");
+                foreach (var finding in findings)
+                {
+                    sb.Append("- ").Append(finding.Id).Append(" [")
+                      .Append(finding.Object ?? "other").Append("] ")
+                      .AppendLine(Trim(finding.Summary, 300));
+                    if (!string.IsNullOrWhiteSpace(finding.Suggestion))
+                        sb.Append("  建议：").AppendLine(Trim(finding.Suggestion, 300));
+                }
+                sb.AppendLine("提案要针对这些观察；只能改已有特征的参数与启停，不能新增特征。");
+                sb.AppendLine();
+            }
 
             var runs = ledger.Runs();
             sb.AppendLine("# 最近运行");

@@ -54,20 +54,20 @@ namespace OpenLoop.App
             _root.BackColor = UiStyle.Surface;
             _root.Padding = new Padding(16, 12, 16, 8);
 
-            ConfigureLabel(_lblId, "模型 id");
-            ConfigureLabel(_lblName, "显示名称");
-            ConfigureLabel(_lblCtx, "上下文");
+            ConfigureLabel(_lblId, Localization.T("ModelIdLabel"));
+            ConfigureLabel(_lblName, Localization.T("DisplayNameLabel"));
+            ConfigureLabel(_lblCtx, Localization.T("Context"));
 
             _txtId.Dock = DockStyle.Fill;
             _txtId.Radius = 8;
             _txtId.BorderWidth = 1;
-            _txtId.PlaceholderText = "发给服务商的模型 id，例如 deepseek-flash-1017";
+            _txtId.PlaceholderText = Localization.T("ModelIdPlaceholder");
             _txtId.Margin = new Padding(0, 6, 0, 6);
 
             _txtName.Dock = DockStyle.Fill;
             _txtName.Radius = 8;
             _txtName.BorderWidth = 1;
-            _txtName.PlaceholderText = "留空用目录里的名字或模型 id";
+            _txtName.PlaceholderText = Localization.T("ModelNamePlaceholder");
             _txtName.Margin = new Padding(0, 6, 0, 6);
 
             _selCtx.Dock = DockStyle.Fill;
@@ -86,14 +86,14 @@ namespace OpenLoop.App
             _buttons.WrapContents = false;
             _buttons.Margin = new Padding(0);
 
-            _btnSave.Text = "保存";
+            _btnSave.Text = Localization.T("SettingsSave");
             _btnSave.Type = AntdUI.TTypeMini.Primary;
             _btnSave.Radius = 8;
             _btnSave.Size = new Size(92, 34);
             _btnSave.Margin = new Padding(8, 6, 0, 0);
             _btnSave.Click += OnSave;
 
-            _btnCancel.Text = "取消";
+            _btnCancel.Text = Localization.T("SettingsCancel");
             _btnCancel.Radius = 8;
             _btnCancel.Size = new Size(84, 34);
             _btnCancel.Margin = new Padding(8, 6, 0, 0);
@@ -122,7 +122,7 @@ namespace OpenLoop.App
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            Text = "模型属性";
+            Text = Localization.T("ModelPropsTitle");
             Controls.Add(_root);
 
             ResumeLayout(false);

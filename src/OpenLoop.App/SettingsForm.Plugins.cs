@@ -60,7 +60,7 @@ namespace OpenLoop.App
 
             _btnPluginRefresh = new AntdUI.Button
             {
-                Text = "刷新",
+                Text = Localization.T("Refresh"),
                 Radius = 8,
                 Size = new Size(88, 30),
                 Dock = DockStyle.Fill,
@@ -75,15 +75,15 @@ namespace OpenLoop.App
                 VisibleHeader = true,
                 RowHeight = 40,
                 MultipleRows = false,
-                EmptyText = "还没有插件",
+                EmptyText = Localization.T("NoPlugins"),
                 Margin = new Padding(0, 4, 0, 4)
             };
             _tblPlugins.SelectIndexChanged += OnPluginSelectionChanged;
-            _tblPlugins.Columns.Add(new AntdUI.Column("Name", "名称") { Width = "180" });
+            _tblPlugins.Columns.Add(new AntdUI.Column("Name", Localization.T("Name")) { Width = "180" });
             _tblPlugins.Columns.Add(new AntdUI.Column("Id", "id") { Width = "110" });
-            _tblPlugins.Columns.Add(new AntdUI.Column("Version", "版本") { Width = "70" });
-            _tblPlugins.Columns.Add(new AntdUI.Column("Kind", "贡献") { Width = "170" });
-            _tblPlugins.Columns.Add(new AntdUI.Column("From", "来源") { Width = "80" });
+            _tblPlugins.Columns.Add(new AntdUI.Column("Version", Localization.T("ColVersion")) { Width = "70" });
+            _tblPlugins.Columns.Add(new AntdUI.Column("Kind", Localization.T("ColContribution")) { Width = "170" });
+            _tblPlugins.Columns.Add(new AntdUI.Column("From", Localization.T("ColFrom")) { Width = "80" });
 
             var buttons = new FlowLayoutPanel
             {
@@ -95,7 +95,7 @@ namespace OpenLoop.App
 
             _btnPluginAdd = new AntdUI.Button
             {
-                Text = "添加",
+                Text = Localization.T("Add"),
                 Radius = 8,
                 Size = new Size(88, 30),
                 Margin = new Padding(0, 2, 8, 0)
@@ -104,7 +104,7 @@ namespace OpenLoop.App
 
             _btnPluginEdit = new AntdUI.Button
             {
-                Text = "编辑",
+                Text = Localization.T("Edit"),
                 Type = AntdUI.TTypeMini.Primary,
                 Radius = 8,
                 Size = new Size(88, 30),
@@ -115,7 +115,7 @@ namespace OpenLoop.App
 
             _btnPluginOpen = new AntdUI.Button
             {
-                Text = "打开目录",
+                Text = Localization.T("OpenPluginFolder"),
                 Radius = 8,
                 Size = new Size(96, 30),
                 Margin = new Padding(0, 2, 8, 0),
@@ -125,7 +125,7 @@ namespace OpenLoop.App
 
             _btnPluginRemove = new AntdUI.Button
             {
-                Text = "卸载",
+                Text = Localization.T("Uninstall"),
                 Radius = 8,
                 Size = new Size(88, 30),
                 Margin = new Padding(0, 2, 8, 0),
@@ -140,10 +140,7 @@ namespace OpenLoop.App
                 ForeColor = UiStyle.Muted,
                 AutoEllipsis = true,
                 Margin = new Padding(0, 4, 0, 0),
-                Text = "工作区插件在 <工作区>/.openloop/plugins，全局插件在 %APPDATA%\\OpenLoop\\plugins（同名时工作区优先）。" +
-                       "存盘即生效，会话里的提供商下拉几秒内自己补上。" +
-                       "「编辑」只改 provider 型插件的地址与密钥，工具/MCP 型请点「打开目录」自己改；「添加」写进当前工作区；" +
-                       "「卸载」把目录搬到插件回收目录（%APPDATA%\\OpenLoop\\plugins-trash）。"
+                Text = Localization.T("PluginsNote")
             };
 
             buttons.Controls.Add(_btnPluginAdd);
@@ -190,7 +187,7 @@ namespace OpenLoop.App
             RebindPlugins();
 
             _lblPluginsPath.Text = string.IsNullOrWhiteSpace(_workspace)
-                ? PluginStore.GlobalRoot + "（还没打开工作区，只看全局）"
+                ? PluginStore.GlobalRoot + Localization.T("OnlyGlobalNoWorkspace")
                 : PluginStore.RootFor(_workspace) + "　·　" + PluginStore.GlobalRoot;
 
             List<PluginStore.Row> rows;
@@ -226,7 +223,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, "添加失败", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AntdUI.Notification.error(this, Localization.T("AddFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
 
@@ -240,8 +237,8 @@ namespace OpenLoop.App
             if (row == null) return;
             if (row.Providers == 0)
             {
-                AntdUI.Notification.warn(this, "不可编辑",
-                    "这个清单里没有 provider 贡献，点「打开目录」自己改。", AntdUI.TAlignFrom.TR, null, 4);
+                AntdUI.Notification.warn(this, Localization.T("NotEditable"),
+                    Localization.T("NotEditableBody"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
 
@@ -252,7 +249,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, "打不开", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AntdUI.Notification.error(this, Localization.T("CannotOpen"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
 
@@ -279,9 +276,12 @@ namespace OpenLoop.App
             var row = CurrentPlugin;
             if (row == null) return;
 
-            string where = string.Equals(row.From, "全局", StringComparison.Ordinal) ? "全局" : "当前工作区";
+            string where = string.Equals(row.From, Localization.T("ScopeGlobal"), StringComparison.Ordinal)
+                ? Localization.T("ScopeGlobal")
+                : Localization.T("CurrentWorkspace");
             if (AntdUI.Modal.open(new AntdUI.Modal.Config(this,
-                    "卸载插件", $"把{where}插件 {row.Id} 的整个目录搬到插件回收目录？需要时可以手工搬回来。", AntdUI.TType.Warn))
+                    Localization.T("UninstallPlugin"),
+                    string.Format(Localization.T("UninstallPluginBody"), where, row.Id), AntdUI.TType.Warn))
                 != DialogResult.OK)
                 return;
 
@@ -292,7 +292,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 AppLog.Warn("卸载插件失败：" + ex.Message);
-                AntdUI.Notification.error(this, "卸载失败", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AntdUI.Notification.error(this, Localization.T("UninstallFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
 
@@ -387,7 +387,7 @@ namespace OpenLoop.App
                 catch (Exception ex)
                 {
                     AppLog.Warn($"写回插件清单失败：{provider.PluginDirectory} {ex.Message}");
-                    AntdUI.Notification.error(this, "插件清单", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                    AntdUI.Notification.error(this, Localization.T("PluginManifest"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 }
             }
         }

@@ -179,7 +179,7 @@ namespace OpenLoop.App
         public OperationResult LoopAppClose()
         {
             HideAndCollapse();
-            return OperationResult.Success("已收起网页页");
+            return OperationResult.Success(Localization.T("已收起网页页"));
         }
 
         /// <summary>视图销毁时停掉回收计时（Designer 的 Dispose 调这里）。</summary>

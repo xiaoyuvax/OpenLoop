@@ -20,6 +20,17 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void Ledger_can_override_base_and_ceiling()
+        {
+            Assert.Equal(TimeSpan.FromSeconds(2), RetryBackoff.Next(0, 2, 30));
+            Assert.Equal(TimeSpan.FromSeconds(2), RetryBackoff.Next(2, 2, 30));
+            Assert.Equal(TimeSpan.FromSeconds(4), RetryBackoff.Next(3, 2, 30));
+            Assert.Equal(TimeSpan.FromSeconds(30), RetryBackoff.Next(10, 2, 30));
+            // 上限小于起点时按起点算，不减慢节奏
+            Assert.Equal(TimeSpan.FromSeconds(2), RetryBackoff.Next(10, 2, 1));
+        }
+
+        [Fact]
         public void Only_connect_level_failures_are_retried()
         {
             Assert.True(OpenCodeReasoner.IsConnectFailure(

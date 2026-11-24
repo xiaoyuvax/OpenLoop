@@ -71,10 +71,24 @@
 检查类型至少支持以上五种；未知类型视为该题失败。
 
 ### 4.5 `loop/findings.jsonl`
+一条 finding = 一条**尚未处置、且能分派到某个可改进对象**的观察。当场修好的、环境故障、一次性事故不写。
 ```json
-{"id":"...","kind":"access|claim|quality|review|other","severity":"info|warn|high",
- "summary":"...","evidence":"trace/<id>#4","suggestion":"...","at":"..."}
+{"id":"...","at":"...","source":"user|loop|worker",
+ "target":"harness|source|unknown","object":"prompt|skill|rule|limit|guard|code|other",
+ "kind":"access|claim|quality|review|other","severity":"info|warn|high",
+ "summary":"...","evidence":"trace/<id>#4","suggestion":"..."}
 ```
+旧行没有 `source/target/object` 时按 `loop/unknown/other` 读。写入入口：Loop 的 `RecordFinding` 与用户命令 `/report`（WinForms 与 Web 同一落账入口 `FindingTriage.Report`）。
+
+### 4.5.1 `loop/triage.jsonl`（处置状态，追加式）
+```json
+{"id":"F-...","at":"...","status":"open|triaged|dispatched|done|dropped",
+ "batch":"B-20261124-153000","note":"...","by":"loop"}
+```
+`findings.jsonl` 只追加不改，状态按 id 取最后一条。一次演进 = 一个 `batch`：harness 类进候选并被 Gate 裁决，源码类写 `loop/dispatch/<batch>.md` 派单给下一次 Loop 会话。
+
+### 4.5.2 系统提示词模板 `prompts/system.md`
+文件是编辑面，内容是账本特征（`kind=prompt`，id 带内容哈希）；未登记的内容不会被采用（回退内置默认）。只能经 TargetCentricSession 由模型落盘，用户不直接改文本。
 
 ### 4.6 `loop/reviews.jsonl`
 ```json

@@ -508,7 +508,7 @@ namespace OpenLoop.App
 
         public string BrowserState => Browser is { } b
             ? $"{(b.InteractEnabled ? "unlocked" : "locked")} | {(b.IsUndocked ? "undocked" : "docked")} | {b.Url}"
-            : "无会话";
+            : Localization.T("无会话");
 
         public bool LoopBusy => _loopView?.Busy ?? false;
 
@@ -655,7 +655,7 @@ namespace OpenLoop.App
         }
 
         /// <summary>
-        /// /complain、/debug：每条反馈独立起一个 Loop 会话，不并到最近的会话里；不抢当前标签页。
+        /// /complain：每条反馈独立起一个 Loop 会话，不并到最近的会话里；不抢当前标签页。
         /// 新会话沿用来源 Worker 会话的模型与强度（视图没建过就取它落盘的记录）。
         /// </summary>
         private void OnComplaint(Session session, string text)
@@ -668,7 +668,7 @@ namespace OpenLoop.App
 
         private void PostComplaint(string workspace, string text, string model = null, string effort = null)
             => EnsureLoop(workspace, select: false, sessionId: "",
-                title: "反馈 " + DateTime.Now.ToString("HH:mm"), model: model, effort: effort)?.Post(text, "feedback");
+                title: Localization.T("反馈 ") + DateTime.Now.ToString("HH:mm"), model: model, effort: effort)?.Post(text, "feedback");
 
         /// <summary>
         /// 取（必要时创建）某个项目的 Loop 会话。历史按「项目 + 会话 id」分开存，
@@ -684,7 +684,7 @@ namespace OpenLoop.App
             if (string.IsNullOrWhiteSpace(target)) target = _settings.Projects.FirstOrDefault();
             if (string.IsNullOrWhiteSpace(target) || !Directory.Exists(target))
             {
-                AntdUI.Notification.warn(this, "Loop", "请先打开一个会话，Loop 需要工作区。", AntdUI.TAlignFrom.TR, null, 3);
+                AntdUI.Notification.warn(this, "Loop", Localization.T("请先打开一个会话，Loop 需要工作区。"), AntdUI.TAlignFrom.TR, null, 3);
                 return null;
             }
 
@@ -744,7 +744,7 @@ namespace OpenLoop.App
             // 同 SessionView：transcript 延迟回读在后台预热，别让第一次 checkpoint 在 UI 线程踩回读
             if (view.Book.Turns.Count > 0)
                 _ = Task.Run(() => ChatStore.WarmTranscripts(view.Book.Turns));
-            // 来源会话（/complain、/debug、/fork、转交、协作）带过来的模型与强度：新会话按它起步
+            // 来源会话（/complain、/fork、转交、协作）带过来的模型与强度：新会话按它起步
             if (!string.IsNullOrWhiteSpace(model)) view.AdoptParameters(model, effort);
             var page = new AntdUI.TabPage
             {
@@ -776,7 +776,7 @@ namespace OpenLoop.App
             _tabs.Pages.Add(page);
             // 先登记再选中：OnSelectedTabChanged 按 _loops 逐个设激活态，晚登记会让新页漏在暂停态
             _loops[key] = (view, page);
-            // 新建页面不主动跳转：/complain、/debug 只让它出现在标签栏，用户自己去点
+            // 新建页面不主动跳转：/complain 只让它出现在标签栏，用户自己去点
             if (select) _tabs.SelectTab(page);
             _loopView = view;
             _loopPage = page;
@@ -820,7 +820,6 @@ namespace OpenLoop.App
             var view = new PuppetView { Dock = DockStyle.Fill };
             string FeedbackWorkspace() => _lastSession?.Workspace ?? SourceSync.InstallRoot;
             view.ComplaintRequested += text => PostComplaint(FeedbackWorkspace(), text);
-            view.FeedbackTurns = () => SessionView.DebugTurns(FeedbackWorkspace());
             var page = new AntdUI.TabPage
             {
                 Text = "Puppet · " + (string.IsNullOrWhiteSpace(agentId) ? host : agentId),
@@ -915,7 +914,9 @@ namespace OpenLoop.App
 
             // 壳刚被迭代重启过：回到原来的 Loop 会话，再把结果报告弹出来
             if (!string.IsNullOrWhiteSpace(Startup.Loop)) OpenLoop(Startup.Loop);
-            ShowIterationReportOnStartup();
+            if (Startup.Iteration) ShowIterationReportOnStartup();
+            else if (IterationRunner.TakeShellFailure())
+                ExitTrace.Write("壳重启失败：新壳没起来，已回退旧版本");   // 非迭代重启的失败标记别带到下一轮迭代
 
             _workerSync.Tick += OnWorkerSyncTick;
             _workerSync.Start();
@@ -954,9 +955,9 @@ namespace OpenLoop.App
             {
                 _autoIterateHead = head;
                 _autoIterateCountdown = DateTime.Now.AddSeconds(AutoIterateCountdownSeconds);
-                AntdUI.Notification.info(this, "准备自动更新",
+                AntdUI.Notification.info(this, Localization.T("准备自动更新"),
                     $"源码已累积 {state.Commits} 次提交，{AutoIterateCountdownSeconds} 秒后自动更新 A/I" +
-                    (BusySessions().Length > 0 ? "（有会话在跑，到时会先问你）" : "。"),
+                    (BusySessions().Length > 0 ? Localization.T("（有会话在跑，到时会先问你）") : "。"),
                     AntdUI.TAlignFrom.TR, null, 8);
                 return;
             }
@@ -966,8 +967,8 @@ namespace OpenLoop.App
 
             string busy = BusySessions();
             if (busy.Length > 0 && MessageBox.Show(this,
-                    "这些会话还在跑：\n" + busy + "\n\n现在更新会中断它们。继续吗？",
-                    "自动更新 A/I", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    Localization.T("SessionsStillRunning") + busy + Localization.T("ConfirmAutoUpdateBusy"),
+                    Localization.T("自动更新 A/I"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                     MessageBoxDefaultButton.Button2) != DialogResult.Yes)
             {
                 AutoIterate.Skip(head);
@@ -983,14 +984,14 @@ namespace OpenLoop.App
             _autoIterateBusy = true;
             try
             {
-                AntdUI.Notification.info(this, "自动更新", "开始构建并换版 A/I，期间别关界面。",
+                AntdUI.Notification.info(this, Localization.T("自动更新"), Localization.T("开始构建并换版 A/I，期间别关界面。"),
                     AntdUI.TAlignFrom.TR, null, 6);
                 string detail = await RunIterationAsync();
                 AppLog.Info("自动迭代：" + detail);
                 if (detail.StartsWith("迭代完成", StringComparison.Ordinal))
-                    AntdUI.Notification.success(this, "自动更新完成", detail, AntdUI.TAlignFrom.TR, null, 6);
+                    AntdUI.Notification.success(this, Localization.T("自动更新完成"), detail, AntdUI.TAlignFrom.TR, null, 6);
                 else
-                    AntdUI.Notification.warn(this, "自动更新未完成", detail, AntdUI.TAlignFrom.TR, null, 8);
+                    AntdUI.Notification.warn(this, Localization.T("自动更新未完成"), detail, AntdUI.TAlignFrom.TR, null, 8);
             }
             finally
             {
@@ -1010,30 +1011,30 @@ namespace OpenLoop.App
                 AppLog.Info("源码同步：" + check);
 
                 if (check.State == global::OpenLoop.Service.Source.SourceState.NoGit)
-                    AntdUI.Notification.warn(this, "未找到 git",
-                        "撤回对话、迭代与版本溯源都依赖 git，请安装并加入 PATH 后重启。",
+                    AntdUI.Notification.warn(this, Localization.T("未找到 git"),
+                        Localization.T("撤回对话、迭代与版本溯源都依赖 git，请安装并加入 PATH 后重启。"),
                         AntdUI.TAlignFrom.TR, null, 8);
                 else if (check.UpstreamNewer)
-                    AntdUI.Notification.warn(this, "上游有更新", check.Detail,
+                    AntdUI.Notification.warn(this, Localization.T("上游有更新"), check.Detail,
                         AntdUI.TAlignFrom.TR, null, 6);
                 else if (check.State == global::OpenLoop.Service.Source.SourceState.Newer)
-                    AntdUI.Notification.info(this, "源码有更新",
+                    AntdUI.Notification.info(this, Localization.T("源码有更新"),
                         $"源码 {check.SourceVersion} 高于运行版本 {check.RunningVersion}，可以迭代。",
                         AntdUI.TAlignFrom.TR, null, 5);
                 else if (check.State == global::OpenLoop.Service.Source.SourceState.Older)
-                    AntdUI.Notification.warn(this, "源码过旧",
+                    AntdUI.Notification.warn(this, Localization.T("源码过旧"),
                         $"源码 {check.SourceVersion} 低于运行版本 {check.RunningVersion}：" +
-                        "更新源码、放弃迭代，或用 Puppet 自愈。",
+                        Localization.T("更新源码、放弃迭代，或用 Puppet 自愈。"),
                         AntdUI.TAlignFrom.TR, null, 6);
 
                 foreach (var (spec, sync) in await global::OpenLoop.Service.Source.SourceSync.CheckComponentsAsync())
                 {
                     AppLog.Info(spec.Label + " 同步：" + sync);
                     if (sync.State == global::OpenLoop.Service.Source.SourceState.Failed)
-                        AntdUI.Notification.warn(this, spec.Label + " 同步失败", sync.Detail,
+                        AntdUI.Notification.warn(this, spec.Label + Localization.T(" 同步失败"), sync.Detail,
                             AntdUI.TAlignFrom.TR, null, 8);
                     else if (sync.Forked)
-                        AntdUI.Notification.info(this, spec.Label + " 已换 fork", sync.Detail,
+                        AntdUI.Notification.info(this, spec.Label + Localization.T(" 已换 fork"), sync.Detail,
                             AntdUI.TAlignFrom.TR, null, 8);
                 }
             }
@@ -1119,6 +1120,43 @@ namespace OpenLoop.App
         }
 
         /// <summary>
+        /// 壳重启的内部工具（壳调试/迭代都走这一条）：先起交接 helper，确认它起来了才退出；
+        /// helper 等本进程退出后再拉起新壳，进到界面才算成功（失败重试 3 次）。helper 没起来就留在当前壳。
+        /// </summary>
+        [PuppetAction(Risk = "High", Desc = "重启壳：默认同一份二进制；from 给一个含 OpenLoop.exe 的目录则重启到那一份（先备份、失败回滚）。有会话在跑会拒绝")]
+        public OperationResult RestartShell(string workspace = "", string from = "")
+        {
+            string target = workspace;
+            if (string.IsNullOrWhiteSpace(target)) target = _loopView?.Workspace ?? "";
+            if (string.IsNullOrWhiteSpace(target)) target = Workspace;
+            if (string.IsNullOrWhiteSpace(target)) target = _settings.Workspace ?? "";
+
+            string busy = BusySessions();
+            if (busy.Length > 0)
+                return OperationResult.Failure("还有会话在跑，先停止再重启壳：\n" + busy);
+            if (_iterationStatus is "running" or "restarting")
+                return OperationResult.Failure("迭代正在进行，等它自己重启壳");
+
+            bool started = string.IsNullOrWhiteSpace(from)
+                ? IterationRunner.LaunchShellRestart(target)
+                : IterationRunner.LaunchRestarter(new ShellStage(from.Trim(), ""), target);
+            ExitTrace.Write("壳重启请求（RestartShell）：started=" + started + " from=" + from + " workspace=" + target);
+            if (!started)
+                return OperationResult.Failure("交接 helper 没起来，壳保持运行；看 logs/iteration-restart.log");
+
+            // 让这次 Puppet 响应先写回去，再退出
+            var exit = new System.Windows.Forms.Timer { Interval = 500 };
+            exit.Tick += (_, _) =>
+            {
+                exit.Stop();
+                exit.Dispose();
+                Application.Exit();
+            };
+            exit.Start();
+            return OperationResult.Success("交接 helper 已起来，壳即将退出并由它拉起新壳");
+        }
+
+        /// <summary>
         /// Loop 页「迭代」：先弹确认框（谁、从哪个版本到哪个版本、改了什么），用户点头才编译与换版。
         /// 无窗口版本留给 Puppet：跳过壳，只换 A/I。
         /// </summary>
@@ -1155,8 +1193,8 @@ namespace OpenLoop.App
                 // 壳重启会把 A/I 与本进程里的 Loop/旁路一起掐掉：还有会话在跑就先问一句
                 string busy = BusySessions();
                 if (busy.Length > 0 && MessageBox.Show(form,
-                        "这些会话还在跑：\n" + busy + "\n\n现在重启壳会中断它们。仍然继续吗？",
-                        "还有会话在运行", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                        Localization.T("SessionsStillRunning") + busy + Localization.T("ConfirmRestartBusy"),
+                        Localization.T("还有会话在运行"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                         MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                 {
                     AppLog.Info("用户暂不重启壳，仍在运行：" + busy.Replace('\n', '；'));
@@ -1183,13 +1221,13 @@ namespace OpenLoop.App
 
             return "已打开迭代确认：" + string.Join("；",
                 plan.Where(p => p.Update).Select(p => $"{p.Label} {p.Current}→{p.Target}")
-                    .DefaultIfEmpty("无需升版"));
+                    .DefaultIfEmpty(Localization.T("无需升版")));
         }
 
         /// <summary>无窗口的一轮（Puppet）：不碰壳，由 I 执行，失败由 I 按迭代前的版本回退。</summary>
         private async Task<string> RunIterationAsync()
         {
-            if (_iterationStatus is "running" or "restarting") return "已有迭代在跑";
+            if (_iterationStatus is "running" or "restarting") return Localization.T("已有迭代在跑");
             _iterationStatus = "running";
             _iterationSteps.Clear();
             try
@@ -1228,7 +1266,7 @@ namespace OpenLoop.App
             if (IterationRunner.TakeShellFailure())
             {
                 report.Ok = false;
-                report.Steps.Add(new Iteration.Step("restart shell", false, "新壳没起来，已回退旧版本"));
+                report.Steps.Add(new Iteration.Step("restart shell", false, Localization.T("新壳没起来，已回退旧版本")));
             }
             report.ShellRestarted = report.Ok;
 
@@ -1432,6 +1470,7 @@ namespace OpenLoop.App
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
+            ExitTrace.Write("退出：窗体关闭（" + e.CloseReason + "）");
             _closing = true;
             // 末次标题：会话结束时用整段对话再总结一次（自动更新只有首轮与这里）。后台跑，最后等有限几秒
             var finalTitles = new List<Task>();
@@ -1884,14 +1923,14 @@ namespace OpenLoop.App
             string workspace = source.Workspace;
             if (string.IsNullOrWhiteSpace(workspace) || source.Turns.Count == 0)
             {
-                AntdUI.Notification.warn(this, "Loop", "没有可复制的对话。", AntdUI.TAlignFrom.TR, null, 3);
+                AntdUI.Notification.warn(this, "Loop", Localization.T("没有可复制的对话。"), AntdUI.TAlignFrom.TR, null, 3);
                 return;
             }
 
             string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
             // 分叉沿用源 Loop 会话的模型与强度
             ChatStore.Save(workspace, source.Turns.Select(CloneTurn).ToList(), id, source.Model, source.Effort);
-            ChatStore.Touch(workspace, id, "分叉 " + DateTime.Now.ToString("HH:mm"));
+            ChatStore.Touch(workspace, id, Localization.T("分叉 ") + DateTime.Now.ToString("HH:mm"));
             EnsureLoop(workspace, select: true, sessionId: id, model: source.Model, effort: source.Effort)
                 ?.Send(request);
         }
@@ -1931,7 +1970,7 @@ namespace OpenLoop.App
             if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return false;
             workspace = Paths.Normalize(workspace);
             string id = Guid.NewGuid().ToString("N")[..8];
-            string title = "转交 " + DateTime.Now.ToString("HH:mm");
+            string title = Localization.T("转交 ") + DateTime.Now.ToString("HH:mm");
             var cloned = turns.Select(CloneTurn).ToList();
             // 沿用来源 Loop 会话的模型与强度：Worker 打开时按这份记录恢复
             ChatStore.Save(workspace, cloned, id, model, effort);
@@ -1950,7 +1989,7 @@ namespace OpenLoop.App
             if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return false;
             workspace = Paths.Normalize(workspace);
             string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
-            string title = "转交 " + DateTime.Now.ToString("HH:mm");
+            string title = Localization.T("转交 ") + DateTime.Now.ToString("HH:mm");
             // 沿用来源 Worker 会话的模型与强度：Loop 打开时按这份记录恢复
             ChatStore.Save(workspace, turns.Select(CloneTurn).ToList(), id, model, effort);
             // Loop 会话只登记在 loops.json：写 chats/index.json 会让它被当成 Worker 会话恢复出来
@@ -1981,7 +2020,7 @@ namespace OpenLoop.App
             if (sessions == null || sessions.Count == 0) return;
             if (MessageBox.Show(this,
                     $"删除 {sessions.Count} 个会话？对话记录会一并删除，不能恢复。",
-                    "删除会话", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    Localization.T("删除会话"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
             int loops = 0;
             foreach (var row in sessions.Where(IsLoopRow).ToList())
@@ -2026,7 +2065,7 @@ namespace OpenLoop.App
             string prompt = count == 0
                 ? $"移除项目“{name}”？"
                 : $"移除项目“{name}”？\n该项目下 {count} 个会话及其对话记录会一并删除，不能恢复。";
-            if (MessageBox.Show(this, prompt, "移除项目", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            if (MessageBox.Show(this, prompt, Localization.T("移除项目"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
             RemoveProject(workspace);
@@ -2116,7 +2155,7 @@ namespace OpenLoop.App
             view.Emptied += OnTiledEmptied;
             var page = new AntdUI.TabPage
             {
-                Text = "平铺视图",
+                Text = Localization.T("平铺视图"),
                 IconSvg = UiIcons.Of(UiIcons.List, UiStyle.Muted),
                 ReadOnly = false,
                 Tag = view,
@@ -2241,23 +2280,23 @@ namespace OpenLoop.App
             var items = new System.Collections.Generic.List<AntdUI.IContextMenuStripItem>();
             if (!global)
             {
-                items.Add(new AntdUI.ContextMenuStripItem("重命名") { ID = "rename" });
+                items.Add(new AntdUI.ContextMenuStripItem(Localization.T("重命名")) { ID = "rename" });
                 items.Add(new AntdUI.ContextMenuStripItemDivider());
             }
-            items.Add(new AntdUI.ContextMenuStripItem("打开所有活动会话") { ID = "openactive" });
-            items.Add(new AntdUI.ContextMenuStripItem("关闭所有非活动会话") { ID = "closenactive" });
-            items.Add(new AntdUI.ContextMenuStripItem("平铺视图") { ID = "tile" });
+            items.Add(new AntdUI.ContextMenuStripItem(Localization.T("打开所有活动会话")) { ID = "openactive" });
+            items.Add(new AntdUI.ContextMenuStripItem(Localization.T("关闭所有非活动会话")) { ID = "closenactive" });
+            items.Add(new AntdUI.ContextMenuStripItem(Localization.T("平铺视图")) { ID = "tile" });
             items.Add(new AntdUI.ContextMenuStripItemDivider());
             if (!global)
             {
-                items.Add(new AntdUI.ContextMenuStripItem("关闭右侧所有页面") { ID = "right" });
-                items.Add(new AntdUI.ContextMenuStripItem("关闭左侧所有页面") { ID = "left" });
+                items.Add(new AntdUI.ContextMenuStripItem(Localization.T("关闭右侧所有页面")) { ID = "right" });
+                items.Add(new AntdUI.ContextMenuStripItem(Localization.T("关闭左侧所有页面")) { ID = "left" });
             }
-            items.Add(new AntdUI.ContextMenuStripItem("关闭所有 Worker 会话") { ID = "closeworker" });
-            items.Add(new AntdUI.ContextMenuStripItem("关闭所有 Loop 会话") { ID = "closeloop" });
+            items.Add(new AntdUI.ContextMenuStripItem(Localization.T("关闭所有 Worker 会话")) { ID = "closeworker" });
+            items.Add(new AntdUI.ContextMenuStripItem(Localization.T("关闭所有 Loop 会话")) { ID = "closeloop" });
             items.Add(new AntdUI.ContextMenuStripItemDivider());
-            if (!global) items.Add(new AntdUI.ContextMenuStripItem("关闭其他页面") { ID = "others" });
-            items.Add(new AntdUI.ContextMenuStripItem("关闭全部页面") { ID = "all" });
+            if (!global) items.Add(new AntdUI.ContextMenuStripItem(Localization.T("关闭其他页面")) { ID = "others" });
+            items.Add(new AntdUI.ContextMenuStripItem(Localization.T("关闭全部页面")) { ID = "all" });
 
             AntdUI.ContextMenuStrip.open(_tabs, selected => OnTabMenu(page, selected?.ID), items.ToArray());
         }
@@ -2318,7 +2357,7 @@ namespace OpenLoop.App
                 Radius = 8,
                 BorderWidth = 1
             };
-            if (AntdUI.Modal.open(this, "重命名", input) != DialogResult.OK) return;
+            if (AntdUI.Modal.open(this, Localization.T("重命名"), input) != DialogResult.OK) return;
 
             string name = input.Text?.Trim() ?? "";
             if (name.Length == 0) return;
@@ -2562,7 +2601,7 @@ namespace OpenLoop.App
         /// <summary>各部件版本：壳取自身 exe，A/I 取运行中的 runtime/&lt;role&gt;.json，没跑就退回 exe。</summary>
         private string[] VersionLines() =>
         [
-            "壳：" + OrUnknown(ExeVersion(Application.ExecutablePath)),
+            Localization.T("壳：") + OrUnknown(ExeVersion(Application.ExecutablePath)),
             "Worker：" + OrUnknown(RoleVersion(global::OpenLoop.Service.Bus.BusRoles.A)),
             "Loop：" + OrUnknown(RoleVersion(global::OpenLoop.Service.Bus.BusRoles.I))
         ];
@@ -2596,7 +2635,7 @@ namespace OpenLoop.App
         }
 
         private static string OrUnknown(string version)
-            => string.IsNullOrWhiteSpace(version) ? "未知" : version;
+            => string.IsNullOrWhiteSpace(version) ? Localization.T("未知") : version;
 
         private void ApplyLanguage(string language)
         {
@@ -2609,7 +2648,7 @@ namespace OpenLoop.App
         {
             _settings.Theme = theme;
             try { _settings.Save(); } catch (Exception ex) { AppLog.Warn("保存主题失败：" + ex.Message); }
-            AntdUI.Notification.info(this, "主题", "已保存，重启 OpenLoop 后生效。", AntdUI.TAlignFrom.TR, null, 3);
+            AntdUI.Notification.info(this, Localization.T("主题"), Localization.T("已保存，重启 OpenLoop 后生效。"), AntdUI.TAlignFrom.TR, null, 3);
         }
 
         private void OpenSettings()
@@ -2622,7 +2661,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 AppLog.Error("打开设置失败", ex);
-                AntdUI.Notification.error(this, "设置失败", ex.Message, AntdUI.TAlignFrom.TR, null, 6);
+                AntdUI.Notification.error(this, Localization.T("设置失败"), ex.Message, AntdUI.TAlignFrom.TR, null, 6);
                 return;
             }
 
@@ -2641,13 +2680,13 @@ namespace OpenLoop.App
                 {
                     _settings.Save();
                     ModelCatalog.Set(ModelCatalog.All.ToList());
-                    AntdUI.Notification.success(this, "设置已保存", "配置写入本地。",
+                    AntdUI.Notification.success(this, Localization.T("设置已保存"), Localization.T("配置写入本地。"),
                         AntdUI.TAlignFrom.TR, null, 2);
                 }
                 catch (Exception ex)
                 {
                     AppLog.Error("保存设置失败", ex);
-                    AntdUI.Notification.error(this, "保存失败", ex.Message, AntdUI.TAlignFrom.TR, null, 4);
+                    AntdUI.Notification.error(this, Localization.T("保存失败"), ex.Message, AntdUI.TAlignFrom.TR, null, 4);
                 }
             }
         }
@@ -2663,7 +2702,7 @@ namespace OpenLoop.App
                 ?? _settings.Projects.FirstOrDefault()
                 ?? global::OpenLoop.Service.Runtime.AppPaths.DataRoot;
             var view = EnsureLoop(workspace, select: true, sessionId: "",
-                title: "配置 " + DateTime.Now.ToString("HH:mm"));
+                title: Localization.T("配置 ") + DateTime.Now.ToString("HH:mm"));
             view?.Post(SettingsPrompt(page));
         }
 

@@ -58,7 +58,7 @@ namespace OpenLoop.App
         public OperationResult LoopAppCloseFor(string sessionId)
         {
             var browser = FindBrowserById(sessionId, create: false);
-            return browser?.LoopAppClose() ?? OperationResult.Success("没有打开的网页页");
+            return browser?.LoopAppClose() ?? OperationResult.Success(Localization.T("没有打开的网页页"));
         }
 
         /// <summary>某个会话的 LoopApp 状态：锁定/浮动/地址。</summary>
@@ -66,7 +66,7 @@ namespace OpenLoop.App
         public string LoopAppStateFor(string sessionId)
         {
             var browser = FindBrowserById(sessionId, create: false);
-            return browser?.LoopAppState ?? "没有网页页";
+            return browser?.LoopAppState ?? Localization.T("没有网页页");
         }
 
         /// <summary>
@@ -78,8 +78,8 @@ namespace OpenLoop.App
             var browser = FindBrowserById(sessionId, create: true);
             if (browser == null)
                 return OperationResult.Failure(string.IsNullOrWhiteSpace(sessionId)
-                    ? "没有打开的会话"
-                    : $"找不到会话 {sessionId}");
+                    ? Localization.T("没有打开的会话")
+                    : string.Format(Localization.T("SessionNotFound"), sessionId));
             return action(browser);
         }
 

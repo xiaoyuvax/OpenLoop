@@ -15,6 +15,10 @@
   - 失败轮（`执行失败：…`、额度耗尽等错误中断）不续发队列：步后与轮后都不发，队列留在原地；等新的输入（用户发送，或自愈发的「继续」）激活会话后，才按原规则继续处理队列。
 - **Web 壳（`src/OpenLoop.Service/wwwroot`）与 WinForms 壳（`src/OpenLoop.App`）同样要保持对齐**：同一功能在两侧都要有，Web 的布局与交互尽量按 WinForms 的布局（左项目/会话、中对话、右详情/预览、顶部状态与模型）还原，不要各写一套信息架构。
 - 工作区 Harness 参数（激活集：提示词/技能/策略/模型参数等可演进项）与二进制分开管理；`.openloop/` 存运行态。
+- **Harness 是工作区级的五类对象**：**Prompt**（系统提示词模板 + `AGENTS.md`）、**Skill**、**Rule**、**Limit**、**Guard**；Limit/Guard 含自愈参数（连接重试、免费额度恢复、退化输出、参数修复）。同一二进制在不同工作区可以是不同形态。
+- **演进 = 非即时集中分析**：findings 与运行证据先攒着，到点集中分诊一次，判 `harness / source / unknown`；harness 类出激活集候选并过 Gate，source 类写 `loop/dispatch/<batch>.md` 派单，状态记 `loop/triage.jsonl`（追加式，按 id 取最后一条）。`/report` 只落账、不触发演进。
+- **findings 只记「尚未处置、且能分派到某个对象」的观察**（当场修好的写进回复/提交）；用户入口是 `/report [harness|prompt|skill|rule|limit|guard|code] <观察>`，WinForms 与 Web 共用 `FindingTriage.Report`。
+- **TargetCentricSession**：会话可绑定一个唯一编辑目标（系统提示词模板 `prompts/system.md` 与 `AGENTS.md`；以后可扩到 SVG/网页等）。实现是 `TargetPane` + `TargetSpec`（Kind/Title/Path/Actual），左栏只读呈现、文件 watcher 驱动刷新、可 undock 成独立窗体；用户用聊天让模型改、模型落盘，用户不直接改文本。加新目标类型 = 新 Kind + 呈现控件 + Bind，不改会话主流程。入口 `/prompt`、`/agents`。系统提示词模板按内容哈希登记为账本 `kind=prompt` 特征，未登记的内容不采用。
 
 ## 构建与验证
 
@@ -34,6 +38,7 @@
 
 - **A 面（`/agent/*`）**：开发期全反射调试，key 见下；**B 面（`/appagent/*`）**：用户 Agent 的具名 Action 通道，凭证在框架写的发现档案 `%LOCALAPPDATA%\Puppet.AppAgents\OpenLoop.<pid>.json`（`probe`/`help` 免凭证，其余带 `Authorization: Bearer <key>`）。两面调的是同一批公开方法，结果同源；区别只在 A 用位置参数、B 用按名参数（未知/缺必填直接 400）。
 - **壳的操作面按 Action 范式写**：`public` 实例方法返回 `OperationResult`/`bool`（= 成败可观察）即自动进 B 的 manifest；`string`/`string[]` 查询方法只属于 A/内部，不要为了 B 去改它们的返回形状。新增操作时同步考虑两面，别写两份。
+- **壳重启只走 `RestartShell` 动作**（`Puppet` target=shell）：它先起交接 helper、确认起来才退出；helper 等旧壳退出再拉起新壳，进到界面才算成功，失败重试 3 次；helper 没起来就留在当前壳。默认重启同一份二进制；`from` 给一个含 `OpenLoop.exe` 的目录则换到那一份（覆盖前备份、起不来回滚）——壳调试就按「编译/发布到临时目录 → RestartShell(from=目录)」走。**禁止用 Shell 杀进程/关窗口来「重启」**——那样壳直接消失、没人接手（2026-11-24 事故）。有会话在跑时该动作会拒绝，先 `StopSession`。
 - 常用 B 动作：`OpenSession` → `SetComposerText` → `Send`（空闲=发送 / 运行中=立即发送（软打断本轮，收尾后先发；`immediate:false` 等本轮返回）/ 运行中且输入框为空=停止）；`StopSession` 硬停当前轮、`InterruptSession` 软打断（下一 step 前收尾）；`EnqueuePending`/`SendPendingNow`/`RetractPending`/`RemovePending` 管排队；`OpenLoop`/`SendLoop`（同样收 `immediate`）/`StopLoop` 管 Loop 会话；`DeleteSessions`/`RemoveProject` 是不可恢复的 High 风险动作。
 - **右侧栏「网页」页是内嵌 WebView2 浏览器**（`BrowserView`）：**按需创建**——侧栏默认没有这一页，只有 Agent 调浏览器动作时才插入并选中（用户点不出空 WebView，避免白占内存），右键页签可「关闭网页」销毁实例。默认锁定，只有 Agent 能操作；`OpenBrowser(url)`/`NavigateBrowser(url)`/`EvalBrowserScript(js)`/`BrowserScreenshot()` 驱动它（后三个在没有该页时也会自动打开），`SetBrowserInteract(true)` 解锁给用户点按，`UndockBrowser`/`DockBrowser` 在独立窗口与侧栏之间搬。状态看 `BrowserState`/`BrowserUrl`。`EvalBrowserScript` 返回 WebView2 的 JSON 结果（字符串结果带引号）。**`BrowserScreenshot` 需要「网页」页已激活**，否则 `CapturePreviewAsync` 失败且只报「截图超时」；`NavigateBrowser` 异步返回（`data` 是导航前的旧 URL），取页面内容前先轮询 `EvalBrowserScript("document.readyState")`，并检查 `location.href` 不是 `chrome-error://`（DNS/网络失败时 `NavigateBrowser` 仍回成功）；`BrowserScreenshot` 的 PNG 走 `asset` 链接（`/appagent/assets/<id>`）下载。侧栏最窄 360 DIP；再窄时工具栏按「系统浏览器 → 刷新 → 前进 → 独立窗口」收起按钮，保住地址栏。
 - **LoopApp 的呈现方式与收尾**：右侧栏是竖版窄栏，只适合小表单/单列列表。`LoopApp(open)` 后壳在导航完成时量一次 DOM（元素数、表格列数、宽块、页高、横向溢出），内容多就自动搬进独立窗口，少就留在侧栏（判定与阈值在 `LoopAppLayout`，纯函数有单测）。`app.json` 的 `window: dock|float` 与 `size: [w,h]` 优先于实测；用户自己关掉独立窗口后本次不再自动浮出。任务做完（页面 `ui.submit` 过、本轮收尾）自动收起：隐藏页面 → 关独立窗口 → 摘掉「网页」标签，实例留着；收起且闲置超过账本 `limit.browser_idle` 分钟（默认 30，按工作区可配可演化）才销毁 WebView2。`LoopApp(close)` 可手动走同一条路。

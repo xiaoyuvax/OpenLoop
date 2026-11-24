@@ -48,14 +48,14 @@ namespace OpenLoop.App
             _header.Margin = new Padding(0);
 
             _lblCount.AutoSize = true;
-            _lblCount.Text = "待发送 0";
+            _lblCount.Text = Localization.T("待发送 0");
             _lblCount.Font = new Font("Segoe UI", 9F);
             _lblCount.ForeColor = UiStyle.Muted;
             _lblCount.TextAlign = ContentAlignment.MiddleLeft;
             _lblCount.Margin = new Padding(0);
 
             _lblHint.AutoSize = true;
-            _lblHint.Text = "Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行";
+            _lblHint.Text = Localization.T("Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行");
             _lblHint.Font = new Font("Segoe UI", 8.5F);
             _lblHint.ForeColor = UiStyle.Muted;
             _lblHint.TextAlign = ContentAlignment.MiddleRight;

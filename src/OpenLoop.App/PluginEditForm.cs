@@ -20,12 +20,10 @@ namespace OpenLoop.App
             _item = _creating ? new PluginStore.Item() : PluginStore.ReadRaw(dir);
 
             InitializeComponent();
-            Text = _creating ? "添加插件" : "编辑插件";
+            Text = Localization.T(_creating ? "PluginAddTitle" : "PluginEditTitle");
             _lblNote.Text = _creating
-                ? $"会新建目录：{PluginStore.RootFor(workspace)}{Path.DirectorySeparatorChar}<id>。" +
-                  "清单只写 provider 贡献，模型清单靠 ModelsUrl 自动发现。"
-                : $"清单声明了 {_item.Models} 个模型，本页不改 models；密钥留空表示不动现有 key.txt。" +
-                  "「{root}」写进清单时会展开成清单所在目录。";
+                ? string.Format(Localization.T("PluginNoteCreate"), PluginStore.RootFor(workspace) + Path.DirectorySeparatorChar + "<id>")
+                : string.Format(Localization.T("PluginNoteEdit"), _item.Models, "{root}");
             Fill();
         }
 
@@ -48,7 +46,7 @@ namespace OpenLoop.App
         {
             if (string.IsNullOrWhiteSpace(_txtId.Text))
             {
-                AntdUI.Notification.warn(this, "缺少插件 id", "id 不能为空。", AntdUI.TAlignFrom.TR, null, 4);
+                AntdUI.Notification.warn(this, Localization.T("MissingPluginId"), Localization.T("MissingPluginIdBody"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
 
@@ -65,7 +63,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, "保存失败", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AntdUI.Notification.error(this, Localization.T("SaveFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
 

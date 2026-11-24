@@ -77,11 +77,27 @@ namespace OpenLoop.Core.Trace
             _skillProblems = problems;
         }
 
-        /// <summary>记录实际注入的系统提示词指纹（原文可能含用户约定，不落盘）。</summary>
+        /// <summary>
+        /// 记录实际注入的系统提示词指纹，并把原文落在本 trace 目录的 system.md。
+        /// 只写工作区内的 .openloop（不对外分享时不出工作区）；「实际提示词」视图读的就是这一份。
+        /// </summary>
         public void SystemPrompt(string prompt)
         {
             _systemPromptHash = SystemPromptBuilder.Fingerprint(prompt);
             _systemPromptChars = prompt?.Length ?? 0;
+            try
+            {
+                lock (_gate)
+                {
+                    if (_finished) return;
+                    File.WriteAllText(Path.Combine(DirectoryPath, "system.md"),
+                        prompt ?? "", new UTF8Encoding(false));
+                }
+            }
+            catch
+            {
+                // 证据目录只写一次失败不影响本轮；指纹照样记录
+            }
         }
 
         public void Message(LlmMessage message) => Message(message?.Role, message?.Content);

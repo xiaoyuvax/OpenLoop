@@ -13,6 +13,8 @@ namespace OpenLoop.App
         private AntdUI.Button _btnEvolve;
         private AntdUI.Button _btnRollback;
         private AntdUI.Button _btnRule;
+        private AntdUI.Button _btnPrompt;
+        private AntdUI.Button _btnAgents;
         private AntdUI.Label _lblHint;
         private ToolTip _tips;
 
@@ -42,6 +44,8 @@ namespace OpenLoop.App
             _btnEvolve = new AntdUI.Button();
             _btnRollback = new AntdUI.Button();
             _btnRule = new AntdUI.Button();
+            _btnPrompt = new AntdUI.Button();
+            _btnAgents = new AntdUI.Button();
             _lblHint = new AntdUI.Label();
 
             _flow.Dock = DockStyle.Fill;
@@ -112,7 +116,7 @@ namespace OpenLoop.App
             _btnRollback.Click += OnRollback;
 
             _btnRule.Name = "btnRule";
-            _btnRule.Text = "新增规则";
+            _btnRule.Text = Localization.T("RuleAddTitle");
             _btnRule.Radius = 8;
             _btnRule.Height = 34;
             _btnRule.Width = 236;
@@ -120,12 +124,29 @@ namespace OpenLoop.App
             _btnRule.Margin = new Padding(0, 0, 0, 4);
             _btnRule.Click += OnAddRule;
 
+            _btnPrompt.Name = "btnPrompt";
+            _btnPrompt.Text = Localization.T("HarnessPromptObject");
+            _btnPrompt.Radius = 8;
+            _btnPrompt.Height = 34;
+            _btnPrompt.Width = 236;
+            _btnPrompt.IconSvg = UiIcons.Of(UiIcons.Edit, UiStyle.Text);
+            _btnPrompt.Margin = new Padding(0, 0, 0, 8);
+            _btnPrompt.Click += (_, _) => EditTargetRequested?.Invoke("prompt");
+
+            _btnAgents.Name = "btnAgents";
+            _btnAgents.Text = Localization.T("HarnessAgentsObject");
+            _btnAgents.Radius = 8;
+            _btnAgents.Height = 34;
+            _btnAgents.Width = 236;
+            _btnAgents.IconSvg = UiIcons.Of(UiIcons.Edit, UiStyle.Text);
+            _btnAgents.Margin = new Padding(0, 0, 0, 4);
+            _btnAgents.Click += (_, _) => EditTargetRequested?.Invoke("agents");
+
             _lblHint.AutoSize = false;
             _lblHint.TextMultiLine = true;
             _lblHint.Width = 236;
             _lblHint.Height = 60;
-            _lblHint.Text = "Harness 只改当前工作区的可演进参数（激活集：护栏开关、阈值、规则、"
-                + "技能顺序、模型参数）；不改代码/工具/提示词，其它工作区不受影响；考核题 A/B 更好才采纳。";
+            _lblHint.Text = Localization.T("HarnessHint");
             _lblHint.Font = new Font("Segoe UI", 8F);
             _lblHint.ForeColor = UiStyle.Muted;
             _lblHint.Margin = new Padding(0, 12, 0, 0);
@@ -138,6 +159,8 @@ namespace OpenLoop.App
             _flow.Controls.Add(_btnEvolve);
             _flow.Controls.Add(_btnRollback);
             _flow.Controls.Add(_btnRule);
+            _flow.Controls.Add(_btnPrompt);
+            _flow.Controls.Add(_btnAgents);
             _flow.Controls.Add(_lblHint);
 
             AutoScaleDimensions = new SizeF(7F, 17F);

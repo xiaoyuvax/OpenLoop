@@ -101,33 +101,33 @@ namespace OpenLoop.App
         private static string Format(TaskDraft draft)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("状态: " + draft.Status);
-            sb.AppendLine("草稿: " + draft.Id);
-            sb.AppendLine("题目 id: " + draft.Task.Id);
-            sb.AppendLine("问题: " + (draft.Task.Problem ?? ""));
-            sb.AppendLine("理由: " + (draft.Reason ?? ""));
-            sb.AppendLine("来源: " + (draft.Source?.Summary ?? "—"));
-            sb.AppendLine("创建: " + (draft.CreatedAt ?? ""));
+            sb.AppendLine(Localization.T("状态: ") + draft.Status);
+            sb.AppendLine(Localization.T("草稿: ") + draft.Id);
+            sb.AppendLine(Localization.T("题目 id: ") + draft.Task.Id);
+            sb.AppendLine(Localization.T("问题: ") + (draft.Task.Problem ?? ""));
+            sb.AppendLine(Localization.T("理由: ") + (draft.Reason ?? ""));
+            sb.AppendLine(Localization.T("来源: ") + (draft.Source?.Summary ?? "—"));
+            sb.AppendLine(Localization.T("创建: ") + (draft.CreatedAt ?? ""));
             if (!string.IsNullOrWhiteSpace(draft.DecidedAt))
-                sb.AppendLine($"决定: {draft.Status} · {draft.DecidedBy} · {draft.DecidedAt}");
+                sb.AppendLine(string.Format(Localization.T("DraftDecisionLine"), draft.Status, draft.DecidedBy, draft.DecidedAt));
             sb.AppendLine();
-            sb.AppendLine("提示词:");
+            sb.AppendLine(Localization.T("提示词:"));
             sb.AppendLine(draft.Task.Prompt ?? "");
             sb.AppendLine();
 
-            sb.AppendLine("起始文件:");
+            sb.AppendLine(Localization.T("起始文件:"));
             if (draft.Task.Seed is { Count: > 0 })
             {
                 foreach (var pair in draft.Task.Seed)
-                    sb.Append("  ").Append(pair.Key).Append("  (").Append((pair.Value ?? "").Length).AppendLine(" 字符)");
+                    sb.Append("  ").Append(pair.Key).Append("  (").Append((pair.Value ?? "").Length).AppendLine(Localization.T(" 字符)"));
             }
             else
             {
-                sb.AppendLine("  （无）");
+                sb.AppendLine(Localization.T("  （无）"));
             }
             sb.AppendLine();
 
-            sb.AppendLine("判定条件:");
+            sb.AppendLine(Localization.T("判定条件:"));
             foreach (var check in draft.Task.Checks ?? [])
             {
                 sb.Append("  - ").Append(check.Type);
@@ -160,7 +160,7 @@ namespace OpenLoop.App
             }
             catch (JsonException ex)
             {
-                _lblStatus.Text = "JSON 解析失败：" + ex.Message;
+                _lblStatus.Text = Localization.T("JSON 解析失败：") + ex.Message;
                 return false;
             }
 
@@ -171,7 +171,7 @@ namespace OpenLoop.App
                 _txtPreview.ReadOnly = true;
                 _btnSave.Visible = false;
                 RefreshList(draft.Id);
-                _lblStatus.Text = "已保存修改。";
+                _lblStatus.Text = Localization.T("已保存修改。");
                 return true;
             }
             catch (Exception ex)
@@ -190,7 +190,7 @@ namespace OpenLoop.App
             _btnSave.Visible = true;
             UpdateButtons();
             ShowDraft(draft);
-            _lblStatus.Text = "正在编辑 JSON；保存后回到预览。";
+            _lblStatus.Text = Localization.T("正在编辑 JSON；保存后回到预览。");
             _txtPreview.Focus();
         }
 
@@ -220,7 +220,7 @@ namespace OpenLoop.App
                     }
                     catch (Exception ex)
                     {
-                        if (!IsDisposed) _lblStatus.Text = "基线试跑失败：" + ex.Message;
+                        if (!IsDisposed) _lblStatus.Text = Localization.T("基线试跑失败：") + ex.Message;
                     }
                     finally
                     {
@@ -238,7 +238,7 @@ namespace OpenLoop.App
         {
             var draft = Selected;
             if (draft == null) return;
-            if (MessageBox.Show(this, "丢弃草稿「" + draft.Task.Id + "」？不会删除已有题集。", "丢弃草稿",
+            if (MessageBox.Show(this, Localization.T("丢弃草稿「") + draft.Task.Id + Localization.T("」？不会删除已有题集。"), Localization.T("丢弃草稿"),
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             try
             {
@@ -264,9 +264,9 @@ namespace OpenLoop.App
             {
                 string mark = Draft.Status switch
                 {
-                    TaskDrafts.StatusDraft => "待确认",
-                    TaskDrafts.StatusAccepted => "已采纳",
-                    _ => "已丢弃"
+                    TaskDrafts.StatusDraft => Localization.T("待确认"),
+                    TaskDrafts.StatusAccepted => Localization.T("已采纳"),
+                    _ => Localization.T("已丢弃")
                 };
                 string title = Draft.Task?.Problem ?? Draft.Task?.Id ?? Draft.Id;
                 if (title.Length > 18) title = title[..18] + "…";

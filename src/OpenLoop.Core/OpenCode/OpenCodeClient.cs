@@ -12,8 +12,13 @@ namespace OpenLoop.Core.OpenCode
 
     public sealed record OpenCodeSessionSnapshot(bool Idle, string Outcome, decimal? Cost, int? TokensIn, int? TokensOut);
 
+    /// <summary>
+    /// 会话里的一条消息。<see cref="Summary"/> 非空表示这是 OpenCode 自己压上下文后留下的摘要
+    /// （type=compaction），正文/思维链为空，不能当模型回复用。
+    /// </summary>
     public sealed record OpenCodeMessage(
-        string Text, string Reasoning, IReadOnlyList<string> Tools, IReadOnlyList<OpenCodeNativeTool> NativeTools);
+        string Text, string Reasoning, IReadOnlyList<string> Tools, IReadOnlyList<OpenCodeNativeTool> NativeTools,
+        string Summary = "", string CompactionStatus = "");
 
     /// <summary>模型在 OpenCode 侧直接调用的原生工具（不属于 OpenLoop 的 step 流）。</summary>
     public sealed record OpenCodeNativeTool(
@@ -29,6 +34,27 @@ namespace OpenLoop.Core.OpenCode
     public sealed record OpenCodeTurn(
         string Text, string Reasoning, decimal? Cost, int? TokensIn, int? TokensOut,
         IReadOnlyList<OpenCodeMessage> Messages);
+
+    /// <summary>
+    /// 一次调用连续很久没有任何输出（正文、思维链、工具状态都没动）。上游最常见的真因是它自己在压缩
+    /// 超长上下文（OpenCode 日志 "provider rejected the request as too long; compacting" 之后就没有事件），
+    /// 其次是免费额度表面成功、实际一直排队。宿主把它当「上下文超限」压缩后重试，而不是直接判任务失败。
+    /// </summary>
+    public sealed class OpenCodeStalledException : Exception
+    {
+        public OpenCodeStalledException(string sessionID, double seconds, string summary = "")
+            : base($"OpenCode 连续 {seconds:0} 秒没有任何输出，已中断该会话（{sessionID}）；" +
+                   "常见原因是上游在压缩超长上下文或额度排队。反复出现时请 /compact 压缩上下文或更换模型。")
+        {
+            SessionID = sessionID;
+            Summary = summary ?? "";
+        }
+
+        public string SessionID { get; }
+
+        /// <summary>上游已经压完的摘要（还没压完就是空）：宿主用它替换超长历史，比整段丢掉信息多得多。</summary>
+        public string Summary { get; }
+    }
 
     /// <summary>模型在下拉/设置里的稳定标识：opencode/&lt;modelID&gt;@&lt;providerID&gt;。</summary>
     public static class OpenCodeModelId
@@ -163,7 +189,7 @@ namespace OpenLoop.Core.OpenCode
                 () => ReadEventsAsync(sessionID,
                     text => { Touch(); onDelta?.Invoke(text); },
                     piece => { Touch(); onReasoning?.Invoke(piece); },
-                    completed, failure, streamCts.Token),
+                    completed, failure, onNotice, streamCts.Token),
                 streamCts.Token);
             // 审批单独轮询：decide 可能等人点（最长 60 秒），绝不能把消息/状态轮询一起卡住
             using var approvalsCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -189,6 +215,7 @@ namespace OpenLoop.Core.OpenCode
                 await PromptAsync(sessionID, prompt, ct);
 
                 OpenCodeSessionSnapshot snapshot = null;
+                string latestSummary = "";
                 string progress = "";
                 bool stopped = false;
                 while (!completed.Task.IsCompleted)
@@ -206,22 +233,38 @@ namespace OpenLoop.Core.OpenCode
 
                     // 有输出就一直等：正文/思维链增量、消息变长、原生工具换状态或产出变多都算在动。
                     if (DateTime.UtcNow.Ticks - Interlocked.Read(ref lastOutput) > idleLimit.Ticks)
-                        throw new TimeoutException(
-                            $"OpenCode 连续 {idleLimit.TotalSeconds:0} 秒没有任何输出，已判定挂住（会话 {sessionID}）");
+                    {
+                        await StopStalledAsync(sessionID);
+                        throw new OpenCodeStalledException(sessionID, idleLimit.TotalSeconds, latestSummary);
+                    }
 
                     await Task.Delay(700, ct);
-                    var polled = await GetMessagesAsync(sessionID, ct);
-                    string now = Progress(polled);
-                    if (!string.Equals(now, progress, StringComparison.Ordinal))
+                    try
                     {
-                        progress = now;
-                        Touch();
+                        var polled = await PollAsync(token => GetMessagesAsync(sessionID, token), ct);
+                        string now = Progress(polled);
+                        if (!string.Equals(now, progress, StringComparison.Ordinal))
+                        {
+                            progress = now;
+                            Touch();
+                        }
+                        // 上游压完上下文也算「还在动」：摘要是本轮历史，挂住重试时要把它带回去。
+                        string compacted = LastCompaction(polled);
+                        if (compacted.Length > 0) latestSummary = compacted;
+                        Collect(polled);
+                        snapshot = await PollAsync(token => GetSessionAsync(sessionID, token), ct);
+                        if (snapshot.Outcome.Length > 0) break;
                     }
-                    Collect(polled);
-                    snapshot = await GetSessionAsync(sessionID, ct);
-                    if (snapshot.Outcome.Length > 0) break;
+                    catch (TimeoutException)
+                    {
+                        // 单次轮询被上游卡住不算失败：空闲计时继续跑，别把一轮拖成永久挂起。
+                    }
                 }
-                snapshot ??= await GetSessionAsync(sessionID, ct);
+                if (snapshot == null)
+                {
+                    try { snapshot = await PollAsync(token => GetSessionAsync(sessionID, token), ct); }
+                    catch (TimeoutException) { }
+                }
 
                 // 被打断的一轮：会话可能报 failed、正文也可能只写了一半，都按「已停止」返回，
                 // 由 StopStep 把这一轮收尾；不能当成失败，也不重试。
@@ -238,7 +281,7 @@ namespace OpenLoop.Core.OpenCode
                 //429/额度/网关错误都在这里：不能当成「模型没说话」，否则用户只看到一句「没有返回正文」
                 if (!string.IsNullOrWhiteSpace(failure.Value))
                     throw new InvalidOperationException(failure.Value);
-                if (string.Equals(snapshot.Outcome, "failed", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(snapshot?.Outcome, "failed", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException($"OpenCode 会话 {sessionID} 以 failed 结束，没有返回错误详情");
 
                 var messages = await ReadMessagesAsync(sessionID, ct);
@@ -246,7 +289,7 @@ namespace OpenLoop.Core.OpenCode
                 return new OpenCodeTurn(
                     LastText(messages),
                     string.Concat(messages.Select(m => m.Reasoning)),
-                    snapshot.Cost, snapshot.TokensIn, snapshot.TokensOut, messages);
+                    snapshot?.Cost, snapshot?.TokensIn, snapshot?.TokensOut, messages);
             }
             finally
             {
@@ -254,9 +297,36 @@ namespace OpenLoop.Core.OpenCode
                 approvalsCts.Cancel();
                 await Task.WhenAny(stream, Task.Delay(TimeSpan.FromSeconds(2)));
                 await Task.WhenAny(approvals, Task.Delay(TimeSpan.FromSeconds(2)));
-                try { await DeleteSessionAsync(sessionID, CancellationToken.None); }
-                catch { }
+                // 清场也要有时限：会话卡住时 DELETE 会一直等，不能让它拖住收尾
+                using (var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                {
+                    try { await DeleteSessionAsync(sessionID, cleanup.Token); }
+                    catch { }
+                }
                 ActiveSessions.TryRemove(sessionID, out _);
+            }
+        }
+
+        /// <summary>上游卡住时先把会话真打断：不打断的话它会一直占着额度，下一轮还可能继续撞同一个会话。</summary>
+        private async Task StopStalledAsync(string sessionID)
+        {
+            using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try { await InterruptAsync(sessionID, stop.Token); }
+            catch { }
+        }
+
+        /// <summary>
+        /// 单次轮询最多等 30 秒。上游压缩上下文时 GET 会跟着卡住，实测一轮被拖到 17 分钟；
+        /// 超时不判失败，交回调用方继续跑空闲计时。
+        /// </summary>
+        private static async Task<T> PollAsync<T>(Func<CancellationToken, Task<T>> call, CancellationToken ct)
+        {
+            using var poll = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            poll.CancelAfter(TimeSpan.FromSeconds(30));
+            try { return await call(poll.Token); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new TimeoutException("OpenCode 轮询请求超时");
             }
         }
 
@@ -266,11 +336,13 @@ namespace OpenLoop.Core.OpenCode
         /// </summary>
         private async Task ReadEventsAsync(
             string sessionID, Action<string> onDelta, Action<string> onReasoning,
-            TaskCompletionSource<bool> completed, StrongBox<string> failure, CancellationToken ct)
+            TaskCompletionSource<bool> completed, StrongBox<string> failure, Action<string> onNotice,
+            CancellationToken ct)
         {
             const string types =
                 "types=session.text.delta&types=session.reasoning.delta" +
-                "&types=session.execution.succeeded&types=session.execution.failed&types=session.idle";
+                "&types=session.execution.succeeded&types=session.execution.failed&types=session.idle" +
+                "&types=session.compaction.started&types=session.compaction.ended";
 
             try
             {
@@ -304,6 +376,13 @@ namespace OpenLoop.Core.OpenCode
                             case "session.reasoning.delta":
                                 onReasoning?.Invoke(OpenCodeEndpoint.Str(data, "delta"));
                                 break;
+                            // 上游自己压上下文时不发正文，界面上会像「卡住」；给一句可见状态。
+                            case "session.compaction.started":
+                                onNotice?.Invoke("上游正在压缩上下文（历史超过它的实际上限），压缩完成后继续");
+                                break;
+                            case "session.compaction.ended":
+                                onNotice?.Invoke(null);
+                                break;
                             case "session.execution.failed":
                                 failure.Value = DescribeFailure(data);
                                 completed.TrySetResult(true);
@@ -328,19 +407,29 @@ namespace OpenLoop.Core.OpenCode
             }
         }
 
-        /// <summary>进度指纹：正文/思维链变长、原生工具换状态或产出变多，都算「还在动」。</summary>
+        /// <summary>进度指纹：正文/思维链变长、原生工具换状态或产出变多、上游压缩进度变化，都算「还在动」。</summary>
         internal static string Progress(IReadOnlyList<OpenCodeMessage> messages)
         {
             var sb = new StringBuilder();
             foreach (var message in messages)
             {
-                sb.Append(message.Text.Length).Append(':').Append(message.Reasoning.Length).Append(':');
+                sb.Append(message.Text.Length).Append(':').Append(message.Reasoning.Length).Append(':')
+                    .Append(message.Summary.Length).Append(':').Append(message.CompactionStatus).Append(':');
                 foreach (var tool in message.NativeTools)
                     sb.Append(tool.Status).Append('/').Append(tool.Input.Length)
                         .Append('/').Append(tool.Output.Length).Append(',');
                 sb.Append('|');
             }
             return sb.ToString();
+        }
+
+        /// <summary>最新一条已完成的压缩摘要；还在压（没有 summary）返回空。</summary>
+        internal static string LastCompaction(IReadOnlyList<OpenCodeMessage> messages)
+        {
+            string summary = "";
+            foreach (var message in messages)
+                if (message.Summary.Length > 0) summary = message.Summary;
+            return summary;
         }
 
         private static string LastText(IReadOnlyList<OpenCodeMessage> messages)
@@ -579,7 +668,16 @@ namespace OpenLoop.Core.OpenCode
 
             foreach (var item in data.EnumerateArray())
             {
-                if (OpenCodeEndpoint.Str(item, "type") != "assistant") continue;
+                string type = OpenCodeEndpoint.Str(item, "type");
+                // 上游自己压上下文后会留下 type=compaction 的消息：summary 就是压缩后的历史。
+                // 不能当模型回复（正文/思维链为空），但可以拿回去替换超长历史。
+                if (type == "compaction")
+                {
+                    messages.Add(new OpenCodeMessage("", "", [], [], OpenCodeEndpoint.Str(item, "summary"),
+                        OpenCodeEndpoint.Str(item, "status")));
+                    continue;
+                }
+                if (type != "assistant") continue;
 
                 var text = new StringBuilder();
                 var reasoning = new StringBuilder();

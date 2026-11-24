@@ -35,16 +35,14 @@ namespace OpenLoop.App
             _plan = plan ?? [];
             _upstreamNewer = upstreamNewer;
 
-            Text = "迭代确认";
+            Text = Localization.T("IterTitleConfirm");
             _txtSummary.Text = summary ?? "";
             // 行高用 Dip() 缩放，容器高度也用同一把尺子：否则高分屏上最后几个部件会被裁掉
             _root.RowStyles[0] = new RowStyle(SizeType.Absolute, Dip(222));
             RenderPlan();
-            _lblStatus.Text = upstreamNewer
-                ? "上游有更新，请先更新源码；仍可用本地代码继续迭代。"
-                : _plan.Any(p => p.Update)
-                    ? "确认后开始：A 与 I 不会同时换，壳最后重启。"
-                    : "没有部件需要更新：源码或依赖有变化才需要迭代。";
+            _lblStatus.Text = Localization.T(upstreamNewer
+                ? "IterUpstreamStatus"
+                : _plan.Any(p => p.Update) ? "IterReadyHint" : "IterNoUpdates");
             SyncButtons();
         }
 
@@ -62,7 +60,7 @@ namespace OpenLoop.App
             // 报告模式没有可退回的版本时也留着按钮（灰掉），别让入口忽隐忽现
             _btnRollback.Visible = true;
 
-            Text = report is { Ok: true } ? "迭代完成" : "迭代失败";
+            Text = Localization.T(report is { Ok: true } ? "IterTitleDone" : "IterTitleFailed");
             _planScroll.Visible = false;
             _root.RowStyles[0] = new RowStyle(SizeType.Absolute, 0F);
             _lblSummary.Visible = false;
@@ -74,11 +72,11 @@ namespace OpenLoop.App
             _btnStart.Visible = false;
             _modeRow.Visible = false;
             _root.RowStyles[5] = new RowStyle(SizeType.Absolute, 0F);
-            _btnClose.Text = "关闭";
+            _btnClose.Text = Localization.T("Close");
             _txtLog.Text = IterationRunner.ReportText(report);
             _lblStatus.Text = report is { Ok: true }
-                ? "成功" + (report.ShellRestarted ? "（壳已重启）" : "")
-                : "失败" + (report.RolledBack ? "，已回退到迭代前的版本" : "");
+                ? Localization.T("IterOk") + (report.ShellRestarted ? Localization.T("IterShellRestarted") : "")
+                : Localization.T("IterFailed") + (report.RolledBack ? Localization.T("IterRolledBackToBefore") : "");
             SyncButtons();
         }
 
@@ -122,10 +120,10 @@ namespace OpenLoop.App
             for (int i = 0; i <= _plan.Count; i++)
                 _planHost.RowStyles.Add(new RowStyle(SizeType.Absolute, Dip(26)));
 
-            Cell("部件", 0, 0, bold: true);
-            Cell("现版本", 1, 0, bold: true);
-            Cell("目标版本", 2, 0, bold: true);
-            Cell("动作", 3, 0, bold: true);
+            Cell(Localization.T("IterColPart"), 0, 0, bold: true);
+            Cell(Localization.T("IterColCurrent"), 1, 0, bold: true);
+            Cell(Localization.T("IterColTarget"), 2, 0, bold: true);
+            Cell(Localization.T("IterColAction"), 3, 0, bold: true);
 
             for (int i = 0; i < _plan.Count; i++)
             {
@@ -141,7 +139,7 @@ namespace OpenLoop.App
         }
 
         private static string ActionOf(RolePlan plan)
-            => !plan.Update ? "不变" : plan.Current == plan.Target ? "重编" : "升版";
+            => Localization.T(!plan.Update ? "IterActKeep" : plan.Current == plan.Target ? "IterActRebuild" : "IterActBump");
 
         private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
 
@@ -180,17 +178,17 @@ namespace OpenLoop.App
             // 上游更新只做提醒，不禁止：用户可以选择仍用本地代码迭代
             if (confirmUpstream && _upstreamNewer &&
                 MessageBox.Show(this,
-                    "上游有更新，请先更新源码。\n仍要用本地代码继续迭代吗？",
-                    "上游有更新", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    Localization.T("IterUpstreamAsk"),
+                    Localization.T("IterUpstreamTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                     MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                 return;
 
             _running = true;
             _btnStart.Enabled = false;
             _btnClose.Enabled = false;
-            _btnClose.Text = "执行中…";
+            _btnClose.Text = Localization.T("IterBusy");
             SyncButtons();
-            _lblStatus.Text = "正在执行…";
+            _lblStatus.Text = Localization.T("IterRunning");
             _cts = new CancellationTokenSource();
 
             try
@@ -198,10 +196,10 @@ namespace OpenLoop.App
                 // 迭代由 I 执行：这里只提交、轮询、显示；换 I 期间请求会短暂断开
                 using var client = new LoopApiClient();
                 string mode = _selMode.SelectedValue as string ?? Iteration.FrameworkMode;
-                Log("发布形态：" + (mode == Iteration.SelfContainedMode ? "自带框架" : "框架依赖"));
+                Log(Localization.T("IterModeLabel") + (mode == Iteration.SelfContainedMode ? Localization.T("IterSelfContained") : Localization.T("IterFrameworkDependent")));
                 await client.StartIterationAsync(_workspace, true, mode, _cts.Token);
-                Log("开始：" + (_plan.Where(p => p.Update).Select(p => $"{p.Label} {p.Current}→{p.Target}")
-                    .DefaultIfEmpty("仅重新编译").Aggregate((a, b) => a + "；" + b)));
+                Log(Localization.T("IterStartLog") + (_plan.Where(p => p.Update).Select(p => $"{p.Label} {p.Current}→{p.Target}")
+                    .DefaultIfEmpty(Localization.T("IterRebuildOnly")).Aggregate((a, b) => a + Localization.T("ListSep") + b)));
 
                 var state = await client.WaitIterationAsync(_workspace, Log, TimeSpan.FromMinutes(15), _cts.Token);
                 var report = state.Report ?? new IterationReport { Workspace = _workspace };
@@ -214,7 +212,7 @@ namespace OpenLoop.App
                 {
                     Log(IterationRunner.ReportText(report));
                     if (!string.IsNullOrWhiteSpace(state.Error)) Log(state.Error);
-                    _lblStatus.Text = report.RolledBack ? "失败，已回退" : "失败";
+                    _lblStatus.Text = Localization.T(report.RolledBack ? "IterFailedRolledBack" : "IterFailed");
                     Finish();
                     return;
                 }
@@ -222,33 +220,33 @@ namespace OpenLoop.App
                 if (report.Steps.Count > 0) Log(IterationRunner.ReportText(report));
                 if (!string.IsNullOrWhiteSpace(report.ShellDir))
                 {
-                    _lblStatus.Text = "即将重启壳：界面会退出，重启后自动回到这里";
-                    Log("3 秒后重启壳（A/I 已完成，壳放到最后一步）。");
+                    _lblStatus.Text = Localization.T("IterRestarting");
+                    Log(Localization.T("IterRestartLog"));
                     await Task.Delay(3000);
                     if (ShellRestart?.Invoke(report) == true) return;
                     // 用户选择先不重启（有会话在跑）：A/I 已是新版本、新壳已发布，留个入口稍后切换
                     _pendingRestart = report;
                     report.ShellRestarted = false;
-                    _lblStatus.Text = "成功（壳未重启）：会话跑完点「重启壳」";
-                    Log("壳未重启：新壳已发布，会话跑完后点「重启壳」完成切换。");
+                    _lblStatus.Text = Localization.T("IterOkNoRestart");
+                    Log(Localization.T("IterNoRestartLog"));
                     Finish();
                     return;
                 }
 
-                _lblStatus.Text = "成功";
+                _lblStatus.Text = Localization.T("IterOk");
                 Finish();
             }
             catch (OperationCanceledException)
             {
-                _lblStatus.Text = "已取消";
-                Log("已取消。");
+                _lblStatus.Text = Localization.T("IterCancelled");
+                Log(Localization.T("IterCancelledLog"));
                 Finish();
             }
             catch (Exception ex)
             {
                 AppLog.Error("迭代异常", ex);
-                _lblStatus.Text = "失败";
-                Log("异常：" + ex.Message);
+                _lblStatus.Text = Localization.T("IterFailed");
+                Log(Localization.T("IterErrorLog") + ex.Message);
                 Finish();
             }
             finally
@@ -262,7 +260,7 @@ namespace OpenLoop.App
         {
             _running = false;
             _btnClose.Enabled = true;
-            _btnClose.Text = "关闭";
+            _btnClose.Text = Localization.T("Close");
             SyncButtons();
             // 这一轮刚改过版本号/源码，工作树状态会变，重新问一次
             _ = RefreshGitStateAsync();
@@ -271,7 +269,7 @@ namespace OpenLoop.App
         /// <summary>按钮可用性只有一处口径：没有要升/重编的部件不给开始，工作树干净不给提交。</summary>
         private void SyncButtons()
         {
-            _btnStart.Text = _pendingRestart != null ? "重启壳" : "开始迭代";
+            _btnStart.Text = Localization.T(_pendingRestart != null ? "IterRestartShell" : "IterStart");
             _btnStart.Enabled = !_reportMode && !_running
                 && (_pendingRestart != null || _plan.Any(p => p.Update));
             _btnCommit.Enabled = _btnPush.Enabled = _hasGitChanges && !_running && !_gitBusy && !_rollingBack;
@@ -307,25 +305,25 @@ namespace OpenLoop.App
             if (_gitBusy || _running || _rollingBack) return;
             _gitBusy = true;
             SyncButtons();
-            _lblStatus.Text = push ? "正在提交并推送…" : "正在提交…";
+            _lblStatus.Text = Localization.T(push ? "IterCommittingPush" : "IterCommitting");
 
             try
             {
                 using var client = new LoopApiClient(timeout: TimeSpan.FromMinutes(5));
                 var status = await client.GitStatusAsync();
                 foreach (var bad in (status?.Repos ?? []).Where(r => !string.IsNullOrWhiteSpace(r.Error)))
-                    Log($"跳过 {bad.Id}：{bad.Error}");
+                    Log(string.Format(Localization.T("IterSkipRepo"), bad.Id, bad.Error));
 
                 var repos = (status?.Repos ?? []).Where(r => r.Files.Count > 0).ToList();
                 if (repos.Count == 0)
                 {
-                    Log("工作树是干净的，没有可提交的改动。");
-                    _lblStatus.Text = "没有改动";
+                    Log(Localization.T("IterNoChangesLog"));
+                    _lblStatus.Text = Localization.T("IterNoChanges");
                     return;
                 }
 
                 foreach (var repo in repos)
-                    Log($"预览 {repo.Id}（{repo.Branch}，{repo.Files.Count} 个文件）"
+                    Log(string.Format(Localization.T("IterPreviewRepo"), repo.Id, repo.Branch, repo.Files.Count)
                         + (string.IsNullOrWhiteSpace(repo.DiffStat) ? "" : " · " + repo.DiffStat));
 
                 var tokens = repos.ToDictionary(r => r.Id, r => r.Token, StringComparer.OrdinalIgnoreCase);
@@ -336,21 +334,21 @@ namespace OpenLoop.App
                 {
                     if (!repo.Ok)
                     {
-                        Log($"FAIL {repo.Id}：{repo.Error}");
+                        Log(string.Format(Localization.T("IterRepoFail"), repo.Id, repo.Error));
                         continue;
                     }
-                    string extra = push ? (repo.Pushed ? "（已推送）" : "（推送失败：" + repo.Error + "）") : "";
+                    string extra = push ? (repo.Pushed ? Localization.T("IterPushed") : string.Format(Localization.T("IterPushFailed"), repo.Error)) : "";
                     Log($"OK {repo.Id} {repo.Commit}{extra}");
                 }
 
                 bool allOk = result?.Repos is { Count: > 0 } list && list.All(r => r.Ok);
-                _lblStatus.Text = allOk ? (push ? "已提交并推送" : "已提交") : "提交未全部成功（见进度）";
+                _lblStatus.Text = Localization.T(allOk ? (push ? "IterCommittedPush" : "IterCommitted") : "IterCommitPartial");
             }
             catch (Exception ex)
             {
                 AppLog.Error("提交失败", ex);
-                Log("提交异常：" + ex.Message);
-                _lblStatus.Text = "提交失败";
+                Log(Localization.T("IterCommitErrorLog") + ex.Message);
+                _lblStatus.Text = Localization.T("IterCommitFailed");
             }
             finally
             {
@@ -376,21 +374,22 @@ namespace OpenLoop.App
             if (roles.Count == 0)
             {
                 _canRollback = false;
-                _lblStatus.Text = "当前已经是迭代前版本";
+                _lblStatus.Text = Localization.T("IterAlreadyBefore");
                 SyncButtons();
                 return;
             }
 
-            string target = string.Join("、", roles.Select(r => $"{r} {before[r].Version}"));
-            if (MessageBox.Show(this, $"退回上一版本？\n{target}\n壳保持当前版本。", "退回上一版本",
+            string target = string.Join(Localization.T("ListSep"), roles.Select(r => $"{r} {before[r].Version}"));
+            if (MessageBox.Show(this, string.Format(Localization.T("IterRollbackAsk"), target),
+                    Localization.T("IterRollback"),
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                 return;
 
             _rollingBack = true;
             SyncButtons();
             _btnClose.Enabled = false;
-            _lblStatus.Text = "正在退回…";
-            Log("回退：" + target);
+            _lblStatus.Text = Localization.T("IterRollingBack");
+            Log(Localization.T("IterRollbackLog") + target);
 
             try
             {
@@ -400,19 +399,19 @@ namespace OpenLoop.App
                     // 下一轮把这两个角色当「未发布」，重编当前源码版本；被退回的 I 可能是旧版，只能改共享基准
                     VersionState.Forget(roles);
                     _rolledBack = true;
-                    _lblStatus.Text = "已退回上一版本（壳未变）";
-                    Log("已退回：" + target);
+                    _lblStatus.Text = Localization.T("IterRolledBack");
+                    Log(Localization.T("IterRolledBackLog") + target);
                 }
                 else
                 {
-                    _lblStatus.Text = "退回未全部成功；worker 忙就等这一轮跑完再试";
+                    _lblStatus.Text = Localization.T("IterRollbackPartial");
                 }
             }
             catch (Exception ex)
             {
                 AppLog.Error("退回失败", ex);
-                Log("退回异常：" + ex.Message);
-                _lblStatus.Text = "退回失败";
+                Log(Localization.T("IterRollbackErrorLog") + ex.Message);
+                _lblStatus.Text = Localization.T("IterRollbackFailed");
             }
             finally
             {

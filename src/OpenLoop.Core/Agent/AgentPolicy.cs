@@ -61,6 +61,21 @@ namespace OpenLoop.Core.Agent
         /// <summary>服务端报上下文超限后「压缩再试」的次数；0 表示不重试。</summary>
         public int CompressRetries { get; set; } = 2;
 
+        /// <summary>连接层失败时一直重试到连上（判据 IsConnectFailure）。</summary>
+        public bool ConnectRetry { get; set; } = true;
+
+        /// <summary>重试退避起点（秒）；前三次都用它。</summary>
+        public int ConnectRetryBaseSeconds { get; set; } = 5;
+
+        /// <summary>重试退避封顶（秒）。</summary>
+        public int ConnectRetryMaxSeconds { get; set; } = 300;
+
+        /// <summary>免费额度耗尽后交给 ConnMan 换节点自愈。</summary>
+        public bool FreeLimitRecovery { get; set; } = true;
+
+        /// <summary>退化输出（词沙拉/复读）整段丢弃后的重试次数；用尽按已跑进度收尾。</summary>
+        public int MaxDegenerateRetries { get; set; } = 2;
+
         /// <summary>按上下文窗口算出单次任务的输出 token 预算；&lt;=0 表示不限。</summary>
         public int OutputTokenBudgetFor(int contextLimit)
         {

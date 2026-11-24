@@ -20,7 +20,7 @@ namespace OpenLoop.App
             if (_optimize == null) return;
             if (RuleText.Length == 0)
             {
-                AntdUI.Notification.warn(this, "规则为空", "先写一条规则，再让 AI 优化。",
+                AntdUI.Notification.warn(this, Localization.T("RuleEmpty"), Localization.T("RuleEmptyOptimizeBody"),
                     AntdUI.TAlignFrom.TR, null, 4);
                 _txtRule.Focus();
                 return;
@@ -28,22 +28,22 @@ namespace OpenLoop.App
 
             _btnOptimize.Enabled = false;
             _btnSave.Enabled = false;
-            _lblHint.Text = "正在优化…";
+            _lblHint.Text = Localization.T("RuleOptimizing");
             try
             {
                 string improved = await _optimize(RuleName, RuleText, CancellationToken.None);
                 if (IsDisposed) return;
                 if (string.IsNullOrWhiteSpace(improved))
                 {
-                    _lblHint.Text = "模型没有返回规则，保持原文。";
+                    _lblHint.Text = Localization.T("RuleOptimizeEmpty");
                     return;
                 }
                 _txtRule.Text = improved;
-                _lblHint.Text = "已优化，请检查后登记（不会自动保存）。";
+                _lblHint.Text = Localization.T("RuleOptimized");
             }
             catch (Exception ex)
             {
-                if (!IsDisposed) _lblHint.Text = "优化失败：" + ex.Message;
+                if (!IsDisposed) _lblHint.Text = Localization.T("RuleOptimizeFailed") + ex.Message;
             }
             finally
             {
@@ -59,7 +59,7 @@ namespace OpenLoop.App
         {
             if (RuleText.Length == 0)
             {
-                AntdUI.Notification.warn(this, "规则为空", "请填写规则正文。",
+                AntdUI.Notification.warn(this, Localization.T("RuleEmpty"), Localization.T("RuleEmptySaveBody"),
                     AntdUI.TAlignFrom.TR, null, 4);
                 _txtRule.Focus();
                 return;

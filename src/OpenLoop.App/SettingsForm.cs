@@ -118,14 +118,14 @@ namespace OpenLoop.App
 
         private static string DisplayName(ProviderConfig p)
         {
-            if (p == null) return "未命名";
-            if (!p.IsPlugin) return string.IsNullOrWhiteSpace(p.Name) ? "未命名" : p.Name.Trim();
+            if (p == null) return Localization.T("Unnamed");
+            if (!p.IsPlugin) return string.IsNullOrWhiteSpace(p.Name) ? Localization.T("Unnamed") : p.Name.Trim();
             string plugin = string.IsNullOrWhiteSpace(p.PluginName) ? p.PluginId : p.PluginName.Trim();
             string own = p.Name?.Trim() ?? "";
             string label = string.IsNullOrWhiteSpace(plugin) ? own : plugin;
             if (own.Length > 0 && plugin.Length > 0 && !string.Equals(own, plugin, StringComparison.OrdinalIgnoreCase))
                 label += " · " + own;
-            return (label.Length == 0 ? "未命名" : label) + "（插件）";
+            return (label.Length == 0 ? Localization.T("Unnamed") : label) + Localization.T("PluginSuffix");
         }
 
         private void OnProviderChanged(object sender, AntdUI.ObjectNEventArgs e)
@@ -155,14 +155,14 @@ namespace OpenLoop.App
                 _txtKey.Enabled = has && !plugin;
                 _btnFetch.Visible = has && !plugin && provider.AutoModels;
                 _lblHint.Text = !has
-                    ? "先添加一个提供商。"
+                    ? Localization.T("ProviderNone")
                     : plugin
                         ? (provider.PluginReady
-                            ? "插件提供商（" + provider.PluginName + "）：地址与密钥归插件清单管；模型的增删写回它的 plugin.json。勾选=启用，取消勾选=停用（不进出模型下拉）。"
-                            : "插件提供商（" + provider.PluginName + "）当前不可用：服务/地址没就绪，模型先按清单列出，也可以先停用。")
+                            ? string.Format(Localization.T("ProviderPluginHint"), provider.PluginName)
+                            : string.Format(Localization.T("ProviderPluginOfflineHint"), provider.PluginName))
                         : provider.AutoModels
-                            ? "内置提供商：点「拉取模型」同步该提供商的模型列表。勾选=启用，取消勾选=停用（不进出模型下拉）。"
-                            : "自定义提供商：逐条添加模型 id（例如 gpt-4o-mini）。勾选=启用，取消勾选=停用（不进出模型下拉）。";
+                            ? Localization.T("ProviderBuiltInHint")
+                            : Localization.T("ProviderCustomHint");
                 _lblStatus.Text = "";
                 _btnRemoveProvider.Enabled = has && !plugin;
                 _btnAddModel.Enabled = has;
@@ -191,7 +191,7 @@ namespace OpenLoop.App
             foreach (var preset in ProviderPresets.All)
                 items.Add(new AntdUI.ContextMenuStripItem(preset.Name) { ID = preset.Kind });
             items.Add(new AntdUI.ContextMenuStripItemDivider());
-            items.Add(new AntdUI.ContextMenuStripItem("自定义") { ID = "custom" });
+            items.Add(new AntdUI.ContextMenuStripItem(Localization.T("CustomPreset")) { ID = "custom" });
 
             AntdUI.ContextMenuStrip.open(_btnAddProvider, selected =>
             {
@@ -200,7 +200,7 @@ namespace OpenLoop.App
                 var provider = new ProviderConfig
                 {
                     Kind = preset?.Kind ?? "custom",
-                    Name = UniqueName(preset?.Name ?? "自定义"),
+                    Name = UniqueName(preset?.Name ?? Localization.T("CustomPreset")),
                     BaseUrl = preset?.BaseUrl ?? ""
                 };
                 _providers.Add(provider);
@@ -226,11 +226,12 @@ namespace OpenLoop.App
             if (provider == null) return;
             if (provider.IsPlugin)
             {
-                AntdUI.Notification.warn(this, "插件提供商",
-                    "它来自插件清单，请到「插件」页卸载或改清单。", AntdUI.TAlignFrom.TR, null, 4);
+                AntdUI.Notification.warn(this, Localization.T("PluginProviderTitle"),
+                    Localization.T("PluginProviderBody"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
-            if (MessageBox.Show(this, $"删除提供商「{DisplayName(provider)}」？", "设置",
+            if (MessageBox.Show(this, string.Format(Localization.T("DeleteProvider"), DisplayName(provider)),
+                    Localization.T("SettingsTitle"),
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
@@ -248,7 +249,7 @@ namespace OpenLoop.App
             CommitProvider(provider);
 
             _btnFetch.Enabled = false;
-            _lblStatus.Text = "正在拉取模型…";
+            _lblStatus.Text = Localization.T("FetchingModels");
             try
             {
                 var ids = await ProviderCatalog.FetchModelsAsync(provider);
@@ -273,13 +274,13 @@ namespace OpenLoop.App
                 try { _txtModelId.Text = ""; }
                 finally { _filling = false; }
                 ReloadModelList(provider);
-                _lblStatus.Text = $"拉取到 {ids.Count} 个模型";
+                _lblStatus.Text = string.Format(Localization.T("FetchedModels"), ids.Count);
             }
             catch (Exception ex)
             {
-                _lblStatus.Text = "拉取失败";
+                _lblStatus.Text = Localization.T("FetchFailed");
                 AppLog.Error("拉取模型失败", ex);
-                AntdUI.Notification.error(this, "拉取失败", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AntdUI.Notification.error(this, Localization.T("FetchFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
             }
             finally
             {
@@ -350,7 +351,8 @@ namespace OpenLoop.App
                 return;
             }
 
-            if (MessageBox.Show(this, $"把模型「{id}」加入「{DisplayName(provider)}」？", "添加模型",
+            if (MessageBox.Show(this, string.Format(Localization.T("AddModelBody"), id, DisplayName(provider)),
+                    Localization.T("AddModel"),
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
@@ -390,7 +392,7 @@ namespace OpenLoop.App
             if (provider == null || string.IsNullOrWhiteSpace(id))
             {
                 if (ReferenceEquals(sender, _btnModelProps))
-                    AntdUI.Notification.warn(this, "先选模型", "在下面的列表里选中一个模型再改属性。",
+                    AntdUI.Notification.warn(this, Localization.T("PickModelFirst"), Localization.T("PickModelFirstBody"),
                         AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
@@ -406,7 +408,7 @@ namespace OpenLoop.App
             {
                 if (provider.Models.Contains(newId, StringComparer.OrdinalIgnoreCase))
                 {
-                    AntdUI.Notification.warn(this, "模型已存在", $"列表里已有 {newId}，换个 id。",
+                    AntdUI.Notification.warn(this, Localization.T("ModelExists"), string.Format(Localization.T("ModelExistsBody"), newId),
                         AntdUI.TAlignFrom.TR, null, 4);
                     return;
                 }
@@ -436,7 +438,9 @@ namespace OpenLoop.App
             try { _txtModelId.Text = ""; }
             finally { _filling = false; }
             ReloadModelList(provider);
-            _lblStatus.Text = count > 0 ? $"已清除 {count} 个模型" : "模型列表已为空";
+            _lblStatus.Text = count > 0
+                ? string.Format(Localization.T("ClearedModels"), count)
+                : Localization.T("ModelListEmpty");
         }
 
         private async void OnTestProvider(object sender, EventArgs e)
@@ -448,27 +452,27 @@ namespace OpenLoop.App
             string model = _lstModels.SelectedItem as string ?? provider.Models.FirstOrDefault();
             if (string.IsNullOrWhiteSpace(provider.BaseUrl) || string.IsNullOrWhiteSpace(model))
             {
-                AntdUI.Notification.warn(this, "缺少配置", "接口地址和至少一个模型都要有。",
+                AntdUI.Notification.warn(this, Localization.T("MissingConfig"), Localization.T("MissingConfigBody"),
                     AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
 
             _btnTest.Enabled = false;
-            _lblStatus.Text = "正在测试连接…";
+            _lblStatus.Text = Localization.T("TestingConnection");
             try
             {
                 var reasoner = new OpenAiCompatibleReasoner(
                     provider.BaseUrl.Trim(), model, AppSettings.ResolveKey(provider));
                 var reply = await reasoner.CompleteAsync([new LlmMessage("user", "只回复两个字母：ok")]);
-                _lblStatus.Text = "连接正常";
-                AntdUI.Notification.success(this, "连接正常",
+                _lblStatus.Text = Localization.T("ConnectionOk");
+                AntdUI.Notification.success(this, Localization.T("ConnectionOk"),
                     $"{model} → {reply.Content?.Trim()}", AntdUI.TAlignFrom.TR, null, 4);
             }
             catch (Exception ex)
             {
-                _lblStatus.Text = "连接失败";
+                _lblStatus.Text = Localization.T("ConnectionFailed");
                 AppLog.Error("测试连接失败", ex);
-                AntdUI.Notification.error(this, "连接失败", ex.Message, AntdUI.TAlignFrom.TR, null, 6);
+                AntdUI.Notification.error(this, Localization.T("ConnectionFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 6);
             }
             finally
             {
@@ -509,8 +513,8 @@ namespace OpenLoop.App
 
             if (!global && string.IsNullOrWhiteSpace(_workspace))
             {
-                _lblSkillsPath.Text = "先在项目里打开一个会话，或切到「全局」管理全局技能";
-                _tblSkills.EmptyText = "没有可管理的技能";
+                _lblSkillsPath.Text = Localization.T("SkillsNoWorkspace");
+                _tblSkills.EmptyText = Localization.T("SkillsNoneManageable");
                 RebindSkills();
                 return;
             }
@@ -545,14 +549,14 @@ namespace OpenLoop.App
             }
 
             if (load != _skillLoad) return;   //切页/连点时只认最后一次
-            _tblSkills.EmptyText = global ? "全局还没有技能" : "这个工作区还没有技能";
+            _tblSkills.EmptyText = global ? Localization.T("SkillsEmptyGlobal") : Localization.T("SkillsEmptyProject");
             foreach (var skill in catalog.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
             {
                 _skillRows.Add(new SkillRow(skill.Name, skill.Description,
                     enabled.Contains(skill.Name),
-                    skill.Global ? "全局"
-                        : (skill.Source ?? "").StartsWith(".opencode/", StringComparison.Ordinal) ? "项目 .opencode"
-                        : "项目",
+                    skill.Global ? Localization.T("ScopeGlobal")
+                        : (skill.Source ?? "").StartsWith(".opencode/", StringComparison.Ordinal) ? Localization.T("ProjectOpencode")
+                        : Localization.T("ScopeProject"),
                     skill));
             }
             RebindSkills();
@@ -571,7 +575,9 @@ namespace OpenLoop.App
         private void UpdateSkillToggle()
         {
             var rows = SelectedSkills();
-            _btnSkillToggle.Text = rows.Count == 0 ? "启用/停用" : rows.Any(row => row.On) ? "停用" : "启用";
+            _btnSkillToggle.Text = rows.Count == 0
+                ? Localization.T("SkillToggle")
+                : rows.Any(row => row.On) ? Localization.T("SkillDisable") : Localization.T("SkillEnable");
         }
 
         private void OnSkillScopeChanged(object sender, AntdUI.ObjectNEventArgs e)
@@ -598,7 +604,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 AppLog.Error("切换技能失败", ex);
-                AntdUI.Notification.error(this, "技能", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AntdUI.Notification.error(this, Localization.T("TabSkills"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
             await LoadSkillsAsync();
@@ -610,7 +616,7 @@ namespace OpenLoop.App
         {
             if (!GlobalSkillScope && string.IsNullOrWhiteSpace(_workspace)) return;
             string root = SkillRoot;
-            using var dialog = new FolderBrowserDialog { Description = "选择技能目录（里面要有 SKILL.md）" };
+            using var dialog = new FolderBrowserDialog { Description = Localization.T("PickSkillFolder") };
             if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
 
             try
@@ -620,7 +626,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, "安装技能", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AntdUI.Notification.error(this, Localization.T("InstallSkill"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
             await LoadSkillsAsync();
@@ -634,7 +640,7 @@ namespace OpenLoop.App
             if (rows.Count == 0) return;
             if (rows.Count > 1)
             {
-                AntdUI.Notification.warn(this, "卸载技能", "一次只卸载一个技能", AntdUI.TAlignFrom.TR, null, 4);
+                AntdUI.Notification.warn(this, Localization.T("UninstallSkill"), Localization.T("UninstallOneOnly"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
             var row = rows[0];
@@ -642,19 +648,19 @@ namespace OpenLoop.App
             //项目页同名的全局技能只是被项目那份盖住，卸载得回全局页做
             if (!GlobalSkillScope && row.Skill.Global)
             {
-                AntdUI.Notification.warn(this, "卸载技能", "全局技能请切到「全局」里卸载", AntdUI.TAlignFrom.TR, null, 4);
+                AntdUI.Notification.warn(this, Localization.T("UninstallSkill"), Localization.T("UninstallGlobalFirst"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
             //.opencode 下的是 opencode agent 装的：不归 OpenLoop 管，也不在技能库根目录下
             if (!GlobalSkillScope && (row.Skill.Source ?? "").StartsWith(".opencode/", StringComparison.Ordinal))
             {
-                AntdUI.Notification.warn(this, "卸载技能",
-                    "这个技能装在 .opencode/skills 里，由 opencode 安装，请在那里删除", AntdUI.TAlignFrom.TR, null, 4);
+                AntdUI.Notification.warn(this, Localization.T("UninstallSkill"),
+                    Localization.T("UninstallOpencodeOwned"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
             if (MessageBox.Show(this,
-                    $"确定卸载技能「{row.Name}」？\n\n会删除整个目录，不可恢复：\n{row.Skill.Directory}",
-                    "卸载技能", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    string.Format(Localization.T("UninstallSkillConfirm"), row.Name, row.Skill.Directory),
+                    Localization.T("UninstallSkill"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                     MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                 return;
 
@@ -671,7 +677,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, "卸载技能", ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AntdUI.Notification.error(this, Localization.T("UninstallSkill"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
             await LoadSkillsAsync();
@@ -687,15 +693,15 @@ namespace OpenLoop.App
 
         private static AntdUI.CellBadge SkillBadge(SkillRow row)
             => row?.On == true
-                ? new AntdUI.CellBadge(AntdUI.TState.Success, "启用")
-                : new AntdUI.CellBadge(AntdUI.TState.Default, "停用");
+                ? new AntdUI.CellBadge(AntdUI.TState.Success, Localization.T("Enabled"))
+                : new AntdUI.CellBadge(AntdUI.TState.Default, Localization.T("Disabled"));
 
         private void OnSave(object sender, EventArgs e)
         {
             if (_switchFullAccess.Checked && !_source.FullAccess
                 && MessageBox.Show(this,
-                    "完全许可会关闭路径边界、命令审批与环境变量隔离，子进程可能拿到密钥，也可以直接访问网络与任意路径。确定启用？",
-                    "完全许可", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    Localization.T("FullAccessConfirm"),
+                    Localization.T("FullAccess"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
             CommitProvider(_loaded);

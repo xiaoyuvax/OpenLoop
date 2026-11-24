@@ -446,6 +446,78 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task StalledTurnCompressesAndRetriesLikeContextOverflow()
+        {
+            var history = Enumerable.Range(0, 8)
+                .Select(i => new OpenLoop.Core.Messages.LlmMessage(i % 2 == 0 ? "user" : "assistant", "内容" + i))
+                .ToList();
+            var reasoner = new StallOnceReasoner();
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync(history, "hi");
+
+            Assert.Equal("完成", result.FinalAnswer);
+            Assert.Equal(1, result.Guards.Compressions);
+            Assert.Equal(3, reasoner.Calls.Count);
+            Assert.Contains("此前对话摘要", reasoner.Calls[2][0].Content);
+        }
+
+        [Fact]
+        public async Task StalledTurnWithOversizedHistoryDropsTheMiddleInsteadOfSummarizing()
+        {
+            var history = Enumerable.Range(0, 12)
+                .Select(i => new OpenLoop.Core.Messages.LlmMessage(
+                    i % 2 == 0 ? "user" : "assistant", new string('話', 4000)))
+                .ToList();
+            var reasoner = new StallOnceReasoner();
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync(history, "hi");
+
+            Assert.Equal("完成", result.FinalAnswer);
+            Assert.Equal(1, result.Guards.Compressions);
+            Assert.Equal(2, reasoner.Calls.Count);   // 只重发一次，没有为摘要再调一次模型
+            Assert.Contains("较早的对话已省略", reasoner.Calls[1][0].Content);
+        }
+
+        [Fact]
+        public async Task StalledTurnUsesUpstreamCompactionSummaryInsteadOfDroppingIt()
+        {
+            var history = Enumerable.Range(0, 8)
+                .Select(i => new OpenLoop.Core.Messages.LlmMessage(
+                    i % 2 == 0 ? "user" : "assistant", new string('內', 200) + i))
+                .ToList();
+            var reasoner = new StallOnceReasoner("上游摘要：目标、决定与进度");
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync(history, "hi");
+
+            Assert.Equal("完成", result.FinalAnswer);
+            Assert.Equal(1, result.Guards.Compressions);
+            Assert.Equal(2, reasoner.Calls.Count);
+            Assert.Contains("较早的对话已由上游压缩", reasoner.Calls[1][0].Content);
+            Assert.Contains("上游摘要：目标、决定与进度", reasoner.Calls[1][0].Content);
+        }
+
+        [Fact]
+        public async Task UpstreamCompactionSummaryReplacesOlderHistoryAfterANormalTurn()
+        {
+            var history = Enumerable.Range(0, 12)
+                .Select(i => new OpenLoop.Core.Messages.LlmMessage(
+                    i % 2 == 0 ? "user" : "assistant", new string('內', 2000) + i))
+                .ToList();
+            var reasoner = new CompactingOnceReasoner("上游摘要：已完成的决定与进度");
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync(history, "hi");
+
+            Assert.Equal("完成", result.FinalAnswer);
+            Assert.Equal(1, result.Guards.Compressions);
+            Assert.True(result.Transcript.Count < history.Count + 2);
+            Assert.Contains(result.Transcript, m => m.Content.Contains("上游摘要：已完成的决定与进度"));
+        }
+
+        [Fact]
         public async Task DegenerateOutputIsRetriedInsteadOfFailingTheRun()
         {
             var history = new List<OpenLoop.Core.Messages.LlmMessage> { new("user", "hi") };

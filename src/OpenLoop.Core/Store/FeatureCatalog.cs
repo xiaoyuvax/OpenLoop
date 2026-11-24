@@ -15,11 +15,13 @@ namespace OpenLoop.Core.Store
         public const string Promise = "guard.promise";
         public const string ArgRepair = "repair.args";
         public const string MalformedRetry = "retry.malformed";
+        public const string ConnectRetry = "guard.connect_retry";
+        public const string FreeLimit = "guard.free_limit";
+        public const string Degenerate = "guard.degenerate";
         public const string MaxSteps = "limit.steps";
         public const string ToolResultLimit = "limit.tool_result";
         public const string CompressAt = "compress.at";
         public const string OutputTokenRatio = "limit.output_tokens";
-        public const string DebugTurns = "limit.debug_turns";
         public const string MentionTurns = "limit.mention_turns";
         public const string Poll = "limit.poll";
         public const string BudgetExtend = "limit.budget_extend";
@@ -32,7 +34,6 @@ namespace OpenLoop.Core.Store
         /// <summary>工具闪现区节拍（毫秒）：没有正文、也没有工具行时，思维链尾部半行多久刷一次。</summary>
         public const string FlashInterval = "limit.flash_interval";
 
-        public const int DefaultDebugTurns = 6;
         public const int DefaultMentionTurns = 6;
         public const int DefaultBrowserIdleMinutes = 30;
         public const int DefaultFlashInterval = 1000;
@@ -82,6 +83,24 @@ namespace OpenLoop.Core.Store
             },
             new FeatureRecord
             {
+                Id = ConnectRetry, Kind = "guard", Source = "user", CreatedAt = Now(),
+                Problem = "连接层失败（拒绝连接、DNS、重置）直接判本轮失败，网络恢复后任务已经从零开始。",
+                Payload = J(new { enabled = true, @base = 5, max = 300 })
+            },
+            new FeatureRecord
+            {
+                Id = FreeLimit, Kind = "guard", Source = "user", CreatedAt = Now(),
+                Problem = "免费模型额度耗尽后会话停在错误上，用户得自己换节点再喊「继续」。",
+                Payload = J(new { enabled = true })
+            },
+            new FeatureRecord
+            {
+                Id = Degenerate, Kind = "guard", Source = "user", CreatedAt = Now(),
+                Problem = "模型吐词沙拉/复读时整轮作废，几十步进度全丢；无限重试又会一直烧钱。",
+                Payload = J(new { enabled = true, max = 2 })
+            },
+            new FeatureRecord
+            {
                 Id = MaxSteps, Kind = "limit", Source = "user", CreatedAt = Now(),
                 Problem = "任务无进展时限不住步数，成本失控。",
                 Payload = J(new { value = 0 })
@@ -127,12 +146,6 @@ namespace OpenLoop.Core.Store
                 Id = Poll, Kind = "limit", Source = "user", CreatedAt = Now(),
                 Problem = "声明轮询等结果时次数没有上限，一次任务把步数全耗在等待上。",
                 Payload = J(new { max = 10, total = 20 })
-            },
-            new FeatureRecord
-            {
-                Id = DebugTurns, Kind = "limit", Source = "user", CreatedAt = Now(),
-                Problem = "/debug 附带的历史轮数：少了判断不准，多了挤占上下文。",
-                Payload = J(new { value = DefaultDebugTurns })
             },
             new FeatureRecord
             {
@@ -192,6 +205,9 @@ namespace OpenLoop.Core.Store
                 Ref(Promise, ("enabled", true), ("max", 2)),
                 Ref(ArgRepair, ("enabled", true)),
                 Ref(MalformedRetry, ("enabled", true), ("max", 2)),
+                Ref(ConnectRetry, ("enabled", true), ("base", 5), ("max", 300)),
+                Ref(FreeLimit, ("enabled", true)),
+                Ref(Degenerate, ("enabled", true), ("max", 2)),
                 Ref(MaxSteps, ("value", 0)),
                 Ref(BudgetExtend, ("steps", 10), ("max", 3)),
                 Ref(ToolResultLimit, ("value", 6000)),
@@ -200,7 +216,6 @@ namespace OpenLoop.Core.Store
                 Ref(CompressKeep, ("messages", AgentContext.KeepRecentMessages), ("tokens", AgentContext.KeepRecentTokens)),
                 Ref(CompressRetry, ("max", 2)),
                 Ref(Poll, ("max", 10), ("total", 20)),
-                Ref(DebugTurns, ("value", DefaultDebugTurns)),
                 Ref(MentionTurns, ("value", DefaultMentionTurns)),
                 Ref(BrowserIdle, ("value", DefaultBrowserIdleMinutes)),
                 Ref(FlashInterval, ("value", DefaultFlashInterval)),
@@ -251,6 +266,19 @@ namespace OpenLoop.Core.Store
                     case MalformedRetry:
                         policy.MalformedRetry = Flag(reference, feature, "enabled");
                         policy.MaxMalformedRetries = Number(reference, feature, "max", policy.MaxMalformedRetries);
+                        break;
+                    case ConnectRetry:
+                        policy.ConnectRetry = Flag(reference, feature, "enabled");
+                        policy.ConnectRetryBaseSeconds = Number(reference, feature, "base", policy.ConnectRetryBaseSeconds);
+                        policy.ConnectRetryMaxSeconds = Number(reference, feature, "max", policy.ConnectRetryMaxSeconds);
+                        break;
+                    case FreeLimit:
+                        policy.FreeLimitRecovery = Flag(reference, feature, "enabled");
+                        break;
+                    case Degenerate:
+                        policy.MaxDegenerateRetries = Flag(reference, feature, "enabled")
+                            ? Number(reference, feature, "max", policy.MaxDegenerateRetries)
+                            : 0;
                         break;
                     case MaxSteps:
                         policy.MaxSteps = Number(reference, feature, "value", policy.MaxSteps);

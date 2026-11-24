@@ -32,7 +32,7 @@ namespace OpenLoop.App
                     && target.Title.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0
                     && !(target.Id ?? "").StartsWith(query, StringComparison.OrdinalIgnoreCase)) continue;
                 items.Add(("@" + target.Title,
-                    $"{target.Turns} 轮 · {LoopCollabHost.StateText(target.State)}"));
+                    string.Format(Localization.T("MentionRow"), target.Turns, LoopCollabHost.StateText(target.State))));
             }
             return items;
         }
@@ -46,11 +46,11 @@ namespace OpenLoop.App
             {
                 if (string.IsNullOrWhiteSpace(target?.Title) || !HasToken(text, "@" + target.Title)) continue;
                 var list = target.Read?.Invoke() ?? [];
-                sb.AppendLine().Append("【引用会话「").Append(target.Title).Append("」】").AppendLine();
+                sb.AppendLine().Append(Localization.T("【引用会话「")).Append(target.Title).Append("」】").AppendLine();
                 sb.AppendLine(SessionMemoryTool.DescribeTurns(target.Title,
                     LoopCollabHost.StateText(target.State), list, 0, Math.Max(1, turns)));
             }
-            return sb.Length == 0 ? "" : "参考上下文（用户 @ 引用的同工作区会话）：" + sb.ToString().TrimEnd();
+            return sb.Length == 0 ? "" : Localization.T("参考上下文（用户 @ 引用的同工作区会话）：") + sb.ToString().TrimEnd();
         }
 
         /// <summary>token 要独立成词：后面是行尾、空白或标点，避免「@A」误命中「@AB」。</summary>

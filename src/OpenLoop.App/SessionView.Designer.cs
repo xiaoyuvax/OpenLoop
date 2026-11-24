@@ -14,6 +14,8 @@ namespace OpenLoop.App
         private AntdUI.Button _btnSummary;
         private Panel _headerLine;
         private SplitContainer _upperSplit;
+        private SplitContainer _targetSplit;
+        private TargetPane _targetPane;
         private ChatFlow.ChatFlowControl _chat;
         private TableLayoutPanel _side;
         private AntdUI.Segmented _sideTabs;
@@ -24,6 +26,7 @@ namespace OpenLoop.App
         private SideWorkView _sideBtw;
         private FilePreviewView _fileView;
         private PuppetActionView _puppetView;
+        private LoopAppView _loopAppView;
         private BrowserView _browser;
         private AntdUI.Button _btnOpenWorkspace;
         private System.Windows.Forms.Label _lblDModel;
@@ -42,6 +45,8 @@ namespace OpenLoop.App
         private AntdUI.Button _btnEvolve;
         private AntdUI.Button _btnRollback;
         private AntdUI.Button _btnRule;
+        private AntdUI.Button _btnPrompt;
+        private AntdUI.Button _btnAgents;
         private TableLayoutPanel _inputArea;
         private AntdUI.Input _txtInput;
         private TableLayoutPanel _toolbar;
@@ -87,6 +92,8 @@ namespace OpenLoop.App
             _btnSummary = new AntdUI.Button();
             _headerLine = new Panel();
             _upperSplit = new SplitContainer();
+            _targetSplit = new SplitContainer();
+            _targetPane = new TargetPane();
             _chat = new ChatFlow.ChatFlowControl();
             _side = new TableLayoutPanel();
             _sideTabs = new AntdUI.Segmented();
@@ -111,6 +118,8 @@ namespace OpenLoop.App
             _btnEvolve = new AntdUI.Button();
             _btnRollback = new AntdUI.Button();
             _btnRule = new AntdUI.Button();
+            _btnPrompt = new AntdUI.Button();
+            _btnAgents = new AntdUI.Button();
             _inputArea = new TableLayoutPanel();
             _txtInput = new AntdUI.Input();
             _toolbar = new TableLayoutPanel();
@@ -134,6 +143,10 @@ namespace OpenLoop.App
             _upperSplit.Panel1.SuspendLayout();
             _upperSplit.Panel2.SuspendLayout();
             _upperSplit.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)_targetSplit).BeginInit();
+            _targetSplit.Panel1.SuspendLayout();
+            _targetSplit.Panel2.SuspendLayout();
+            _targetSplit.SuspendLayout();
 
             // root
             _root.Dock = DockStyle.Fill;
@@ -158,7 +171,7 @@ namespace OpenLoop.App
 
             _lblTitle.Name = "lblTitle";
             _lblTitle.Dock = DockStyle.Fill;
-            _lblTitle.Text = "会话";
+            _lblTitle.Text = Localization.T("会话");
             _lblTitle.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
             _lblTitle.ForeColor = UiStyle.Text;
             _lblTitle.TextAlign = ContentAlignment.MiddleLeft;
@@ -172,7 +185,7 @@ namespace OpenLoop.App
             _headerRight.Margin = new Padding(0);
 
             _chkSelect.Name = "chkSelect";
-            _chkSelect.Text = "选择";
+            _chkSelect.Text = Localization.T("选择");
             // AutoSize 会让勾选框比同排按钮高一截（250% DPI 下实测 78 vs 69），顶对齐就变成“下沉”；
             // 固定成和按钮一样的 30，整排才真正垂直居中。
             _chkSelect.AutoSize = false;
@@ -183,16 +196,16 @@ namespace OpenLoop.App
             _chkSelect.CheckedChanged += OnSelectModeChanged;
 
             _selMenu.Name = "selMenu";
-            _selMenu.Text = "操作";
+            _selMenu.Text = Localization.T("操作");
             _selMenu.Width = 84;
             _selMenu.Height = 30;
             _selMenu.Ghost = true;
             _selMenu.Radius = 8;
             _selMenu.Margin = new Padding(0, 5, 8, 5);
             _selMenu.SelectedValueChanged += OnSelectAction;
-            _selMenu.Items.Add(new AntdUI.SelectItem("复制") { Tag = "copy" });
-            _selMenu.Items.Add(new AntdUI.SelectItem("转给 Loop") { Tag = "loop" });
-            _selMenu.Items.Add(new AntdUI.SelectItem("删除") { Tag = "delete" });
+            _selMenu.Items.Add(new AntdUI.SelectItem(Localization.T("复制")) { Tag = "copy" });
+            _selMenu.Items.Add(new AntdUI.SelectItem(Localization.T("转给 Loop")) { Tag = "loop" });
+            _selMenu.Items.Add(new AntdUI.SelectItem(Localization.T("删除")) { Tag = "delete" });
 
             _btnPanel.Name = "btnPanel";
             _btnPanel.Width = 36;
@@ -229,6 +242,18 @@ namespace OpenLoop.App
             // 右侧栏默认收起
             _upperSplit.Panel2Collapsed = true;
 
+            // 目标中心会话：左侧目标文本（只读渲染、可独立成窗），右侧仍是聊天与侧栏
+            _targetSplit.Dock = DockStyle.Fill;
+            _targetSplit.Orientation = Orientation.Vertical;
+            _targetSplit.SplitterWidth = 8;
+            _targetSplit.FixedPanel = FixedPanel.Panel1;
+            _targetSplit.BackColor = UiStyle.Page;
+            _targetSplit.Panel1Collapsed = true;
+            _targetSplit.Panel1MinSize = 240;
+            _targetPane.Dock = DockStyle.Fill;
+            _targetSplit.Panel1.Controls.Add(_targetPane);
+            _targetSplit.Panel2.Controls.Add(_upperSplit);
+
             _chat.Dock = DockStyle.Fill;
             _chat.BackColor = UiStyle.Surface;
             _chat.Margin = new Padding(0);
@@ -249,9 +274,10 @@ namespace OpenLoop.App
             _sideTabs.Height = 32;
             _sideTabs.Margin = new Padding(0);
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabDetail") });
-            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "旁路" });
+            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("TabSideWork") });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Harness" });
             _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "Puppet" });
+            _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "LoopApp" });
             // 「网页」页不预置：只有 Agent 打开浏览器时才插入，用户点不出一个空 WebView
             _sideTabs.SelectIndex = 0;
             _sideTabs.SelectIndexChanged += OnSidePageChanged;
@@ -276,6 +302,7 @@ namespace OpenLoop.App
             _sideBtw = new SideWorkView { Dock = DockStyle.Fill, Visible = false };
             _fileView = new FilePreviewView { Dock = DockStyle.Fill, Visible = false };
             _puppetView = new PuppetActionView { Dock = DockStyle.Fill, Visible = false };
+            _loopAppView = new LoopAppView { Dock = DockStyle.Fill, Visible = false };
 
             _lblDef.AutoSize = true;
             _lblDef.MaximumSize = new Size(260, 0);
@@ -288,7 +315,7 @@ namespace OpenLoop.App
 
             _lblTasks.AutoSize = true;
             _lblTasks.MaximumSize = new Size(260, 0);
-            _lblTasks.Text = "考核题: —";
+            _lblTasks.Text = Localization.T("考核题: —");
             _lblTasks.Font = new Font("Segoe UI", 9F);
             _lblTasks.ForeColor = UiStyle.Muted;
             _lblTasks.Margin = new Padding(0, 0, 0, 8);
@@ -326,8 +353,8 @@ namespace OpenLoop.App
             _lblEvolveHint.TextMultiLine = true;
             _lblEvolveHint.Width = 236;
             _lblEvolveHint.Height = 60;
-            _lblEvolveHint.Text = "Harness 只改当前工作区的可演进参数（激活集：护栏开关、阈值、规则、"
-                + "技能顺序、模型参数）；不改代码/工具/提示词，其它工作区不受影响；考核题 A/B 更好才采纳。";
+            _lblEvolveHint.Text = Localization.T("Harness 只改当前工作区的可演进对象（Prompt / Skill / Rule / Limit / Guard）；")
+                + Localization.T("系统提示词与 AGENTS.md 经目标会话由模型落盘；考核题 A/B 更好才采纳。");
             _lblEvolveHint.Font = new Font("Segoe UI", 8F);
             _lblEvolveHint.ForeColor = UiStyle.Muted;
             // 放在按钮组下方：与上方按钮留一段距离，别贴着
@@ -370,13 +397,31 @@ namespace OpenLoop.App
             _btnRollback.Click += OnRollback;
 
             _btnRule.Name = "btnRule";
-            _btnRule.Text = "新增规则";
+            _btnRule.Text = Localization.T("新增规则");
             _btnRule.Radius = 8;
             _btnRule.Height = 34;
             _btnRule.Width = 236;
             _btnRule.IconSvg = UiIcons.Of(UiIcons.Plus, UiStyle.Text);
             _btnRule.Margin = new Padding(0, 0, 0, 4);
             _btnRule.Click += OnAddRule;
+
+            _btnPrompt.Name = "btnPrompt";
+            _btnPrompt.Text = Localization.T("HarnessPromptObject");
+            _btnPrompt.Radius = 8;
+            _btnPrompt.Height = 34;
+            _btnPrompt.Width = 236;
+            _btnPrompt.IconSvg = UiIcons.Of(UiIcons.Edit, UiStyle.Text);
+            _btnPrompt.Margin = new Padding(0, 0, 0, 8);
+            _btnPrompt.Click += OnEditPrompt;
+
+            _btnAgents.Name = "btnAgents";
+            _btnAgents.Text = Localization.T("HarnessAgentsObject");
+            _btnAgents.Radius = 8;
+            _btnAgents.Height = 34;
+            _btnAgents.Width = 236;
+            _btnAgents.IconSvg = UiIcons.Of(UiIcons.Edit, UiStyle.Text);
+            _btnAgents.Margin = new Padding(0, 0, 0, 4);
+            _btnAgents.Click += OnEditAgents;
 
             _lblDModel.AutoSize = true;
             _lblDModel.Text = Localization.T("Model") + ": —";
@@ -412,7 +457,7 @@ namespace OpenLoop.App
             _lblDStatus.MaximumSize = new Size(260, 0);
             _lblDStatus.Margin = new Padding(0, 0, 0, 8);
 
-            _btnPendingSurveys.Text = "待答 0";
+            _btnPendingSurveys.Text = Localization.T("待答 0");
             _btnPendingSurveys.Type = AntdUI.TTypeMini.Primary;
             _btnPendingSurveys.Ghost = true;
             _btnPendingSurveys.Radius = 8;
@@ -442,6 +487,8 @@ namespace OpenLoop.App
             _loopFlow.Controls.Add(_btnEvolve);
             _loopFlow.Controls.Add(_btnRollback);
             _loopFlow.Controls.Add(_btnRule);
+            _loopFlow.Controls.Add(_btnPrompt);
+            _loopFlow.Controls.Add(_btnAgents);
             // 说明文字放最后：所有按钮之下，占住底部空白区
             _loopFlow.Controls.Add(_lblEvolveHint);
 
@@ -457,6 +504,7 @@ namespace OpenLoop.App
             _sideHost.Controls.Add(_sideBtw);
             _sideHost.Controls.Add(_fileView);
             _sideHost.Controls.Add(_puppetView);
+            _sideHost.Controls.Add(_loopAppView);
             _side.Controls.Add(_sideTabs, 0, 0);
             _side.Controls.Add(_sideHost, 0, 1);
             _upperSplit.Panel2.Controls.Add(_side);
@@ -550,7 +598,7 @@ namespace OpenLoop.App
             _selModel.Height = 30;
             _selModel.Radius = 8;
             _selModel.ListAutoWidth = true;
-            _selModel.PlaceholderText = "模型";
+            _selModel.PlaceholderText = Localization.T("模型");
             _selModel.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
             _selModel.Margin = new Padding(6, 0, 0, 0);
             _selModel.SelectedValueChanged += OnModelChanged;
@@ -560,7 +608,7 @@ namespace OpenLoop.App
             _selImage.Height = 30;
             _selImage.Radius = 8;
             _selImage.ListAutoWidth = true;
-            _selImage.PlaceholderText = "生图模型";
+            _selImage.PlaceholderText = Localization.T("生图模型");
             _selImage.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
             _selImage.Margin = new Padding(6, 0, 0, 0);
             _selImage.Visible = false;
@@ -657,7 +705,7 @@ namespace OpenLoop.App
 
             _root.Controls.Add(_header, 0, 0);
             _root.Controls.Add(_headerLine, 0, 1);
-            _root.Controls.Add(_upperSplit, 0, 2);
+            _root.Controls.Add(_targetSplit, 0, 2);
 
             // “/” 命令联想：浮在输入区上方，不占布局（旧做法占一行，命令多了会把输入框压成一条线）
             _cmdPopup.Name = "cmdPopup";
@@ -676,6 +724,10 @@ namespace OpenLoop.App
             _upperSplit.Panel2.ResumeLayout(false);
             _upperSplit.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)_upperSplit).EndInit();
+            _targetSplit.Panel1.ResumeLayout(false);
+            _targetSplit.Panel2.ResumeLayout(false);
+            _targetSplit.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)_targetSplit).EndInit();
             ResumeLayout(false);
         }
     }

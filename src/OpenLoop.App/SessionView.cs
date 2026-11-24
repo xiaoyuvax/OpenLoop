@@ -60,10 +60,13 @@ namespace OpenLoop.App
         private int _filePage = -1;
 
         /// <summary>「网页」页在侧栏标签里的固定下标（内嵌浏览器）。</summary>
-        private const int BrowserPage = 4;
+        private const int BrowserPage = 5;
 
         /// <summary>「Puppet」页在侧栏标签里的固定下标（Action 清单，/puppet 打开）。</summary>
         private const int PuppetPage = 3;
+
+        /// <summary>「LoopApp」页在侧栏标签里的固定下标（本工作区生成过的应用）。</summary>
+        private const int LoopAppPage = 4;
 
         /// <summary>访问 A 的 /api/sessions；界面不再自己跑 Agent。</summary>
         private WorkerApiClient _client;
@@ -112,10 +115,10 @@ namespace OpenLoop.App
             _onlyFree = current.OnlyFreeModels;
 
             _lblTitle.Text = session.Title;
-            _tips.SetToolTip(_btnSummary, "用当前模型重新总结会话标题");
-            _tips.SetToolTip(_btnAttach, "添加附件（也可拖放或粘贴文件/图片）");
+            _tips.SetToolTip(_btnSummary, Localization.T("用当前模型重新总结会话标题"));
+            _tips.SetToolTip(_btnAttach, Localization.T("添加附件（也可拖放或粘贴文件/图片）"));
             _lblPath.Text = UiStyle.ShortPath(session.Workspace);
-            _tips.SetToolTip(_lblPath, session.Workspace + "（点击在资源管理器中打开）");
+            _tips.SetToolTip(_lblPath, session.Workspace + Localization.T("（点击在资源管理器中打开）"));
             _chat.PlaceholderText = Localization.T("NoMessages");
             //每轮都落过盘，但要在这里读回来，否则重启后会话是空的；
             //不再重复读文件：Initialize 开头读的那份 entries 直接投影（transcript 走延迟回读）
@@ -136,9 +139,9 @@ namespace OpenLoop.App
             // 与 Loop 页一致：ChatFlow 右键「操作」与右上角工具栏共用这三个动作
             _chat.SelectionActions =
             [
-                new ChatSelectionAction("copy", "复制"),
-                new ChatSelectionAction("loop", "转给 Loop"),
-                new ChatSelectionAction("delete", "删除")
+                new ChatSelectionAction("copy", Localization.T("复制")),
+                new ChatSelectionAction("loop", Localization.T("转给 Loop")),
+                new ChatSelectionAction("delete", Localization.T("删除"))
             ];
             _chat.SelectionActionRequested += (_, e) => RunSelectionAction(e.Key);
             _chat.SelectionModeChanged += (_, _) =>
@@ -179,11 +182,12 @@ namespace OpenLoop.App
             Disposed += (_, _) =>
             {
                 ModelCatalog.Changed -= OnCatalogChanged;
+                _targetPane.Shutdown();
                 _client?.Dispose();
                 _loopClient?.Dispose();
             };
-            _tips.SetToolTip(_lblDef, "点击查看特征与规则");
-            _tips.SetToolTip(_lblTasks, "点击查看考核题");
+            _tips.SetToolTip(_lblDef, Localization.T("点击查看特征与规则"));
+            _tips.SetToolTip(_lblTasks, Localization.T("点击查看考核题"));
             _sideBtw.Initialize(session.Workspace, settings);
             _sideBtw.ActivatePage = () => ActivatePage?.Invoke() ?? false;
             // Puppet Action 清单页：双击一行把「/puppet <action> 」填回输入框
@@ -194,6 +198,14 @@ namespace OpenLoop.App
                 _txtInput.Focus();
             };
             _puppetView.Initialize();
+            // LoopApp 页：双击一行在「网页」页打开（应用的虚拟域只有壳里的 WebView 认）
+            _loopAppView.Initialize(() => Session?.Workspace ?? "");
+            _loopAppView.OpenRequested += slug =>
+            {
+                ShowBrowser();
+                Browser?.LoopAppOpen(slug);
+            };
+            _targetPane.CloseRequested += CloseTarget;
             FitLoopLabels();
             UpdateEvolveButtonEnabled();
             UpdateSendButton();
@@ -267,7 +279,7 @@ namespace OpenLoop.App
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string PendingSummary => string.Join("\n",
-            _queue.Items.Select(i => (i.Immediate ? "[立即] " : "[等本轮] ")
+            _queue.Items.Select(i => (i.Immediate ? Localization.T("[立即] ") : Localization.T("[等本轮] "))
                 + (i.Text.Length > 0 ? i.Text : "📎 附件")));
 
         /// <summary>A 面驱动：移除第 index 个排队请求。</summary>
@@ -366,13 +378,13 @@ namespace OpenLoop.App
                 _browser = new BrowserView { Dock = DockStyle.Fill, Visible = false };
                 AttachLoopApp(_browser);
                 _sideHost.Controls.Add(_browser);
-                _sideTabs.Items.Insert(BrowserPage, new AntdUI.SegmentedItem { Text = "网页" });
+                _sideTabs.Items.Insert(BrowserPage, new AntdUI.SegmentedItem { Text = Localization.T("网页") });
                 if (_filePage >= BrowserPage) _filePage++;
             }
             else if (_browserTabHidden)
             {
                 // 收起来过：实例还在，把标签插回原位就是（不重建 WebView2）
-                _sideTabs.Items.Insert(BrowserPage, new AntdUI.SegmentedItem { Text = "网页" });
+                _sideTabs.Items.Insert(BrowserPage, new AntdUI.SegmentedItem { Text = Localization.T("网页") });
                 if (_filePage >= BrowserPage) _filePage++;
                 _browserTabHidden = false;
             }
@@ -401,7 +413,7 @@ namespace OpenLoop.App
             if (e.Button != MouseButtons.Right || _browser == null) return;
             var items = new AntdUI.IContextMenuStripItem[]
             {
-                new AntdUI.ContextMenuStripItem("关闭网页") { ID = "closebrowser" }
+                new AntdUI.ContextMenuStripItem(Localization.T("关闭网页")) { ID = "closebrowser" }
             };
             AntdUI.ContextMenuStrip.open(_sideTabs, item =>
             {
@@ -418,6 +430,8 @@ namespace OpenLoop.App
             _fileView.Visible = index >= 0 && index == _filePage;
             _puppetView.Visible = index == PuppetPage;
             if (index == PuppetPage) _puppetView.Reload();
+            _loopAppView.Visible = index == LoopAppPage;
+            if (index == LoopAppPage) _loopAppView.Reload();
             if (_browser != null)
             {
                 _browser.Visible = index == BrowserPage;
@@ -437,7 +451,7 @@ namespace OpenLoop.App
             if (e.Kind == ChatTextStyler.ChatLinkKind.Url)
             {
                 ShowBrowser();
-                if (!Browser.Navigate(e.Target, out string urlError)) Notify("无法打开网址", urlError, error: true);
+                if (!Browser.Navigate(e.Target, out string urlError)) Notify(Localization.T("无法打开网址"), urlError, error: true);
                 return;
             }
 
@@ -451,7 +465,7 @@ namespace OpenLoop.App
             }
             if (_filePage < 0)
             {
-                _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = "文件" });
+                _sideTabs.Items.Add(new AntdUI.SegmentedItem { Text = Localization.T("文件") });
                 _filePage = _sideTabs.Items.Count - 1;
             }
             if (_upperSplit.Panel2Collapsed) OnToggleSide(null, EventArgs.Empty);
@@ -541,10 +555,80 @@ namespace OpenLoop.App
         {
             base.OnResize(e);
             if (!_layoutReady) ApplyLayout();
+            ApplyTargetLayout();
             if (_cmdPopup.IsOpen) _cmdPopup.PlaceAbove(_inputArea);
         }
 
         private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
+
+        /// <summary>
+        /// TargetCentricSession：左栏挂一个可修订目标（系统提示词模板 / AGENTS.md）。
+        /// 面板只读，用户通过聊天让 agent 改；文件一变面板立刻刷新，模板同时登记进账本。
+        /// 以后加 svg / 网页等目标只是多一个 TargetSpec 与呈现控件。
+        /// </summary>
+        internal void OpenTarget(string kind)
+        {
+            string workspace = Session?.Workspace ?? "";
+            if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(workspace))
+            {
+                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                return;
+            }
+
+            TargetSpec spec;
+            try
+            {
+                spec = kind == "agents" ? TargetSpec.Agents(workspace) : TargetSpec.Prompt(workspace);
+            }
+            catch (Exception ex)
+            {
+                Notify("打不开目标", ex.Message, error: true);
+                return;
+            }
+
+            _targetPane.Bind(spec, _ => SyncTarget(kind, workspace));
+            _targetSplit.Panel1Collapsed = false;
+            ApplyTargetLayout();
+        }
+
+        private void CloseTarget()
+        {
+            _targetPane.Shutdown();
+            _targetPane.Bind(null);
+            _targetSplit.Panel1Collapsed = true;
+        }
+
+        /// <summary>模板改了要登记成账本特征并激活，否则 ActiveTemplate 回退内置默认。</summary>
+        private void SyncTarget(string kind, string workspace)
+        {
+            if (kind != "prompt") return;
+            try
+            {
+                PromptCatalog.Sync(Ledger.Open(workspace), workspace);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("登记系统提示词模板失败：" + ex.Message);
+            }
+        }
+
+        private void ApplyTargetLayout()
+        {
+            if (_targetSplit.Panel1Collapsed || _targetSplit.Width <= 0) return;
+            int total = _targetSplit.Width;
+            int splitter = _targetSplit.SplitterWidth;
+            // 两侧都要留够最小宽度，否则 SplitterDistance 赋值会抛异常
+            int max = total - splitter - Math.Max(_targetSplit.Panel2MinSize, Dip(360));
+            int distance = Math.Min(Dip(420), max);
+            if (distance >= _targetSplit.Panel1MinSize)
+                _targetSplit.SplitterDistance = distance;
+        }
+
+        /// <summary>目标会话的每次输入都带上这句：编辑目标唯一，防止 agent 顺手改别的文件。</summary>
+        private string TargetDirective()
+            => $"[目标会话] 当前会话的唯一编辑目标是 {_targetPane.Path}（{_targetPane.Title}）："
+               + "要改就只改这个文件，不要动其它文件；改完说明改了什么。";
+
 
         private void ApplyLayout()
         {
@@ -685,7 +769,7 @@ namespace OpenLoop.App
                 if (AttachmentsUi.TryPaste(_attachments, pasteLimit, out bool overflow))
                 {
                     e.Result = false;
-                    if (overflow) Notify("附件太多", $"当前模型最多 {pasteLimit} 个附件", error: true);
+                    if (overflow) Notify(Localization.T("附件太多"), string.Format(Localization.T("TooManyAttachmentsBody"), pasteLimit), error: true);
                     UpdateAttachments();
                     return;
                 }
@@ -711,13 +795,15 @@ namespace OpenLoop.App
 
         private static readonly (string Command, string Description)[] Commands =
         {
-            ("/btw", "在右侧栏用当前上下文跑一个只读旁路任务"),
-            ("/complain", "把对 Worker 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）"),
-            ("/debug", "把对 Worker 的问题连同最近几轮对话发给 Loop"),
-            ("/compact", "把较早的对话压缩成摘要，省下上下文"),
-            ("/fork", "复制当前上下文开一个新会话（可继续对话）并跳转"),
-            ("/puppet", "打开右侧 Puppet Action 清单；/puppet <action> <参数> 直接执行"),
-            ("/new", "开一个新会话，沿用当前的模型与强度")
+            ("/btw", Localization.T("在右侧栏用当前上下文跑一个只读旁路任务")),
+            ("/complain", Localization.T("把对 Worker 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）")),
+            ("/report", Localization.T("把一条值得改进的观察记入 findings（不立即处理，演进时分诊）")),
+            ("/prompt", Localization.T("打开目标会话：左栏显示系统提示词模板，用聊天让 agent 改")),
+            ("/agents", Localization.T("打开目标会话：左栏显示 AGENTS.md，用聊天让 agent 改")),
+            ("/compact", Localization.T("把较早的对话压缩成摘要，省下上下文")),
+            ("/fork", Localization.T("复制当前上下文开一个新会话（可继续对话）并跳转")),
+            ("/puppet", Localization.T("打开右侧 Puppet Action 清单；/puppet <action> <参数> 直接执行")),
+            ("/new", Localization.T("开一个新会话，沿用当前的模型与强度"))
         };
 
         private readonly List<(string Command, string Description)> _cmdMatches = [];
@@ -910,12 +996,12 @@ namespace OpenLoop.App
                 _lblTitle.Text = Session.Title;
                 TitleChanged?.Invoke(Session);
                 // 标题变化很小（同长度、同位置），不提示的话用户会以为没生效
-                if (force) Notify(same ? "标题未变化" : "标题已更新", Session.Title);
+                if (force) Notify(same ? Localization.T("标题未变化") : Localization.T("标题已更新"), Session.Title);
             }
             catch (Exception ex)
             {
                 AppLog.Warn("生成标题失败：" + ex.Message);
-                if (force) Notify("总结失败", ex.Message, error: true);
+                if (force) Notify(Localization.T("总结失败"), ex.Message, error: true);
             }
         }
 
@@ -1035,12 +1121,16 @@ namespace OpenLoop.App
                 return (true, "已执行命令");
             }
             //命令写了但没写请求：只提示，不要把「/btw」本身当任务发出去
-            if (IsCommand(text, "/btw") || IsCommand(text, "/complain") || IsCommand(text, "/debug")
+            if (IsCommand(text, "/btw") || IsCommand(text, "/complain") || IsCommand(text, "/report")
                 || IsCommand(text, "/fork"))
                 return (false, "命令缺少内容，没有发送");
 
             //「/技能名 请求…」展开成让 Worker 先读技能再执行的任务，后面按普通输入发送/排队
             text = SlashCommands.SkillTask(text, _skillCommands) ?? text;
+
+            // 目标会话：每次输入都带上唯一编辑目标，避免 agent 顺手改别的文件
+            if (!_targetSplit.Panel1Collapsed && text.Length > 0)
+                text = TargetDirective() + "\n\n" + text;
 
             if (_running)
             {
@@ -1096,7 +1186,7 @@ namespace OpenLoop.App
                 string request = text[4..].Trim();
                 if (request.Length == 0)
                 {
-                    Notify("缺少请求", "/btw 后面要写具体请求，例如：/btw 顺便看看还有哪些调用点。", error: true);
+                    Notify(Localization.T("缺少请求"), Localization.T("/btw 后面要写具体请求，例如：/btw 顺便看看还有哪些调用点。"), error: true);
                     return false;
                 }
                 RunSideWork(request);
@@ -1108,22 +1198,34 @@ namespace OpenLoop.App
                 string complaint = text[9..].Trim();
                 if (complaint.Length == 0)
                 {
-                    Notify("缺少内容", "/complain 后面要写具体不满，例如：/complain 它没查调用点就改了方法签名。", error: true);
+                    Notify(Localization.T("缺少内容"), Localization.T("/complain 后面要写具体不满，例如：/complain 它没查调用点就改了方法签名。"), error: true);
                     return false;
                 }
-                ComplaintRequested?.Invoke(Session, ComplaintText(complaint, debug: false));
+                ComplaintRequested?.Invoke(Session, ComplaintText(complaint));
                 return true;
             }
 
-            if (IsCommand(text, "/debug"))
+            if (IsCommand(text, "/report"))
             {
-                string complaint = text[6..].Trim();
-                if (complaint.Length == 0)
+                string note = text[7..].Trim();
+                if (note.Length == 0)
                 {
-                    Notify("缺少内容", "/debug 后面要写具体问题，例如：/debug 它没查调用点就改了方法签名。", error: true);
+                    Notify(Localization.T("缺少内容"), Localization.T("/report 后面要写观察，例如：/report 改模型后按钮仍显示旧值。"), error: true);
                     return false;
                 }
-                ComplaintRequested?.Invoke(Session, ComplaintText(complaint, debug: true));
+                RecordFinding(note);
+                return true;
+            }
+
+            if (IsCommand(text, "/prompt"))
+            {
+                OpenTarget("prompt");
+                return true;
+            }
+
+            if (IsCommand(text, "/agents"))
+            {
+                OpenTarget("agents");
                 return true;
             }
 
@@ -1140,12 +1242,12 @@ namespace OpenLoop.App
             {
                 if (_running)
                 {
-                    Notify("正在运行", "请先停止当前任务，再压缩上下文。", error: true);
+                    Notify(Localization.T("正在运行"), Localization.T("请先停止当前任务，再压缩上下文。"), error: true);
                     return true;
                 }
                 if (_compacting)
                 {
-                    Notify("正在压缩", "上一次压缩还没结束，请稍候。", error: true);
+                    Notify(Localization.T("正在压缩"), Localization.T("上一次压缩还没结束，请稍候。"), error: true);
                     return true;
                 }
                 _ = CompactContextAsync();
@@ -1157,7 +1259,7 @@ namespace OpenLoop.App
                 string request = text[5..].Trim();
                 if (request.Length == 0)
                 {
-                    Notify("缺少请求", "/fork 后面要写具体请求，例如：/fork 继续把第二项改完。", error: true);
+                    Notify(Localization.T("缺少请求"), Localization.T("/fork 后面要写具体请求，例如：/fork 继续把第二项改完。"), error: true);
                     return false;
                 }
                 ForkRequested?.Invoke(Session, request);
@@ -1193,24 +1295,24 @@ namespace OpenLoop.App
                 var result = await Client.CompactAsync(Session.Id);
                 if (result == null)
                 {
-                    Notify("压缩失败", "Worker 不认识这个会话。", error: true);
+                    Notify(Localization.T("压缩失败"), Localization.T("Worker 不认识这个会话。"), error: true);
                     return;
                 }
                 if (!result.Ok)
                 {
-                    Notify("未压缩", result.Error ?? "没有可压缩的上下文。", error: true);
+                    Notify(Localization.T("未压缩"), result.Error ?? Localization.T("没有可压缩的上下文。"), error: true);
                     return;
                 }
                 var last = Session.Book.Turns.LastOrDefault();
                 if (last != null && result.Messages is { Count: > 0 })
                     ChatStore.AttachTranscript(last, result.Messages);
                 UpdateContext(result.After);
-                Notify("已压缩上下文", $"{result.Before:N0} → {result.After:N0} tokens");
+                Notify(Localization.T("已压缩上下文"), $"{result.Before:N0} → {result.After:N0} tokens");
             }
             catch (Exception ex)
             {
                 AppLog.Error("压缩上下文失败", ex);
-                Notify("压缩失败", ex.Message, error: true);
+                Notify(Localization.T("压缩失败"), ex.Message, error: true);
             }
             finally
             {
@@ -1238,26 +1340,26 @@ namespace OpenLoop.App
                 var sheet = await PuppetActions.LoadAsync();
                 string notice = PuppetActions.NoticeText(sheet, request, "shell");
                 var result = await Client.NoticeAsync(Session.Id, notice, "puppet");
-                if (result == null) Notify("未执行", "Worker 不认识这个会话。", error: true);
-                else Notify("已交给会话执行", request);
+                if (result == null) Notify(Localization.T("未执行"), Localization.T("Worker 不认识这个会话。"), error: true);
+                else Notify(Localization.T("已交给会话执行"), request);
             }
             catch (Exception ex)
             {
                 AppLog.Error("执行 Puppet action 失败", ex);
-                Notify("未执行", ex.Message, error: true);
+                Notify(Localization.T("未执行"), ex.Message, error: true);
             }
         }
 
-        /// <summary>转给 Loop 的用户反馈：/complain 只带一句，/debug 另附账本配置的最近几轮与源会话记录。</summary>
-        private string ComplaintText(string complaint, bool debug)
-            => ComposeComplaint("Worker", Session.Title,
-                debug ? Session.Book.Turns : null, complaint,
-                ChatHistory.PathFor(Session.Workspace, Session.Id), Session.Workspace,
-                debug ? DebugTurns(Session.Workspace) : 0);
+        private void RecordFinding(string note)
+        {
+            bool ok = FindingCommand.TryRecord(Session.Workspace, note, out string message);
+            Notify(ok ? Localization.T("已记录") : Localization.T("未记录"), message, error: !ok);
+        }
 
-        /// <summary>/debug 附带的源会话轮数：读本工作区账本的 limit.debug_turns，可在激活集里配置与演化。</summary>
-        internal static int DebugTurns(string workspace)
-            => LedgerValue(workspace, FeatureCatalog.DebugTurns, FeatureCatalog.DefaultDebugTurns);
+        /// <summary>转给 Loop 的用户反馈：只带一句，上下文由 Loop 用 ReadSession 按需读源会话。</summary>
+        private string ComplaintText(string complaint)
+            => ComposeComplaint("Worker", Session.Title, complaint,
+                ChatHistory.PathFor(Session.Workspace, Session.Id), Session.Workspace);
 
         /// <summary>@ 引用另一个会话时附带的轮数：账本 limit.mention_turns，同样可配置与演化。</summary>
         internal static int MentionTurns(string workspace)
@@ -1286,27 +1388,14 @@ namespace OpenLoop.App
             }
         }
 
-        /// <summary>Worker 与 Loop 的 /complain、/debug 共用同一段反馈格式，只有申诉对象不同。</summary>
+        /// <summary>Worker 与 Loop 的 /complain 共用同一段反馈格式，只有申诉对象不同。</summary>
         internal static string ComposeComplaint(string role, string title,
-            IReadOnlyList<ChatTurn> turns, string complaint, string historyPath = null,
-            string workspace = null, int historyTurns = 0)
+            string complaint, string historyPath = null, string workspace = null)
         {
             var sb = new StringBuilder();
             sb.Append("[用户反馈] 对 ").Append(role).Append(" 表现不满（会话「")
                 .Append(title).Append("」）：").AppendLine(complaint);
-            if (historyTurns > 0 && turns is { Count: > 0 })
-            {
-                int from = Math.Max(0, turns.Count - historyTurns);
-                sb.Append("来源会话最近 ").Append(turns.Count - from).AppendLine(" 轮：");
-                for (int i = from; i < turns.Count; i++)
-                {
-                    sb.Append("- 用户：").AppendLine(Trim(turns[i].UserText, 300));
-                    if (!string.IsNullOrWhiteSpace(turns[i].ToolCallLines))
-                        sb.Append("  工具：").AppendLine(Trim(turns[i].ToolCallLines, 600));
-                    sb.Append("  回复：").AppendLine(Trim(turns[i].AssistantText, 500));
-                }
-            }
-            sb.Append("需要更多轮次与工具细节时用 ReadSession 工具读内存会话（session=\"").Append(title)
+            sb.Append("需要轮次与工具细节时用 ReadSession 工具读内存会话（session=\"").Append(title)
                 .AppendLine("\"，offset/count 可选）。");
             if (!string.IsNullOrWhiteSpace(historyPath))
                 sb.Append("会话已关闭时再读文件：").AppendLine(historyPath);
@@ -1457,7 +1546,7 @@ namespace OpenLoop.App
             if (picked == null) return;
             _attachments.Clear();
             _attachments.AddRange(picked);
-            if (overflow) Notify("附件太多", $"当前模型最多 {limit} 个附件", error: true);
+            if (overflow) Notify(Localization.T("附件太多"), string.Format(Localization.T("TooManyAttachmentsBody"), limit), error: true);
             UpdateAttachments();
         }
 
@@ -1466,7 +1555,7 @@ namespace OpenLoop.App
         {
             int limit = MediaModels.AttachmentLimit(_model);
             if (AttachmentsUi.Add(_attachments, paths, limit))
-                Notify("附件太多", $"当前模型最多 {limit} 个附件", error: true);
+                Notify(Localization.T("附件太多"), string.Format(Localization.T("TooManyAttachmentsBody"), limit), error: true);
             UpdateAttachments();
         }
 
@@ -1673,7 +1762,7 @@ namespace OpenLoop.App
             int current = _settings().PropsFor(_model)?.ContextLimit ?? 0;
             var items = new List<AntdUI.IContextMenuStripItem>
             {
-                new AntdUI.ContextMenuStripItem("自动（目录 / 内置表）") { ID = "0", Checked = current == 0 }
+                new AntdUI.ContextMenuStripItem(Localization.T("自动（目录 / 内置表）")) { ID = "0", Checked = current == 0 }
             };
             foreach (var (label, value) in ContextChoices)
                 items.Add(new AntdUI.ContextMenuStripItem(label) { ID = value.ToString(), Checked = current == value });
@@ -1738,7 +1827,7 @@ namespace OpenLoop.App
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("请选择工作目录"), Localization.T("工作目录不存在：") + workspace, error: true);
                 return;
             }
 
@@ -1748,7 +1837,7 @@ namespace OpenLoop.App
             // dsh 走 ACP（A 进程拉起），没有 HTTP 接口地址
             if ((baseUrl.Length == 0 && !DshAcpHub.IsDsh(model)) || model.Length == 0)
             {
-                Notify("缺少配置", "先在设置里填写接口地址与模型。", error: true);
+                Notify(Localization.T("缺少配置"), Localization.T("先在设置里填写接口地址与模型。"), error: true);
                 return;
             }
 
@@ -1758,7 +1847,7 @@ namespace OpenLoop.App
                 MediaModels.AttachmentLimit(model), out string attachmentError);
             if (saved == null)
             {
-                Notify("附件不可用", attachmentError, error: true);
+                Notify(Localization.T("附件不可用"), attachmentError, error: true);
                 return;
             }
             if (fromComposer) _txtInput.Clear();
@@ -1886,11 +1975,11 @@ namespace OpenLoop.App
             }
 
             if (outcome == "ok")
-                Notify("任务完成", $"{remoteTurn?.Steps ?? 0} 步 · 成本 {(snapshot?.Cost?.ToString("0.0000") ?? "—")}");
+                Notify(Localization.T("任务完成"), string.Format(Localization.T("StepsCostLine"), remoteTurn?.Steps ?? 0, snapshot?.Cost?.ToString("0.0000") ?? "—"));
             else if (outcome == "budget")
-                Notify("预算用尽", "本次执行到达步数上限。", error: true);
+                Notify(Localization.T("预算用尽"), Localization.T("本次执行到达步数上限。"), error: true);
             else if (outcome == "error")
-                Notify("执行失败", failure ?? "执行失败", error: true);
+                Notify(Localization.T("执行失败"), failure ?? Localization.T("执行失败"), error: true);
 
             SetRunning(false);
             Session.Steps = remoteTurn?.Steps ?? Session.Steps;
@@ -2196,7 +2285,7 @@ namespace OpenLoop.App
             string workspace = Session?.Workspace?.Trim() ?? "";
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("请选择工作目录"), Localization.T("工作目录不存在：") + workspace, error: true);
                 return;
             }
             try
@@ -2236,7 +2325,7 @@ namespace OpenLoop.App
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("请选择工作目录"), Localization.T("工作目录不存在：") + workspace, error: true);
                 return;
             }
 
@@ -2246,7 +2335,7 @@ namespace OpenLoop.App
                 var current = ledger.Current;
                 if (current == null)
                 {
-                    Notify("暂无激活集", "先运行一次，账本初始化后再看。", error: true);
+                    Notify(Localization.T("暂无激活集"), Localization.T("先运行一次，账本初始化后再看。"), error: true);
                     return;
                 }
 
@@ -2290,7 +2379,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 AppLog.Error("读取特征失败", ex);
-                Notify("读取失败", ex.Message, error: true);
+                Notify(Localization.T("读取失败"), ex.Message, error: true);
             }
         }
 
@@ -2299,7 +2388,7 @@ namespace OpenLoop.App
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("请选择工作目录"), Localization.T("工作目录不存在：") + workspace, error: true);
                 return;
             }
 
@@ -2323,7 +2412,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 AppLog.Error("读取考核题失败", ex);
-                Notify("读取失败", ex.Message, error: true);
+                Notify(Localization.T("读取失败"), ex.Message, error: true);
             }
         }
 
@@ -2374,7 +2463,7 @@ namespace OpenLoop.App
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("请选择工作目录"), Localization.T("工作目录不存在：") + workspace, error: true);
                 return;
             }
 
@@ -2384,12 +2473,16 @@ namespace OpenLoop.App
             RefreshLedgerInfo();
         }
 
+        private void OnEditPrompt(object sender, EventArgs e) => OpenTarget("prompt");
+
+        private void OnEditAgents(object sender, EventArgs e) => OpenTarget("agents");
+
         private void OnOpenReports(object sender, EventArgs e)
         {
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("请选择工作目录"), Localization.T("工作目录不存在：") + workspace, error: true);
                 return;
             }
 
@@ -2431,14 +2524,14 @@ namespace OpenLoop.App
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("请选择工作目录"), Localization.T("工作目录不存在：") + workspace, error: true);
                 return;
             }
 
             string model = _model?.Trim() ?? "";
             if (model.Length == 0)
             {
-                Notify("缺少配置", "先在设置里选择模型。", error: true);
+                Notify(Localization.T("缺少配置"), Localization.T("先在设置里选择模型。"), error: true);
                 return;
             }
 
@@ -2466,7 +2559,7 @@ namespace OpenLoop.App
                     case "done":
                         _lblStatus.Text = Localization.T("Status") +
                                           (state.Adopted ? $": 已采纳 v{state.CandidateVersion}" : ": 保留旧版");
-                        Notify(state.Adopted ? "已更替" : "未更替",
+                        Notify(state.Adopted ? Localization.T("已更替") : Localization.T("未更替"),
                             state.Detail == null ? score : score + "\n" + state.Detail, error: false);
                         SetState(SessionState.Done);
                         break;
@@ -2477,7 +2570,7 @@ namespace OpenLoop.App
                     default:
                         _lblStatus.Text = Localization.T("Status") + ": " + Localization.T("StatusEvolveFailed");
                         SetState(SessionState.Interrupted);
-                        Notify("演进失败", state.Error ?? score, error: true);
+                        Notify(Localization.T("演进失败"), state.Error ?? score, error: true);
                         break;
                 }
             }
@@ -2491,7 +2584,7 @@ namespace OpenLoop.App
                 AppLog.Error("演进失败", ex);
                 _lblStatus.Text = Localization.T("Status") + ": " + Localization.T("StatusEvolveFailed");
                 SetState(SessionState.Interrupted);
-                Notify("演进失败", ex.Message, error: true);
+                Notify(Localization.T("演进失败"), ex.Message, error: true);
             }
             finally
             {
@@ -2514,7 +2607,7 @@ namespace OpenLoop.App
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("请选择工作目录"), Localization.T("工作目录不存在：") + workspace, error: true);
                 return;
             }
 
@@ -2524,34 +2617,34 @@ namespace OpenLoop.App
                 var current = Ledger.Open(workspace).Current;
                 if (current == null || current.Version <= 1)
                 {
-                    Notify("没有更早的版本", "当前已是最早版本。");
+                    Notify(Localization.T("没有更早的版本"), Localization.T("当前已是最早版本。"));
                     return;
                 }
                 currentVersion = current.Version;
             }
             catch (Exception ex)
             {
-                Notify("读取账本失败", ex.Message, error: true);
+                Notify(Localization.T("读取账本失败"), ex.Message, error: true);
                 return;
             }
 
             int target = currentVersion - 1;
             if (MessageBox.Show(FindForm(),
                     $"退回 v{target}？会写成 v{currentVersion + 1}，旧版本文件不动。",
-                    "回滚", MessageBoxButtons.YesNo) != DialogResult.Yes)
+                    Localization.T("回滚"), MessageBoxButtons.YesNo) != DialogResult.Yes)
                 return;
 
             try
             {
                 var version = await Loop.RollbackAsync(workspace, target);
                 RefreshLedgerInfo();
-                _lblStatus.Text = Localization.T("Status") + $": 已退回 v{target}（新版本 v{version}）";
-                Notify("已回滚", $"当前版本 v{version}");
+                _lblStatus.Text = Localization.T("Status") + string.Format(Localization.T("RolledBackTo"), target, version);
+                Notify(Localization.T("已回滚"), string.Format(Localization.T("CurrentVersion"), version));
             }
             catch (Exception ex)
             {
                 AppLog.Error("回滚失败", ex);
-                Notify("回滚失败", ex.Message, error: true);
+                Notify(Localization.T("回滚失败"), ex.Message, error: true);
             }
         }
 
@@ -2560,7 +2653,7 @@ namespace OpenLoop.App
             string workspace = Session.Workspace.Trim();
             if (!Directory.Exists(workspace))
             {
-                Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
+                Notify(Localization.T("请选择工作目录"), Localization.T("工作目录不存在：") + workspace, error: true);
                 return;
             }
 
@@ -2570,7 +2663,7 @@ namespace OpenLoop.App
             baseUrl = baseUrl?.Trim() ?? "";
             if (baseUrl.Length == 0 || model.Length == 0)
             {
-                Notify("缺少配置", "先在设置里填写接口地址与模型。", error: true);
+                Notify(Localization.T("缺少配置"), Localization.T("先在设置里填写接口地址与模型。"), error: true);
                 return;
             }
             using var form = new RuleForm((name, text, ct) =>
@@ -2582,12 +2675,12 @@ namespace OpenLoop.App
             {
                 var id = await Loop.AddRuleAsync(workspace, form.RuleName, form.RuleText);
                 RefreshLedgerInfo();
-                Notify("规则已登记", $"{id}\n当前版本不变；下一轮演进时可被启用。");
+                Notify(Localization.T("规则已登记"), string.Format(Localization.T("RuleRegisteredBody"), id));
             }
             catch (Exception ex)
             {
                 AppLog.Error("登记规则失败", ex);
-                Notify("登记规则失败", ex.Message, error: true);
+                Notify(Localization.T("登记规则失败"), ex.Message, error: true);
             }
         }
 
@@ -2700,7 +2793,7 @@ namespace OpenLoop.App
             var picked = Session.Book.Turns.Where(t => t.Selected).ToList();
             if (picked.Count == 0)
             {
-                Notify("未选择对话", "先打开「选择」并勾选要处理的对话。", error: true);
+                Notify(Localization.T("未选择对话"), Localization.T("先打开「选择」并勾选要处理的对话。"), error: true);
                 return;
             }
 
@@ -2723,14 +2816,14 @@ namespace OpenLoop.App
             }).Where(block => block.Length > 0));
             if (text.Length == 0) return;
             try { Clipboard.SetText(text); } catch { }
-            Notify("已复制", $"复制了 {turns.Count} 组对话。");
+            Notify(Localization.T("已复制"), string.Format(Localization.T("CopiedTurns"), turns.Count));
         }
 
         private void TransferTurnsToLoop(IReadOnlyList<ChatTurn> turns)
         {
             if (TransferToLoop == null || !TransferToLoop(turns))
             {
-                Notify("无法转交", "宿主没有提供 Loop 入口。", error: true);
+                Notify(Localization.T("无法转交"), Localization.T("宿主没有提供 Loop 入口。"), error: true);
                 return;
             }
             _chat.SelectTurns(_ => false);
@@ -2741,13 +2834,13 @@ namespace OpenLoop.App
         {
             if (_running)
             {
-                Notify("正在运行", "请先停止当前任务，再删除对话。", error: true);
+                Notify(Localization.T("正在运行"), Localization.T("请先停止当前任务，再删除对话。"), error: true);
                 return;
             }
             if (MessageBox.Show(this,
                     $"删除选中的 {turns.Count} 组对话？\n"
                     + "会从对话记录里删掉，不能恢复；之后的 KV cache 前缀也会从这里断开。",
-                    "删除对话", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    Localization.T("删除对话"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
             var remove = new HashSet<ChatTurn>(turns);
@@ -2765,7 +2858,7 @@ namespace OpenLoop.App
             if (selected == null) return;
             if (_running)
             {
-                Notify("正在运行", "请先停止当前任务，再撤回对话。", error: true);
+                Notify(Localization.T("正在运行"), Localization.T("请先停止当前任务，再撤回对话。"), error: true);
                 return;
             }
 
@@ -2778,7 +2871,7 @@ namespace OpenLoop.App
             int count = turns.Count - index;
             if (MessageBox.Show(this,
                     $"将撤回从所选对话到最新一条的全部 {count} 组对话，并恢复这些对话写入过的文件。确定？",
-                    "撤回对话", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    Localization.T("撤回对话"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
             // 服务端也删：只删本地的话，下一次发送拿到快照会把撤回的轮次重新补回来（看起来像两对重复对话）
@@ -2816,7 +2909,7 @@ namespace OpenLoop.App
                 + (restoreFailed ? "" : hasSnapshot ? "，工作区已还原（.gitignore 除外）" : "（该轮没有可用快照，未还原文件）");
             if (errors.Count > 0)
                 message += "\n未完全恢复：" + string.Join("；", errors.Take(3));
-            Notify("撤回完成", message, errors.Count > 0);
+            Notify(Localization.T("撤回完成"), message, errors.Count > 0);
         }
 
         private void RefreshChat() => Session.Book.RaiseTextChanged();
@@ -2913,7 +3006,7 @@ namespace OpenLoop.App
             if (InvokeRequired)
                 return (bool)Invoke(new Func<bool>(() => AskOnUi(message)));
             var owner = FindForm();
-            return MessageBox.Show(owner, message, "继续？", MessageBoxButtons.YesNo) == DialogResult.Yes;
+            return MessageBox.Show(owner, message, Localization.T("继续？"), MessageBoxButtons.YesNo) == DialogResult.Yes;
         }
     }
 }

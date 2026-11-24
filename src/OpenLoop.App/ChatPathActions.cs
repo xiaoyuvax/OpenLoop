@@ -17,7 +17,7 @@ namespace OpenLoop.App
             string full = Resolve(target, workspace);
             if (Directory.Exists(full))
             {
-                Shell(owner, full, "打开文件夹");
+                Shell(owner, full, Localization.T("打开文件夹"));
                 return true;
             }
             if (File.Exists(full)) return false;
@@ -29,12 +29,12 @@ namespace OpenLoop.App
         internal static void AskSystemOpen(IWin32Window owner, string target, string workspace, string reason)
         {
             string full = Resolve(target, workspace);
-            string text = (string.IsNullOrWhiteSpace(reason) ? "" : reason + "\n\n") + "要用系统默认程序打开吗？\n" + full;
-            if (MessageBox.Show(owner, text, "打开文件",
+            string text = (string.IsNullOrWhiteSpace(reason) ? "" : reason + "\n\n") + Localization.T("AskOpenWithDefault") + full;
+            if (MessageBox.Show(owner, text, Localization.T("打开文件"),
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
-            Shell(owner, full, "打开文件");
+            Shell(owner, full, Localization.T("打开文件"));
         }
 
         /// <summary>用资源管理器打开一个目录（不存在时提示并问是否复制路径）。</summary>
@@ -61,20 +61,20 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                MessageBox.Show(owner, "打开失败：" + ex.Message, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(owner, Localization.T("打开失败：") + ex.Message, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private static void AskMissing(IWin32Window owner, string full)
         {
-            if (MessageBox.Show(owner, "路径不存在：\n" + full + "\n\n要复制这段路径吗？", "路径不存在",
+            if (MessageBox.Show(owner, string.Format(Localization.T("AskCopyPath"), full), Localization.T("路径不存在"),
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
             try { Clipboard.SetText(full); }
             catch (Exception ex)
             {
-                MessageBox.Show(owner, "复制失败：" + ex.Message, "路径不存在", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(owner, Localization.T("复制失败：") + ex.Message, Localization.T("路径不存在"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
     }

@@ -27,17 +27,19 @@ OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A�
 - **Worker**：多会话（关标签不停止）、流式正文与思考区、排队/立即插入、`/btw` 只读旁路、`/fork` 复制上下文、`/new` 新会话、模型与推理强度选择、上下文占比、成本与步数、完整 trace、调查卡（AskUser）。
 - **工具**：`ReadFile`、`WriteFile`、`ListDir`、`Grep`、`Shell` 等内置工具；`ReadEvidence`、`RecordFinding`、`ProposeTask` 走证据通道；技能（内置 + 项目级）；外部 `OpenCodeTask` / `DshTask`；`WebFetch` 只读抓取；Puppet 探测对端进程与界面。
 - **Loop**：OpenLoop 自己的 Worker——读写源码、跑构建与测试、出迭代计划并执行；每个项目一段 Loop 会话，读账本/trace/findings，把结论写成发现或考核题草稿，并演进工作区 Harness 参数。
-- **Harness 页**：Worker 与 Loop 会话的右侧栏都有这一页，管理本工作区的可演进参数（激活集、规则、考核题、报告），触发演进/回滚与迭代。
+- **findings**：只记「尚未处置、且能分派到 Prompt/Skill/Rule/Limit/Guard/源码之一」的观察（当场修好的写进回复或提交）。Loop 用 `RecordFinding` 记，用户用 `/report [harness|prompt|skill|rule|limit|guard|code] <观察>` 记；`/report` 只落账，不启动会话、不触发演进。处置状态追加在 `loop/triage.jsonl`。
+- **Harness 页**：Worker 与 Loop 会话的右侧栏都有这一页，管理本工作区的五类可演进对象——**Prompt**（系统提示词模板 + `AGENTS.md`）、**Skill**、**Rule**、**Limit**、**Guard**（Limit/Guard 含连接重试、免费额度恢复、退化输出等自愈参数）；另有考核题与报告入口，可触发演进/回滚与迭代。
+- **目标中心会话**：`/prompt`、`/agents` 让会话绑定一个唯一编辑目标，左栏只读呈现原文（可 undock 成独立窗口），用户用聊天告诉模型怎么改、模型落盘，文件一变左栏立刻刷新；用户不直接改文本。加新目标类型只需新 Kind + 呈现控件，不改会话主流程。
 - **模型与外部 agent**：
   - **opencode**：本机 OpenCode v2 服务通过 `~/.local/state/opencode/service.json` 自动发现，就绪后作为 OpenCode 提供商出现；模型 id 形如 `opencode/<模型>@<提供商>`，可直接当会话模型，也可用 `OpenCodeTask` 把整件事交给它的 agent（工具、会话、上下文都在对方那边，权限仍转给你审批）。免费模型有标记。
   - **dsh**：装了 dsh 就作为一个提供商出现，模型 id 形如 `dsh/<提供商>/<模型>`；`DshTask` 把任务交给 dsh 的 agent，用它是因为 dsh 的插件生态（如 `our-free-model` 的免费模型）或 dsh 特有工具。模型清单在后台探测，界面隔一拍重开下拉即可。
   - **其它**：任何 OpenAI 兼容端点（`baseUrl` + `model`，默认 OpenRouter）。
-- **护栏**：重复调用检测、探索预算、参数自愈、畸形调用重试、上下文压缩、敏感操作审批。
+- **护栏**：重复调用检测、探索预算、参数自愈、畸形调用重试、上下文压缩、敏感操作审批；连接层失败一直重试到连上、免费额度耗尽自动换节点、退化输出丢弃后重试——这些自愈参数的开关与阈值都在工作区账本里，可演进。
 - **Puppet**：A/I/壳各自带 Puppet 服务，agent 可探测状态、调用操作面（B 面具名 Action）；界面调试不靠 UI 自动化。
 
 ### 迭代与版本
 
-- 两条线并行：**演进**改当前工作区的 Harness 参数（激活集：护栏开关、阈值、规则、技能顺序、模型参数、激活的模型与工具集）；**迭代**换可执行物（Worker `OpenLoop.A`、Loop `OpenLoop.I`、壳 `OpenLoop.App`）。
+- 两条线并行：**演进**是「非即时集中分析」——findings 与运行证据先攒着，到点集中分诊一次，判成 harness / source / unknown；harness 类出激活集候选并过 Gate 采纳，source 类写成派单交给下一次源码修复，unknown 留到下一批。**迭代**才换可执行物（Worker `OpenLoop.A`、Loop `OpenLoop.I`、壳 `OpenLoop.App`）。两条线互不触发。
 - 每轮迭代只换一个角色，两侧协议号必须对齐；Harness 参数与二进制分开存档。
 - 版本图：`PuppetCore → Service → {A, I, 壳}`、`ChatFlow → 壳`、`Core → Service`；上游变了下游必须升，沿依赖边级联。
 - 迭代入口：壳里的「迭代」按钮（Loop 会话详情页 / Web 的 Harness 页）→ 先出计划（谁升版、现版本 → 目标版本、变更摘要）→ 用户确认 → 编译 → 换 A → A 更新 I → 最后发布新壳并由新壳自我重启（界面短暂退出）。

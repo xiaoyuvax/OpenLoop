@@ -63,8 +63,8 @@ namespace OpenLoop.App
             var current = settings();
             _model = current.Model ?? "";
             _effort = current.ReasoningEffort ?? "";
-            _lblStatus.Text = "只读 · 尚未运行";
-            _chat.PlaceholderText = "在输入框里用 /btw <请求> 跑一个只读的旁路任务";
+            _lblStatus.Text = Localization.T("只读 · 尚未运行");
+            _chat.PlaceholderText = Localization.T("在输入框里用 /btw <请求> 跑一个只读的旁路任务");
             _chat.FlashInterval = SessionView.FlashIntervalMs(_workspace);   // 工具闪现区节拍（账本可演化）
             // 侧栏默认不在「旁路」页：先暂停，摆到前台时由宿主 SetActive 恢复
             _chat.SuspendRendering = !Visible;
@@ -110,7 +110,7 @@ namespace OpenLoop.App
         {
             _userEpoch++;
             _book.Clear();
-            _lblStatus.Text = "只读 · 尚未运行";
+            _lblStatus.Text = Localization.T("只读 · 尚未运行");
         }
 
         public void Shutdown()
@@ -128,7 +128,7 @@ namespace OpenLoop.App
         {
             if (_running)
             {
-                Notify("旁路任务进行中", "等当前旁路任务结束再发。", error: true);
+                Notify(Localization.T("旁路任务进行中"), Localization.T("等当前旁路任务结束再发。"), error: true);
                 return;
             }
 
@@ -139,7 +139,7 @@ namespace OpenLoop.App
             var settings = _settings();
             if (!Directory.Exists(_workspace))
             {
-                Notify("项目不可用", "工作区目录不存在：" + _workspace, error: true);
+                Notify(Localization.T("项目不可用"), Localization.T("工作区目录不存在：") + _workspace, error: true);
                 return;
             }
 
@@ -148,7 +148,7 @@ namespace OpenLoop.App
             baseUrl = baseUrl?.Trim() ?? "";
             if (baseUrl.Length == 0 || model.Length == 0)
             {
-                Notify("缺少配置", "先在设置里填写接口地址与模型。", error: true);
+                Notify(Localization.T("缺少配置"), Localization.T("先在设置里填写接口地址与模型。"), error: true);
                 return;
             }
 
@@ -176,7 +176,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 AppLog.Error("旁路：读取账本失败", ex);
-                Notify("读取账本失败", ex.Message, error: true);
+                Notify(Localization.T("读取账本失败"), ex.Message, error: true);
                 return;
             }
 
@@ -194,7 +194,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                Notify("创建 trace 失败", ex.Message, error: true);
+                Notify(Localization.T("创建 trace 失败"), ex.Message, error: true);
                 return;
             }
 
@@ -357,7 +357,7 @@ namespace OpenLoop.App
                     : result.StoppedByUser || result.StoppedByGuard ? "stopped"
                     : "ok";
                 trace.Finish(outcome, turn.AssistantText, result.ChatCost, result.Guards);
-                _lblStatus.Text = $"只读 · {outcome} · {result.Steps.Count} 步";
+                _lblStatus.Text = string.Format(Localization.T("SideWorkStatus"), outcome, result.Steps.Count);
             }
             catch (OperationCanceledException)
             {
@@ -365,9 +365,9 @@ namespace OpenLoop.App
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
                 lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
-                if (string.IsNullOrEmpty(turn.AssistantText)) turn.AssistantText = "（已停止）";
+                if (string.IsNullOrEmpty(turn.AssistantText)) turn.AssistantText = Localization.T("（已停止）");
                 trace.Finish("stopped", turn.AssistantText);
-                _lblStatus.Text = "只读 · stopped";
+                _lblStatus.Text = Localization.T("只读 · stopped");
             }
             catch (Exception ex)
             {
@@ -376,8 +376,8 @@ namespace OpenLoop.App
                 turn.ToolStatusText = null;
                 turn.AssistantText = LoopView.FailedText(ex.Message);
                 trace.Finish("error", turn.AssistantText);
-                _lblStatus.Text = "只读 · error";
-                Notify("旁路执行失败", ex.Message, error: true);
+                _lblStatus.Text = Localization.T("只读 · error");
+                Notify(Localization.T("旁路执行失败"), ex.Message, error: true);
                 // 免费额度耗尽：让 ConnMan 换节点，就绪后重跑同一条旁路任务（旁路没有「继续」的会话，
                 // 只能把这次请求原样再发一遍）。回调在后台线程，Run 会碰控件，必须回 UI 线程。
                 if (ServerNotice.IsQuotaFailure(turn.AssistantText))
@@ -433,7 +433,7 @@ namespace OpenLoop.App
         private void SetRunning(bool running)
         {
             _running = running;
-            if (running) _lblStatus.Text = "只读 · 运行中…";
+            if (running) _lblStatus.Text = Localization.T("只读 · 运行中…");
         }
 
         private void RefreshChat() => _book.RaiseTextChanged();
@@ -449,7 +449,7 @@ namespace OpenLoop.App
         {
             if (InvokeRequired)
                 return (bool)Invoke(new Func<bool>(() => AskOnUi(message)));
-            return MessageBox.Show(FindForm(), message, "继续执行？", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+            return MessageBox.Show(FindForm(), message, Localization.T("继续执行？"), MessageBoxButtons.YesNo, MessageBoxIcon.Question)
                 == DialogResult.Yes;
         }
 
@@ -468,7 +468,7 @@ namespace OpenLoop.App
                 error ? AntdUI.TType.Error : AntdUI.TType.Info, AntdUI.TAlignFrom.TR,
                 null, error ? 12 : 10);
             if (ActivatePage != null)
-                config.Link = new AntdUI.Notification.ConfigLink("打开会话", () =>
+                config.Link = new AntdUI.Notification.ConfigLink(Localization.T("打开会话"), () =>
                 {
                     ActivatePage();
                     return false;

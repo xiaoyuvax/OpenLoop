@@ -120,7 +120,7 @@ namespace OpenLoop.App
             {
                 _interact = enabled;
                 _btnInteract.IconSvg = UiIcons.Of(enabled ? UiIcons.Lock : UiIcons.Unlock, UiStyle.Text);
-                _tips.SetToolTip(_btnInteract, enabled ? "锁定：网页由 Agent 控制" : "解锁：允许你自己点按网页");
+                _tips.SetToolTip(_btnInteract, enabled ? Localization.T("锁定：网页由 Agent 控制") : Localization.T("解锁：允许你自己点按网页"));
                 // 锁定时禁用控件本身：Windows 不再把鼠标/键盘送给网页
                 _web.Enabled = enabled;
                 _overlay.Visible = !_ready;
@@ -137,7 +137,7 @@ namespace OpenLoop.App
 
                 var form = new Form
                 {
-                    Text = "OpenLoop 浏览器",
+                    Text = Localization.T("OpenLoop 浏览器"),
                     Width = Dip(1100),
                     Height = Dip(800),
                     StartPosition = FormStartPosition.CenterScreen
@@ -171,7 +171,7 @@ namespace OpenLoop.App
         private CallResult NavigateCore(string url)
         {
             string target = Normalize(url);
-            if (target == null) return new CallResult(false, null, "地址为空");
+            if (target == null) return new CallResult(false, null, Localization.T("地址为空"));
             if (!EnsureCore(out string initError)) return new CallResult(false, null, initError);
             try
             {
@@ -185,24 +185,24 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                return new CallResult(false, null, "导航失败：" + ex.Message);
+                return new CallResult(false, null, Localization.T("导航失败：") + ex.Message);
             }
         }
 
         private CallResult EvalCore(string script)
         {
-            if (string.IsNullOrWhiteSpace(script)) return new CallResult(false, null, "脚本为空");
+            if (string.IsNullOrWhiteSpace(script)) return new CallResult(false, null, Localization.T("脚本为空"));
             if (!EnsureCore(out string initError)) return new CallResult(false, null, initError);
             try
             {
                 var task = _web.CoreWebView2.ExecuteScriptAsync(script);
-                if (!Pump(task)) return new CallResult(false, null, "执行脚本超时");
+                if (!Pump(task)) return new CallResult(false, null, Localization.T("执行脚本超时"));
                 Touch();
                 return new CallResult(true, task.Result, null);
             }
             catch (Exception ex)
             {
-                return new CallResult(false, null, "执行脚本失败：" + ex.Message);
+                return new CallResult(false, null, Localization.T("执行脚本失败：") + ex.Message);
             }
         }
 
@@ -216,14 +216,14 @@ namespace OpenLoop.App
                 {
                     var task = _web.CoreWebView2.CapturePreviewAsync(
                         CoreWebView2CapturePreviewImageFormat.Png, stream);
-                    if (!Pump(task)) return new CallResult(false, null, "截图超时");
+                    if (!Pump(task)) return new CallResult(false, null, Localization.T("截图超时"));
                 }
                 Touch();
                 return new CallResult(true, Convert.ToBase64String(File.ReadAllBytes(file)), null);
             }
             catch (Exception ex)
             {
-                return new CallResult(false, null, "截图失败：" + ex.Message);
+                return new CallResult(false, null, Localization.T("截图失败：") + ex.Message);
             }
             finally
             {
@@ -243,7 +243,7 @@ namespace OpenLoop.App
                 if (!Pump(task))
                 {
                     _failed = true;
-                    _overlay.Text = "WebView2 初始化超时：检查是否装了 WebView2 Runtime";
+                    _overlay.Text = Localization.T("WebView2 初始化超时：检查是否装了 WebView2 Runtime");
                     error = _overlay.Text;
                     return false;
                 }
@@ -275,7 +275,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 _failed = true;
-                _overlay.Text = "WebView2 初始化失败：" + ex.Message;
+                _overlay.Text = Localization.T("WebView2 初始化失败：") + ex.Message;
                 error = _overlay.Text;
                 return false;
             }
@@ -308,7 +308,7 @@ namespace OpenLoop.App
 
         private CallResult OnUiCall(Func<CallResult> action)
         {
-            if (IsDisposed) return new CallResult(false, null, "浏览器视图已关闭");
+            if (IsDisposed) return new CallResult(false, null, Localization.T("浏览器视图已关闭"));
             if (!InvokeRequired) return action();
             try { return (CallResult)Invoke(action); }
             catch (Exception ex) { return new CallResult(false, null, ex.Message); }
@@ -355,7 +355,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                _overlay.Text = "打开系统浏览器失败：" + ex.Message;
+                _overlay.Text = Localization.T("打开系统浏览器失败：") + ex.Message;
             }
         }
 

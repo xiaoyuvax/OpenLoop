@@ -49,269 +49,35 @@
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
   </resheader>
-  <resheader name="version">
-    <value>2.0</value>
-  </resheader>
-  <resheader name="reader">
-    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
-  </resheader>
-  <resheader name="writer">
-    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
-  </resheader>
-  <data name="AppTitle" xml:space="preserve">
-    <value>OpenLoop</value>
+  <data name="Accept" xml:space="preserve">
+    <value>采纳</value>
   </data>
-  <data name="AppSubtitle" xml:space="preserve">
-    <value>一个可自我迭代的开放式Agent</value>
+  <data name="Add" xml:space="preserve">
+    <value>添加</value>
   </data>
-  <data name="MenuNewSession" xml:space="preserve">
-    <value>新建会话…</value>
+  <data name="AddFailed" xml:space="preserve">
+    <value>添加失败</value>
   </data>
-  <data name="MenuSessionList" xml:space="preserve">
-    <value>会话列表</value>
+  <data name="AddModel" xml:space="preserve">
+    <value>添加模型</value>
   </data>
-  <data name="MenuLoop" xml:space="preserve">
-    <value>Loop 会话</value>
+  <data name="AddModelBody" xml:space="preserve">
+    <value>把模型「{0}」加入「{1}」？</value>
   </data>
-  <data name="MenuThemeLight" xml:space="preserve">
-    <value>主题：浅色</value>
+  <data name="AgentBack" xml:space="preserve">
+    <value>← 返回</value>
   </data>
-  <data name="MenuThemeDark" xml:space="preserve">
-    <value>主题：深色</value>
+  <data name="AgentsHint" xml:space="preserve">
+    <value>把全局与项目 AGENTS.md 注入系统提示词</value>
   </data>
-  <data name="MenuThemeGrayBlue" xml:space="preserve">
-    <value>主题：灰蓝</value>
-  </data>
-  <data name="MenuLanguageZh" xml:space="preserve">
-    <value>语言：中文</value>
-  </data>
-  <data name="MenuLanguageEn" xml:space="preserve">
-    <value>语言：English</value>
-  </data>
-  <data name="MenuAbout" xml:space="preserve">
-    <value>关于</value>
-  </data>
-  <data name="MenuSettings" xml:space="preserve">
-    <value>设置…</value>
-  </data>
-  <data name="MenuExit" xml:space="preserve">
-    <value>退出</value>
-  </data>
-  <data name="TabOverview" xml:space="preserve">
-    <value>会话</value>
-  </data>
-  <data name="Projects" xml:space="preserve">
-    <value>项目</value>
-  </data>
-  <data name="SearchSessions" xml:space="preserve">
-    <value>搜索会话</value>
-  </data>
-  <data name="NewSession" xml:space="preserve">
-    <value>新建会话</value>
-  </data>
-  <data name="ColState" xml:space="preserve">
-    <value>状态</value>
-  </data>
-  <data name="ColSession" xml:space="preserve">
-    <value>会话</value>
-  </data>
-  <data name="ColStarted" xml:space="preserve">
-    <value>开始</value>
-  </data>
-  <data name="ColSteps" xml:space="preserve">
-    <value>步数</value>
-  </data>
-  <data name="EmptySessions" xml:space="preserve">
-    <value>这个项目还没有会话</value>
-  </data>
-  <data name="Settings" xml:space="preserve">
-    <value>设置</value>
-  </data>
-  <data name="Send" xml:space="preserve">
-    <value>发送</value>
-  </data>
-  <data name="Continue" xml:space="preserve">
-    <value>继续</value>
-  </data>
-  <data name="ContinuePrompt" xml:space="preserve">
-    <value>继续</value>
-  </data>
-  <data name="Stop" xml:space="preserve">
-    <value>停止</value>
-  </data>
-  <data name="FreeOnly" xml:space="preserve">
-    <value>只看免费</value>
-  </data>
-  <data name="Provider" xml:space="preserve">
-    <value>提供商</value>
+  <data name="AiConfig" xml:space="preserve">
+    <value>让 AI 帮我配置</value>
   </data>
   <data name="AllProviders" xml:space="preserve">
     <value>全部提供商</value>
   </data>
-  <data name="ModeTask" xml:space="preserve">
-    <value>任务</value>
-  </data>
-  <data name="ComposerHint" xml:space="preserve">
-    <value>描述任务（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）</value>
-  </data>
-  <data name="TabLoop" xml:space="preserve">
-    <value>Loop</value>
-  </data>
-  <data name="TabDetail" xml:space="preserve">
-    <value>详情</value>
-  </data>
-  <data name="Evolve" xml:space="preserve">
-    <value>演进一轮</value>
-  </data>
-  <data name="Rollback" xml:space="preserve">
-    <value>回滚上一版</value>
-  </data>
-  <data name="OpenLoopChat" xml:space="preserve">
-    <value>打开 Loop 会话</value>
-  </data>
-  <data name="LoopSubtitle" xml:space="preserve">
-    <value>观察 Worker 与用户判定，积累下一版</value>
-  </data>
-  <data name="LoopHint" xml:space="preserve">
-    <value>和 Loop 对话：说出你的体验、不满或改进建议（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）</value>
-  </data>
-  <data name="NewSessionSubtitle" xml:space="preserve">
-    <value>选择项目并描述任务，开始一个新的会话</value>
-  </data>
-  <data name="NewSessionHint" xml:space="preserve">
-    <value>描述任务，例如：为这个项目补一个 README（Enter 发送，Shift+Enter 换行）</value>
-  </data>
-  <data name="Start" xml:space="preserve">
-    <value>开始</value>
-  </data>
-  <data name="NewProject" xml:space="preserve">
-    <value>＋ 新建项目…</value>
-  </data>
-  <data name="PickProject" xml:space="preserve">
-    <value>选择项目，或新建项目</value>
-  </data>
-  <data name="LanguageChanged" xml:space="preserve">
-    <value>语言已保存，重启 OpenLoop 后生效。</value>
-  </data>
-  <data name="ThemeChanged" xml:space="preserve">
-    <value>已保存，重启 OpenLoop 后生效。</value>
-  </data>
-  <data name="Status" xml:space="preserve">
-    <value>状态</value>
-  </data>
-  <data name="StateIdle" xml:space="preserve">
-    <value>待开始</value>
-  </data>
-  <data name="Model" xml:space="preserve">
-    <value>模型</value>
-  </data>
-  <data name="Effort" xml:space="preserve">
-    <value>强度</value>
-  </data>
-  <data name="Cost" xml:space="preserve">
-    <value>成本</value>
-  </data>
-  <data name="Trace" xml:space="preserve">
-    <value>trace</value>
-  </data>
-  <data name="EvolveIdle" xml:space="preserve">
-    <value>就绪</value>
-  </data>
-  <data name="StateDone" xml:space="preserve">
-    <value>已结束</value>
-  </data>
-  <data name="StateRunning" xml:space="preserve">
-    <value>运行中</value>
-  </data>
-  <data name="StateInterrupted" xml:space="preserve">
-    <value>中断</value>
-  </data>
-  <data name="Context" xml:space="preserve">
-    <value>上下文</value>
-  </data>
-  <data name="Workspace" xml:space="preserve">
-    <value>工作区</value>
-  </data>
-  <data name="EvolveRunning" xml:space="preserve">
-    <value>运行中</value>
-  </data>
-  <data name="Tasks" xml:space="preserve">
-    <value>考核题</value>
-  </data>
-  <data name="EffortHigh" xml:space="preserve">
-    <value>高</value>
-  </data>
-  <data name="EffortAuto" xml:space="preserve">
-    <value>自动</value>
-  </data>
-  <data name="EffortLow" xml:space="preserve">
-    <value>低</value>
-  </data>
-  <data name="EffortMedium" xml:space="preserve">
-    <value>中</value>
-  </data>
-  <data name="Features" xml:space="preserve">
-    <value>特征</value>
-  </data>
-  <data name="NoMessages" xml:space="preserve">
-    <value>暂无对话</value>
-  </data>
-  <data name="Rules" xml:space="preserve">
-    <value>规则</value>
-  </data>
-  <data name="SettingsModel" xml:space="preserve">
-    <value>模型</value>
-  </data>
-  <data name="StatusProposing" xml:space="preserve">
-    <value>正在候选</value>
-  </data>
-  <data name="StatusThinking" xml:space="preserve">
-    <value>思考中…</value>
-  </data>
-  <data name="SettingsSave" xml:space="preserve">
-    <value>保存</value>
-  </data>
-  <data name="FetchFreeModels" xml:space="preserve">
-    <value>免费模型</value>
-  </data>
-  <data name="SettingsTest" xml:space="preserve">
-    <value>测试连接</value>
-  </data>
-  <data name="SettingsKey" xml:space="preserve">
-    <value>密钥</value>
-  </data>
-  <data name="SettingsTitle" xml:space="preserve">
-    <value>设置</value>
-  </data>
-  <data name="SettingsBaseUrl" xml:space="preserve">
-    <value>接口地址</value>
-  </data>
-  <data name="StatusEvolveFailed" xml:space="preserve">
-    <value>演进失败</value>
-  </data>
-  <data name="StatusPaused" xml:space="preserve">
-    <value>已暂停</value>
-  </data>
-  <data name="SettingsCancel" xml:space="preserve">
-    <value>取消</value>
-  </data>
-  <data name="StatusRolledBack" xml:space="preserve">
-    <value>回滚到 v{0}（新版 v{1}）</value>
-  </data>
-  <data name="TasksUnit" xml:space="preserve">
-    <value>道</value>
-  </data>
-  <data name="StatusReviewing" xml:space="preserve">
-    <value>评审 {0} 道题（{1} 次运行）…</value>
-  </data>
-  <data name="Steps" xml:space="preserve">
-    <value>步</value>
-  </data>
-  <data name="MenuLanguageAuto" xml:space="preserve">
-    <value>语言：跟随系统</value>
-  </data>
-  <data name="ApproveTitle" xml:space="preserve">
-    <value>需要确认</value>
+  <data name="AlreadyFirstVersion" xml:space="preserve">
+    <value>当前已是最早版本。</value>
   </data>
   <data name="ApproveCommand" xml:space="preserve">
     <value>即将执行命令（{0}）：
@@ -320,73 +86,2280 @@
 
 允许执行吗？</value>
   </data>
-  <data name="EmptyBlocked" xml:space="preserve">
-    <value>（上游以内容策略拦截了本次回答，未返回正文。）</value>
+  <data name="ApproveTitle" xml:space="preserve">
+    <value>需要确认</value>
   </data>
-  <data name="EmptySafetyOnly" xml:space="preserve">
-    <value>（模型只返回了安全判定，没有正文；已自动重试仍为空。）</value>
+  <data name="AppSubtitle" xml:space="preserve">
+    <value>一个可自我迭代的开放式Agent</value>
   </data>
-  <data name="EmptyNoBody" xml:space="preserve">
-    <value>（模型没有返回正文。）</value>
+  <data name="AppTitle" xml:space="preserve">
+    <value>OpenLoop</value>
   </data>
-  <data name="RawResponse" xml:space="preserve">
-    <value>原始响应：</value>
+  <data name="AutoApprove" xml:space="preserve">
+    <value>自动审批</value>
   </data>
-  <data name="ReviewPending" xml:space="preserve">
-    <value>待答</value>
+  <data name="AutoApproveHint" xml:space="preserve">
+    <value>一切工具调用都无需审批（含工作区外访问与风险操作）</value>
   </data>
-  <data name="AgentBack" xml:space="preserve">
-    <value>← 返回</value>
+  <data name="AutoEvolve" xml:space="preserve">
+    <value>自动演进</value>
   </data>
-  <data name="TaskDrafts" xml:space="preserve">
-    <value>题目候选</value>
+  <data name="AutoEvolveHint" xml:space="preserve">
+    <value>改行为版本：Prompt / Skill / Rule / Limit / Guard，攒够待分诊的观察（findings）自动跑考核</value>
   </data>
-  <data name="EvalReports" xml:space="preserve">
-    <value>评估报告</value>
+  <data name="AutoIterate" xml:space="preserve">
+    <value>自动迭代</value>
   </data>
-  <data name="Accept" xml:space="preserve">
-    <value>采纳</value>
+  <data name="AutoIterateHint" xml:space="preserve">
+    <value>源码攒够提交后自动升版换 A/I（有会话在跑会先问，默认关）</value>
   </data>
-  <data name="Discard" xml:space="preserve">
-    <value>丢弃</value>
-  </data>
-  <data name="EditDraft" xml:space="preserve">
-    <value>编辑</value>
-  </data>
-  <data name="SaveDraft" xml:space="preserve">
-    <value>保存修改</value>
-  </data>
-  <data name="Close" xml:space="preserve">
-    <value>关闭</value>
-  </data>
-  <data name="DraftsEmpty" xml:space="preserve">
-    <value>暂无草稿。Loop 观察到可复现的问题后会起草到这里。</value>
-  </data>
-  <data name="PickDraft" xml:space="preserve">
-    <value>从左侧选择一条草稿。</value>
-  </data>
-  <data name="ReportsEmpty" xml:space="preserve">
-    <value>还没有评估报告。跑一轮演进后生成。</value>
-  </data>
-  <data name="OpenWorkspace" xml:space="preserve">
-    <value>打开工作区</value>
-  </data>
-  <data name="OpenFolder" xml:space="preserve">
-    <value>打开报告目录</value>
-  </data>
-  <data name="BaselineSmoke" xml:space="preserve">
-    <value>采纳后试跑基线</value>
-  </data>
-  <data name="DraftAccepted" xml:space="preserve">
-    <value>已加入题集：</value>
-  </data>
-  <data name="BaselineRunning" xml:space="preserve">
-    <value>正在试跑基线…</value>
+  <data name="BaselineFailed" xml:space="preserve">
+    <value>基线未通过：已留作回归题。</value>
   </data>
   <data name="BaselinePassed" xml:space="preserve">
     <value>基线通过：该题区分度可能不足，建议收紧判定条件。</value>
   </data>
-  <data name="BaselineFailed" xml:space="preserve">
-    <value>基线未通过：已留作回归题。</value>
+  <data name="BaselineRunning" xml:space="preserve">
+    <value>正在试跑基线…</value>
+  </data>
+  <data name="BaselineSmoke" xml:space="preserve">
+    <value>采纳后试跑基线</value>
+  </data>
+  <data name="CannotOpen" xml:space="preserve">
+    <value>打不开</value>
+  </data>
+  <data name="ClearedModels" xml:space="preserve">
+    <value>已清除 {0} 个模型</value>
+  </data>
+  <data name="ClearModels" xml:space="preserve">
+    <value>全部清除</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="ColContribution" xml:space="preserve">
+    <value>贡献</value>
+  </data>
+  <data name="ColDescription" xml:space="preserve">
+    <value>说明</value>
+  </data>
+  <data name="ColFrom" xml:space="preserve">
+    <value>来源</value>
+  </data>
+  <data name="CollabNote" xml:space="preserve">
+    <value>协作会话是平级的独立会话，不是子 agent：它们不共享发起方的工具调用栈，只在同一工作区各干一段。发起方启动后不再自己动手，只做监测与协调；监测汇报以仿用户消息进入它的队列（队列里用特殊底色标出），全部会话结束或不可恢复地中止后自动停止。暂不支持跨工作区协作。</value>
+  </data>
+  <data name="CollabPoll" xml:space="preserve">
+    <value>监测间隔</value>
+  </data>
+  <data name="CollabReuse" xml:space="preserve">
+    <value>沿用上下文</value>
+  </data>
+  <data name="CollabReuseHint" xml:space="preserve">
+    <value>协作会话带上发起方已完成的对话，复用前缀缓存（同模型才生效）</value>
+  </data>
+  <data name="ColParams" xml:space="preserve">
+    <value>参数</value>
+  </data>
+  <data name="ColSession" xml:space="preserve">
+    <value>会话</value>
+  </data>
+  <data name="ColStarted" xml:space="preserve">
+    <value>开始</value>
+  </data>
+  <data name="ColState" xml:space="preserve">
+    <value>状态</value>
+  </data>
+  <data name="ColSteps" xml:space="preserve">
+    <value>步数</value>
+  </data>
+  <data name="ColVersion" xml:space="preserve">
+    <value>版本</value>
+  </data>
+  <data name="ComposerHint" xml:space="preserve">
+    <value>描述任务（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）</value>
+  </data>
+  <data name="ConnectionFailed" xml:space="preserve">
+    <value>连接失败</value>
+  </data>
+  <data name="ConnectionOk" xml:space="preserve">
+    <value>连接正常</value>
+  </data>
+  <data name="Context" xml:space="preserve">
+    <value>上下文</value>
+  </data>
+  <data name="Continue" xml:space="preserve">
+    <value>继续</value>
+  </data>
+  <data name="ContinuePrompt" xml:space="preserve">
+    <value>继续</value>
+  </data>
+  <data name="Cost" xml:space="preserve">
+    <value>成本</value>
+  </data>
+  <data name="CurrentVersion" xml:space="preserve">
+    <value>当前版本 v{0}</value>
+  </data>
+  <data name="CurrentWorkspace" xml:space="preserve">
+    <value>当前工作区</value>
+  </data>
+  <data name="CustomPreset" xml:space="preserve">
+    <value>自定义</value>
+  </data>
+  <data name="DeleteProvider" xml:space="preserve">
+    <value>删除提供商「{0}」？</value>
+  </data>
+  <data name="Disabled" xml:space="preserve">
+    <value>停用</value>
+  </data>
+  <data name="Discard" xml:space="preserve">
+    <value>丢弃</value>
+  </data>
+  <data name="DisplayNameLabel" xml:space="preserve">
+    <value>显示名称</value>
+  </data>
+  <data name="DraftAccepted" xml:space="preserve">
+    <value>已加入题集：</value>
+  </data>
+  <data name="DraftsEmpty" xml:space="preserve">
+    <value>暂无草稿。Loop 观察到可复现的问题后会起草到这里。</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="EditDraft" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="Effort" xml:space="preserve">
+    <value>强度</value>
+  </data>
+  <data name="EffortAuto" xml:space="preserve">
+    <value>自动</value>
+  </data>
+  <data name="EffortHigh" xml:space="preserve">
+    <value>高</value>
+  </data>
+  <data name="EffortLow" xml:space="preserve">
+    <value>低</value>
+  </data>
+  <data name="EffortMedium" xml:space="preserve">
+    <value>中</value>
+  </data>
+  <data name="EmptyBlocked" xml:space="preserve">
+    <value>（上游以内容策略拦截了本次回答，未返回正文。）</value>
+  </data>
+  <data name="EmptyNoBody" xml:space="preserve">
+    <value>（模型没有返回正文。）</value>
+  </data>
+  <data name="EmptySafetyOnly" xml:space="preserve">
+    <value>（模型只返回了安全判定，没有正文；已自动重试仍为空。）</value>
+  </data>
+  <data name="EmptySessions" xml:space="preserve">
+    <value>这个项目还没有会话</value>
+  </data>
+  <data name="En" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="EnableCollab" xml:space="preserve">
+    <value>启用协作</value>
+  </data>
+  <data name="EnableCollabHint" xml:space="preserve">
+    <value>给 Worker 与 Loop 会话挂 CollabStart / CollabMonitor / ReadSession</value>
+  </data>
+  <data name="Enabled" xml:space="preserve">
+    <value>启用</value>
+  </data>
+  <data name="EvalReports" xml:space="preserve">
+    <value>评估报告</value>
+  </data>
+  <data name="Evolve" xml:space="preserve">
+    <value>演进一轮</value>
+  </data>
+  <data name="EvolveFailed" xml:space="preserve">
+    <value>演进失败</value>
+  </data>
+  <data name="EvolveIdle" xml:space="preserve">
+    <value>就绪</value>
+  </data>
+  <data name="EvolveRunning" xml:space="preserve">
+    <value>运行中</value>
+  </data>
+  <data name="Features" xml:space="preserve">
+    <value>特征</value>
+  </data>
+  <data name="FetchedModels" xml:space="preserve">
+    <value>拉取到 {0} 个模型</value>
+  </data>
+  <data name="FetchFailed" xml:space="preserve">
+    <value>拉取失败</value>
+  </data>
+  <data name="FetchFreeModels" xml:space="preserve">
+    <value>免费模型</value>
+  </data>
+  <data name="FetchingModels" xml:space="preserve">
+    <value>正在拉取模型…</value>
+  </data>
+  <data name="FetchModels" xml:space="preserve">
+    <value>拉取模型</value>
+  </data>
+  <data name="FollowSystem" xml:space="preserve">
+    <value>跟随系统</value>
+  </data>
+  <data name="FreeOnly" xml:space="preserve">
+    <value>只看免费</value>
+  </data>
+  <data name="FullAccess" xml:space="preserve">
+    <value>完全许可</value>
+  </data>
+  <data name="FullAccessConfirm" xml:space="preserve">
+    <value>完全许可会关闭路径边界、命令审批与环境变量隔离，子进程可能拿到密钥，也可以直接访问网络与任意路径。确定启用？</value>
+  </data>
+  <data name="FullAccessHint" xml:space="preserve">
+    <value>关闭路径边界、命令审批与环境隔离，可直连网络</value>
+  </data>
+  <data name="GeneralNote" xml:space="preserve">
+    <value>主题与语言在重启 OpenLoop 后生效；完全许可、自动审批、自动演进与自动迭代立即生效。</value>
+  </data>
+  <data name="HarnessAdopted" xml:space="preserve">
+    <value>已更替</value>
+  </data>
+  <data name="HarnessContentLabel" xml:space="preserve">
+    <value>内容：</value>
+  </data>
+  <data name="HarnessCurrentHeader" xml:space="preserve">
+    <value>当前版本 v{0} · {1} · {2}</value>
+  </data>
+  <data name="HarnessDefsTitle" xml:space="preserve">
+    <value>特征与规则</value>
+  </data>
+  <data name="HarnessDefUninitialized" xml:space="preserve">
+    <value>—（首次运行后初始化）</value>
+  </data>
+  <data name="HarnessDirLabel" xml:space="preserve">
+    <value>目录：</value>
+  </data>
+  <data name="HarnessDormant" xml:space="preserve">
+    <value>未启用（{0}）</value>
+  </data>
+  <data name="HarnessEnabled" xml:space="preserve">
+    <value>已启用（{0}）</value>
+  </data>
+  <data name="HarnessHint" xml:space="preserve">
+    <value>Harness 只改当前工作区的五类可演进对象（Prompt / Skill / Rule / Limit / Guard），其它工作区不受影响；提示词与 AGENTS.md 用 /prompt、/agents 让模型改；演进按考核题 A/B，更好才采纳。</value>
+  </data>
+  <data name="HarnessKept" xml:space="preserve">
+    <value>未更替</value>
+  </data>
+  <data name="HarnessNeedEndpointAndModel" xml:space="preserve">
+    <value>先在设置里填写接口地址与模型。</value>
+  </data>
+  <data name="HarnessNoActivation" xml:space="preserve">
+    <value>暂无激活集</value>
+  </data>
+  <data name="HarnessNoActivationBaseline" xml:space="preserve">
+    <value>没有激活版本，未试跑基线。</value>
+  </data>
+  <data name="HarnessNoActivationBody" xml:space="preserve">
+    <value>先运行一次，账本初始化后再看。</value>
+  </data>
+  <data name="HarnessNoEndpointBaseline" xml:space="preserve">
+    <value>缺少接口配置，未试跑基线。</value>
+  </data>
+  <data name="HarnessNoModel" xml:space="preserve">
+    <value>先在设置里选择模型。</value>
+  </data>
+  <data name="HarnessParamsLabel" xml:space="preserve">
+    <value>参数：</value>
+  </data>
+  <data name="HarnessProblemLabel" xml:space="preserve">
+    <value>问题：</value>
+  </data>
+  <data name="HarnessPromptLabel" xml:space="preserve">
+    <value>提示：</value>
+  </data>
+  <data name="HarnessReadFailed" xml:space="preserve">
+    <value>读取失败</value>
+  </data>
+  <data name="HarnessReadFeaturesFailed" xml:space="preserve">
+    <value>读取特征失败</value>
+  </data>
+  <data name="HarnessReadTasksFailed" xml:space="preserve">
+    <value>读取考核题失败</value>
+  </data>
+  <data name="HarnessRollbackAsk" xml:space="preserve">
+    <value>退回 v{0}？会写成 v{1}，旧版本文件不动。</value>
+  </data>
+  <data name="HarnessRollbackTitle" xml:space="preserve">
+    <value>回滚</value>
+  </data>
+  <data name="HarnessScore" xml:space="preserve">
+    <value>候选 {0}/{1}，基线 {2}/{3}</value>
+  </data>
+  <data name="HarnessTaskCount" xml:space="preserve">
+    <value>共 {0} 道</value>
+  </data>
+  <data name="HarnessTaskLine" xml:space="preserve">
+    <value>{0}  [{1}]  检查 {2} 项</value>
+  </data>
+  <data name="HarnessTasksTitle" xml:space="preserve">
+    <value>考核题</value>
+  </data>
+  <data name="HarnessTipDef" xml:space="preserve">
+    <value>点击查看特征与规则</value>
+  </data>
+  <data name="HarnessTipTasks" xml:space="preserve">
+    <value>点击查看考核题</value>
+  </data>
+  <data name="Install" xml:space="preserve">
+    <value>安装…</value>
+  </data>
+  <data name="InstallSkill" xml:space="preserve">
+    <value>安装技能</value>
+  </data>
+  <data name="IntervalMinutes" xml:space="preserve">
+    <value>{0} 分钟</value>
+  </data>
+  <data name="IntervalSeconds" xml:space="preserve">
+    <value>{0} 秒</value>
+  </data>
+  <data name="IterActBump" xml:space="preserve">
+    <value>升版</value>
+  </data>
+  <data name="IterActKeep" xml:space="preserve">
+    <value>不变</value>
+  </data>
+  <data name="IterActRebuild" xml:space="preserve">
+    <value>重编</value>
+  </data>
+  <data name="IterAlreadyBefore" xml:space="preserve">
+    <value>当前已经是迭代前版本</value>
+  </data>
+  <data name="IterBusy" xml:space="preserve">
+    <value>执行中…</value>
+  </data>
+  <data name="IterCancelled" xml:space="preserve">
+    <value>已取消</value>
+  </data>
+  <data name="IterCancelledLog" xml:space="preserve">
+    <value>已取消。</value>
+  </data>
+  <data name="IterColAction" xml:space="preserve">
+    <value>动作</value>
+  </data>
+  <data name="IterColCurrent" xml:space="preserve">
+    <value>现版本</value>
+  </data>
+  <data name="IterColPart" xml:space="preserve">
+    <value>部件</value>
+  </data>
+  <data name="IterColTarget" xml:space="preserve">
+    <value>目标版本</value>
+  </data>
+  <data name="IterCommitErrorLog" xml:space="preserve">
+    <value>提交异常：</value>
+  </data>
+  <data name="IterCommitFailed" xml:space="preserve">
+    <value>提交失败</value>
+  </data>
+  <data name="IterCommitOnly" xml:space="preserve">
+    <value>仅提交</value>
+  </data>
+  <data name="IterCommitPartial" xml:space="preserve">
+    <value>提交未全部成功（见进度）</value>
+  </data>
+  <data name="IterCommitPush" xml:space="preserve">
+    <value>提交并推送</value>
+  </data>
+  <data name="IterCommitted" xml:space="preserve">
+    <value>已提交</value>
+  </data>
+  <data name="IterCommittedPush" xml:space="preserve">
+    <value>已提交并推送</value>
+  </data>
+  <data name="IterCommitting" xml:space="preserve">
+    <value>正在提交…</value>
+  </data>
+  <data name="IterCommittingPush" xml:space="preserve">
+    <value>正在提交并推送…</value>
+  </data>
+  <data name="IterErrorLog" xml:space="preserve">
+    <value>异常：</value>
+  </data>
+  <data name="IterFailed" xml:space="preserve">
+    <value>失败</value>
+  </data>
+  <data name="IterFailedRolledBack" xml:space="preserve">
+    <value>失败，已回退</value>
+  </data>
+  <data name="IterFrameworkDependent" xml:space="preserve">
+    <value>框架依赖</value>
+  </data>
+  <data name="IterLog" xml:space="preserve">
+    <value>进度</value>
+  </data>
+  <data name="IterModeFramework" xml:space="preserve">
+    <value>框架依赖：目标机需装 .NET 10，三个 exe 共享一份框架</value>
+  </data>
+  <data name="IterModeLabel" xml:space="preserve">
+    <value>发布形态</value>
+  </data>
+  <data name="IterModeSelfContained" xml:space="preserve">
+    <value>自带框架：每个 exe 各带运行时，目标机不用装 .NET</value>
+  </data>
+  <data name="IterNoChanges" xml:space="preserve">
+    <value>没有改动</value>
+  </data>
+  <data name="IterNoChangesLog" xml:space="preserve">
+    <value>工作树是干净的，没有可提交的改动。</value>
+  </data>
+  <data name="IterNoRestartLog" xml:space="preserve">
+    <value>壳未重启：新壳已发布，会话跑完后点「重启壳」完成切换。</value>
+  </data>
+  <data name="IterNoUpdates" xml:space="preserve">
+    <value>没有部件需要更新：源码或依赖有变化才需要迭代。</value>
+  </data>
+  <data name="IterOk" xml:space="preserve">
+    <value>成功</value>
+  </data>
+  <data name="IterOkNoRestart" xml:space="preserve">
+    <value>成功（壳未重启）：会话跑完点「重启壳」</value>
+  </data>
+  <data name="IterPreviewRepo" xml:space="preserve">
+    <value>预览 {0}（{1}，{2} 个文件）</value>
+  </data>
+  <data name="IterPushed" xml:space="preserve">
+    <value>（已推送）</value>
+  </data>
+  <data name="IterPushFailed" xml:space="preserve">
+    <value>（推送失败：{0}）</value>
+  </data>
+  <data name="IterReadyHint" xml:space="preserve">
+    <value>确认后开始：A 与 I 不会同时换，壳最后重启。</value>
+  </data>
+  <data name="IterRebuildOnly" xml:space="preserve">
+    <value>仅重新编译</value>
+  </data>
+  <data name="IterRepoFail" xml:space="preserve">
+    <value>FAIL {0}：{1}</value>
+  </data>
+  <data name="IterRestarting" xml:space="preserve">
+    <value>即将重启壳：界面会退出，重启后自动回到这里</value>
+  </data>
+  <data name="IterRestartLog" xml:space="preserve">
+    <value>3 秒后重启壳（A/I 已完成，壳放到最后一步）。</value>
+  </data>
+  <data name="IterRestartShell" xml:space="preserve">
+    <value>重启壳</value>
+  </data>
+  <data name="IterRollback" xml:space="preserve">
+    <value>退回上一版本</value>
+  </data>
+  <data name="IterRollbackAsk" xml:space="preserve">
+    <value>退回上一版本？
+{0}
+壳保持当前版本。</value>
+  </data>
+  <data name="IterRollbackErrorLog" xml:space="preserve">
+    <value>退回异常：</value>
+  </data>
+  <data name="IterRollbackFailed" xml:space="preserve">
+    <value>退回失败</value>
+  </data>
+  <data name="IterRollbackLog" xml:space="preserve">
+    <value>回退：</value>
+  </data>
+  <data name="IterRollbackPartial" xml:space="preserve">
+    <value>退回未全部成功；worker 忙就等这一轮跑完再试</value>
+  </data>
+  <data name="IterRolledBack" xml:space="preserve">
+    <value>已退回上一版本（壳未变）</value>
+  </data>
+  <data name="IterRolledBackLog" xml:space="preserve">
+    <value>已退回：</value>
+  </data>
+  <data name="IterRolledBackToBefore" xml:space="preserve">
+    <value>，已回退到迭代前的版本</value>
+  </data>
+  <data name="IterRollingBack" xml:space="preserve">
+    <value>正在退回…</value>
+  </data>
+  <data name="IterRunning" xml:space="preserve">
+    <value>正在执行…</value>
+  </data>
+  <data name="IterSelfContained" xml:space="preserve">
+    <value>自带框架</value>
+  </data>
+  <data name="IterShellRestarted" xml:space="preserve">
+    <value>（壳已重启）</value>
+  </data>
+  <data name="IterSkipRepo" xml:space="preserve">
+    <value>跳过 {0}：{1}</value>
+  </data>
+  <data name="IterStart" xml:space="preserve">
+    <value>开始迭代</value>
+  </data>
+  <data name="IterStartLog" xml:space="preserve">
+    <value>开始：</value>
+  </data>
+  <data name="IterSummary" xml:space="preserve">
+    <value>变更内容</value>
+  </data>
+  <data name="IterTitle" xml:space="preserve">
+    <value>迭代</value>
+  </data>
+  <data name="IterTitleConfirm" xml:space="preserve">
+    <value>迭代确认</value>
+  </data>
+  <data name="IterTitleDone" xml:space="preserve">
+    <value>迭代完成</value>
+  </data>
+  <data name="IterTitleFailed" xml:space="preserve">
+    <value>迭代失败</value>
+  </data>
+  <data name="IterUpstreamAsk" xml:space="preserve">
+    <value>上游有更新，请先更新源码。
+仍要用本地代码继续迭代吗？</value>
+  </data>
+  <data name="IterUpstreamStatus" xml:space="preserve">
+    <value>上游有更新，请先更新源码；仍可用本地代码继续迭代。</value>
+  </data>
+  <data name="IterUpstreamTitle" xml:space="preserve">
+    <value>上游有更新</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>语言</value>
+  </data>
+  <data name="LanguageChanged" xml:space="preserve">
+    <value>语言已保存，重启 OpenLoop 后生效。</value>
+  </data>
+  <data name="LedgerReadFailed" xml:space="preserve">
+    <value>读取账本失败</value>
+  </data>
+  <data name="ListSep" xml:space="preserve">
+    <value>、</value>
+  </data>
+  <data name="LoopAppColPath" xml:space="preserve">
+    <value>路径</value>
+  </data>
+  <data name="LoopAppCount" xml:space="preserve">
+    <value>筛出 {0} / 共 {1} 个 · {2}</value>
+  </data>
+  <data name="LoopAppDeleteAsk" xml:space="preserve">
+    <value>删除「{0}」？目录会一起删掉：
+{1}</value>
+  </data>
+  <data name="LoopAppDeleteFailed" xml:space="preserve">
+    <value>删除失败：</value>
+  </data>
+  <data name="LoopAppDeleteMenu" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="LoopAppDeleteTitle" xml:space="preserve">
+    <value>删除 LoopApp</value>
+  </data>
+  <data name="LoopAppEditMenu" xml:space="preserve">
+    <value>编辑名称/用途</value>
+  </data>
+  <data name="LoopAppEditTitle" xml:space="preserve">
+    <value>编辑 LoopApp</value>
+  </data>
+  <data name="LoopAppEmpty" xml:space="preserve">
+    <value>还没有 LoopApp</value>
+  </data>
+  <data name="LoopAppEmptyHint" xml:space="preserve">
+    <value>还没有 LoopApp：{0}</value>
+  </data>
+  <data name="LoopAppFilterPlaceholder" xml:space="preserve">
+    <value>筛选名称 / 用途 / 路径</value>
+  </data>
+  <data name="LoopAppGone" xml:space="preserve">
+    <value>目录已不存在：</value>
+  </data>
+  <data name="LoopAppMetaFailed" xml:space="preserve">
+    <value>写入 app.json 失败：</value>
+  </data>
+  <data name="LoopAppNameEmpty" xml:space="preserve">
+    <value>名称不能为空</value>
+  </data>
+  <data name="LoopAppNameLabel" xml:space="preserve">
+    <value>名称（目录名）</value>
+  </data>
+  <data name="LoopAppNameTaken" xml:space="preserve">
+    <value>已经有同名应用：{0}</value>
+  </data>
+  <data name="LoopAppOpen" xml:space="preserve">
+    <value>打开</value>
+  </data>
+  <data name="LoopAppPageHint" xml:space="preserve">
+    <value>本工作区生成过的 LoopApp</value>
+  </data>
+  <data name="LoopAppRenameFailed" xml:space="preserve">
+    <value>重命名失败：</value>
+  </data>
+  <data name="LoopAppUsageLabel" xml:space="preserve">
+    <value>用途</value>
+  </data>
+  <data name="LoopHint" xml:space="preserve">
+    <value>和 Loop 对话：说出你的体验、不满或改进建议（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）</value>
+  </data>
+  <data name="LoopSubtitle" xml:space="preserve">
+    <value>观察 Worker 与用户判定，积累下一版</value>
+  </data>
+  <data name="MenuAbout" xml:space="preserve">
+    <value>关于</value>
+  </data>
+  <data name="MenuExit" xml:space="preserve">
+    <value>退出</value>
+  </data>
+  <data name="MenuLanguageAuto" xml:space="preserve">
+    <value>语言：跟随系统</value>
+  </data>
+  <data name="MenuLanguageEn" xml:space="preserve">
+    <value>语言：English</value>
+  </data>
+  <data name="MenuLanguageZh" xml:space="preserve">
+    <value>语言：中文</value>
+  </data>
+  <data name="MenuLoop" xml:space="preserve">
+    <value>Loop 会话</value>
+  </data>
+  <data name="MenuNewSession" xml:space="preserve">
+    <value>新建会话…</value>
+  </data>
+  <data name="MenuSessionList" xml:space="preserve">
+    <value>会话列表</value>
+  </data>
+  <data name="MenuSettings" xml:space="preserve">
+    <value>设置…</value>
+  </data>
+  <data name="MenuThemeDark" xml:space="preserve">
+    <value>主题：深色</value>
+  </data>
+  <data name="MenuThemeGrayBlue" xml:space="preserve">
+    <value>主题：灰蓝</value>
+  </data>
+  <data name="MenuThemeLight" xml:space="preserve">
+    <value>主题：浅色</value>
+  </data>
+  <data name="MissingConfig" xml:space="preserve">
+    <value>缺少配置</value>
+  </data>
+  <data name="MissingConfigBody" xml:space="preserve">
+    <value>接口地址和至少一个模型都要有。</value>
+  </data>
+  <data name="MissingModelId" xml:space="preserve">
+    <value>缺少模型 id</value>
+  </data>
+  <data name="MissingModelIdBody" xml:space="preserve">
+    <value>模型 id 不能为空。</value>
+  </data>
+  <data name="MissingPluginId" xml:space="preserve">
+    <value>缺少插件 id</value>
+  </data>
+  <data name="MissingPluginIdBody" xml:space="preserve">
+    <value>id 不能为空。</value>
+  </data>
+  <data name="Model" xml:space="preserve">
+    <value>模型</value>
+  </data>
+  <data name="ModelCtxAutoChoice" xml:space="preserve">
+    <value>自动（目录 / 内置表 / 默认）</value>
+  </data>
+  <data name="ModelCtxAutoHint" xml:space="preserve">
+    <value>自动：目录报的值 → 内置表 → 默认值，目前解析为 {0}。</value>
+  </data>
+  <data name="ModelCtxFixed" xml:space="preserve">
+    <value>固定按 {0} 压缩上下文；实际容量以服务商为准。自动值为 {1}。</value>
+  </data>
+  <data name="ModelExists" xml:space="preserve">
+    <value>模型已存在</value>
+  </data>
+  <data name="ModelExistsBody" xml:space="preserve">
+    <value>列表里已有 {0}，换个 id。</value>
+  </data>
+  <data name="ModelIdLabel" xml:space="preserve">
+    <value>模型 id</value>
+  </data>
+  <data name="ModelIdPlaceholder" xml:space="preserve">
+    <value>发给服务商的模型 id，例如 deepseek-flash-1017</value>
+  </data>
+  <data name="ModelListEmpty" xml:space="preserve">
+    <value>模型列表已为空</value>
+  </data>
+  <data name="ModelNamePlaceholder" xml:space="preserve">
+    <value>留空用目录里的名字或模型 id</value>
+  </data>
+  <data name="ModelPropsTitle" xml:space="preserve">
+    <value>模型属性</value>
+  </data>
+  <data name="ModelSearchHint" xml:space="preserve">
+    <value>输入搜索模型；点添加加入列表</value>
+  </data>
+  <data name="ModeTask" xml:space="preserve">
+    <value>任务</value>
+  </data>
+  <data name="Name" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="NewProject" xml:space="preserve">
+    <value>＋ 新建项目…</value>
+  </data>
+  <data name="NewSession" xml:space="preserve">
+    <value>新建会话</value>
+  </data>
+  <data name="NewSessionHint" xml:space="preserve">
+    <value>描述任务，例如：为这个项目补一个 README（Enter 发送，Shift+Enter 换行）</value>
+  </data>
+  <data name="NewSessionSubtitle" xml:space="preserve">
+    <value>选择项目并描述任务，开始一个新的会话</value>
+  </data>
+  <data name="NoEarlierVersion" xml:space="preserve">
+    <value>没有更早的版本</value>
+  </data>
+  <data name="NoMessages" xml:space="preserve">
+    <value>暂无对话</value>
+  </data>
+  <data name="NoPlugins" xml:space="preserve">
+    <value>还没有插件</value>
+  </data>
+  <data name="NotEditable" xml:space="preserve">
+    <value>不可编辑</value>
+  </data>
+  <data name="NotEditableBody" xml:space="preserve">
+    <value>这个清单里没有 provider 贡献，点「打开目录」自己改。</value>
+  </data>
+  <data name="OnlyGlobalNoWorkspace" xml:space="preserve">
+    <value>（还没打开工作区，只看全局）</value>
+  </data>
+  <data name="OpenCodeApproval" xml:space="preserve">
+    <value>权限审批</value>
+  </data>
+  <data name="OpenCodeHint" xml:space="preserve">
+    <value>委派给 OpenCode 时，每个动作都经本应用审批</value>
+  </data>
+  <data name="OpenCodeNote" xml:space="preserve">
+    <value>服务通过 ~/.local/state/opencode/service.json 自动发现；未就绪时不会出现在模型列表里。</value>
+  </data>
+  <data name="OpenFolder" xml:space="preserve">
+    <value>打开报告目录</value>
+  </data>
+  <data name="OpenLoopChat" xml:space="preserve">
+    <value>打开 Loop 会话</value>
+  </data>
+  <data name="OpenPluginFolder" xml:space="preserve">
+    <value>打开目录</value>
+  </data>
+  <data name="OpenWorkspace" xml:space="preserve">
+    <value>打开工作区</value>
+  </data>
+  <data name="PickDraft" xml:space="preserve">
+    <value>从左侧选择一条草稿。</value>
+  </data>
+  <data name="PickModelFirst" xml:space="preserve">
+    <value>先选模型</value>
+  </data>
+  <data name="PickModelFirstBody" xml:space="preserve">
+    <value>在下面的列表里选中一个模型再改属性。</value>
+  </data>
+  <data name="PickProject" xml:space="preserve">
+    <value>选择项目，或新建项目</value>
+  </data>
+  <data name="PickSkillFolder" xml:space="preserve">
+    <value>选择技能目录（里面要有 SKILL.md）</value>
+  </data>
+  <data name="PickWorkspace" xml:space="preserve">
+    <value>请选择工作目录</value>
+  </data>
+  <data name="PluginAddTitle" xml:space="preserve">
+    <value>添加插件</value>
+  </data>
+  <data name="PluginEditTitle" xml:space="preserve">
+    <value>编辑插件</value>
+  </data>
+  <data name="PluginIdLabel" xml:space="preserve">
+    <value>插件 id</value>
+  </data>
+  <data name="PluginIdPlaceholder" xml:space="preserve">
+    <value>目录名与清单 id，例如 agent2api</value>
+  </data>
+  <data name="PluginKeyPlaceholder" xml:space="preserve">
+    <value>写入同目录 key.txt；留空表示不改动</value>
+  </data>
+  <data name="PluginManifest" xml:space="preserve">
+    <value>插件清单</value>
+  </data>
+  <data name="PluginModelsUrlPlaceholder" xml:space="preserve">
+    <value>可选：GET 这个地址取 data[].id 当模型清单</value>
+  </data>
+  <data name="PluginNamePlaceholder" xml:space="preserve">
+    <value>下拉里显示的名字；留空用 id</value>
+  </data>
+  <data name="PluginNoteCreate" xml:space="preserve">
+    <value>会新建目录：{0}。清单只写 provider 贡献，模型清单靠 ModelsUrl 自动发现。</value>
+  </data>
+  <data name="PluginNoteEdit" xml:space="preserve">
+    <value>清单声明了 {0} 个模型，本页不改 models；密钥留空表示不动现有 key.txt。「{1}」写进清单时会展开成清单所在目录。</value>
+  </data>
+  <data name="PluginPrefixLabel" xml:space="preserve">
+    <value>模型前缀</value>
+  </data>
+  <data name="PluginPrefixPlaceholder" xml:space="preserve">
+    <value>可选：界面上的模型前缀，发上游前会去掉，例如 a2a/</value>
+  </data>
+  <data name="PluginProviderBody" xml:space="preserve">
+    <value>它来自插件清单，请到「插件」页卸载或改清单。</value>
+  </data>
+  <data name="PluginProviderTitle" xml:space="preserve">
+    <value>插件提供商</value>
+  </data>
+  <data name="PluginsNote" xml:space="preserve">
+    <value>工作区插件在 &lt;工作区&gt;/.openloop/plugins，全局插件在 %APPDATA%\OpenLoop\plugins（同名时工作区优先）。存盘即生效，会话里的提供商下拉几秒内自己补上。「编辑」只改 provider 型插件的地址与密钥，工具/MCP 型请点「打开目录」自己改；「添加」写进当前工作区；「卸载」把目录搬到插件回收目录（%APPDATA%\OpenLoop\plugins-trash）。</value>
+  </data>
+  <data name="PluginSuffix" xml:space="preserve">
+    <value>（插件）</value>
+  </data>
+  <data name="PluginUrlPlaceholder" xml:space="preserve">
+    <value>OpenAI 兼容根地址，例如 http://127.0.0.1:3065/v1</value>
+  </data>
+  <data name="ProjectOpencode" xml:space="preserve">
+    <value>项目 .opencode</value>
+  </data>
+  <data name="Projects" xml:space="preserve">
+    <value>项目</value>
+  </data>
+  <data name="Properties" xml:space="preserve">
+    <value>属性</value>
+  </data>
+  <data name="Provider" xml:space="preserve">
+    <value>提供商</value>
+  </data>
+  <data name="ProviderBuiltInHint" xml:space="preserve">
+    <value>内置提供商：点「拉取模型」同步该提供商的模型列表。勾选=启用，取消勾选=停用（不进出模型下拉）。</value>
+  </data>
+  <data name="ProviderCustomHint" xml:space="preserve">
+    <value>自定义提供商：逐条添加模型 id（例如 gpt-4o-mini）。勾选=启用，取消勾选=停用（不进出模型下拉）。</value>
+  </data>
+  <data name="ProviderNone" xml:space="preserve">
+    <value>先添加一个提供商。</value>
+  </data>
+  <data name="ProviderPluginHint" xml:space="preserve">
+    <value>插件提供商（{0}）：地址与密钥归插件清单管；模型的增删写回它的 plugin.json。勾选=启用，取消勾选=停用（不进出模型下拉）。</value>
+  </data>
+  <data name="ProviderPluginOfflineHint" xml:space="preserve">
+    <value>插件提供商（{0}）当前不可用：服务/地址没就绪，模型先按清单列出，也可以先停用。</value>
+  </data>
+  <data name="PuppetBroadcast" xml:space="preserve">
+    <value>（广播）</value>
+  </data>
+  <data name="PuppetChatHint" xml:space="preserve">
+    <value>Puppet 留言板：各会话的 agent 在这里自行对话；你也可以输入参与。</value>
+  </data>
+  <data name="PuppetCommandComplain" xml:space="preserve">
+    <value>把 Puppet 交谈中的问题发给 Loop（不附上下文）</value>
+  </data>
+  <data name="PuppetComplainEmpty" xml:space="preserve">
+    <value>/complain 后面要写具体问题。</value>
+  </data>
+  <data name="PuppetEmpty" xml:space="preserve">
+    <value>没有可用的 action</value>
+  </data>
+  <data name="PuppetFiltered" xml:space="preserve">
+    <value> · 筛出 {0}</value>
+  </data>
+  <data name="PuppetFilterPlaceholder" xml:space="preserve">
+    <value>筛选 action / 参数 / 说明</value>
+  </data>
+  <data name="PuppetInputHint" xml:space="preserve">
+    <value>以用户身份在留言板上发言；输入 / 呼出工具</value>
+  </data>
+  <data name="PuppetListLoading" xml:space="preserve">
+    <value>Puppet Action 清单 · 读取中…</value>
+  </data>
+  <data name="PuppetListTitle" xml:space="preserve">
+    <value>Puppet Action 清单</value>
+  </data>
+  <data name="PuppetMessages" xml:space="preserve">
+    <value> · {0} 条留言</value>
+  </data>
+  <data name="PuppetMissingTitle" xml:space="preserve">
+    <value>缺少内容</value>
+  </data>
+  <data name="PuppetNoBoard" xml:space="preserve">
+    <value>没有可用的留言板</value>
+  </data>
+  <data name="PuppetOnline" xml:space="preserve">
+    <value>在线 {0}</value>
+  </data>
+  <data name="PuppetShellDisabled" xml:space="preserve">
+    <value>壳启用 Puppet（B 面）后才能列出 action；清单来自本进程的 /appagent/manifest。</value>
+  </data>
+  <data name="PuppetStatus" xml:space="preserve">
+    <value>Puppet Action 清单 · 实例 {0} · {1} 个 action</value>
+  </data>
+  <data name="PuppetUnreadable" xml:space="preserve">
+    <value>读不到清单：</value>
+  </data>
+  <data name="PuppetUsage" xml:space="preserve">
+    <value>双击一行把这条命令填进输入框：/puppet &lt;action&gt; &lt;参数…&gt;（参数用自然语言写，模型自己对应）</value>
+  </data>
+  <data name="PuppetUsageShort" xml:space="preserve">
+    <value>双击一行把这条命令填进输入框：/puppet &lt;action&gt; &lt;参数…&gt;</value>
+  </data>
+  <data name="RawResponse" xml:space="preserve">
+    <value>原始响应：</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>刷新</value>
+  </data>
+  <data name="Remove" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="RemoveSelected" xml:space="preserve">
+    <value>删除选中</value>
+  </data>
+  <data name="ReportsEmpty" xml:space="preserve">
+    <value>还没有评估报告。跑一轮演进后生成。</value>
+  </data>
+  <data name="ReviewPending" xml:space="preserve">
+    <value>待答</value>
+  </data>
+  <data name="Rollback" xml:space="preserve">
+    <value>回滚上一版</value>
+  </data>
+  <data name="RollbackFailed" xml:space="preserve">
+    <value>回滚失败</value>
+  </data>
+  <data name="RolledBack" xml:space="preserve">
+    <value>已回滚</value>
+  </data>
+  <data name="RuleAddTitle" xml:space="preserve">
+    <value>新增规则</value>
+  </data>
+  <data name="RuleBodyLabel" xml:space="preserve">
+    <value>规则正文</value>
+  </data>
+  <data name="RuleBodyPlaceholder" xml:space="preserve">
+    <value>写给 Worker 的一条规则，例如：修改文件前先用 ReadFile 确认内容。</value>
+  </data>
+  <data name="RuleEmpty" xml:space="preserve">
+    <value>规则为空</value>
+  </data>
+  <data name="RuleEmptyOptimizeBody" xml:space="preserve">
+    <value>先写一条规则，再让 AI 优化。</value>
+  </data>
+  <data name="RuleEmptySaveBody" xml:space="preserve">
+    <value>请填写规则正文。</value>
+  </data>
+  <data name="RuleHint" xml:space="preserve">
+    <value>登记后是休眠特征，下一轮演进可被启用；id 由名字 + 正文哈希生成，改字即新 id。</value>
+  </data>
+  <data name="RuleNameLabel" xml:space="preserve">
+    <value>规则名</value>
+  </data>
+  <data name="RuleNamePlaceholder" xml:space="preserve">
+    <value>可选，例如：先读再写</value>
+  </data>
+  <data name="RuleOptimize" xml:space="preserve">
+    <value>AI 优化</value>
+  </data>
+  <data name="RuleOptimized" xml:space="preserve">
+    <value>已优化，请检查后登记（不会自动保存）。</value>
+  </data>
+  <data name="RuleOptimizeEmpty" xml:space="preserve">
+    <value>模型没有返回规则，保持原文。</value>
+  </data>
+  <data name="RuleOptimizeFailed" xml:space="preserve">
+    <value>优化失败：</value>
+  </data>
+  <data name="RuleOptimizing" xml:space="preserve">
+    <value>正在优化…</value>
+  </data>
+  <data name="RuleRegister" xml:space="preserve">
+    <value>登记</value>
+  </data>
+  <data name="RuleRegistered" xml:space="preserve">
+    <value>规则已登记</value>
+  </data>
+  <data name="RuleRegisteredBody" xml:space="preserve">
+    <value>{0}\n当前版本不变；下一轮演进时可被启用。</value>
+  </data>
+  <data name="RuleRegisterFailed" xml:space="preserve">
+    <value>登记规则失败</value>
+  </data>
+  <data name="Rules" xml:space="preserve">
+    <value>规则</value>
+  </data>
+  <data name="SaveDraft" xml:space="preserve">
+    <value>保存修改</value>
+  </data>
+  <data name="SaveFailed" xml:space="preserve">
+    <value>保存失败</value>
+  </data>
+  <data name="ScopeGlobal" xml:space="preserve">
+    <value>全局</value>
+  </data>
+  <data name="ScopeProject" xml:space="preserve">
+    <value>项目</value>
+  </data>
+  <data name="SearchSessions" xml:space="preserve">
+    <value>搜索会话</value>
+  </data>
+  <data name="Send" xml:space="preserve">
+    <value>发送</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="SettingsBaseUrl" xml:space="preserve">
+    <value>接口地址</value>
+  </data>
+  <data name="SettingsCancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="SettingsKey" xml:space="preserve">
+    <value>密钥</value>
+  </data>
+  <data name="SettingsModel" xml:space="preserve">
+    <value>模型</value>
+  </data>
+  <data name="SettingsSave" xml:space="preserve">
+    <value>保存</value>
+  </data>
+  <data name="SettingsTest" xml:space="preserve">
+    <value>测试连接</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="SkillDisable" xml:space="preserve">
+    <value>停用</value>
+  </data>
+  <data name="SkillEnable" xml:space="preserve">
+    <value>启用</value>
+  </data>
+  <data name="SkillsEmptyGlobal" xml:space="preserve">
+    <value>全局还没有技能</value>
+  </data>
+  <data name="SkillsEmptyProject" xml:space="preserve">
+    <value>这个工作区还没有技能</value>
+  </data>
+  <data name="SkillsHint" xml:space="preserve">
+    <value>「全局」改 %APPDATA%\OpenLoop\skills，「项目」改 &lt;工作区&gt;/.openloop/skills（也读 OpenCode 的 &lt;工作区&gt;/.opencode/skills）；同名时 .openloop &gt; .opencode &gt; 全局，全局开关只影响项目里没配置过的技能。Ctrl/Shift 点行可多选，一起启用或停用。</value>
+  </data>
+  <data name="SkillsNoneManageable" xml:space="preserve">
+    <value>没有可管理的技能</value>
+  </data>
+  <data name="SkillsNoWorkspace" xml:space="preserve">
+    <value>先在项目里打开一个会话，或切到「全局」管理全局技能</value>
+  </data>
+  <data name="SkillToggle" xml:space="preserve">
+    <value>启用/停用</value>
+  </data>
+  <data name="Start" xml:space="preserve">
+    <value>开始</value>
+  </data>
+  <data name="StateDone" xml:space="preserve">
+    <value>已结束</value>
+  </data>
+  <data name="StateIdle" xml:space="preserve">
+    <value>待开始</value>
+  </data>
+  <data name="StateInterrupted" xml:space="preserve">
+    <value>中断</value>
+  </data>
+  <data name="StateRunning" xml:space="preserve">
+    <value>运行中</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>状态</value>
+  </data>
+  <data name="StatusAdopted" xml:space="preserve">
+    <value>: 已采纳 v{0}</value>
+  </data>
+  <data name="StatusEvolveFailed" xml:space="preserve">
+    <value>演进失败</value>
+  </data>
+  <data name="StatusKeptOld" xml:space="preserve">
+    <value>: 保留旧版</value>
+  </data>
+  <data name="StatusPaused" xml:space="preserve">
+    <value>已暂停</value>
+  </data>
+  <data name="StatusPreparing" xml:space="preserve">
+    <value>: 准备中…</value>
+  </data>
+  <data name="StatusPreparingPhase" xml:space="preserve">
+    <value>准备中…</value>
+  </data>
+  <data name="StatusProposing" xml:space="preserve">
+    <value>正在候选</value>
+  </data>
+  <data name="StatusProposingPhase" xml:space="preserve">
+    <value>构思中…</value>
+  </data>
+  <data name="StatusReviewing" xml:space="preserve">
+    <value>评审 {0} 道题（{1} 次运行）…</value>
+  </data>
+  <data name="StatusRolledBack" xml:space="preserve">
+    <value>回滚到 v{0}（新版 v{1}）</value>
+  </data>
+  <data name="StatusRolledBackTo" xml:space="preserve">
+    <value>: 已退回 v{0}（新版本 v{1}）</value>
+  </data>
+  <data name="StatusStopped" xml:space="preserve">
+    <value>: 已停止</value>
+  </data>
+  <data name="StatusThinking" xml:space="preserve">
+    <value>思考中…</value>
+  </data>
+  <data name="Steps" xml:space="preserve">
+    <value>步</value>
+  </data>
+  <data name="Stop" xml:space="preserve">
+    <value>停止</value>
+  </data>
+  <data name="TabCollab" xml:space="preserve">
+    <value>协作</value>
+  </data>
+  <data name="TabDetail" xml:space="preserve">
+    <value>详情</value>
+  </data>
+  <data name="TabGeneral" xml:space="preserve">
+    <value>普通</value>
+  </data>
+  <data name="TabLoop" xml:space="preserve">
+    <value>Loop</value>
+  </data>
+  <data name="TabModels" xml:space="preserve">
+    <value>模型</value>
+  </data>
+  <data name="TabOverview" xml:space="preserve">
+    <value>会话</value>
+  </data>
+  <data name="TabPlugins" xml:space="preserve">
+    <value>插件</value>
+  </data>
+  <data name="TabSideWork" xml:space="preserve">
+    <value>旁路</value>
+  </data>
+  <data name="TabSkills" xml:space="preserve">
+    <value>技能</value>
+  </data>
+  <data name="TabTools" xml:space="preserve">
+    <value>工具</value>
+  </data>
+  <data name="TaskDrafts" xml:space="preserve">
+    <value>题目候选</value>
+  </data>
+  <data name="Tasks" xml:space="preserve">
+    <value>考核题</value>
+  </data>
+  <data name="TasksUnit" xml:space="preserve">
+    <value>道</value>
+  </data>
+  <data name="TestingConnection" xml:space="preserve">
+    <value>正在测试连接…</value>
+  </data>
+  <data name="ThemeAccent" xml:space="preserve">
+    <value>主题色</value>
+  </data>
+  <data name="ThemeChanged" xml:space="preserve">
+    <value>已保存，重启 OpenLoop 后生效。</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>深色</value>
+  </data>
+  <data name="ThemeGrayBlue" xml:space="preserve">
+    <value>灰蓝</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>浅色</value>
+  </data>
+  <data name="Thinking" xml:space="preserve">
+    <value>思考过程</value>
+  </data>
+  <data name="ThinkingHint" xml:space="preserve">
+    <value>新回话默认展开「思考与工具过程」</value>
+  </data>
+  <data name="ToolsNote" xml:space="preserve">
+    <value>内网与环回地址一律拒绝；只抓文本/HTML/JSON/XML，单页最多 2MB，结果默认 6000 字符。Worker 与 Loop 同时生效。</value>
+  </data>
+  <data name="Trace" xml:space="preserve">
+    <value>trace</value>
+  </data>
+  <data name="Uninstall" xml:space="preserve">
+    <value>卸载</value>
+  </data>
+  <data name="UninstallFailed" xml:space="preserve">
+    <value>卸载失败</value>
+  </data>
+  <data name="UninstallGlobalFirst" xml:space="preserve">
+    <value>全局技能请切到「全局」里卸载</value>
+  </data>
+  <data name="UninstallOneOnly" xml:space="preserve">
+    <value>一次只卸载一个技能</value>
+  </data>
+  <data name="UninstallOpencodeOwned" xml:space="preserve">
+    <value>这个技能装在 .opencode/skills 里，由 opencode 安装，请在那里删除</value>
+  </data>
+  <data name="UninstallPlugin" xml:space="preserve">
+    <value>卸载插件</value>
+  </data>
+  <data name="UninstallPluginBody" xml:space="preserve">
+    <value>把{0}插件 {1} 的整个目录搬到插件回收目录？需要时可以手工搬回来。</value>
+  </data>
+  <data name="UninstallSkill" xml:space="preserve">
+    <value>卸载技能</value>
+  </data>
+  <data name="UninstallSkillConfirm" xml:space="preserve">
+    <value>确定卸载技能「{0}」？
+
+会删除整个目录，不可恢复：
+{1}</value>
+  </data>
+  <data name="Unknown" xml:space="preserve">
+    <value>未知</value>
+  </data>
+  <data name="Unnamed" xml:space="preserve">
+    <value>未命名</value>
+  </data>
+  <data name="WebFetchAllow" xml:space="preserve">
+    <value>免审批（默认）</value>
+  </data>
+  <data name="WebFetchAsk" xml:space="preserve">
+    <value>每次审批</value>
+  </data>
+  <data name="WebFetchHint" xml:space="preserve">
+    <value>只读抓取 http/https 网页正文并转纯文本；不执行 JavaScript，内容按不可信数据处理</value>
+  </data>
+  <data name="WebFetchOff" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="Workspace" xml:space="preserve">
+    <value>工作区</value>
+  </data>
+  <data name="WorkspaceMissing" xml:space="preserve">
+    <value>工作目录不存在：</value>
+  </data>
+  <data name="Zh" xml:space="preserve">
+    <value>中文</value>
+  </data>
+  <data name="状态: " xml:space="preserve">
+    <value>状态: </value>
+  </data>
+  <data name="草稿: " xml:space="preserve">
+    <value>草稿: </value>
+  </data>
+  <data name="题目 id: " xml:space="preserve">
+    <value>题目 id: </value>
+  </data>
+  <data name="问题: " xml:space="preserve">
+    <value>问题: </value>
+  </data>
+  <data name="理由: " xml:space="preserve">
+    <value>理由: </value>
+  </data>
+  <data name="来源: " xml:space="preserve">
+    <value>来源: </value>
+  </data>
+  <data name="创建: " xml:space="preserve">
+    <value>创建: </value>
+  </data>
+  <data name="提示词:" xml:space="preserve">
+    <value>提示词:</value>
+  </data>
+  <data name="起始文件:" xml:space="preserve">
+    <value>起始文件:</value>
+  </data>
+  <data name=" 字符)" xml:space="preserve">
+    <value> 字符)</value>
+  </data>
+  <data name="  （无）" xml:space="preserve">
+    <value>  （无）</value>
+  </data>
+  <data name="判定条件:" xml:space="preserve">
+    <value>判定条件:</value>
+  </data>
+  <data name="JSON 解析失败：" xml:space="preserve">
+    <value>JSON 解析失败：</value>
+  </data>
+  <data name="已保存修改。" xml:space="preserve">
+    <value>已保存修改。</value>
+  </data>
+  <data name="正在编辑 JSON；保存后回到预览。" xml:space="preserve">
+    <value>正在编辑 JSON；保存后回到预览。</value>
+  </data>
+  <data name="基线试跑失败：" xml:space="preserve">
+    <value>基线试跑失败：</value>
+  </data>
+  <data name="丢弃草稿" xml:space="preserve">
+    <value>丢弃草稿</value>
+  </data>
+  <data name="」？不会删除已有题集。" xml:space="preserve">
+    <value>」？不会删除已有题集。</value>
+  </data>
+  <data name="丢弃草稿「" xml:space="preserve">
+    <value>丢弃草稿「</value>
+  </data>
+  <data name="待确认" xml:space="preserve">
+    <value>待确认</value>
+  </data>
+  <data name="已采纳" xml:space="preserve">
+    <value>已采纳</value>
+  </data>
+  <data name="已丢弃" xml:space="preserve">
+    <value>已丢弃</value>
+  </data>
+  <data name="只读 · 尚未运行" xml:space="preserve">
+    <value>只读 · 尚未运行</value>
+  </data>
+  <data name="在输入框里用 /btw &lt;请求&gt; 跑一个只读的旁路任务" xml:space="preserve">
+    <value>在输入框里用 /btw &lt;请求&gt; 跑一个只读的旁路任务</value>
+  </data>
+  <data name="等当前旁路任务结束再发。" xml:space="preserve">
+    <value>等当前旁路任务结束再发。</value>
+  </data>
+  <data name="旁路任务进行中" xml:space="preserve">
+    <value>旁路任务进行中</value>
+  </data>
+  <data name="工作区目录不存在：" xml:space="preserve">
+    <value>工作区目录不存在：</value>
+  </data>
+  <data name="项目不可用" xml:space="preserve">
+    <value>项目不可用</value>
+  </data>
+  <data name="先在设置里填写接口地址与模型。" xml:space="preserve">
+    <value>先在设置里填写接口地址与模型。</value>
+  </data>
+  <data name="缺少配置" xml:space="preserve">
+    <value>缺少配置</value>
+  </data>
+  <data name="读取账本失败" xml:space="preserve">
+    <value>读取账本失败</value>
+  </data>
+  <data name="创建 trace 失败" xml:space="preserve">
+    <value>创建 trace 失败</value>
+  </data>
+  <data name="（已停止）" xml:space="preserve">
+    <value>（已停止）</value>
+  </data>
+  <data name="只读 · stopped" xml:space="preserve">
+    <value>只读 · stopped</value>
+  </data>
+  <data name="只读 · error" xml:space="preserve">
+    <value>只读 · error</value>
+  </data>
+  <data name="旁路执行失败" xml:space="preserve">
+    <value>旁路执行失败</value>
+  </data>
+  <data name="只读 · 运行中…" xml:space="preserve">
+    <value>只读 · 运行中…</value>
+  </data>
+  <data name="继续执行？" xml:space="preserve">
+    <value>继续执行？</value>
+  </data>
+  <data name="打开会话" xml:space="preserve">
+    <value>打开会话</value>
+  </data>
+  <data name="模型" xml:space="preserve">
+    <value>模型</value>
+  </data>
+  <data name="生图模型" xml:space="preserve">
+    <value>生图模型</value>
+  </data>
+  <data name="自动" xml:space="preserve">
+    <value>自动</value>
+  </data>
+  <data name="低" xml:space="preserve">
+    <value>低</value>
+  </data>
+  <data name="中" xml:space="preserve">
+    <value>中</value>
+  </data>
+  <data name="高" xml:space="preserve">
+    <value>高</value>
+  </data>
+  <data name="选择" xml:space="preserve">
+    <value>选择</value>
+  </data>
+  <data name="操作" xml:space="preserve">
+    <value>操作</value>
+  </data>
+  <data name="复制" xml:space="preserve">
+    <value>复制</value>
+  </data>
+  <data name="转给 worker" xml:space="preserve">
+    <value>转给 worker</value>
+  </data>
+  <data name="删除" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="迭代" xml:space="preserve">
+    <value>迭代</value>
+  </data>
+  <data name="提交" xml:space="preserve">
+    <value>提交</value>
+  </data>
+  <data name="提交并推送" xml:space="preserve">
+    <value>提交并推送</value>
+  </data>
+  <data name="退回上一个版本" xml:space="preserve">
+    <value>退回上一个版本</value>
+  </data>
+  <data name="解锁：允许你自己点按网页" xml:space="preserve">
+    <value>解锁：允许你自己点按网页</value>
+  </data>
+  <data name="锁定：网页由 Agent 控制" xml:space="preserve">
+    <value>锁定：网页由 Agent 控制</value>
+  </data>
+  <data name="OpenLoop 浏览器" xml:space="preserve">
+    <value>OpenLoop 浏览器</value>
+  </data>
+  <data name="地址为空" xml:space="preserve">
+    <value>地址为空</value>
+  </data>
+  <data name="导航失败：" xml:space="preserve">
+    <value>导航失败：</value>
+  </data>
+  <data name="脚本为空" xml:space="preserve">
+    <value>脚本为空</value>
+  </data>
+  <data name="执行脚本超时" xml:space="preserve">
+    <value>执行脚本超时</value>
+  </data>
+  <data name="执行脚本失败：" xml:space="preserve">
+    <value>执行脚本失败：</value>
+  </data>
+  <data name="截图超时" xml:space="preserve">
+    <value>截图超时</value>
+  </data>
+  <data name="截图失败：" xml:space="preserve">
+    <value>截图失败：</value>
+  </data>
+  <data name="WebView2 初始化超时：检查是否装了 WebView2 Runtime" xml:space="preserve">
+    <value>WebView2 初始化超时：检查是否装了 WebView2 Runtime</value>
+  </data>
+  <data name="WebView2 初始化失败：" xml:space="preserve">
+    <value>WebView2 初始化失败：</value>
+  </data>
+  <data name="浏览器视图已关闭" xml:space="preserve">
+    <value>浏览器视图已关闭</value>
+  </data>
+  <data name="打开系统浏览器失败：" xml:space="preserve">
+    <value>打开系统浏览器失败：</value>
+  </data>
+  <data name="会话" xml:space="preserve">
+    <value>会话</value>
+  </data>
+  <data name="转给 Loop" xml:space="preserve">
+    <value>转给 Loop</value>
+  </data>
+  <data name="考核题: —" xml:space="preserve">
+    <value>考核题: —</value>
+  </data>
+  <data name="新增规则" xml:space="preserve">
+    <value>新增规则</value>
+  </data>
+  <data name="待答 0" xml:space="preserve">
+    <value>待答 0</value>
+  </data>
+  <data name="没有打开的网页页" xml:space="preserve">
+    <value>没有打开的网页页</value>
+  </data>
+  <data name="没有网页页" xml:space="preserve">
+    <value>没有网页页</value>
+  </data>
+  <data name="没有打开的会话" xml:space="preserve">
+    <value>没有打开的会话</value>
+  </data>
+  <data name="报告: " xml:space="preserve">
+    <value>报告: </value>
+  </data>
+  <data name="时间: " xml:space="preserve">
+    <value>时间: </value>
+  </data>
+  <data name="失败" xml:space="preserve">
+    <value>失败</value>
+  </data>
+  <data name="通过" xml:space="preserve">
+    <value>通过</value>
+  </data>
+  <data name="：基线 " xml:space="preserve">
+    <value>：基线 </value>
+  </data>
+  <data name="，候选 " xml:space="preserve">
+    <value>，候选 </value>
+  </data>
+  <data name="  基线: " xml:space="preserve">
+    <value>  基线: </value>
+  </data>
+  <data name="  候选: " xml:space="preserve">
+    <value>  候选: </value>
+  </data>
+  <data name="保留" xml:space="preserve">
+    <value>保留</value>
+  </data>
+  <data name="采纳" xml:space="preserve">
+    <value>采纳</value>
+  </data>
+  <data name="立即：插到下一步（当前轮在下一个 step 前收尾）" xml:space="preserve">
+    <value>立即：插到下一步（当前轮在下一个 step 前收尾）</value>
+  </data>
+  <data name="等本轮：等这一轮返回（Ctrl+Enter 发送）" xml:space="preserve">
+    <value>等本轮：等这一轮返回（Ctrl+Enter 发送）</value>
+  </data>
+  <data name="📎 附件" xml:space="preserve">
+    <value>📎 附件</value>
+  </data>
+  <data name="编辑" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="立即" xml:space="preserve">
+    <value>立即</value>
+  </data>
+  <data name="自动：agent 插入（立即发送）" xml:space="preserve">
+    <value>自动：agent 插入（立即发送）</value>
+  </data>
+  <data name="允许" xml:space="preserve">
+    <value>允许</value>
+  </data>
+  <data name="拒绝" xml:space="preserve">
+    <value>拒绝</value>
+  </data>
+  <data name="工作区外访问" xml:space="preserve">
+    <value>工作区外访问</value>
+  </data>
+  <data name="后续同类操作都许可" xml:space="preserve">
+    <value>后续同类操作都许可</value>
+  </data>
+  <data name="（可在设置 →「普通」里关闭）" xml:space="preserve">
+    <value>（可在设置 →「普通」里关闭）</value>
+  </data>
+  <data name="打开文件夹" xml:space="preserve">
+    <value>打开文件夹</value>
+  </data>
+  <data name="打开文件" xml:space="preserve">
+    <value>打开文件</value>
+  </data>
+  <data name="打开失败：" xml:space="preserve">
+    <value>打开失败：</value>
+  </data>
+  <data name="路径不存在" xml:space="preserve">
+    <value>路径不存在</value>
+  </data>
+  <data name="复制失败：" xml:space="preserve">
+    <value>复制失败：</value>
+  </data>
+  <data name="路径无效：" xml:space="preserve">
+    <value>路径无效：</value>
+  </data>
+  <data name="文件不存在：" xml:space="preserve">
+    <value>文件不存在：</value>
+  </data>
+  <data name="读取失败：" xml:space="preserve">
+    <value>读取失败：</value>
+  </data>
+  <data name="这是二进制文件，不预览。" xml:space="preserve">
+    <value>这是二进制文件，不预览。</value>
+  </data>
+  <data name="解码失败：" xml:space="preserve">
+    <value>解码失败：</value>
+  </data>
+  <data name="Loop 会话（全部项目）· 关于OpenLoop自身迭代和演进的所有会话" xml:space="preserve">
+    <value>Loop 会话（全部项目）· 关于OpenLoop自身迭代和演进的所有会话</value>
+  </data>
+  <data name="Puppet 是 OpenLoop 各组件内嵌自调试机制。OpenLoop 的主驱动服务：A(Worker) 和 I(Loop) 两个实例各有一个 Puppet 实例，均允许 Agent 连接交流。Puppet 留言板 · 各会话的 Agent 在同一块板上自行对话（默认 @A，A 不可达时转 @I），没有主 Agent 驱动" xml:space="preserve">
+    <value>Puppet 是 OpenLoop 各组件内嵌自调试机制。OpenLoop 的主驱动服务：A(Worker) 和 I(Loop) 两个实例各有一个 Puppet 实例，均允许 Agent 连接交流。Puppet 留言板 · 各会话的 Agent 在同一块板上自行对话（默认 @A，A 不可达时转 @I），没有主 Agent 驱动</value>
+  </data>
+  <data name="打开工作区路径" xml:space="preserve">
+    <value>打开工作区路径</value>
+  </data>
+  <data name="复制路径" xml:space="preserve">
+    <value>复制路径</value>
+  </data>
+  <data name="新建会话" xml:space="preserve">
+    <value>新建会话</value>
+  </data>
+  <data name="删除项目" xml:space="preserve">
+    <value>删除项目</value>
+  </data>
+  <data name="前往" xml:space="preserve">
+    <value>前往</value>
+  </data>
+  <data name="独立窗口：把网页搬进独立窗口" xml:space="preserve">
+    <value>独立窗口：把网页搬进独立窗口</value>
+  </data>
+  <data name="用系统默认浏览器打开" xml:space="preserve">
+    <value>用系统默认浏览器打开</value>
+  </data>
+  <data name="选择作为新项目的工作区文件夹" xml:space="preserve">
+    <value>选择作为新项目的工作区文件夹</value>
+  </data>
+  <data name="请先描述任务" xml:space="preserve">
+    <value>请先描述任务</value>
+  </data>
+  <data name="请选择项目或新建项目" xml:space="preserve">
+    <value>请选择项目或新建项目</value>
+  </data>
+  <data name="【引用会话「" xml:space="preserve">
+    <value>【引用会话「</value>
+  </data>
+  <data name="参考上下文（用户 @ 引用的同工作区会话）：" xml:space="preserve">
+    <value>参考上下文（用户 @ 引用的同工作区会话）：</value>
+  </data>
+  <data name="内容为空，没有提交" xml:space="preserve">
+    <value>内容为空，没有提交</value>
+  </data>
+  <data name="队列拒绝接收" xml:space="preserve">
+    <value>队列拒绝接收</value>
+  </data>
+  <data name="已发送" xml:space="preserve">
+    <value>已发送</value>
+  </data>
+  <data name="已入队，本轮结束后发送" xml:space="preserve">
+    <value>已入队，本轮结束后发送</value>
+  </data>
+  <data name="已收起网页页" xml:space="preserve">
+    <value>已收起网页页</value>
+  </data>
+  <data name="待发送 0" xml:space="preserve">
+    <value>待发送 0</value>
+  </data>
+  <data name="Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行" xml:space="preserve">
+    <value>Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行</value>
+  </data>
+  <data name="新会话" xml:space="preserve">
+    <value>新会话</value>
+  </data>
+  <data name="Loop工作区" xml:space="preserve">
+    <value>Loop工作区</value>
+  </data>
+  <data name="旁路" xml:space="preserve">
+    <value>旁路</value>
+  </data>
+  <data name="只读" xml:space="preserve">
+    <value>只读</value>
+  </data>
+  <data name="技能：" xml:space="preserve">
+    <value>技能：</value>
+  </data>
+  <data name="免费" xml:space="preserve">
+    <value>免费</value>
+  </data>
+  <data name="删除选中" xml:space="preserve">
+    <value>删除选中</value>
+  </data>
+  <data name="DraftDecisionLine" xml:space="preserve">
+    <value>决定: {0} · {1} · {2}</value>
+  </data>
+  <data name="SideWorkStatus" xml:space="preserve">
+    <value>只读 · {0} · {1} 步</value>
+  </data>
+  <data name="SessionNotFound" xml:space="preserve">
+    <value>找不到会话 {0}</value>
+  </data>
+  <data name="EvalVerdictAdopted" xml:space="preserve">
+    <value>结论: 采纳 v{0}</value>
+  </data>
+  <data name="EvalVerdictKept" xml:space="preserve">
+    <value>结论: 保留 v{0}</value>
+  </data>
+  <data name="EvalPassedLine" xml:space="preserve">
+    <value>通过: 基线 {0}/{1}，候选 {2}/{3}</value>
+  </data>
+  <data name="PendingCount" xml:space="preserve">
+    <value>待发送 {0}</value>
+  </data>
+  <data name="ApproveOutsideWorkspace" xml:space="preserve">
+    <value>{0}
+
+工具：{1}
+允许这次访问吗？</value>
+  </data>
+  <data name="AskOpenWithDefault" xml:space="preserve">
+    <value>要用系统默认程序打开吗？
+</value>
+  </data>
+  <data name="AskCopyPath" xml:space="preserve">
+    <value>路径不存在：{0}
+
+要复制这段路径吗？</value>
+  </data>
+  <data name="FileTooLarge" xml:space="preserve">
+    <value>文件太大（{0:0.#} MB），不预览。</value>
+  </data>
+  <data name="BrowserLockedOverlay" xml:space="preserve">
+    <value>已锁定：网页由 Agent 控制
+点上方「解锁」后可自行操作</value>
+  </data>
+  <data name="MentionRow" xml:space="preserve">
+    <value>{0} 轮 · {1}</value>
+  </data>
+  <data name="PickAttachments" xml:space="preserve">
+    <value>选择附件（最多 {0} 个）</value>
+  </data>
+  <data name="AttachmentSummary" xml:space="preserve">
+    <value>📎 {0}/{1}：{2}（点此清空）</value>
+  </data>
+  <data name="暂无对话" xml:space="preserve">
+    <value>暂无对话</value>
+  </data>
+  <data name="思考中…" xml:space="preserve">
+    <value>思考中…</value>
+  </data>
+  <data name="TiledUserPrefix" xml:space="preserve">
+    <value>用户：
+</value>
+  </data>
+  <data name="移除项目" xml:space="preserve">
+    <value>移除项目</value>
+  </data>
+  <data name="重命名" xml:space="preserve">
+    <value>重命名</value>
+  </data>
+  <data name="打开所有活动会话" xml:space="preserve">
+    <value>打开所有活动会话</value>
+  </data>
+  <data name="关闭所有非活动会话" xml:space="preserve">
+    <value>关闭所有非活动会话</value>
+  </data>
+  <data name="平铺视图" xml:space="preserve">
+    <value>平铺视图</value>
+  </data>
+  <data name="关闭右侧所有页面" xml:space="preserve">
+    <value>关闭右侧所有页面</value>
+  </data>
+  <data name="关闭左侧所有页面" xml:space="preserve">
+    <value>关闭左侧所有页面</value>
+  </data>
+  <data name="关闭所有 Worker 会话" xml:space="preserve">
+    <value>关闭所有 Worker 会话</value>
+  </data>
+  <data name="关闭所有 Loop 会话" xml:space="preserve">
+    <value>关闭所有 Loop 会话</value>
+  </data>
+  <data name="关闭其他页面" xml:space="preserve">
+    <value>关闭其他页面</value>
+  </data>
+  <data name="关闭全部页面" xml:space="preserve">
+    <value>关闭全部页面</value>
+  </data>
+  <data name="用当前模型重新总结会话标题" xml:space="preserve">
+    <value>用当前模型重新总结会话标题</value>
+  </data>
+  <data name="添加附件（也可拖放或粘贴文件/图片）" xml:space="preserve">
+    <value>添加附件（也可拖放或粘贴文件/图片）</value>
+  </data>
+  <data name="（点击在资源管理器中打开）" xml:space="preserve">
+    <value>（点击在资源管理器中打开）</value>
+  </data>
+  <data name="点击查看特征与规则" xml:space="preserve">
+    <value>点击查看特征与规则</value>
+  </data>
+  <data name="点击查看考核题" xml:space="preserve">
+    <value>点击查看考核题</value>
+  </data>
+  <data name="网页" xml:space="preserve">
+    <value>网页</value>
+  </data>
+  <data name="关闭网页" xml:space="preserve">
+    <value>关闭网页</value>
+  </data>
+  <data name="无法打开网址" xml:space="preserve">
+    <value>无法打开网址</value>
+  </data>
+  <data name="文件" xml:space="preserve">
+    <value>文件</value>
+  </data>
+  <data name="标题已更新" xml:space="preserve">
+    <value>标题已更新</value>
+  </data>
+  <data name="标题未变化" xml:space="preserve">
+    <value>标题未变化</value>
+  </data>
+  <data name="总结失败" xml:space="preserve">
+    <value>总结失败</value>
+  </data>
+  <data name="/btw 后面要写具体请求，例如：/btw 顺便看看还有哪些调用点。" xml:space="preserve">
+    <value>/btw 后面要写具体请求，例如：/btw 顺便看看还有哪些调用点。</value>
+  </data>
+  <data name="缺少请求" xml:space="preserve">
+    <value>缺少请求</value>
+  </data>
+  <data name="/complain 后面要写具体不满，例如：/complain 它没查调用点就改了方法签名。" xml:space="preserve">
+    <value>/complain 后面要写具体不满，例如：/complain 它没查调用点就改了方法签名。</value>
+  </data>
+  <data name="缺少内容" xml:space="preserve">
+    <value>缺少内容</value>
+  </data>
+  <data name="/report 后面要写观察，例如：/report 改模型后按钮仍显示旧值。" xml:space="preserve">
+    <value>/report 后面要写观察，例如：/report 改模型后按钮仍显示旧值。</value>
+  </data>
+  <data name="请先停止当前任务，再压缩上下文。" xml:space="preserve">
+    <value>请先停止当前任务，再压缩上下文。</value>
+  </data>
+  <data name="正在运行" xml:space="preserve">
+    <value>正在运行</value>
+  </data>
+  <data name="上一次压缩还没结束，请稍候。" xml:space="preserve">
+    <value>上一次压缩还没结束，请稍候。</value>
+  </data>
+  <data name="正在压缩" xml:space="preserve">
+    <value>正在压缩</value>
+  </data>
+  <data name="/fork 后面要写具体请求，例如：/fork 继续把第二项改完。" xml:space="preserve">
+    <value>/fork 后面要写具体请求，例如：/fork 继续把第二项改完。</value>
+  </data>
+  <data name="Worker 不认识这个会话。" xml:space="preserve">
+    <value>Worker 不认识这个会话。</value>
+  </data>
+  <data name="压缩失败" xml:space="preserve">
+    <value>压缩失败</value>
+  </data>
+  <data name="没有可压缩的上下文。" xml:space="preserve">
+    <value>没有可压缩的上下文。</value>
+  </data>
+  <data name="未压缩" xml:space="preserve">
+    <value>未压缩</value>
+  </data>
+  <data name="未执行" xml:space="preserve">
+    <value>未执行</value>
+  </data>
+  <data name="已交给会话执行" xml:space="preserve">
+    <value>已交给会话执行</value>
+  </data>
+  <data name="未记录" xml:space="preserve">
+    <value>未记录</value>
+  </data>
+  <data name="已记录" xml:space="preserve">
+    <value>已记录</value>
+  </data>
+  <data name="自动（目录 / 内置表）" xml:space="preserve">
+    <value>自动（目录 / 内置表）</value>
+  </data>
+  <data name="工作目录不存在：" xml:space="preserve">
+    <value>工作目录不存在：</value>
+  </data>
+  <data name="请选择工作目录" xml:space="preserve">
+    <value>请选择工作目录</value>
+  </data>
+  <data name="附件不可用" xml:space="preserve">
+    <value>附件不可用</value>
+  </data>
+  <data name="本次执行到达步数上限。" xml:space="preserve">
+    <value>本次执行到达步数上限。</value>
+  </data>
+  <data name="预算用尽" xml:space="preserve">
+    <value>预算用尽</value>
+  </data>
+  <data name="执行失败" xml:space="preserve">
+    <value>执行失败</value>
+  </data>
+  <data name="先运行一次，账本初始化后再看。" xml:space="preserve">
+    <value>先运行一次，账本初始化后再看。</value>
+  </data>
+  <data name="暂无激活集" xml:space="preserve">
+    <value>暂无激活集</value>
+  </data>
+  <data name="读取失败" xml:space="preserve">
+    <value>读取失败</value>
+  </data>
+  <data name="先在设置里选择模型。" xml:space="preserve">
+    <value>先在设置里选择模型。</value>
+  </data>
+  <data name="未更替" xml:space="preserve">
+    <value>未更替</value>
+  </data>
+  <data name="已更替" xml:space="preserve">
+    <value>已更替</value>
+  </data>
+  <data name="演进失败" xml:space="preserve">
+    <value>演进失败</value>
+  </data>
+  <data name="当前已是最早版本。" xml:space="preserve">
+    <value>当前已是最早版本。</value>
+  </data>
+  <data name="没有更早的版本" xml:space="preserve">
+    <value>没有更早的版本</value>
+  </data>
+  <data name="回滚失败" xml:space="preserve">
+    <value>回滚失败</value>
+  </data>
+  <data name="登记规则失败" xml:space="preserve">
+    <value>登记规则失败</value>
+  </data>
+  <data name="先打开「选择」并勾选要处理的对话。" xml:space="preserve">
+    <value>先打开「选择」并勾选要处理的对话。</value>
+  </data>
+  <data name="未选择对话" xml:space="preserve">
+    <value>未选择对话</value>
+  </data>
+  <data name="宿主没有提供 Loop 入口。" xml:space="preserve">
+    <value>宿主没有提供 Loop 入口。</value>
+  </data>
+  <data name="无法转交" xml:space="preserve">
+    <value>无法转交</value>
+  </data>
+  <data name="请先停止当前任务，再删除对话。" xml:space="preserve">
+    <value>请先停止当前任务，再删除对话。</value>
+  </data>
+  <data name="请先停止当前任务，再撤回对话。" xml:space="preserve">
+    <value>请先停止当前任务，再撤回对话。</value>
+  </data>
+  <data name="撤回完成" xml:space="preserve">
+    <value>撤回完成</value>
+  </data>
+  <data name="继续？" xml:space="preserve">
+    <value>继续？</value>
+  </data>
+  <data name="先出计划（谁升版、改了什么），确认后编译并换 A/I，最后重启壳（界面会短暂退出）" xml:space="preserve">
+    <value>先出计划（谁升版、改了什么），确认后编译并换 A/I，最后重启壳（界面会短暂退出）</value>
+  </data>
+  <data name="提交托管仓库里的改动（工作树干净时不可用）" xml:space="preserve">
+    <value>提交托管仓库里的改动（工作树干净时不可用）</value>
+  </data>
+  <data name="提交并推送到远端（工作树干净时不可用）" xml:space="preserve">
+    <value>提交并推送到远端（工作树干净时不可用）</value>
+  </data>
+  <data name="把 A/I 退回上一版本，壳保持当前版本（没有上一版本时不可用）" xml:space="preserve">
+    <value>把 A/I 退回上一版本，壳保持当前版本（没有上一版本时不可用）</value>
+  </data>
+  <data name="请先在设置里填写接口地址、模型。" xml:space="preserve">
+    <value>请先在设置里填写接口地址、模型。</value>
+  </data>
+  <data name="状态: 运行中" xml:space="preserve">
+    <value>状态: 运行中</value>
+  </data>
+  <data name="状态: error" xml:space="preserve">
+    <value>状态: error</value>
+  </data>
+  <data name="Loop 执行失败" xml:space="preserve">
+    <value>Loop 执行失败</value>
+  </data>
+  <data name="状态: stopped" xml:space="preserve">
+    <value>状态: stopped</value>
+  </data>
+  <data name="/complain 后面要写具体不满，例如：/complain 它没看证据就下了结论。" xml:space="preserve">
+    <value>/complain 后面要写具体不满，例如：/complain 它没看证据就下了结论。</value>
+  </data>
+  <data name="/report 后面要写观察，例如：/report harness 思考链闪现太快。" xml:space="preserve">
+    <value>/report 后面要写观察，例如：/report harness 思考链闪现太快。</value>
+  </data>
+  <data name="请先停止当前任务，再分叉对话。" xml:space="preserve">
+    <value>请先停止当前任务，再分叉对话。</value>
+  </data>
+  <data name="当前会话还没有历史。" xml:space="preserve">
+    <value>当前会话还没有历史。</value>
+  </data>
+  <data name="没有可压缩的上下文" xml:space="preserve">
+    <value>没有可压缩的上下文</value>
+  </data>
+  <data name="请先选择模型。" xml:space="preserve">
+    <value>请先选择模型。</value>
+  </data>
+  <data name="状态: 压缩上下文…" xml:space="preserve">
+    <value>状态: 压缩上下文…</value>
+  </data>
+  <data name="上下文太短，没有可压缩的中间部分。" xml:space="preserve">
+    <value>上下文太短，没有可压缩的中间部分。</value>
+  </data>
+  <data name="宿主没有提供 Worker 入口。" xml:space="preserve">
+    <value>宿主没有提供 Worker 入口。</value>
+  </data>
+  <data name="状态: 正在提交…" xml:space="preserve">
+    <value>状态: 正在提交…</value>
+  </data>
+  <data name="状态: 正在提交并推送…" xml:space="preserve">
+    <value>状态: 正在提交并推送…</value>
+  </data>
+  <data name="状态: 没有改动" xml:space="preserve">
+    <value>状态: 没有改动</value>
+  </data>
+  <data name="工作树是干净的，没有可提交的改动。" xml:space="preserve">
+    <value>工作树是干净的，没有可提交的改动。</value>
+  </data>
+  <data name="提交失败" xml:space="preserve">
+    <value>提交失败</value>
+  </data>
+  <data name="状态: 提交失败" xml:space="preserve">
+    <value>状态: 提交失败</value>
+  </data>
+  <data name="状态: 当前已经是上一轮之前的版本" xml:space="preserve">
+    <value>状态: 当前已经是上一轮之前的版本</value>
+  </data>
+  <data name="状态: 正在退回…" xml:space="preserve">
+    <value>状态: 正在退回…</value>
+  </data>
+  <data name="状态: 已退回上一版本（壳未变）" xml:space="preserve">
+    <value>状态: 已退回上一版本（壳未变）</value>
+  </data>
+  <data name="（壳未变）" xml:space="preserve">
+    <value>（壳未变）</value>
+  </data>
+  <data name="已退回上一版本" xml:space="preserve">
+    <value>已退回上一版本</value>
+  </data>
+  <data name="状态: 退回未全部成功" xml:space="preserve">
+    <value>状态: 退回未全部成功</value>
+  </data>
+  <data name="worker 忙就等这一轮跑完再试。" xml:space="preserve">
+    <value>worker 忙就等这一轮跑完再试。</value>
+  </data>
+  <data name="退回失败" xml:space="preserve">
+    <value>退回失败</value>
+  </data>
+  <data name="状态: 退回失败" xml:space="preserve">
+    <value>状态: 退回失败</value>
+  </data>
+  <data name="状态: 迭代中…" xml:space="preserve">
+    <value>状态: 迭代中…</value>
+  </data>
+  <data name="状态: 迭代失败" xml:space="preserve">
+    <value>状态: 迭代失败</value>
+  </data>
+  <data name="迭代失败" xml:space="preserve">
+    <value>迭代失败</value>
+  </data>
+  <data name="TooManyAttachmentsBody" xml:space="preserve">
+    <value>当前模型最多 {0} 个附件</value>
+  </data>
+  <data name="CopiedTurns" xml:space="preserve">
+    <value>复制了 {0} 组对话。</value>
+  </data>
+  <data name="StepsCostLine" xml:space="preserve">
+    <value>{0} 步 · 成本 {1}</value>
+  </data>
+  <data name="RolledBackTo" xml:space="preserve">
+    <value>: 已退回 v{0}（新版本 v{1}）</value>
+  </data>
+  <data name="StatusStepsCost" xml:space="preserve">
+    <value>{0} · {1} 步 · 成本 {2}</value>
+  </data>
+  <data name="RevertedTurns" xml:space="preserve">
+    <value>已撤回 {0} 组对话</value>
+  </data>
+  <data name="ConfirmRevert" xml:space="preserve">
+    <value>退回上一版本？
+{0}
+壳保持当前版本。</value>
+  </data>
+  <data name="RevertRestoreFailed" xml:space="preserve">
+    <value>
+还原失败</value>
+  </data>
+  <data name="，工作区已还原（.gitignore 除外）" xml:space="preserve">
+    <value>，工作区已还原（.gitignore 除外）</value>
+  </data>
+  <data name="（该轮没有可用快照，未还原文件）" xml:space="preserve">
+    <value>（该轮没有可用快照，未还原文件）</value>
+  </data>
+  <data name="附件太多" xml:space="preserve">
+    <value>附件太多</value>
+  </data>
+  <data name="已压缩上下文" xml:space="preserve">
+    <value>已压缩上下文</value>
+  </data>
+  <data name="已复制" xml:space="preserve">
+    <value>已复制</value>
+  </data>
+  <data name="退回上一版本" xml:space="preserve">
+    <value>退回上一版本</value>
+  </data>
+  <data name="任务完成" xml:space="preserve">
+    <value>任务完成</value>
+  </data>
+  <data name="已回滚" xml:space="preserve">
+    <value>已回滚</value>
+  </data>
+  <data name="规则已登记" xml:space="preserve">
+    <value>规则已登记</value>
+  </data>
+  <data name="请先打开一个会话，Loop 需要工作区。" xml:space="preserve">
+    <value>请先打开一个会话，Loop 需要工作区。</value>
+  </data>
+  <data name="准备自动更新" xml:space="preserve">
+    <value>准备自动更新</value>
+  </data>
+  <data name="自动更新 A/I" xml:space="preserve">
+    <value>自动更新 A/I</value>
+  </data>
+  <data name="开始构建并换版 A/I，期间别关界面。" xml:space="preserve">
+    <value>开始构建并换版 A/I，期间别关界面。</value>
+  </data>
+  <data name="自动更新" xml:space="preserve">
+    <value>自动更新</value>
+  </data>
+  <data name="自动更新未完成" xml:space="preserve">
+    <value>自动更新未完成</value>
+  </data>
+  <data name="未找到 git" xml:space="preserve">
+    <value>未找到 git</value>
+  </data>
+  <data name="上游有更新" xml:space="preserve">
+    <value>上游有更新</value>
+  </data>
+  <data name="源码有更新" xml:space="preserve">
+    <value>源码有更新</value>
+  </data>
+  <data name="源码过旧" xml:space="preserve">
+    <value>源码过旧</value>
+  </data>
+  <data name=" 同步失败" xml:space="preserve">
+    <value> 同步失败</value>
+  </data>
+  <data name=" 已换 fork" xml:space="preserve">
+    <value> 已换 fork</value>
+  </data>
+  <data name="还有会话在运行" xml:space="preserve">
+    <value>还有会话在运行</value>
+  </data>
+  <data name="没有可复制的对话。" xml:space="preserve">
+    <value>没有可复制的对话。</value>
+  </data>
+  <data name="删除会话" xml:space="preserve">
+    <value>删除会话</value>
+  </data>
+  <data name="已保存，重启 OpenLoop 后生效。" xml:space="preserve">
+    <value>已保存，重启 OpenLoop 后生效。</value>
+  </data>
+  <data name="主题" xml:space="preserve">
+    <value>主题</value>
+  </data>
+  <data name="设置失败" xml:space="preserve">
+    <value>设置失败</value>
+  </data>
+  <data name="保存失败" xml:space="preserve">
+    <value>保存失败</value>
+  </data>
+  <data name="回滚" xml:space="preserve">
+    <value>回滚</value>
+  </data>
+  <data name="删除对话" xml:space="preserve">
+    <value>删除对话</value>
+  </data>
+  <data name="撤回对话" xml:space="preserve">
+    <value>撤回对话</value>
+  </data>
+  <data name="HarnessPromptObject" xml:space="preserve">
+    <value>编辑提示词</value>
+  </data>
+  <data name="HarnessAgentsObject" xml:space="preserve">
+    <value>编辑 AGENTS.md</value>
+  </data>
+  <data name="Harness 只改当前工作区的可演进对象（Prompt / Skill / Rule / Limit / Guard）；" xml:space="preserve">
+    <value>Harness 只改当前工作区的可演进对象（Prompt / Skill / Rule / Limit / Guard）；</value>
+  </data>
+  <data name="系统提示词与 AGENTS.md 经目标会话由模型落盘；考核题 A/B 更好才采纳。" xml:space="preserve">
+    <value>系统提示词与 AGENTS.md 经目标会话由模型落盘；考核题 A/B 更好才采纳。</value>
+  </data>
+  <data name="在右侧栏用当前上下文跑一个只读旁路任务" xml:space="preserve">
+    <value>在右侧栏用当前上下文跑一个只读旁路任务</value>
+  </data>
+  <data name="把对 Worker 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）" xml:space="preserve">
+    <value>把对 Worker 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）</value>
+  </data>
+  <data name="把一条值得改进的观察记入 findings（不立即处理，演进时分诊）" xml:space="preserve">
+    <value>把一条值得改进的观察记入 findings（不立即处理，演进时分诊）</value>
+  </data>
+  <data name="打开目标会话：左栏显示系统提示词模板，用聊天让 agent 改" xml:space="preserve">
+    <value>打开目标会话：左栏显示系统提示词模板，用聊天让 agent 改</value>
+  </data>
+  <data name="打开目标会话：左栏显示 AGENTS.md，用聊天让 agent 改" xml:space="preserve">
+    <value>打开目标会话：左栏显示 AGENTS.md，用聊天让 agent 改</value>
+  </data>
+  <data name="把较早的对话压缩成摘要，省下上下文" xml:space="preserve">
+    <value>把较早的对话压缩成摘要，省下上下文</value>
+  </data>
+  <data name="复制当前上下文开一个新会话（可继续对话）并跳转" xml:space="preserve">
+    <value>复制当前上下文开一个新会话（可继续对话）并跳转</value>
+  </data>
+  <data name="打开右侧 Puppet Action 清单；/puppet &lt;action&gt; &lt;参数&gt; 直接执行" xml:space="preserve">
+    <value>打开右侧 Puppet Action 清单；/puppet &lt;action&gt; &lt;参数&gt; 直接执行</value>
+  </data>
+  <data name="开一个新会话，沿用当前的模型与强度" xml:space="preserve">
+    <value>开一个新会话，沿用当前的模型与强度</value>
+  </data>
+  <data name="把对 Loop 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）" xml:space="preserve">
+    <value>把对 Loop 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）</value>
+  </data>
+  <data name="复制当前上下文开一个新的 Loop 会话（可继续对话）并跳转" xml:space="preserve">
+    <value>复制当前上下文开一个新的 Loop 会话（可继续对话）并跳转</value>
+  </data>
+  <data name="盘点来源会话的避坑经验与各组件优化点，新开 Loop 会话等确认后实施" xml:space="preserve">
+    <value>盘点来源会话的避坑经验与各组件优化点，新开 Loop 会话等确认后实施</value>
+  </data>
+  <data name="盘点同上并直接实施（不切会话）" xml:space="preserve">
+    <value>盘点同上并直接实施（不切会话）</value>
+  </data>
+  <data name="开一个新的 Loop 会话，沿用当前的模型与强度" xml:space="preserve">
+    <value>开一个新的 Loop 会话，沿用当前的模型与强度</value>
+  </data>
+  <data name="自动更新完成" xml:space="preserve">
+    <value>自动更新完成</value>
+  </data>
+  <data name="壳：" xml:space="preserve">
+    <value>壳：</value>
+  </data>
+  <data name="配置写入本地。" xml:space="preserve">
+    <value>配置写入本地。</value>
+  </data>
+  <data name="设置已保存" xml:space="preserve">
+    <value>设置已保存</value>
+  </data>
+  <data name="SessionsStillRunning" xml:space="preserve">
+    <value>这些会话还在跑：
+</value>
+  </data>
+  <data name="ConfirmAutoUpdateBusy" xml:space="preserve">
+    <value>
+
+现在更新会中断它们。继续吗？</value>
+  </data>
+  <data name="ConfirmRestartBusy" xml:space="preserve">
+    <value>
+
+现在重启壳会中断它们。仍然继续吗？</value>
+  </data>
+  <data name="（有会话在跑，到时会先问你）" xml:space="preserve">
+    <value>（有会话在跑，到时会先问你）</value>
+  </data>
+  <data name="撤回对话、迭代与版本溯源都依赖 git，请安装并加入 PATH 后重启。" xml:space="preserve">
+    <value>撤回对话、迭代与版本溯源都依赖 git，请安装并加入 PATH 后重启。</value>
+  </data>
+  <data name="更新源码、放弃迭代，或用 Puppet 自愈。" xml:space="preserve">
+    <value>更新源码、放弃迭代，或用 Puppet 自愈。</value>
+  </data>
+  <data name="无需升版" xml:space="preserve">
+    <value>无需升版</value>
+  </data>
+  <data name="已有迭代在跑" xml:space="preserve">
+    <value>已有迭代在跑</value>
+  </data>
+  <data name="新壳没起来，已回退旧版本" xml:space="preserve">
+    <value>新壳没起来，已回退旧版本</value>
+  </data>
+  <data name="无会话" xml:space="preserve">
+    <value>无会话</value>
+  </data>
+  <data name="未知" xml:space="preserve">
+    <value>未知</value>
+  </data>
+  <data name="反馈 " xml:space="preserve">
+    <value>反馈 </value>
+  </data>
+  <data name="分叉 " xml:space="preserve">
+    <value>分叉 </value>
+  </data>
+  <data name="转交 " xml:space="preserve">
+    <value>转交 </value>
+  </data>
+  <data name="配置 " xml:space="preserve">
+    <value>配置 </value>
+  </data>
+  <data name="[立即] " xml:space="preserve">
+    <value>[立即] </value>
+  </data>
+  <data name="[等本轮] " xml:space="preserve">
+    <value>[等本轮] </value>
   </data>
 </root>

@@ -35,17 +35,17 @@ namespace OpenLoop.App
         /// <returns>一句给页面看的结果说明。</returns>
         internal string SubmitFromPage(string text, bool immediate = false)
         {
-            if (string.IsNullOrWhiteSpace(text)) return "内容为空，没有提交";
+            if (string.IsNullOrWhiteSpace(text)) return Localization.T("内容为空，没有提交");
 
             var item = _queue.Add(text, "task", immediate ? PendingMode.NextStep : PendingMode.AfterTurn);
-            if (item == null) return "队列拒绝接收";
+            if (item == null) return Localization.T("队列拒绝接收");
             _queue.Paused = false;
             _pending.Sync();
 
             if (item.Immediate) OnImmediateRequested(item);
             else if (!_running) DrainQueue();
 
-            return _running ? "已入队，本轮结束后发送" : "已发送";
+            return _running ? Localization.T("已入队，本轮结束后发送") : Localization.T("已发送");
         }
 
         /// <summary>页面能看到的队列长度（与队列控件同一口径）。</summary>

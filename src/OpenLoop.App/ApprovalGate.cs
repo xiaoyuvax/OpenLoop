@@ -52,8 +52,8 @@ namespace OpenLoop.App
             panel.Size = new Size(deviceWidth, deviceHeight + (int)(44 * scale));
 
             var config = AntdUI.Modal.config(form, title, (object)panel);
-            config.OkText = "允许";
-            config.CancelText = "拒绝";
+            config.OkText = Localization.T("允许");
+            config.CancelText = Localization.T("拒绝");
             bool ok = AntdUI.Modal.open(config) == DialogResult.OK;
             if (!ok) return ApprovalDecision.Deny;
 
@@ -90,14 +90,14 @@ namespace OpenLoop.App
 
             var allow = new Button
             {
-                Text = "允许",
+                Text = Localization.T("允许"),
                 DialogResult = DialogResult.OK,
                 Size = new Size((int)(92 * scale), (int)(32 * scale)),
                 Margin = new Padding((int)(8 * scale), 0, 0, 0)
             };
             var deny = new Button
             {
-                Text = "拒绝",
+                Text = Localization.T("拒绝"),
                 DialogResult = DialogResult.Cancel,
                 Size = new Size((int)(92 * scale), (int)(32 * scale))
             };
@@ -153,11 +153,11 @@ namespace OpenLoop.App
         }
 
         private static string TitleFor(ApprovalRequest request)
-            => request.Kind == ApprovalKind.OutsideWorkspace ? "工作区外访问" : Localization.T("ApproveTitle");
+            => request.Kind == ApprovalKind.OutsideWorkspace ? Localization.T("工作区外访问") : Localization.T("ApproveTitle");
 
         private static string TextFor(ApprovalRequest request)
             => request.Kind == ApprovalKind.OutsideWorkspace
-                ? $"{request.Text}\n\n工具：{request.Tool}\n允许这次访问吗？"
+                ? string.Format(Localization.T("ApproveOutsideWorkspace"), request.Text, request.Tool)
                 : string.Format(Localization.T("ApproveCommand"), request.Reason, request.Detail);
 
         private static ApprovalDecision AllowAlways(Func<AppSettings> settings, ApprovalRequest request)
@@ -183,7 +183,7 @@ namespace OpenLoop.App
             var remember = new System.Windows.Forms.CheckBox
             {
                 AutoSize = true,
-                Text = "后续同类操作都许可",
+                Text = Localization.T("后续同类操作都许可"),
                 ForeColor = UiStyle.Text,
                 Margin = new Padding(0, 10, 0, 0)
             };
@@ -191,7 +191,7 @@ namespace OpenLoop.App
             {
                 AutoSize = true,
                 MaximumSize = new Size(deviceWidth, 0),
-                Text = "（可在设置 →「普通」里关闭）",
+                Text = Localization.T("（可在设置 →「普通」里关闭）"),
                 ForeColor = UiStyle.Muted,
                 Margin = new Padding(2, 2, 0, 0)
             };

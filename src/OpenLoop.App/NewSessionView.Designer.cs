@@ -150,7 +150,7 @@ namespace OpenLoop.App
             _selModel.Radius = 8;
             _selModel.ListAutoWidth = true;
             _selModel.PrefixSvg = UiIcons.Of(UiIcons.Model, UiStyle.Muted);
-            _selModel.PlaceholderText = "模型";
+            _selModel.PlaceholderText = Localization.T("模型");
             _selModel.Margin = new Padding(0, 0, 8, 0);
 
             _freeSwitch.Name = "freeSwitch";
@@ -173,10 +173,10 @@ namespace OpenLoop.App
             _selEffort.Radius = 8;
             _selEffort.PrefixSvg = UiIcons.Of(UiIcons.Effort, UiStyle.Muted);
             _selEffort.Margin = new Padding(0);
-            _selEffort.Items.Add(new AntdUI.SelectItem("自动") { Tag = "" });
-            _selEffort.Items.Add(new AntdUI.SelectItem("低") { Tag = "low" });
-            _selEffort.Items.Add(new AntdUI.SelectItem("中") { Tag = "medium" });
-            _selEffort.Items.Add(new AntdUI.SelectItem("高") { Tag = "high" });
+            _selEffort.Items.Add(new AntdUI.SelectItem(Localization.T("自动")) { Tag = "" });
+            _selEffort.Items.Add(new AntdUI.SelectItem(Localization.T("低")) { Tag = "low" });
+            _selEffort.Items.Add(new AntdUI.SelectItem(Localization.T("中")) { Tag = "medium" });
+            _selEffort.Items.Add(new AntdUI.SelectItem(Localization.T("高")) { Tag = "high" });
             _selEffort.SelectedIndex = 0;
 
             _toolbarLeft.Controls.Add(_selProvider);

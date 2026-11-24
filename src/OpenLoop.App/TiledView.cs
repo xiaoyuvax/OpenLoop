@@ -280,13 +280,13 @@ namespace OpenLoop.App
         private static string Preview(ChatTurnBook book)
         {
             var turn = book?.Turns.LastOrDefault();
-            if (turn == null) return "暂无对话";
+            if (turn == null) return Localization.T("暂无对话");
             string user = turn.UserText?.Trim() ?? "";
             string answer = turn.AssistantText?.Trim() ?? "";
             var parts = new List<string>(2);
-            if (user.Length > 0) parts.Add("用户：\n" + user);
-            if (answer.Length > 0) parts.Add("AI：\n" + answer);
-            if (parts.Count == 0) return turn.Streaming ? "思考中…" : "暂无对话";
+            if (user.Length > 0) parts.Add(Localization.T("TiledUserPrefix") + user);
+            if (answer.Length > 0) parts.Add("AI:\n" + answer);
+            if (parts.Count == 0) return turn.Streaming ? Localization.T("思考中…") : Localization.T("暂无对话");
             return string.Join("\n\n", parts);
         }
 

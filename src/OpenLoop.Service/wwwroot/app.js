@@ -7,6 +7,336 @@ const {
   Progress, Modal, Switch, Segmented, Tooltip, Empty, Popconfirm, Table, theme, message
 } = antd;
 const { Text } = Typography;
+// 界面语言：settings.language（"" 跟随系统；只有系统语言是英文才显示英文，与 WinForms 一致）。
+// 中文是源语言，直接写在代码里；英文查 EN 表，查不到就原样显示。
+let LANG = 'zh';
+function applyLanguage(value) {
+  LANG = String(value || navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'zh';
+  document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  return LANG;
+}
+
+// 带 ${} 插值的句子：整句进表，用 {name} 占位，避免把一句话拆成几段各翻各的。
+const TPL = {
+  '已压缩上下文：{before} → {after} tokens': 'Context compacted: {before} → {after} tokens',
+  '{command} 是 WinForms 壳的命令，Web 壳暂不支持；请在 WinForms 壳里用': '{command} is a WinForms shell command, not supported in the web shell; use it in the WinForms shell',
+  '已选 {n}/8': 'Selected {n}/8',
+  'v{version} · {features} 特征 · {rules} 规则': 'v{version} · {features} features · {rules} rules',
+  '题目 {n}': '{n} tasks',
+  '候选 {cp}/{n}，基线 {bp}/{n}': 'candidate {cp}/{n}, baseline {bp}/{n}',
+  '删除提供商「{name}」？': 'Delete provider "{name}"?',
+  '拉取到 {n} 个模型': 'Fetched {n} models',
+  '确定卸载技能「{name}」？\n\n会删除整个目录，不可恢复：\n{dir}': 'Uninstall skill "{name}"?\n\nThis deletes the whole directory and cannot be undone:\n{dir}',
+  '卸载{where}插件 {id}？\n\n整个目录会移进 OpenLoop 的插件回收目录，需要时能捞回来。\n{dir}': 'Uninstall the {where} plugin {id}?\n\nThe whole directory moves into OpenLoop\'s plugin recycle folder and can be restored.\n{dir}',
+  '清单声明了 {n} 个模型，这里不改 models 与工具/MCP 字段。': 'The manifest declares {n} models; models and tool/MCP fields are not changed here.'
+};
+function tf(fmt, vars) {
+  let s = LANG === 'en' ? (TPL[fmt] ?? fmt) : fmt;
+  for (const k in vars) s = s.split('{' + k + '}').join(String(vars[k]));
+  return s;
+}
+
+const EN = {
+  "已允许 Puppet 截图": "Puppet screenshots allowed",
+  "已关闭 Puppet 截图": "Puppet screenshots off",
+  "允许 Puppet 截图": "Allow Puppet screenshots",
+  "一个可自我迭代的开放式Agent": "A self-iterating open agent",
+  "设置": "Settings",
+  "项目": "Project",
+  "（空工作区）": "(empty workspace)",
+  "新建会话": "New session",
+  "搜索会话": "Search sessions",
+  "删除选中的 ": "Delete selected ",
+  " 个会话？": " sessions?",
+  "对话历史会一起删除，不可恢复。": "Chat history is deleted with them. This cannot be undone.",
+  "删除": "Delete",
+  "取消": "Cancel",
+  "删除选中": "Delete selected",
+  "全部项目": "All projects",
+  "暂无会话": "No sessions",
+  "会话": "Sessions",
+  "状态": "Status",
+  "工作区": "Workspace",
+  "历史": "History",
+  "会话私信": "Session DM",
+  "Puppet 动作": "Puppet action",
+  "协作提示": "Collab notice",
+  "输出中…": "Streaming…",
+  "思考": "Reasoning",
+  "最近使用": "Recent",
+  "全部模型": "All models",
+  "附件最多 8 个": "At most 8 attachments",
+  "请先停止当前任务，再压缩上下文": "Stop the current task before compacting context",
+  "正在压缩上下文，最长约 2 分钟…": "Compacting context, up to ~2 minutes…",
+  "没有可压缩的上下文": "Nothing to compact",
+  "压缩失败：": "Compaction failed: ",
+  "继续": "Continue",
+  "发送失败：": "Send failed: ",
+  "输入框为空": "The composer is empty",
+  "停止失败：": "Stop failed: ",
+  "已插队，本轮收尾后立刻发送": "Jumped the queue: sends right after this turn wraps up",
+  "已入队，本轮结束后发送": "Queued: sends when this turn ends",
+  "失败：": "Failed: ",
+  "已切换模型": "Model switched",
+  "切换失败：": "Switch failed: ",
+  "选择": "Select",
+  "删除这个会话？": "Delete this session?",
+  "停止当前轮": "Stop this turn",
+  "打断（下一 step 前收尾）": "Interrupt (wrap up before the next step)",
+  "压缩上下文": "Compact context",
+  "复制工作区": "Copy workspace path",
+  "已复制工作区": "Workspace path copied",
+  "已执行": "Done",
+  "操作 ▾": "Actions ▾",
+  "上下文占用：": "Context usage: ",
+  "暂无对话": "No messages",
+  "：": ": ",
+  "已允许": "Allowed",
+  "允许一次": "Allow once",
+  "已允许同类": "Allowed for this kind",
+  "同类都允许": "Allow this kind",
+  "已拒绝": "Denied",
+  "拒绝": "Deny",
+  "排队": "Queued",
+  "自动：agent 插入（立即发送）": "Auto: inserted by the agent (sent immediately)",
+  "立即": "Now",
+  "撤回": "Retract",
+  "全部提供商": "All providers",
+  "模型": "Model",
+  "生图模型": "Image model",
+  "只看免费": "Free only",
+  "努力 Auto": "Effort Auto",
+  "发送": "Send",
+  "停止": "Stop",
+  "上传或粘贴文本/图片附件（最多 8 个）": "Upload or paste text/image attachments (up to 8)",
+  "📎 附件": "📎 Attach",
+  "可上传或粘贴文本/图片": "Text or image files",
+  "描述任务（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）": "Describe the task (Enter=send after this step, Ctrl+Enter=send after this turn, Shift+Enter=soft newline)",
+  "待答 ": "Surveys ",
+  "考核点: —": "Eval: —",
+  "版本: ": "Version: ",
+  " 特征 · ": " features · ",
+  " 规则": " rules",
+  "努力": "Effort",
+  "上下文": "Context",
+  "成本": "Cost",
+  "读不到清单：": "Cannot read the list: ",
+  "Puppet Action 清单 · 实例 ": "Puppet actions · instance ",
+  " 个 action": " actions",
+  "Puppet Action 清单 · 读取中…": "Puppet actions · loading…",
+  "筛选 action / 参数 / 说明": "Filter by action / params / description",
+  "刷新": "Refresh",
+  "读取中…": "Loading…",
+  "没有可用的 action": "No actions available",
+  "参数": "Params",
+  "说明": "Description",
+  "壳启用 Puppet（B 面）后才能列出 action；清单来自壳的 /appagent/manifest。": "Actions are listed once the shell enables Puppet (B face); the list comes from the shell's /appagent/manifest.",
+  "双击一行把这条命令填进输入框：/puppet <action> <参数…>（参数用自然语言写，模型自己对应）": "Double-click a row to put the command into the composer: /puppet <action> <params…> (write params in natural language; the model maps them)",
+  "详情": "Detail",
+  "旁路": "Side work",
+  "旁路未接入浏览器": "Side work is not wired into the browser",
+  "先填工作目录": "Set the working directory first",
+  "账本未初始化（先跑一次或新建会话）": "Ledger not initialized (run once or create a session)",
+  "读账本失败：": "Cannot read the ledger: ",
+  "已采纳 v": "Adopted v",
+  "成功": "OK",
+  "已回滚": "Rolled back",
+  "绝对路径": "Absolute path",
+  "演进": "Evolve",
+  "Harness 管当前工作区的五类对象：Prompt（系统提示词模板 + AGENTS.md）、Skill、Rule、Limit、Guard（含连接重试、免费额度恢复等自愈参数）；": "The Harness page manages this workspace's five object kinds: Prompt (system-prompt template + AGENTS.md), Skill, Rule, Limit and Guard (the guards carry connect retry, free-quota recovery and other self-healing parameters);",
+  "改提示词与 AGENTS.md 在桌面壳里用 /prompt、/agents 让模型改，用户不直接编辑文本。": "to change the prompt or AGENTS.md, use /prompt or /agents in the desktop shell and let the model edit it — you never edit the text yourself.",
+  "演进是攒够证据后的一次集中分诊：harness 类出候选并过考核题，源码类写派单，未知留到下一批。": "Evolution is one batched triage once enough evidence accumulated: harness items become candidates judged by the eval tasks, source items become a work order, unknown items wait for the next batch.",
+  "观察用 /report <内容> 记入 findings，只落账、不立即处理。": "Record an observation with /report <text>; it only lands in findings and is not handled immediately.",
+  "模型（留空用默认）": "Model (blank = default)",
+  "演进启动失败：": "Evolve failed to start: ",
+  "自动演进已开启": "Auto-evolve on",
+  "自动演进已关闭": "Auto-evolve off",
+  "设置失败：": "Setting failed: ",
+  "自动演进": "Auto-evolve",
+  "规则与回滚": "Rules and rollback",
+  "规则 id，如 rule.style": "Rule id, e.g. rule.style",
+  "规则内容": "Rule content",
+  "工作目录和规则 id 都要填": "Both the working directory and the rule id are required",
+  "已登记 ": "Registered ",
+  "登记失败：": "Register failed: ",
+  "登记规则": "Register rule",
+  "回滚到上一版？": "Roll back to the previous version?",
+  "会写成新版本，旧版本文件不动。": "This writes a new version; older version files stay untouched.",
+  "回滚": "Roll back",
+  "已回滚，当前 v": "Rolled back, now v",
+  "回滚失败：": "Rollback failed: ",
+  "回滚上一版": "Roll back one version",
+  "迭代": "Iterate",
+  "迭代启动失败：": "Iteration failed to start: ",
+  "开始迭代": "Start iteration",
+  "（跳过）": " (skipped)",
+  "生成计划失败：": "Plan generation failed: ",
+  "生成计划": "Generate plan",
+  "连壳": "Shell",
+  "形态": "Form",
+  "框架依赖（需装 .NET）": "Framework-dependent (needs .NET)",
+  "自带框架": "Self-contained",
+  "账本": "Ledger",
+  "技能": "Skills",
+  " 个启用": " enabled",
+  "（无）": "(none)",
+  "svg 渲染失败": "svg render failed",
+  "截图区域为空": "The screenshot area is empty",
+  "读取设置失败：": "Cannot read settings: ",
+  "读取技能失败：": "Cannot read skills: ",
+  "读取插件失败：": "Cannot read plugins: ",
+  "完全许可会关闭路径边界、命令审批与环境变量隔离，子进程可能拿到密钥，也可以直接访问网络与任意路径。确定启用？": "Full access turns off path boundaries, command approval and env isolation: child processes may see keys and can reach the network and any path. Enable it?",
+  "已保存": "Saved",
+  "保存失败：": "Save failed: ",
+  "正在拉取模型…": "Fetching models…",
+  "拉取失败": "Fetch failed",
+  "拉取失败：": "Fetch failed: ",
+  "先拉取或添加一个模型": "Fetch or add a model first",
+  "正在测试连接…": "Testing connection…",
+  "连接正常：": "Connected: ",
+  "连接失败": "Connection failed",
+  "连接失败：": "Connection failed: ",
+  "已卸载 ": "Uninstalled ",
+  "卸载失败：": "Uninstall failed: ",
+  "先填技能目录的绝对路径": "Enter the absolute path of the skill directory first",
+  "已安装到 ": "Installed to ",
+  "安装失败：": "Install failed: ",
+  "插件 id 不能为空": "Plugin id is required",
+  "已保存，会话里的提供商下拉重开一次就能看到新模型": "Saved. Reopen the provider dropdown in a session to see the new models",
+  "全局": "Global",
+  "当前工作区": "This workspace",
+  "正在读取设置…": "Loading settings…",
+  "语言": "Language",
+  "跟随系统": "Follow system",
+  "中文": "中文",
+  "主题色": "Theme",
+  "浅色": "Light",
+  "深色": "Dark",
+  "灰蓝": "Gray blue",
+  "完全许可": "Full access",
+  "关闭路径边界、命令审批与环境隔离，可直连网络": "Turns off path boundaries, command approval and env isolation; direct network access",
+  "自动审批": "Auto-approve",
+  "一切工具调用都无需审批（含工作区外访问与风险操作）": "No approval for any tool call (including outside-workspace access and risky operations)",
+  "把全局与项目 AGENTS.md 注入系统提示词": "Inject global and project AGENTS.md into the system prompt",
+  "思考过程": "Reasoning",
+  "新回话默认展开「思考与工具过程」": "New turns expand \"reasoning and tool steps\" by default",
+  "改行为版本：护栏、阈值、规则与技能顺序": "Changes the behavior version: guardrails, thresholds, rules and skill order",
+  "演进的对象是 Agent 的行为版本：只改当前工作区的护栏、阈值、规则与技能顺序（.openloop 激活集），": "Evolution targets the agent's behavior version: only this workspace's guardrails, thresholds, rules and skill order (the .openloop activation set);",
+  "不编译、不换二进制；攒够新证据就自动跑一轮 A/B 考核，候选更好才采纳。": "no compile, no binary swap; with enough new evidence an A/B eval runs and the candidate is adopted only if better.",
+  "自动迭代": "Auto-iterate",
+  "改程序版本：工作树源码构建升版，换掉 A/I": "Changes the program version: build the worktree sources, bump and swap A/I",
+  "迭代的对象是 OpenLoop 程序本身：把工作树里的源码改动构建、升版并替换 A/I（不连壳，壳仍由 Loop 页「迭代」换）。": "Iteration targets OpenLoop itself: build the source changes in the worktree, bump and replace A/I (the shell is not included; the shell is still swapped by \"Iterate\" on the Loop page).",
+  "演进采纳后自动跑一次，会重启 A、中断正在跑的会话；工作树有未提交改动时跳过。": "Runs once right after an evolution is adopted; it restarts A and interrupts running sessions, and is skipped while the worktree has uncommitted changes.",
+  "主题与语言在重启 OpenLoop 后生效；完全许可、自动审批、自动演进与自动迭代立即生效。": "Theme and language apply after restarting OpenLoop; full access, auto-approve, auto-evolve and auto-iterate apply immediately.",
+  "启用协作": "Enable collab",
+  "给 Worker 与 Loop 会话挂 CollabStart / CollabMonitor / ReadSession": "Gives Worker and Loop sessions CollabStart / CollabMonitor / ReadSession",
+  "监测间隔": "Poll interval",
+  "10 秒": "10 s",
+  "30 秒": "30 s",
+  "1 分钟": "1 min",
+  "2 分钟": "2 min",
+  "5 分钟": "5 min",
+  "沿用上下文": "Reuse context",
+  "协作会话带上发起方已完成的对话，复用前缀缓存（同模型才生效）": "Collab sessions carry the initiator's finished turns to reuse the prefix cache (same model only)",
+  "协作会话是平级的独立会话，不是子 agent：它们不共享发起方的工具调用栈，只在同一工作区各干一段。": "Collab sessions are peer sessions, not sub-agents: they share no tool-call stack with the initiator and each works a slice of the same workspace.",
+  "发起方启动后不再自己动手，只做监测与协调；监测汇报以仿用户消息进入它的队列（队列里用特殊底色标出），": "Once started the initiator stops doing the work itself and only monitors and coordinates; progress reports enter its queue as user-like messages (highlighted in the queue),",
+  "全部会话结束或不可恢复地中止后自动停止。暂不支持跨工作区协作。": "and stop automatically once every session ends or aborts unrecoverably. Cross-workspace collaboration is not supported yet.",
+  "权限审批": "Approval",
+  "委派给 OpenCode 时，每个动作都经本应用审批": "Every action is approved here when delegated to OpenCode",
+  "服务通过 ~/.local/state/opencode/service.json 自动发现；未就绪时不会出现在模型列表里。": "The service is discovered via ~/.local/state/opencode/service.json; it stays out of the model list until ready.",
+  "免审批（默认）": "No approval (default)",
+  "每次审批": "Approve every action",
+  "关闭": "Close",
+  "只读抓取 http/https 网页正文并转纯文本；不执行 JavaScript，内容按不可信数据处理。": "Read-only fetch of http/https page text as plain text; JavaScript is not executed and content is treated as untrusted data.",
+  "内网与环回地址一律拒绝；只抓文本/HTML/JSON/XML，单页最多 2MB，结果默认 6000 字符，一轮最多 8 次。Worker 与 Loop 同时生效。": "Private-network and loopback addresses are refused; only text/HTML/JSON/XML up to 2 MB per page is fetched, 6000 characters by default, at most 8 per turn. Applies to Worker and Loop alike.",
+  "（插件）": " (plugin)",
+  "提供商 ": "Provider ",
+  "提供商": "Provider",
+  "还没有提供商": "No providers yet",
+  "添加": "Add",
+  "名称": "Name",
+  "接口地址": "Base URL",
+  "密钥": "API key",
+  "由插件清单管理": "Managed by the plugin manifest",
+  "已保存（留空表示不改）": "Saved (blank keeps it unchanged)",
+  "粘贴 API Key": "Paste API key",
+  "拉取模型": "Fetch models",
+  "测试": "Test",
+  "插件提供商：模型的增删写回它的 plugin.json": "Plugin provider: model changes are written back to its plugin.json",
+  "插件提供商当前不可用（服务未就绪），可以先停用": "This plugin provider is unavailable (service not ready); you can disable it",
+  "模型 id，回车加入": "Model id, Enter to add",
+  "加入": "Add",
+  "这个提供商还没有模型": "This provider has no models yet",
+  "取消勾选=停用（不进出模型下拉）": "Unchecking disables it (kept out of the model dropdown)",
+  "属性": "Properties",
+  "「拉取模型」会请求提供商的 /models；「测试」会真的发一次最小补全。属性可设显示名称与上下文上限。": "\"Fetch models\" requests the provider's /models; \"Test\" really sends one minimal completion. Properties set the display name and context limit.",
+  "插件贡献的提供商标着「（插件）」，模型增删写回插件清单，停用状态存在 settings.json。": "Providers contributed by plugins are marked \"(plugin)\"; model changes are written back to the plugin manifest and disabled state lives in settings.json.",
+  "范围": "Scope",
+  "先在项目里打开一个会话，或切到「全局」管理全局技能": "Open a session in a project first, or switch to \"Global\" to manage global skills",
+  "安装": "Install",
+  "含 SKILL.md 的目录（绝对路径）": "Directory containing SKILL.md (absolute path)",
+  "没有可管理的技能": "No skills to manage",
+  "项目 .opencode": "Project .opencode",
+  "卸载": "Uninstall",
+  "项目技能停用/启用走账本（由 I 收敛）；全局技能只改本机开关。.opencode/skills 里的技能由 opencode 管理，这里只能看。": "Enabling/disabling project skills goes through the ledger (converged by I); global skills only flip a local switch. Skills in .opencode/skills are managed by opencode and are read-only here.",
+  "存放位置": "Locations",
+  "工作区 ": "Workspace ",
+  "（还没打开工作区，只看全局）": "(no workspace open yet; global only)",
+  "全局 ": "Global ",
+  "还没有插件": "No plugins yet",
+  "编辑": "Edit",
+  "存盘即生效，会话里的提供商下拉几秒内自己补上。「编辑」只改 provider 型插件的地址与密钥，": "Saved changes apply at once and the provider dropdown picks them up within seconds. \"Edit\" only changes the URL and key of provider plugins;",
+  "工具/MCP 型插件的清单自己去目录里改；「卸载」把整个目录移进回收目录，可捞回。": "change the manifest of tool/MCP plugins in their directory; \"Uninstall\" moves the whole directory to a recycle folder and can be restored.",
+  "同名插件工作区优先，全局新插件点「添加」时写进当前工作区。": "Workspace plugins win over same-name global ones; \"Add\" writes new plugins into the current workspace.",
+  "普通": "Plain",
+  "工具": "Tool",
+  "插件": "Plugin",
+  "协作": "Collab",
+  "保存": "Save",
+  "编辑插件": "Edit plugin",
+  "添加插件": "Add plugin",
+  "会写进当前工作区的插件目录（没有工作区就写全局）": "Writes into the current workspace's plugin directory (global when there is no workspace)",
+  "插件 id（也是目录名）": "Plugin id (also the directory name)",
+  "下拉里显示的名字，留空用 id": "Name shown in the dropdown; blank uses the id",
+  "OpenAI 兼容根地址，例如 http://127.0.0.1:3065/v1": "OpenAI-compatible base URL, e.g. http://127.0.0.1:3065/v1",
+  "可选：GET 这个地址取 data[].id 当模型清单": "Optional: GET this URL and use data[].id as the model list",
+  "可选：界面上的模型前缀，发上游前会去掉，例如 a2a/": "Optional: model prefix shown in the UI, stripped before sending upstream, e.g. a2a/",
+  "写入同目录 key.txt；留空表示不改": "Written to key.txt in the same directory; blank keeps it unchanged",
+  "写入同目录 key.txt，可留空": "Written to key.txt in the same directory; can be blank",
+  "只建 provider 贡献，模型清单靠 ModelsUrl 自动发现。": "Only the provider contribution is created; the model list comes from ModelsUrl discovery.",
+  "模型属性": "Model properties",
+  "确定": "OK",
+  "显示名称（留空沿用模型 id）": "Display name (blank keeps the model id)",
+  "上下文上限（token，0 表示自动）": "Context limit (tokens, 0 = auto)",
+  "拿不到能力位：": "Cannot read capabilities: ",
+  "会话已删除：": "Session deleted: ",
+  "已重连 ": "Reconnected ",
+  "会话读取失败：": "Cannot read the session: ",
+  "Puppet 截图失败：": "Puppet screenshot failed: ",
+  "已删除会话 ": "Deleted session ",
+  "删除失败：": "Delete failed: ",
+  "新建失败：": "Create failed: ",
+  "会话列表": "Session list",
+  "关于": "About",
+  "没有运行中的会话": "No running sessions",
+  "会话列表还没加载完": "The session list is still loading",
+  "打开所有活动会话": "Open all active sessions",
+  "关闭所有非活动会话": "Close all inactive sessions",
+  "关闭所有 Worker 会话": "Close all Worker sessions",
+  "正在连接…": "Connecting…",
+  "创建": "Create",
+  "工作目录（绝对路径）": "Working directory (absolute path)",
+  "模型，如 opencode/xxx（留空用默认）": "Model, e.g. opencode/xxx (blank = default)",
+  "OpenLoop 浏览器壳": "OpenLoop browser shell",
+  "角色：": "Roles: ",
+  "默认工作区：": "Default workspace: ",
+  "模型目录：": "Model catalog: ",
+  " 个": "",
+  "未就绪": "not ready",
+  "会话：": "Sessions: ",
+};
+const t = s => (LANG === 'en' ? (EN[s] ?? s) : s);
+
 
 async function api(path, options = {}) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
@@ -22,7 +352,7 @@ const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(bo
 
 // 与 WinForms 的 SessionView.TryRunCommand 同一组命令：Web 只接自己能真正执行的，其余明确回绝，别把「/命令」当正文发给模型
 const WEB_COMMANDS = ['/compact'];
-const SHELL_COMMANDS = ['/btw', '/complain', '/debug', '/fork', '/new', '/puppet', '/review', '/optimize'];
+const SHELL_COMMANDS = ['/btw', '/complain', '/fork', '/new', '/prompt', '/agents', '/puppet', '/review', '/optimize'];
 const commandOf = text => {
   const m = /^(\S+)(?:\s|$)/.exec(text || '');
   return m ? m[1].toLowerCase() : '';
@@ -54,10 +384,10 @@ const PuppetRow = ({ shot, setShot }) => h('div', { style: { display: 'flex', al
     onChange: v => {
       setShot(v);
       localStorage.setItem('openloop.shot', v ? '1' : '0');
-      message.success(v ? '已允许 Puppet 截图' : '已关闭 Puppet 截图');
+      message.success(v ? t('已允许 Puppet 截图') : t('已关闭 Puppet 截图'));
     }
   }),
-  h(Muted, null, '允许 Puppet 截图'));
+  h(Muted, null, t('允许 Puppet 截图')));
 
 // ---------------- 顶栏 ----------------
 
@@ -72,9 +402,9 @@ function TopBar({ menu, onSettings }) {
       h(Button, { type: 'text', style: { width: 38, height: 34, borderRadius: 8 } }, '☰')),
     h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 } },
       h('span', { style: { fontSize: 17, fontWeight: 700 } }, 'OpenLoop'),
-      h('span', { style: { fontSize: 12, color: '#8c8c8c' } }, '一个可自我迭代的开放式Agent')),
+      h('span', { style: { fontSize: 12, color: '#8c8c8c' } }, t('一个可自我迭代的开放式Agent'))),
     h('div', { style: { flex: 1 } }),
-    h(Tooltip, { title: '设置' },
+    h(Tooltip, { title: t('设置') },
       h(Button, { type: 'text', style: { width: 38, height: 34, borderRadius: 8 }, onClick: onSettings }, '⚙')));
 }
 
@@ -117,51 +447,51 @@ function OverviewPage({ sessions, project, setProject, onOpen, onNew, onDelete, 
         display: 'flex', flexDirection: 'column', minHeight: 0
       }
     },
-      h('div', { style: { padding: '10px 12px 6px', fontSize: 12, color: '#8c8c8c' } }, '项目'),
+      h('div', { style: { padding: '10px 12px 6px', fontSize: 12, color: '#8c8c8c' } }, t('项目')),
       h('div', { className: 'ol-scroll', style: { flex: 1, minHeight: 0, padding: '0 8px' } },
         projects.map(p => h('div', {
           key: p.ws || '∅',
           className: 'ol-item' + (project === p.ws ? ' active' : ''),
           onClick: () => setProject(p.ws),
-          title: p.ws || '（空工作区）'
+          title: p.ws || t('（空工作区）')
         },
           h('span', { className: 'ol-avatar' }, (p.name || '?').slice(0, 1).toUpperCase()),
           h('span', { style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name),
           h(Muted, null, p.count)))),
       h('div', { style: { padding: 10, borderTop: '1px solid #f0f0f0', display: 'grid', gap: 8 } },
         h(Button, { block: true, onClick: onLoop }, 'Harness'),
-        h(Button, { block: true, onClick: onNew }, '新建会话'))),
+        h(Button, { block: true, onClick: onNew }, t('新建会话')))),
 
     h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 } },
       h('div', { style: { display: 'flex', gap: 8, padding: '10px 16px' } },
         h(Input, {
           value: q, onChange: e => setQ(e.target.value), allowClear: true,
-          placeholder: '搜索会话', style: { maxWidth: 480 }
+          placeholder: t('搜索会话'), style: { maxWidth: 480 }
         }),
         h('div', { style: { flex: 1 } }),
         picked.length
           ? h(Popconfirm, {
-              title: '删除选中的 ' + picked.length + ' 个会话？',
-              description: '对话历史会一起删除，不可恢复。',
-              okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
+              title: t('删除选中的 ') + picked.length + t(' 个会话？'),
+              description: t('对话历史会一起删除，不可恢复。'),
+              okText: t('删除'), cancelText: t('取消'), okButtonProps: { danger: true },
               onConfirm: removePicked
-            }, h(Button, { danger: true }, '删除选中'))
-          : h(Button, { disabled: true }, '删除选中'),
-        h(Button, { type: 'primary', onClick: onNew }, '新建会话')),
+            }, h(Button, { danger: true }, t('删除选中')))
+          : h(Button, { disabled: true }, t('删除选中')),
+        h(Button, { type: 'primary', onClick: onNew }, t('新建会话'))),
       h('div', { style: { padding: '0 16px 8px' } },
-        h(Muted, null, project || '全部项目')),
+        h(Muted, null, project || t('全部项目'))),
       h('div', { className: 'ol-scroll', style: { flex: 1, minHeight: 0, padding: '0 16px 12px' } },
         rows.length === 0
-          ? h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: '暂无会话' })
+          ? h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: t('暂无会话') })
           : h('div', { className: 'ol-table' },
             h('div', { className: 'ol-thead' },
               h('input', {
                 type: 'checkbox', checked: allPicked,
                 onChange: () => setPicked(allPicked ? [] : rows.map(r => r.id))
               }),
-              h('span', { style: { flex: 1 } }, '会话'),
-              h('span', { style: { width: 90 } }, '状态'),
-              h('span', { style: { width: 220 } }, '工作区')),
+              h('span', { style: { flex: 1 } }, t('会话')),
+              h('span', { style: { width: 90 } }, t('状态')),
+              h('span', { style: { width: 220 } }, t('工作区'))),
             rows.map(s => h('div', {
               key: s.id, className: 'ol-trow', onClick: () => onOpen(s.id)
             },
@@ -173,7 +503,7 @@ function OverviewPage({ sessions, project, setProject, onOpen, onNew, onDelete, 
                 h(Dot, { state: s.state }),
                 h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
                   s.title || baseName(s.workspace) || s.id),
-                s.live === false ? h(Tag, { style: { marginLeft: 8 } }, '历史') : null),
+                s.live === false ? h(Tag, { style: { marginLeft: 8 } }, t('历史')) : null),
               h('span', { style: { width: 90 } }, h(Muted, null, s.state || 'idle')),
               h('span', { style: { width: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
                 h(Muted, null, s.workspace || '—'))))))));
@@ -187,15 +517,15 @@ function Turn({ turn, bodyRef }) {
     // 协作提示（agent 自动插入的仿用户消息）：折叠成一行标题 + 淡黄底，详情点开看
     turn.notice ? h('div', { className: 'ol-turn' },
       h('details', { className: 'ol-details ol-notice' },
-        h('summary', null, (turn.noticeKind === 'mention' ? '会话私信' : turn.noticeKind === 'puppet' ? 'Puppet 动作' : '协作提示')
+        h('summary', null, (turn.noticeKind === 'mention' ? t('会话私信') : turn.noticeKind === 'puppet' ? t('Puppet 动作') : t('协作提示'))
           + ' · ' + (turn.user || '').split('\n')[0]),
         h('pre', null, turn.user || ''))) : (turn.user ? h('div', { className: 'ol-msg ol-msg-user' },
       h('div', { className: 'ol-body' }, turn.user)) : null),
     h('div', { className: 'ol-msg ol-msg-ai' + (turn.user ? ' ol-msg-next' : '') },
       h('div', { ref: bodyRef, className: 'ol-body' }, turn.assistant || ''),
-      turn.streaming ? h('div', { className: 'ol-streaming' }, '输出中…') : null,
+      turn.streaming ? h('div', { className: 'ol-streaming' }, t('输出中…')) : null,
       turn.reasoning ? h('details', { className: 'ol-details' },
-        h('summary', null, '思考'),
+        h('summary', null, t('思考')),
         h('pre', null, turn.reasoning)) : null,
       (turn.timeline || turn.toolLines) ? h('pre', { className: 'ol-tools' }, turn.timeline || turn.toolLines) : null));
 }
@@ -209,6 +539,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   const [sideOpen, setSideOpen] = useState(true);
   const [sideTab, setSideTab] = useState('detail');
   const [puppetSheet, setPuppetSheet] = useState(null);   // Puppet Action 清单：null=未读，{error} 或壳的 manifest
+  const [puppetFilter, setPuppetFilter] = useState('');
   const [selectMode, setSelectMode] = useState(false);
   const [files, setFiles] = useState([]);
   const [imageModel, setImageModel] = useState('');
@@ -271,8 +602,8 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     if (!head.length) return list;
     const tail = list.filter(o => !rank.has(o.value));
     return [
-      { label: '最近使用', options: head },
-      ...(tail.length ? [{ label: '全部模型', options: tail }] : [])
+      { label: t('最近使用'), options: head },
+      ...(tail.length ? [{ label: t('全部模型'), options: tail }] : [])
     ];
   }, [models, recent, freeOnly, provider, images]);
 
@@ -302,7 +633,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   const acceptFiles = async (picked) => {
     const next = [];
     for (const file of picked) {
-      if (files.length + next.length >= 8) { message.warning('附件最多 8 个'); break; }
+      if (files.length + next.length >= 8) { message.warning(t('附件最多 8 个')); break; }
       const data = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
@@ -317,14 +648,14 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   // 手动压缩上下文（/compact 与「操作 ▾ → 压缩上下文」同一条路）
   const compactContext = async () => {
     if (!activeId) return;
-    if (running) return message.warning('请先停止当前任务，再压缩上下文');
-    const hide = message.loading('正在压缩上下文，最长约 2 分钟…', 0);
+    if (running) return message.warning(t('请先停止当前任务，再压缩上下文'));
+    const hide = message.loading(t('正在压缩上下文，最长约 2 分钟…'), 0);
     try {
       const r = await post(`/api/sessions/${activeId}/compact`, {});
       hide();
-      if (r?.ok) message.success(`已压缩上下文：${r.before} → ${r.after} tokens`);
-      else message.warning(r?.error || '没有可压缩的上下文');
-    } catch (e) { hide(); message.error('压缩失败：' + e.message); }
+      if (r?.ok) message.success(tf('已压缩上下文：{before} → {after} tokens', { before: r.before, after: r.after }));
+      else message.warning(r?.error || t('没有可压缩的上下文'));
+    } catch (e) { hide(); message.error(t('压缩失败：') + e.message); }
   };
 
   const send = async (immediate = true) => {
@@ -332,17 +663,26 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     // 命令不走普通对话：/compact 直接执行；WinForms 才有的命令回绝并保留原文，免得模型收到一句看不懂的「/xxx」
     const command = value.startsWith('/') ? commandOf(value) : '';
     if (WEB_COMMANDS.includes(command)) { setText(''); return compactContext(); }
+    // /report：只落 findings（A 面同一落账入口），不启动会话、不触发演进
+    if (command === '/report') {
+      try {
+        const r = await post(`/api/sessions/${activeId}/report`, { text: value.slice(7).trim() });
+        setText('');
+        if (r?.ok) message.success(r.message); else message.warning(r?.message || t('缺少内容'));
+      } catch (e) { message.error(t('记录失败：') + e.message); }
+      return;
+    }
     if (SHELL_COMMANDS.includes(command)) {
-      return message.warning(`${command} 是 WinForms 壳的命令，Web 壳暂不支持；请在 WinForms 壳里用`);
+      return message.warning(tf('{command} 是 WinForms 壳的命令，Web 壳暂不支持；请在 WinForms 壳里用', { command }));
     }
     if (!value && !files.length) {
       if (retry) {
-        try { await post(`/api/sessions/${activeId}/messages`, { text: '继续', tag: 'task' }); }
-        catch (e) { message.error('发送失败：' + e.message); }
+        try { await post(`/api/sessions/${activeId}/messages`, { text: t('继续'), tag: 'task' }); }
+        catch (e) { message.error(t('发送失败：') + e.message); }
         return;
       }
-      if (!running) return message.warning('输入框为空');
-      try { await post(`/api/sessions/${activeId}/stop`); } catch (e) { message.error('停止失败：' + e.message); }
+      if (!running) return message.warning(t('输入框为空'));
+      try { await post(`/api/sessions/${activeId}/stop`); } catch (e) { message.error(t('停止失败：') + e.message); }
       return;
     }
     const attachments = files.map(f => ({ name: f.name, data: f.data }));
@@ -351,14 +691,14 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     try {
       await post(`/api/sessions/${activeId}/messages`,
         { text: value, tag: 'task', immediate, imageModel, attachments });
-      if (running) message.success(immediate ? '已插队，本轮收尾后立刻发送' : '已入队，本轮结束后发送');
-    } catch (e) { setText(value); setFiles(attachments); message.error('发送失败：' + e.message); }
+      if (running) message.success(immediate ? t('已插队，本轮收尾后立刻发送') : t('已入队，本轮结束后发送'));
+    } catch (e) { setText(value); setFiles(attachments); message.error(t('发送失败：') + e.message); }
   };
 
   const act = async (action, body, ok) => {
     if (!activeId) return;
     try { await post(`/api/sessions/${activeId}/${action}`, body); if (ok) message.success(ok); }
-    catch (e) { message.error('失败：' + e.message); }
+    catch (e) { message.error(t('失败：') + e.message); }
   };
 
   const pickModel = async (id, nextEffort) => {
@@ -367,9 +707,9 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     if (!activeId) return;
     try {
       await post(`/api/sessions/${activeId}/model`, { model: id, effort: nextEffort !== undefined ? nextEffort : effort });
-      message.success('已切换模型');
+      message.success(t('已切换模型'));
       if (reloadModels) reloadModels();   // 重拉一次，让「最近使用」跟上
-    } catch (e) { message.error('切换失败：' + e.message); }
+    } catch (e) { message.error(t('切换失败：') + e.message); }
   };
 
   const header = h('div', {
@@ -380,46 +720,46 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   },
     h(Dot, { state: snapshot?.state }),
     h('span', { style: { fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
-      snapshot?.title || snapshot?.id || '会话'),
+      snapshot?.title || snapshot?.id || t('会话')),
     h('div', { style: { flex: 1 } }),
     h('label', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
-      h('input', { type: 'checkbox', checked: selectMode, onChange: e => setSelectMode(e.target.checked) }), '选择'),
+      h('input', { type: 'checkbox', checked: selectMode, onChange: e => setSelectMode(e.target.checked) }), t('选择')),
     selectMode
       ? h(Popconfirm, {
-          title: '删除这个会话？', description: '对话历史会一起删除，不可恢复。',
-          okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
+          title: t('删除这个会话？'), description: t('对话历史会一起删除，不可恢复。'),
+          okText: t('删除'), cancelText: t('取消'), okButtonProps: { danger: true },
           onConfirm: () => onDelete(snapshot?.id)
-        }, h(Button, { size: 'small', danger: true }, '删除'))
+        }, h(Button, { size: 'small', danger: true }, t('删除')))
       : h(Dropdown, {
           menu: {
             items: [
-              { key: 'stop', label: '停止当前轮', disabled: !running },
-              { key: 'interrupt', label: '打断（下一 step 前收尾）', disabled: !running },
-              { key: 'resume', label: '继续', disabled: running },
-              { key: 'compact', label: '压缩上下文', disabled: running },
+              { key: 'stop', label: t('停止当前轮'), disabled: !running },
+              { key: 'interrupt', label: t('打断（下一 step 前收尾）'), disabled: !running },
+              { key: 'resume', label: t('继续'), disabled: running },
+              { key: 'compact', label: t('压缩上下文'), disabled: running },
               { type: 'divider' },
-              { key: 'copy', label: '复制工作区' }
+              { key: 'copy', label: t('复制工作区') }
             ],
             onClick: ({ key }) => {
               if (key === 'copy') {
                 navigator.clipboard?.writeText(snapshot?.workspace || '');
-                return message.success('已复制工作区');
+                return message.success(t('已复制工作区'));
               }
               if (key === 'compact') { compactContext(); return; }
-              act(key, null, '已执行');
+              act(key, null, t('已执行'));
             }
           }
-        }, h(Button, { size: 'small', type: 'text' }, '操作 ▾')),
-    h(Tooltip, { title: '上下文占用：' + (snapshot?.contextTokens ?? '—') + ' / ' + (snapshot?.contextLimit || '—') },
+        }, h(Button, { size: 'small', type: 'text' }, t('操作 ▾'))),
+    h(Tooltip, { title: t('上下文占用：') + (snapshot?.contextTokens ?? '—') + ' / ' + (snapshot?.contextLimit || '—') },
       h(Progress, { type: 'circle', size: 26, percent: pct, showInfo: false, strokeWidth: 8 })),
     h(Muted, { style: { width: 34, textAlign: 'right' } }, pct + '%'),
     h(Button, { size: 'small', type: 'text', onClick: () => setSideOpen(v => !v) }, sideOpen ? '»' : '«'));
 
   const chat = h('div', { ref: chatRef, className: 'ol-scroll', style: { flex: 1, minHeight: 0, padding: '12px 20px' } },
     !snapshot
-      ? h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: '暂无对话' })
+      ? h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: t('暂无对话') })
       : (snapshot.turns || []).length === 0
-        ? h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: '暂无对话' })
+        ? h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: t('暂无对话') })
         : (snapshot.turns || []).map((t, i) => h(Turn, {
             key: i, turn: t,
             bodyRef: i === (snapshot.turns || []).length - 1 ? answerRef : undefined
@@ -427,24 +767,24 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     (snapshot?.prompts || []).map(p => h('div', { key: p.id, className: 'ol-prompt' },
       h('div', { style: { flex: 1, minWidth: 0 } },
         h('div', { style: { fontWeight: 600, whiteSpace: 'pre-wrap' } },
-          (p.category ? '[' + p.category + '] ' : '') + (p.tool ? p.tool + '：' : '') + (p.text || '')),
+          (p.category ? '[' + p.category + '] ' : '') + (p.tool ? p.tool + t('：') : '') + (p.text || '')),
         p.reason ? h(Muted, null, p.reason) : null),
       h(Space, { size: 4, style: { flex: 'none' } },
-        h(Button, { size: 'small', type: 'primary', onClick: () => act('approval', { id: p.id, decision: 1 }, '已允许') }, '允许一次'),
-        h(Button, { size: 'small', onClick: () => act('approval', { id: p.id, decision: 2 }, '已允许同类') }, '同类都允许'),
-        h(Button, { size: 'small', danger: true, onClick: () => act('approval', { id: p.id, decision: 0 }, '已拒绝') }, '拒绝')))));
+        h(Button, { size: 'small', type: 'primary', onClick: () => act('approval', { id: p.id, decision: 1 }, t('已允许')) }, t('允许一次')),
+        h(Button, { size: 'small', onClick: () => act('approval', { id: p.id, decision: 2 }, t('已允许同类')) }, t('同类都允许')),
+        h(Button, { size: 'small', danger: true, onClick: () => act('approval', { id: p.id, decision: 0 }, t('已拒绝')) }, t('拒绝'))))));
 
   const pending = (snapshot?.pending || []).length
     ? h('div', { className: 'ol-pending' },
-        h(Muted, { style: { flex: 'none' } }, '排队'),
+        h(Muted, { style: { flex: 'none' } }, t('排队')),
         (snapshot.pending || []).map((item, i) => {
           // agent 自动插入的（协作监测汇报）用特殊底色标出，用户敲的仍是普通底色
           const auto = (snapshot.pendingAuto || [])[i] === true
           return h('div', { key: i, className: 'ol-pending-row' + (auto ? ' ol-pending-auto' : '') },
-            auto ? h('span', { className: 'ol-pending-icon', title: '自动：agent 插入（立即发送）' }, '🤖') : null,
+            auto ? h('span', { className: 'ol-pending-icon', title: t('自动：agent 插入（立即发送）') }, '🤖') : null,
             h('span', { title: item, style: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, item),
-            auto ? null : h(Button, { size: 'small', type: 'link', onClick: () => act('pending', { index: i, action: 'now' }) }, '立即'),
-            h(Button, { size: 'small', type: 'link', danger: true, onClick: () => act('pending', { index: i, action: 'remove' }) }, '撤回'))
+            auto ? null : h(Button, { size: 'small', type: 'link', onClick: () => act('pending', { index: i, action: 'now' }) }, t('立即')),
+            h(Button, { size: 'small', type: 'link', danger: true, onClick: () => act('pending', { index: i, action: 'remove' }) }, t('撤回')))
         }))
     : null;
 
@@ -455,48 +795,48 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     providers.length
       ? h(Select, {
           value: provider || '', onChange: setProvider, style: { width: 140 },
-          options: [{ value: '', label: '全部提供商' }, ...providers.map(p => ({ value: p, label: p }))]
+          options: [{ value: '', label: t('全部提供商') }, ...providers.map(p => ({ value: p, label: p }))]
         }) : null,
     models.length
       ? h(Select, {
           value: model || undefined, onChange: id => pickModel(id), style: { width: 280 },
-          showSearch: true, optionFilterProp: 'label', placeholder: '模型',
+          showSearch: true, optionFilterProp: 'label', placeholder: t('模型'),
           options: choices.length ? choices : [{ value: model, label: model }].filter(o => o.value)
         })
-      : h(Input, { value: model, onChange: e => setModel(e.target.value), onBlur: () => pickModel(model), placeholder: '模型', style: { width: 280 } }),
+      : h(Input, { value: model, onChange: e => setModel(e.target.value), onBlur: () => pickModel(model), placeholder: t('模型'), style: { width: 280 } }),
     imageChoices.length
       ? h('span', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
           h(Button, {
-            size: 'small', title: '生图模型', type: imageOpen ? 'primary' : 'default',
+            size: 'small', title: t('生图模型'), type: imageOpen ? 'primary' : 'default',
             onClick: () => setImageOpen(v => !v)
           }, '🖼'),
           imageOpen ? h(Select, {
             value: imageModel || undefined, onChange: setImageModel, style: { width: 200 },
-            showSearch: true, optionFilterProp: 'label', placeholder: '生图模型',
+            showSearch: true, optionFilterProp: 'label', placeholder: t('生图模型'),
             options: imageChoices
           }) : null)
       : null,
     h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
-      '只看免费',
+      t('只看免费'),
       h(Switch, { size: 'small', checked: freeOnly, onChange: setFreeOnly })),
     h(Select, {
       value: effort || '', onChange: v => pickModel(model, v), style: { width: 110 },
-      options: [{ value: '', label: '努力 Auto' }, { value: 'low', label: 'Low' },
+      options: [{ value: '', label: t('努力 Auto') }, { value: 'low', label: 'Low' },
         { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]
     }),
     h(Button, {
       type: 'primary', style: { width: 96 },
       danger: running && !value, onClick: () => send(true)
-    }, running ? (value ? '发送' : '停止') : retry ? '继续' : '发送'));
+    }, running ? (value ? t('发送') : t('停止')) : retry ? t('继续') : t('发送')));
 
   const attachRow = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap', fontSize: 12 } },
     h('label', {
       style: { cursor: 'pointer', color: '#1677ff', flex: 'none' },
-      title: '上传或粘贴文本/图片附件（最多 8 个）'
-    }, '📎 附件', h('input', {
+      title: t('上传或粘贴文本/图片附件（最多 8 个）')
+    }, t('📎 附件'), h('input', {
       type: 'file', multiple: true, style: { display: 'none' }, onChange: pickFiles
     })),
-    h(Muted, { style: { flex: 'none' } }, files.length ? `已选 ${files.length}/8` : '可上传或粘贴文本/图片'),
+    h(Muted, { style: { flex: 'none' } }, files.length ? tf('已选 {n}/8', { n: files.length }) : t('可上传或粘贴文本/图片')),
     files.map((file, i) => h('span', {
       key: i, style: {
         display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px',
@@ -511,7 +851,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
   },
     h(Input.TextArea, {
       value: text, onChange: e => setText(e.target.value), autoSize: { minRows: 3, maxRows: 10 },
-      placeholder: '描述任务（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）',
+      placeholder: t('描述任务（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）'),
       onKeyDown: e => {
         // 与 WinForms 一致：Enter 即时发送（运行中=打断本轮），Ctrl+Enter 排队等本轮返回，Shift+Enter 软换行；输入法组字中的 Enter 不算
         if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return;
@@ -530,24 +870,24 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     toolbar);
 
   const loopSide = h('div', { style: { padding: 12, display: 'grid', gap: 8 } },
-    h(Button, { size: 'small' }, '待答 ' + ((snapshot?.prompts || []).length)),
+    h(Button, { size: 'small' }, t('待答 ') + ((snapshot?.prompts || []).length)),
     h(Muted, null, 'def: —'),
-    h(Muted, null, '考核点: —'),
+    h(Muted, null, t('考核点: —')),
     h(Muted, { style: { wordBreak: 'break-all' } }, 'trace: ' + (snapshot?.traceDirectory || '—')),
-    h(Muted, null, '版本: ' + (snapshot?.activationVersion
-      ? 'v' + snapshot.activationVersion + ' · ' + snapshot.featureCount + ' 特征 · ' + snapshot.ruleCount + ' 规则' : '—')));
+    h(Muted, null, t('版本: ') + (snapshot?.activationVersion
+      ? 'v' + snapshot.activationVersion + ' · ' + snapshot.featureCount + t(' 特征 · ') + snapshot.ruleCount + t(' 规则') : '—')));
 
   const detailSide = h('div', { style: { padding: 12, display: 'grid', gap: 6 } },
-    h(Muted, null, '模型'), h('div', { style: { wordBreak: 'break-all' } }, snapshot?.model || '—'),
-    h(Muted, null, '努力'), h('div', null, snapshot?.effort || 'Auto'),
-    h(Muted, null, '上下文'),
+    h(Muted, null, t('模型')), h('div', { style: { wordBreak: 'break-all' } }, snapshot?.model || '—'),
+    h(Muted, null, t('努力')), h('div', null, snapshot?.effort || 'Auto'),
+    h(Muted, null, t('上下文')),
     h('div', null, (snapshot?.contextTokens != null ? snapshot.contextTokens.toLocaleString() : '—') + ' / '
       + (snapshot?.contextLimit > 0 ? snapshot.contextLimit.toLocaleString() : '—')),
-    h(Muted, null, '成本'), h('div', null, snapshot?.cost != null ? snapshot.cost.toFixed(4) : '—'),
-    h(Muted, null, '状态'), h('div', null, [snapshot?.state, snapshot?.outcome].filter(Boolean).join(' · ') || '—'),
-    h(Muted, null, '工作区'), h('div', { style: { wordBreak: 'break-all' } }, snapshot?.workspace || '—'));
+    h(Muted, null, t('成本')), h('div', null, snapshot?.cost != null ? snapshot.cost.toFixed(4) : '—'),
+    h(Muted, null, t('状态')), h('div', null, [snapshot?.state, snapshot?.outcome].filter(Boolean).join(' · ') || '—'),
+    h(Muted, null, t('工作区')), h('div', { style: { wordBreak: 'break-all' } }, snapshot?.workspace || '—'));
 
-  const puppetRows = ((puppetSheet && puppetSheet.actions) || []).map(a => {
+  const puppetAll = ((puppetSheet && puppetSheet.actions) || []).map(a => {
     const params = (a.parameters || []).slice()
       .sort((x, y) => (x.required ? 0 : 1) - (y.required ? 0 : 1));
     return {
@@ -557,30 +897,40 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     };
   }).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
+  const puppetQ = puppetFilter.trim().toLowerCase();
+  const puppetRows = puppetQ
+    ? puppetAll.filter(r => (r.name + ' ' + r.paramText + ' ' + r.desc).toLowerCase().includes(puppetQ))
+    : puppetAll;
+
   const puppetHint = puppetSheet?.error
-    ? '读不到清单：' + puppetSheet.error
+    ? t('读不到清单：') + puppetSheet.error
     : puppetSheet
-      ? 'Puppet Action 清单 · 实例 ' + (puppetSheet.instance || '—') + ' · ' + puppetRows.length + ' 个 action'
+      ? t('Puppet Action 清单 · 实例 ') + (puppetSheet.instance || '—') + ' · ' + puppetRows.length
+        + (puppetQ ? ' / ' + puppetAll.length : '') + t(' 个 action')
         + (puppetSheet.at ? ' · ' + puppetSheet.at.toLocaleTimeString() : '')
-      : 'Puppet Action 清单 · 读取中…';
+      : t('Puppet Action 清单 · 读取中…');
 
   const puppetSide = h('div', { style: { padding: 12, display: 'grid', gap: 8 } },
+    h(Input, {
+      size: 'small', allowClear: true, placeholder: t('筛选 action / 参数 / 说明'),
+      value: puppetFilter, onChange: e => setPuppetFilter(e.target.value)
+    }),
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
       h(Muted, { style: { flex: 1, minWidth: 0 } }, puppetHint),
-      h(Button, { size: 'small', loading: !!puppetSheet?.loading, onClick: loadPuppet }, '刷新')),
+      h(Button, { size: 'small', loading: !!puppetSheet?.loading, onClick: loadPuppet }, t('刷新'))),
     h(Table, {
       size: 'small', rowKey: 'name', pagination: false, dataSource: puppetRows, className: 'ol-puppet-table',
-      locale: { emptyText: puppetSheet?.loading ? '读取中…' : '没有可用的 action' },
+      locale: { emptyText: puppetSheet?.loading ? t('读取中…') : t('没有可用的 action') },
       onRow: row => ({ onDoubleClick: () => setText('/puppet ' + row.name + ' ') }),
       columns: [
         { title: 'Action', dataIndex: 'name', width: 116, ellipsis: true },
-        { title: '参数', dataIndex: 'paramText', width: 104, ellipsis: true },
-        { title: '说明', dataIndex: 'desc', width: 120, ellipsis: true }
+        { title: t('参数'), dataIndex: 'paramText', width: 104, ellipsis: true },
+        { title: t('说明'), dataIndex: 'desc', width: 120, ellipsis: true }
       ]
     }),
     h(Muted, null, puppetSheet?.error
-      ? '壳启用 Puppet（B 面）后才能列出 action；清单来自壳的 /appagent/manifest。'
-      : '双击一行把这条命令填进输入框：/puppet <action> <参数…>（参数用自然语言写，模型自己对应）'));
+      ? t('壳启用 Puppet（B 面）后才能列出 action；清单来自壳的 /appagent/manifest。')
+      : t('双击一行把这条命令填进输入框：/puppet <action> <参数…>（参数用自然语言写，模型自己对应）')));
 
   const side = h('div', {
     style: {
@@ -591,14 +941,14 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
     h('div', { style: { padding: 8, borderBottom: '1px solid #f0f0f0' } },
       h(Segmented, {
         block: true, size: 'small', value: sideTab, onChange: setSideTab,
-        options: [{ label: '详情', value: 'detail' }, { label: '旁路', value: 'btw' },
+        options: [{ label: t('详情'), value: 'detail' }, { label: t('旁路'), value: 'btw' },
           { label: 'Harness', value: 'loop' }, { label: 'Puppet', value: 'puppet' }]
       })),
     h('div', { className: 'ol-scroll', style: { flex: 1, minHeight: 0 } },
       sideTab === 'loop' ? loopSide
         : sideTab === 'detail' ? detailSide
           : sideTab === 'puppet' ? puppetSide
-            : h('div', { style: { padding: 24 } }, h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: '旁路未接入浏览器' }))));
+            : h('div', { style: { padding: 24 } }, h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: t('旁路未接入浏览器') }))));
 
   return h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
     header,
@@ -629,16 +979,16 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
 
   const refresh = async () => {
     const ws = wsRef.current.trim();
-    if (!ws) { setLedger('先填工作目录'); setSkills([]); return; }
+    if (!ws) { setLedger(t('先填工作目录')); setSkills([]); return; }
     try {
       const payload = await api('/api/loop/activation?workspace=' + encodeURIComponent(ws));
       if (payload?.activation) {
         const a = payload.activation;
         const rules = (a.features || []).filter(f => f.id && f.id.startsWith('rule.')).length;
-        setLedger(`v${a.version} · ${(a.features || []).length} 特征 · ${rules} 规则`);
-      } else setLedger('账本未初始化（先跑一次或新建会话）');
+        setLedger(tf('v{version} · {features} 特征 · {rules} 规则', { version: a.version, features: (a.features || []).length, rules }));
+      } else setLedger(t('账本未初始化（先跑一次或新建会话）'));
       setSkills(payload?.skills || []);
-    } catch (e) { setLedger('读账本失败：' + e.message); setSkills([]); }
+    } catch (e) { setLedger(t('读账本失败：') + e.message); setSkills([]); }
   };
 
   const pollEvolve = async () => {
@@ -672,9 +1022,9 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
   const evolveText = useMemo(() => {
     if (!evolve) return '—';
     const parts = [evolve.state, evolve.phase];
-    if (evolve.taskCount) parts.push(`题目 ${evolve.taskCount}`);
-    if (evolve.state === 'done') parts.push(`候选 ${evolve.candidatePassed}/${evolve.taskCount}，基线 ${evolve.baselinePassed}/${evolve.taskCount}`);
-    if (evolve.adopted) parts.push('已采纳 v' + evolve.candidateVersion);
+    if (evolve.taskCount) parts.push(tf('题目 {n}', { n: evolve.taskCount }));
+    if (evolve.state === 'done') parts.push(tf('候选 {cp}/{n}，基线 {bp}/{n}', { cp: evolve.candidatePassed, n: evolve.taskCount, bp: evolve.baselinePassed }));
+    if (evolve.adopted) parts.push(t('已采纳 v') + evolve.candidateVersion);
     if (evolve.detail) parts.push(evolve.detail);
     if (evolve.error) parts.push(evolve.error);
     return parts.filter(Boolean).join(' · ');
@@ -684,126 +1034,129 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
     if (!iteration) return '—';
     const parts = [iteration.state];
     if (iteration.version) parts.push('v' + iteration.version);
-    if (iteration.ok) parts.push('成功');
-    if (iteration.rolledBack) parts.push('已回滚');
+    if (iteration.ok) parts.push(t('成功'));
+    if (iteration.rolledBack) parts.push(t('已回滚'));
     if (iteration.error) parts.push(iteration.error);
     return parts.filter(Boolean).join(' · ');
   }, [iteration]);
 
   return h('div', { style: { display: 'flex', height: '100%', minHeight: 0 } },
     h('div', { className: 'ol-scroll', style: { flex: 1, minWidth: 0, padding: '14px 20px' } },
-      h('div', { className: 'ol-section-title' }, '工作区'),
+      h('div', { className: 'ol-section-title' }, t('工作区')),
       h(Input, {
         value: workspace, onChange: e => setWorkspace(e.target.value),
-        placeholder: '绝对路径',
+        placeholder: t('绝对路径'),
         onPressEnter: () => { refresh(); pollEvolve(); pollIteration(); },
         onBlur: () => { refresh(); pollEvolve(); pollIteration(); }
       }),
       h(Muted, { style: { display: 'block', margin: '6px 0 16px' } }, ledger || '—'),
 
-      h('div', { className: 'ol-section-title' }, '演进'),
+      h('div', { className: 'ol-section-title' }, t('演进')),
       h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
-        'Harness 只改当前工作区的可演进参数（激活集：护栏开关、阈值、规则、技能顺序、模型参数）；'
-        + '不改代码/工具/提示词，其它工作区不受影响；考核题 A/B 更好才采纳。'),
+        t('Harness 管当前工作区的五类对象：Prompt（系统提示词模板 + AGENTS.md）、Skill、Rule、Limit、Guard（含连接重试、免费额度恢复等自愈参数）；')
+        + t('改提示词与 AGENTS.md 在桌面壳里用 /prompt、/agents 让模型改，用户不直接编辑文本。')),
+      h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
+        t('演进是攒够证据后的一次集中分诊：harness 类出候选并过考核题，源码类写派单，未知留到下一批。')
+        + t('观察用 /report <内容> 记入 findings，只落账、不立即处理。')),
       h(Space, { wrap: true, style: { marginBottom: 6 } },
-        h(Input, { value: model, onChange: e => setModel(e.target.value), placeholder: '模型（留空用默认）', style: { width: 280 } }),
+        h(Input, { value: model, onChange: e => setModel(e.target.value), placeholder: t('模型（留空用默认）'), style: { width: 280 } }),
         h(Button, {
           type: 'primary', disabled: evolve?.state === 'running',
           onClick: async () => {
             const ws = workspace.trim();
-            if (!ws) return message.warning('先填工作目录');
+            if (!ws) return message.warning(t('先填工作目录'));
             try {
               setEvolve(await post('/api/loop/evolve', { workspace: ws, model: model.trim(), effort: '' }));
               setTimeout(pollEvolve, 2000);
-            } catch (e) { message.error('演进启动失败：' + e.message); }
+            } catch (e) { message.error(t('演进启动失败：') + e.message); }
           }
-        }, '演进'),
+        }, t('演进')),
         h(Button, {
           disabled: evolve?.state !== 'running',
           onClick: () => post('/api/loop/evolve/stop', { workspace: workspace.trim() }).catch(e => message.error(e.message))
-        }, '停止'),
+        }, t('停止')),
         h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
           h(Switch, {
             size: 'small', checked: !!evolve?.autoEnabled,
             onChange: async enabled => {
               try {
                 const r = await post('/api/loop/auto', { workspace: workspace.trim(), enabled });
-                message.success(r.enabled ? '自动演进已开启' : '自动演进已关闭');
+                message.success(r.enabled ? t('自动演进已开启') : t('自动演进已关闭'));
                 pollEvolve();
-              } catch (e) { message.error('设置失败：' + e.message); }
+              } catch (e) { message.error(t('设置失败：') + e.message); }
             }
-          }), '自动演进')),
+          }), t('自动演进'))),
       h(Muted, { style: { display: 'block', marginBottom: 16 } }, evolveText),
 
-      h('div', { className: 'ol-section-title' }, '规则与回滚'),
+      h('div', { className: 'ol-section-title' }, t('规则与回滚')),
       h(Space, { wrap: true, style: { marginBottom: 16 } },
-        h(Input, { value: ruleName, onChange: e => setRuleName(e.target.value), placeholder: '规则 id，如 rule.style', style: { width: 220 } }),
-        h(Input, { value: ruleText, onChange: e => setRuleText(e.target.value), placeholder: '规则内容', style: { width: 320 } }),
+        h(Input, { value: ruleName, onChange: e => setRuleName(e.target.value), placeholder: t('规则 id，如 rule.style'), style: { width: 220 } }),
+        h(Input, { value: ruleText, onChange: e => setRuleText(e.target.value), placeholder: t('规则内容'), style: { width: 320 } }),
         h(Button, {
           onClick: async () => {
             const ws = workspace.trim();
-            if (!ws || !ruleName.trim()) return message.warning('工作目录和规则 id 都要填');
+            if (!ws || !ruleName.trim()) return message.warning(t('工作目录和规则 id 都要填'));
             try {
               const r = await post('/api/loop/rule', { workspace: ws, name: ruleName.trim(), text: ruleText.trim() });
               setRuleName(''); setRuleText('');
-              message.success('已登记 ' + r.id);
+              message.success(t('已登记 ') + r.id);
               refresh();
-            } catch (e) { message.error('登记失败：' + e.message); }
+            } catch (e) { message.error(t('登记失败：') + e.message); }
           }
-        }, '登记规则'),
+        }, t('登记规则')),
         h(Popconfirm, {
-          title: '回滚到上一版？', description: '会写成新版本，旧版本文件不动。',
-          okText: '回滚', cancelText: '取消',
+          title: t('回滚到上一版？'), description: t('会写成新版本，旧版本文件不动。'),
+          okText: t('回滚'), cancelText: t('取消'),
           onConfirm: async () => {
             try {
               const r = await post('/api/loop/rollback', { workspace: workspace.trim() });
-              message.success('已回滚，当前 v' + r.version);
+              message.success(t('已回滚，当前 v') + r.version);
               refresh();
-            } catch (e) { message.error('回滚失败：' + e.message); }
+            } catch (e) { message.error(t('回滚失败：') + e.message); }
           }
-        }, h(Button, null, '回滚上一版'))),
+        }, h(Button, null, t('回滚上一版')))),
 
-      h('div', { className: 'ol-section-title' }, '迭代'),
+      h('div', { className: 'ol-section-title' }, t('迭代')),
       h(Space, { wrap: true, style: { marginBottom: 6 } },
         h(Button, {
           type: 'primary', disabled: iteration?.state === 'running',
           onClick: async () => {
             const ws = workspace.trim();
-            if (!ws) return message.warning('先填工作目录');
+            if (!ws) return message.warning(t('先填工作目录'));
             try {
               setIteration(await post('/api/loop/iteration', { workspace: ws, shell: shellIncluded, publishMode }));
               setTimeout(pollIteration, 2000);
-            } catch (e) { message.error('迭代启动失败：' + e.message); }
+            } catch (e) { message.error(t('迭代启动失败：') + e.message); }
           }
-        }, '开始迭代'),
+        }, t('开始迭代')),
         h(Button, {
           disabled: iteration?.state === 'running',
           onClick: async () => {
             const ws = workspace.trim();
-            if (!ws) return message.warning('先填工作目录');
+            if (!ws) return message.warning(t('先填工作目录'));
             try {
               const r = await api('/api/loop/iteration/plan?workspace=' + encodeURIComponent(ws));
               const lines = [];
               if (r.summary) lines.push(r.summary);
-              for (const p of r.plan || []) lines.push(`${p.role} → ${p.target}${p.update === false ? '（跳过）' : ''}`);
+              for (const p of r.plan || []) lines.push(`${p.role} → ${p.target}${p.update === false ? t('（跳过）') : ''}`);
               setPlan(lines.join('\n'));
-            } catch (e) { message.error('生成计划失败：' + e.message); }
+            } catch (e) { message.error(t('生成计划失败：') + e.message); }
           }
-        }, '生成计划'),
+        }, t('生成计划')),
         h(Button, {
           disabled: iteration?.state !== 'running',
           onClick: () => post('/api/loop/iteration/stop', {}).catch(e => message.error(e.message))
-        }, '停止'),
+        }, t('停止')),
         h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
-          h(Switch, { size: 'small', checked: shellIncluded, onChange: setShellIncluded }), '连壳'),
+          h(Switch, { size: 'small', checked: shellIncluded, onChange: setShellIncluded }), t('连壳')),
         h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
-          '形态',
+          t('形态'),
           h(Select, {
             size: 'small', style: { width: 200 }, value: publishMode, onChange: setPublishMode,
             disabled: iteration?.state === 'running',
             options: [
-              { value: 'framework', label: '框架依赖（需装 .NET）' },
-              { value: 'selfcontained', label: '自带框架' }
+              { value: 'framework', label: t('框架依赖（需装 .NET）') },
+              { value: 'selfcontained', label: t('自带框架') }
             ]
           }))),
       h(Muted, { style: { display: 'block', marginBottom: 8 } }, iterationText),
@@ -815,9 +1168,9 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
         padding: 12, display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0
       }
     },
-      h(Muted, null, '工作区'), h('div', { style: { wordBreak: 'break-all' } }, workspace || '—'),
-      h(Muted, { style: { marginTop: 8 } }, '账本'), h('div', null, ledger || '—'),
-      h(Muted, { style: { marginTop: 8 } }, '技能'), h('div', null, skills.length ? skills.length + ' 个启用' : '（无）'),
+      h(Muted, null, t('工作区')), h('div', { style: { wordBreak: 'break-all' } }, workspace || '—'),
+      h(Muted, { style: { marginTop: 8 } }, t('账本')), h('div', null, ledger || '—'),
+      h(Muted, { style: { marginTop: 8 } }, t('技能')), h('div', null, skills.length ? skills.length + t(' 个启用') : t('（无）')),
       skills.length ? h('pre', { className: 'ol-tools', style: { maxHeight: 240 } }, skills.join('\n')) : null));
 }
 
@@ -857,14 +1210,14 @@ async function capturePage(region) {
   const bitmap = await new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('svg 渲染失败'));
+    image.onerror = () => reject(new Error(t('svg 渲染失败')));
     image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   });
   const x = Math.max(0, region.x | 0);
   const y = Math.max(0, region.y | 0);
   const w = region.width > 0 ? Math.min(region.width, width - x) : width - x;
   const hh = region.height > 0 ? Math.min(region.height, height - y) : height - y;
-  if (w < 1 || hh < 1) throw new Error('截图区域为空');
+  if (w < 1 || hh < 1) throw new Error(t('截图区域为空'));
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = hh;
@@ -897,7 +1250,7 @@ const blankProvider = () => ({
   hasKey: false, key: null, models: []
 });
 
-function SettingsPanel({ caps, onClose }) {
+function SettingsPanel({ caps, onClose, onLanguage }) {
   const [loaded, setLoaded] = useState(null);
   const [draft, setDraft] = useState(null);
   const [tab, setTab] = useState('general');
@@ -920,21 +1273,22 @@ function SettingsPanel({ caps, onClose }) {
       setLoaded(s);
       setDraft(JSON.parse(JSON.stringify(s)));
       setProviderIndex(0);
-    } catch (e) { message.error('读取设置失败：' + e.message); }
+      onLanguage?.(s.language);
+    } catch (e) { message.error(t('读取设置失败：') + e.message); }
   };
   useEffect(() => { reload(); }, []);
 
   const loadSkills = async scope => {
     try {
       setSkills(await api(`/api/settings/skills?scope=${scope}&workspace=${encodeURIComponent(workspace)}`) || {});
-    } catch (e) { message.error('读取技能失败：' + e.message); }
+    } catch (e) { message.error(t('读取技能失败：') + e.message); }
   };
   useEffect(() => { if (tab === 'skills') loadSkills(skillScope); }, [tab, skillScope]);
 
   const loadPlugins = async () => {
     try {
       setPlugins(await api(`/api/settings/plugins?workspace=${encodeURIComponent(workspace)}`) || { rows: [] });
-    } catch (e) { message.error('读取插件失败：' + e.message); }
+    } catch (e) { message.error(t('读取插件失败：') + e.message); }
   };
   useEffect(() => { if (tab === 'plugins') loadPlugins(); }, [tab]);
 
@@ -949,7 +1303,7 @@ function SettingsPanel({ caps, onClose }) {
 
   const save = async () => {
     if (draft.fullAccess && !loaded.fullAccess
-      && !window.confirm('完全许可会关闭路径边界、命令审批与环境变量隔离，子进程可能拿到密钥，也可以直接访问网络与任意路径。确定启用？')) return;
+      && !window.confirm(t('完全许可会关闭路径边界、命令审批与环境变量隔离，子进程可能拿到密钥，也可以直接访问网络与任意路径。确定启用？'))) return;
     setBusy(true);
     try {
       const modelProps = {};
@@ -959,9 +1313,9 @@ function SettingsPanel({ caps, onClose }) {
         modelProps[id] = { name: p?.name || '', contextLimit: p?.contextLimit || 0 };
       }
       await post('/api/settings', { ...draft, modelProps });
-      message.success('已保存');
+      message.success(t('已保存'));
       await reload();
-    } catch (e) { message.error('保存失败：' + e.message); }
+    } catch (e) { message.error(t('保存失败：') + e.message); }
     setBusy(false);
   };
 
@@ -974,7 +1328,7 @@ function SettingsPanel({ caps, onClose }) {
 
   const removeProvider = () => {
     if (!provider) return;
-    if (!window.confirm(`删除提供商「${provider.name}」？`)) return;
+    if (!window.confirm(tf('删除提供商「{name}」？', { name: provider.name }))) return;
     const list = providers.filter((_, i) => i !== providerIndex);
     setDraft(d => ({ ...d, providers: list }));
     setProviderIndex(Math.max(0, Math.min(providerIndex, list.length - 1)));
@@ -988,29 +1342,29 @@ function SettingsPanel({ caps, onClose }) {
 
   const fetchModels = async () => {
     if (!provider) return;
-    setProviderStatus('正在拉取模型…');
+    setProviderStatus(t('正在拉取模型…'));
     try {
       const r = await post('/api/settings/provider/fetch', providerBody({}));
       const merged = [...new Set([...(provider.models || []), ...(r.models || [])])];
       setProvider(providerIndex, { models: merged });
-      setProviderStatus(`拉取到 ${(r.models || []).length} 个模型`);
+      setProviderStatus(tf('拉取到 {n} 个模型', { n: (r.models || []).length }));
     } catch (e) {
-      setProviderStatus('拉取失败');
-      message.error('拉取失败：' + e.message);
+      setProviderStatus(t('拉取失败'));
+      message.error(t('拉取失败：') + e.message);
     }
   };
 
   const testProvider = async () => {
     if (!provider) return;
     const model = (provider.models || [])[0];
-    if (!model) return message.warning('先拉取或添加一个模型');
-    setProviderStatus('正在测试连接…');
+    if (!model) return message.warning(t('先拉取或添加一个模型'));
+    setProviderStatus(t('正在测试连接…'));
     try {
       const r = await post('/api/settings/provider/test', providerBody({ model }));
-      setProviderStatus('连接正常：' + (r.reply || ''));
+      setProviderStatus(t('连接正常：') + (r.reply || ''));
     } catch (e) {
-      setProviderStatus('连接失败');
-      message.error('连接失败：' + e.message);
+      setProviderStatus(t('连接失败'));
+      message.error(t('连接失败：') + e.message);
     }
   };
 
@@ -1049,28 +1403,28 @@ function SettingsPanel({ caps, onClose }) {
     try {
       await post('/api/settings/skills', { workspace, scope: skillScope, name: row.name, enabled });
       await loadSkills(skillScope);
-    } catch (e) { message.error('切换失败：' + e.message); }
+    } catch (e) { message.error(t('切换失败：') + e.message); }
   };
 
   const uninstallSkill = async row => {
-    if (!window.confirm(`确定卸载技能「${row.name}」？\n\n会删除整个目录，不可恢复：\n${row.directory}`)) return;
+    if (!window.confirm(tf('确定卸载技能「{name}」？\n\n会删除整个目录，不可恢复：\n{dir}', { name: row.name, dir: row.directory }))) return;
     try {
       await post('/api/settings/skills/uninstall', { workspace, scope: skillScope, name: row.name });
-      message.success('已卸载 ' + row.name);
+      message.success(t('已卸载 ') + row.name);
       await loadSkills(skillScope);
-    } catch (e) { message.error('卸载失败：' + e.message); }
+    } catch (e) { message.error(t('卸载失败：') + e.message); }
   };
 
   const installSkill = async () => {
-    if (!installPath.trim()) return message.warning('先填技能目录的绝对路径');
+    if (!installPath.trim()) return message.warning(t('先填技能目录的绝对路径'));
     try {
       const r = await post('/api/settings/skills/install', {
         workspace, scope: skillScope, path: installPath.trim()
       });
       setInstallPath('');
-      message.success('已安装到 ' + r.directory);
+      message.success(t('已安装到 ') + r.directory);
       await loadSkills(skillScope);
-    } catch (e) { message.error('安装失败：' + e.message); }
+    } catch (e) { message.error(t('安装失败：') + e.message); }
   };
 
   const blankPlugin = () => ({
@@ -1079,113 +1433,113 @@ function SettingsPanel({ caps, onClose }) {
 
   const savePlugin = async () => {
     if (!pluginDraft) return;
-    if (!(pluginDraft.id || '').trim()) return message.warning('插件 id 不能为空');
+    if (!(pluginDraft.id || '').trim()) return message.warning(t('插件 id 不能为空'));
     try {
       await post('/api/settings/plugins', { ...pluginDraft, workspace });
-      message.success('已保存，会话里的提供商下拉重开一次就能看到新模型');
+      message.success(t('已保存，会话里的提供商下拉重开一次就能看到新模型'));
       setPluginDraft(null);
       await loadPlugins();
-    } catch (e) { message.error('保存失败：' + e.message); }
+    } catch (e) { message.error(t('保存失败：') + e.message); }
   };
 
   const removePlugin = async row => {
-    const where = row.from === '全局' ? '全局' : '当前工作区';
-    if (!window.confirm(`卸载${where}插件 ${row.id}？\n\n整个目录会移进 OpenLoop 的插件回收目录，需要时能捞回来。\n${row.directory}`)) return;
+    const where = row.from === '全局' ? t('全局') : t('当前工作区');
+    if (!window.confirm(tf('卸载{where}插件 {id}？\n\n整个目录会移进 OpenLoop 的插件回收目录，需要时能捞回来。\n{dir}', { where, id: row.id, dir: row.directory }))) return;
     try {
       await post('/api/settings/plugins/remove', { workspace, directory: row.directory });
-      message.success('已卸载 ' + row.id);
+      message.success(t('已卸载 ') + row.id);
       await loadPlugins();
-    } catch (e) { message.error('卸载失败：' + e.message); }
+    } catch (e) { message.error(t('卸载失败：') + e.message); }
   };
 
-  if (!draft) return h('div', { style: { padding: 30, textAlign: 'center' } }, h(Muted, null, '正在读取设置…'));
+  if (!draft) return h('div', { style: { padding: 30, textAlign: 'center' } }, h(Muted, null, t('正在读取设置…')));
 
   const general = [
-    h(SettingRow, { key: 'lang', label: '语言' },
+    h(SettingRow, { key: 'lang', label: t('语言') },
       h(Select, {
         value: draft.language || '', style: { maxWidth: 240 },
         onChange: v => patch({ language: v }),
-        options: [{ value: '', label: '跟随系统' }, { value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]
+        options: [{ value: '', label: t('跟随系统') }, { value: 'zh', label: t('中文') }, { value: 'en', label: 'English' }]
       })),
-    h(SettingRow, { key: 'theme', label: '主题色' },
+    h(SettingRow, { key: 'theme', label: t('主题色') },
       h(Select, {
         value: draft.theme || 'light', style: { maxWidth: 240 },
         onChange: v => patch({ theme: v }),
-        options: [{ value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }, { value: 'grayblue', label: '灰蓝' }]
+        options: [{ value: 'light', label: t('浅色') }, { value: 'dark', label: t('深色') }, { value: 'grayblue', label: t('灰蓝') }]
       })),
     h(SwitchRow, {
-      key: 'full', label: '完全许可', checked: draft.fullAccess,
+      key: 'full', label: t('完全许可'), checked: draft.fullAccess,
       onChange: v => patch({ fullAccess: v }),
-      hint: '关闭路径边界、命令审批与环境隔离，可直连网络', warn: true
+      hint: t('关闭路径边界、命令审批与环境隔离，可直连网络'), warn: true
     }),
     h(SwitchRow, {
-      key: 'auto', label: '自动审批', checked: draft.autoApprove,
+      key: 'auto', label: t('自动审批'), checked: draft.autoApprove,
       onChange: v => patch({ autoApprove: v }),
-      hint: '一切工具调用都无需审批（含工作区外访问与风险操作）'
+      hint: t('一切工具调用都无需审批（含工作区外访问与风险操作）')
     }),
     h(SwitchRow, {
       key: 'agents', label: 'AGENTS.md', checked: draft.useAgentsMd,
       onChange: v => patch({ useAgentsMd: v }),
-      hint: '把全局与项目 AGENTS.md 注入系统提示词'
+      hint: t('把全局与项目 AGENTS.md 注入系统提示词')
     }),
     h(SwitchRow, {
-      key: 'think', label: '思考过程', checked: draft.thinkingExpandedByDefault,
+      key: 'think', label: t('思考过程'), checked: draft.thinkingExpandedByDefault,
       onChange: v => patch({ thinkingExpandedByDefault: v }),
-      hint: '新回话默认展开「思考与工具过程」'
+      hint: t('新回话默认展开「思考与工具过程」')
     }),
     h(SwitchRow, {
-      key: 'evolve', label: '自动演进', checked: draft.autoEvolve,
+      key: 'evolve', label: t('自动演进'), checked: draft.autoEvolve,
       onChange: v => patch({ autoEvolve: v }),
-      hint: '改行为版本：护栏、阈值、规则与技能顺序'
+      hint: t('改行为版本：护栏、阈值、规则与技能顺序')
     }),
     h(SettingHint, { key: 'evolve-hint' },
-      '演进的对象是 Agent 的行为版本：只改当前工作区的护栏、阈值、规则与技能顺序（.openloop 激活集），'
-      + '不编译、不换二进制；攒够新证据就自动跑一轮 A/B 考核，候选更好才采纳。'),
+      t('演进的对象是 Agent 的行为版本：只改当前工作区的护栏、阈值、规则与技能顺序（.openloop 激活集），')
+      + t('不编译、不换二进制；攒够新证据就自动跑一轮 A/B 考核，候选更好才采纳。')),
     h(SwitchRow, {
-      key: 'iterate', label: '自动迭代', checked: draft.autoIterate,
+      key: 'iterate', label: t('自动迭代'), checked: draft.autoIterate,
       onChange: v => patch({ autoIterate: v }),
-      hint: '改程序版本：工作树源码构建升版，换掉 A/I'
+      hint: t('改程序版本：工作树源码构建升版，换掉 A/I')
     }),
     h(SettingHint, { key: 'iterate-hint' },
-      '迭代的对象是 OpenLoop 程序本身：把工作树里的源码改动构建、升版并替换 A/I（不连壳，壳仍由 Loop 页「迭代」换）。'
-      + '演进采纳后自动跑一次，会重启 A、中断正在跑的会话；工作树有未提交改动时跳过。'),
-    h(SettingHint, { key: 'note' }, '主题与语言在重启 OpenLoop 后生效；完全许可、自动审批、自动演进与自动迭代立即生效。')
+      t('迭代的对象是 OpenLoop 程序本身：把工作树里的源码改动构建、升版并替换 A/I（不连壳，壳仍由 Loop 页「迭代」换）。')
+      + t('演进采纳后自动跑一次，会重启 A、中断正在跑的会话；工作树有未提交改动时跳过。')),
+    h(SettingHint, { key: 'note' }, t('主题与语言在重启 OpenLoop 后生效；完全许可、自动审批、自动演进与自动迭代立即生效。'))
   ];
 
   const collab = [
     h(SwitchRow, {
-      key: 'collab-on', label: '启用协作', checked: draft.enableCollab,
+      key: 'collab-on', label: t('启用协作'), checked: draft.enableCollab,
       onChange: v => patch({ enableCollab: v }),
-      hint: '给 Worker 与 Loop 会话挂 CollabStart / CollabMonitor / ReadSession'
+      hint: t('给 Worker 与 Loop 会话挂 CollabStart / CollabMonitor / ReadSession')
     }),
-    h(SettingRow, { key: 'collab-poll', label: '监测间隔' },
+    h(SettingRow, { key: 'collab-poll', label: t('监测间隔') },
       h(Select, {
         value: draft.collabPollSeconds || 30, style: { maxWidth: 240 },
         onChange: v => patch({ collabPollSeconds: v }),
         options: [
-          { value: 10, label: '10 秒' }, { value: 30, label: '30 秒' },
-          { value: 60, label: '1 分钟' }, { value: 120, label: '2 分钟' },
-          { value: 300, label: '5 分钟' }
+          { value: 10, label: t('10 秒') }, { value: 30, label: t('30 秒') },
+          { value: 60, label: t('1 分钟') }, { value: 120, label: t('2 分钟') },
+          { value: 300, label: t('5 分钟') }
         ]
       })),
     h(SwitchRow, {
-      key: 'collab-reuse', label: '沿用上下文', checked: draft.collabReuseContext,
+      key: 'collab-reuse', label: t('沿用上下文'), checked: draft.collabReuseContext,
       onChange: v => patch({ collabReuseContext: v }),
-      hint: '协作会话带上发起方已完成的对话，复用前缀缓存（同模型才生效）'
+      hint: t('协作会话带上发起方已完成的对话，复用前缀缓存（同模型才生效）')
     }),
     h(SettingHint, { key: 'collab-note' },
-      '协作会话是平级的独立会话，不是子 agent：它们不共享发起方的工具调用栈，只在同一工作区各干一段。'
-      + '发起方启动后不再自己动手，只做监测与协调；监测汇报以仿用户消息进入它的队列（队列里用特殊底色标出），'
-      + '全部会话结束或不可恢复地中止后自动停止。暂不支持跨工作区协作。')
+      t('协作会话是平级的独立会话，不是子 agent：它们不共享发起方的工具调用栈，只在同一工作区各干一段。')
+      + t('发起方启动后不再自己动手，只做监测与协调；监测汇报以仿用户消息进入它的队列（队列里用特殊底色标出），')
+      + t('全部会话结束或不可恢复地中止后自动停止。暂不支持跨工作区协作。'))
   ];
 
   const openCode = [
     h(SwitchRow, {
-      key: 'ask', label: '权限审批', checked: draft.openCodeAskPermissions,
+      key: 'ask', label: t('权限审批'), checked: draft.openCodeAskPermissions,
       onChange: v => patch({ openCodeAskPermissions: v }),
-      hint: '委派给 OpenCode 时，每个动作都经本应用审批'
+      hint: t('委派给 OpenCode 时，每个动作都经本应用审批')
     }),
-    h(SettingHint, { key: 'note' }, '服务通过 ~/.local/state/opencode/service.json 自动发现；未就绪时不会出现在模型列表里。')
+    h(SettingHint, { key: 'note' }, t('服务通过 ~/.local/state/opencode/service.json 自动发现；未就绪时不会出现在模型列表里。'))
   ];
 
   const tools = [
@@ -1194,17 +1548,17 @@ function SettingsPanel({ caps, onClose }) {
         value: draft.webFetchMode || 'allow', style: { maxWidth: 240 },
         onChange: v => patch({ webFetchMode: v }),
         options: [
-          { value: 'allow', label: '免审批（默认）' },
-          { value: 'ask', label: '每次审批' },
-          { value: 'off', label: '关闭' }
+          { value: 'allow', label: t('免审批（默认）') },
+          { value: 'ask', label: t('每次审批') },
+          { value: 'off', label: t('关闭') }
         ]
       })),
-    h(SettingHint, { key: 'hint' }, '只读抓取 http/https 网页正文并转纯文本；不执行 JavaScript，内容按不可信数据处理。'),
-    h(SettingHint, { key: 'note' }, '内网与环回地址一律拒绝；只抓文本/HTML/JSON/XML，单页最多 2MB，结果默认 6000 字符，一轮最多 8 次。Worker 与 Loop 同时生效。')
+    h(SettingHint, { key: 'hint' }, t('只读抓取 http/https 网页正文并转纯文本；不执行 JavaScript，内容按不可信数据处理。')),
+    h(SettingHint, { key: 'note' }, t('内网与环回地址一律拒绝；只抓文本/HTML/JSON/XML，单页最多 2MB，结果默认 6000 字符，一轮最多 8 次。Worker 与 Loop 同时生效。'))
   ];
 
   const providerOptions = providers.map((p, i) => ({
-    value: i, label: p.plugin ? (p.label || (p.name + '（插件）')) : (p.name || ('提供商 ' + (i + 1)))
+    value: i, label: p.plugin ? (p.label || (p.name + t('（插件）'))) : (p.name || (t('提供商 ') + (i + 1)))
   }));
   const modelProps = draft.modelProps || {};
   const disabledModels = draft.disabledModels || [];
@@ -1215,96 +1569,96 @@ function SettingsPanel({ caps, onClose }) {
   });
 
   const models = [
-    h(SettingRow, { key: 'provider', label: '提供商' },
+    h(SettingRow, { key: 'provider', label: t('提供商') },
       h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
         h(Select, {
-          value: providers.length ? providerIndex : undefined, placeholder: '还没有提供商',
+          value: providers.length ? providerIndex : undefined, placeholder: t('还没有提供商'),
           style: { minWidth: 220 }, options: providerOptions,
           onChange: v => { setProviderIndex(v); setProviderStatus(''); }
         }),
-        h(Button, { onClick: addProvider }, '添加'),
-        h(Button, { danger: true, disabled: !provider || provider.plugin, onClick: removeProvider }, '删除'))),
-    h(SettingRow, { key: 'name', label: '名称' },
+        h(Button, { onClick: addProvider }, t('添加')),
+        h(Button, { danger: true, disabled: !provider || provider.plugin, onClick: removeProvider }, t('删除')))),
+    h(SettingRow, { key: 'name', label: t('名称') },
       h(Input, {
         value: provider?.name || '', disabled: !provider || provider.plugin, style: { maxWidth: 320 },
         onChange: e => setProvider(providerIndex, { name: e.target.value })
       })),
-    h(SettingRow, { key: 'url', label: '接口地址' },
+    h(SettingRow, { key: 'url', label: t('接口地址') },
       h(Input, {
         value: provider?.baseUrl || '', disabled: !provider || provider.plugin, style: { maxWidth: 420 },
         onChange: e => setProvider(providerIndex, { baseUrl: e.target.value })
       })),
-    h(SettingRow, { key: 'key', label: '密钥' },
+    h(SettingRow, { key: 'key', label: t('密钥') },
       h(Input.Password, {
         value: provider?.key ?? '', disabled: !provider || provider.plugin, style: { maxWidth: 420 },
-        placeholder: provider?.plugin ? '由插件清单管理'
-          : provider?.hasKey && provider?.key == null ? '已保存（留空表示不改）' : '粘贴 API Key',
+        placeholder: provider?.plugin ? t('由插件清单管理')
+          : provider?.hasKey && provider?.key == null ? t('已保存（留空表示不改）') : t('粘贴 API Key'),
         onChange: e => setProvider(providerIndex, { key: e.target.value })
       })),
     h(SettingRow, { key: 'actions', label: '' },
       h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
-        provider?.plugin ? null : h(Button, { disabled: !provider, onClick: fetchModels }, '拉取模型'),
-        provider?.plugin ? null : h(Button, { disabled: !provider, onClick: testProvider }, '测试'),
+        provider?.plugin ? null : h(Button, { disabled: !provider, onClick: fetchModels }, t('拉取模型')),
+        provider?.plugin ? null : h(Button, { disabled: !provider, onClick: testProvider }, t('测试')),
         h(Muted, null, provider?.plugin
-          ? (provider.ready ? '插件提供商：模型的增删写回它的 plugin.json'
-            : '插件提供商当前不可用（服务未就绪），可以先停用')
+          ? (provider.ready ? t('插件提供商：模型的增删写回它的 plugin.json')
+            : t('插件提供商当前不可用（服务未就绪），可以先停用'))
           : providerStatus))),
-    h(SettingRow, { key: 'models', label: '模型' },
+    h(SettingRow, { key: 'models', label: t('模型') },
       h('div', null,
         h('div', { style: { display: 'flex', gap: 8, marginBottom: 8 } },
           h(Input, {
-            value: modelInput, placeholder: '模型 id，回车加入', style: { maxWidth: 320 },
+            value: modelInput, placeholder: t('模型 id，回车加入'), style: { maxWidth: 320 },
             onChange: e => setModelInput(e.target.value),
             onPressEnter: addModel
           }),
-          h(Button, { disabled: !provider, onClick: addModel }, '加入')),
+          h(Button, { disabled: !provider, onClick: addModel }, t('加入'))),
         h('div', {
           className: 'ol-scroll',
           style: { height: 220, border: '1px solid #f0f0f0', borderRadius: 8, background: '#fafafa', padding: 6 }
         },
           (provider?.models || []).length === 0
-            ? h(Muted, { style: { display: 'block', padding: 8 } }, '这个提供商还没有模型')
+            ? h(Muted, { style: { display: 'block', padding: 8 } }, t('这个提供商还没有模型'))
             : (provider.models || []).map(id => h('div', {
               key: id,
               style: { display: 'flex', alignItems: 'center', gap: 8, padding: '3px 6px' }
             },
               h('input', {
-                type: 'checkbox', checked: !isOff(id), title: '取消勾选=停用（不进出模型下拉）',
+                type: 'checkbox', checked: !isOff(id), title: t('取消勾选=停用（不进出模型下拉）'),
                 onChange: e => setDisabled(id, !e.target.checked)
               }),
               h('span', { style: { flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' } }, id),
               modelProps[id]?.name || modelProps[id]?.contextLimit
                 ? h(Muted, null, `${modelProps[id]?.name || ''}${modelProps[id]?.contextLimit ? ' · ' + modelProps[id].contextLimit : ''}`)
                 : null,
-              h(Button, { size: 'small', type: 'link', onClick: () => openProps(id) }, '属性'),
-              h(Button, { size: 'small', type: 'link', danger: true, onClick: () => removeModel(id) }, '删除')))))),
+              h(Button, { size: 'small', type: 'link', onClick: () => openProps(id) }, t('属性')),
+              h(Button, { size: 'small', type: 'link', danger: true, onClick: () => removeModel(id) }, t('删除'))))))),
     h(SettingHint, { key: 'note' },
-      '「拉取模型」会请求提供商的 /models；「测试」会真的发一次最小补全。属性可设显示名称与上下文上限。'
-      + '插件贡献的提供商标着「（插件）」，模型增删写回插件清单，停用状态存在 settings.json。')
+      t('「拉取模型」会请求提供商的 /models；「测试」会真的发一次最小补全。属性可设显示名称与上下文上限。')
+      + t('插件贡献的提供商标着「（插件）」，模型增删写回插件清单，停用状态存在 settings.json。'))
   ];
 
   const skillRows = skills.rows || [];
   const skillsPage = [
-    h(SettingRow, { key: 'scope', label: '范围' },
+    h(SettingRow, { key: 'scope', label: t('范围') },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         h(Segmented, {
           value: skillScope, onChange: setSkillScope,
-          options: [{ value: 'global', label: '全局' }, { value: 'project', label: '项目' }]
+          options: [{ value: 'global', label: t('全局') }, { value: 'project', label: t('项目') }]
         }),
-        h(Muted, null, skills.root || (workspace ? '' : '先在项目里打开一个会话，或切到「全局」管理全局技能')))),
-    h(SettingRow, { key: 'install', label: '安装' },
+        h(Muted, null, skills.root || (workspace ? '' : t('先在项目里打开一个会话，或切到「全局」管理全局技能'))))),
+    h(SettingRow, { key: 'install', label: t('安装') },
       h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
         h(Input, {
-          value: installPath, placeholder: '含 SKILL.md 的目录（绝对路径）', style: { maxWidth: 420 },
+          value: installPath, placeholder: t('含 SKILL.md 的目录（绝对路径）'), style: { maxWidth: 420 },
           onChange: e => setInstallPath(e.target.value)
         }),
-        h(Button, { onClick: installSkill }, '安装'))),
+        h(Button, { onClick: installSkill }, t('安装')))),
     h('div', {
       className: 'ol-scroll',
       style: { height: 320, border: '1px solid #f0f0f0', borderRadius: 8, padding: 6 }
     },
       skills.error ? h(Muted, { style: { display: 'block', padding: 8 } }, skills.error)
-        : skillRows.length === 0 ? h(Muted, { style: { display: 'block', padding: 8 } }, '没有可管理的技能')
+        : skillRows.length === 0 ? h(Muted, { style: { display: 'block', padding: 8 } }, t('没有可管理的技能'))
           : skillRows.map(row => h('div', {
             key: row.name,
             style: { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderBottom: '1px solid #f5f5f5' }
@@ -1312,35 +1666,35 @@ function SettingsPanel({ caps, onClose }) {
             h(Switch, { size: 'small', checked: row.enabled, onChange: v => toggleSkill(row, v) }),
             h('div', { style: { minWidth: 0, flex: 1 } },
               h('div', { style: { fontSize: 13 } }, row.name,
-                h(Muted, { style: { marginLeft: 8 } }, row.global ? '全局' : row.opencode ? '项目 .opencode' : '项目')),
+                h(Muted, { style: { marginLeft: 8 } }, row.global ? t('全局') : row.opencode ? t('项目 .opencode') : t('项目'))),
               h(Muted, { style: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
                 row.description || row.directory || '')),
             h(Button, {
               size: 'small', danger: true,
               disabled: skillScope === 'project' && (row.global || row.opencode),
               onClick: () => uninstallSkill(row)
-            }, '卸载')))),
-    h(SettingHint, { key: 'note' }, '项目技能停用/启用走账本（由 I 收敛）；全局技能只改本机开关。.opencode/skills 里的技能由 opencode 管理，这里只能看。')
+            }, t('卸载'))))),
+    h(SettingHint, { key: 'note' }, t('项目技能停用/启用走账本（由 I 收敛）；全局技能只改本机开关。.opencode/skills 里的技能由 opencode 管理，这里只能看。'))
   ];
 
   const pluginRows = plugins.rows || [];
   const pluginsPage = [
-    h(SettingRow, { key: 'roots', label: '存放位置' },
+    h(SettingRow, { key: 'roots', label: t('存放位置') },
       h('div', { style: { minWidth: 0 } },
         h(Muted, { style: { display: 'block', wordBreak: 'break-all' } },
-          '工作区 ' + (plugins.workspaceRoot || '（还没打开工作区，只看全局）')),
+          t('工作区 ') + (plugins.workspaceRoot || t('（还没打开工作区，只看全局）'))),
         h(Muted, { style: { display: 'block', wordBreak: 'break-all' } },
-          '全局 ' + (plugins.globalRoot || '')))),
+          t('全局 ') + (plugins.globalRoot || '')))),
     h(SettingRow, { key: 'actions', label: '' },
       h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
-        h(Button, { onClick: () => setPluginDraft(blankPlugin()) }, '添加'),
-        h(Button, { onClick: loadPlugins }, '刷新'))),
+        h(Button, { onClick: () => setPluginDraft(blankPlugin()) }, t('添加')),
+        h(Button, { onClick: loadPlugins }, t('刷新')))),
     h('div', {
       className: 'ol-scroll',
       style: { height: 320, border: '1px solid #f0f0f0', borderRadius: 8, padding: 6 }
     },
       plugins.error ? h(Muted, { style: { display: 'block', padding: 8 } }, plugins.error)
-        : pluginRows.length === 0 ? h(Muted, { style: { display: 'block', padding: 8 } }, '还没有插件')
+        : pluginRows.length === 0 ? h(Muted, { style: { display: 'block', padding: 8 } }, t('还没有插件'))
           : pluginRows.map(row => h('div', {
             key: row.directory,
             style: { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderBottom: '1px solid #f5f5f5' }
@@ -1359,77 +1713,77 @@ function SettingsPanel({ caps, onClose }) {
                 baseUrl: row.baseUrl || '', modelsUrl: row.modelsUrl || '',
                 modelPrefix: row.modelPrefix || '', key: '', models: row.models || 0
               })
-            }, '编辑'),
-            h(Button, { size: 'small', danger: true, onClick: () => removePlugin(row) }, '卸载')))),
+            }, t('编辑')),
+            h(Button, { size: 'small', danger: true, onClick: () => removePlugin(row) }, t('卸载'))))),
     h(SettingHint, { key: 'note' },
-      '存盘即生效，会话里的提供商下拉几秒内自己补上。「编辑」只改 provider 型插件的地址与密钥，'
-      + '工具/MCP 型插件的清单自己去目录里改；「卸载」把整个目录移进回收目录，可捞回。'
-      + '同名插件工作区优先，全局新插件点「添加」时写进当前工作区。')
+      t('存盘即生效，会话里的提供商下拉几秒内自己补上。「编辑」只改 provider 型插件的地址与密钥，')
+      + t('工具/MCP 型插件的清单自己去目录里改；「卸载」把整个目录移进回收目录，可捞回。')
+      + t('同名插件工作区优先，全局新插件点「添加」时写进当前工作区。'))
   ];
 
   return h('div', null,
     h(Tabs, {
       size: 'small', activeKey: tab, onChange: setTab,
       items: [
-        { key: 'general', label: '普通', children: h('div', { style: { paddingTop: 12 } }, general) },
+        { key: 'general', label: t('普通'), children: h('div', { style: { paddingTop: 12 } }, general) },
         { key: 'opencode', label: 'OpenCode', children: h('div', { style: { paddingTop: 12 } }, openCode) },
-        { key: 'tools', label: '工具', children: h('div', { style: { paddingTop: 12 } }, tools) },
-        { key: 'models', label: '模型', children: h('div', { style: { paddingTop: 12 } }, models) },
-        { key: 'skills', label: '技能', children: h('div', { style: { paddingTop: 12 } }, skillsPage) },
-        { key: 'plugins', label: '插件', children: h('div', { style: { paddingTop: 12 } }, pluginsPage) },
-        { key: 'collab', label: '协作', children: h('div', { style: { paddingTop: 12 } }, collab) }
+        { key: 'tools', label: t('工具'), children: h('div', { style: { paddingTop: 12 } }, tools) },
+        { key: 'models', label: t('模型'), children: h('div', { style: { paddingTop: 12 } }, models) },
+        { key: 'skills', label: t('技能'), children: h('div', { style: { paddingTop: 12 } }, skillsPage) },
+        { key: 'plugins', label: t('插件'), children: h('div', { style: { paddingTop: 12 } }, pluginsPage) },
+        { key: 'collab', label: t('协作'), children: h('div', { style: { paddingTop: 12 } }, collab) }
       ]
     }),
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 } },
-      h(Button, { onClick: onClose }, '取消'),
-      h(Button, { type: 'primary', loading: busy, onClick: save }, '保存')),
+      h(Button, { onClick: onClose }, t('取消')),
+      h(Button, { type: 'primary', loading: busy, onClick: save }, t('保存'))),
     h(Modal, {
-      open: pluginDraft != null, title: pluginDraft?.directory ? '编辑插件' : '添加插件',
-      okText: '保存', cancelText: '取消', width: 560,
+      open: pluginDraft != null, title: pluginDraft?.directory ? t('编辑插件') : t('添加插件'),
+      okText: t('保存'), cancelText: t('取消'), width: 560,
       onOk: savePlugin, onCancel: () => setPluginDraft(null)
     },
       pluginDraft ? h('div', { style: { display: 'grid', gap: 10, paddingTop: 8 } },
-        h(Muted, null, pluginDraft.directory || '会写进当前工作区的插件目录（没有工作区就写全局）'),
+        h(Muted, null, pluginDraft.directory || t('会写进当前工作区的插件目录（没有工作区就写全局）')),
         h(Input, {
-          value: pluginDraft.id, placeholder: '插件 id（也是目录名）',
+          value: pluginDraft.id, placeholder: t('插件 id（也是目录名）'),
           onChange: e => setPluginDraft(d => ({ ...d, id: e.target.value }))
         }),
         h(Input, {
-          value: pluginDraft.name, placeholder: '下拉里显示的名字，留空用 id',
+          value: pluginDraft.name, placeholder: t('下拉里显示的名字，留空用 id'),
           onChange: e => setPluginDraft(d => ({ ...d, name: e.target.value }))
         }),
         h(Input, {
-          value: pluginDraft.baseUrl, placeholder: 'OpenAI 兼容根地址，例如 http://127.0.0.1:3065/v1',
+          value: pluginDraft.baseUrl, placeholder: t('OpenAI 兼容根地址，例如 http://127.0.0.1:3065/v1'),
           onChange: e => setPluginDraft(d => ({ ...d, baseUrl: e.target.value }))
         }),
         h(Input, {
-          value: pluginDraft.modelsUrl, placeholder: '可选：GET 这个地址取 data[].id 当模型清单',
+          value: pluginDraft.modelsUrl, placeholder: t('可选：GET 这个地址取 data[].id 当模型清单'),
           onChange: e => setPluginDraft(d => ({ ...d, modelsUrl: e.target.value }))
         }),
         h(Input, {
-          value: pluginDraft.modelPrefix, placeholder: '可选：界面上的模型前缀，发上游前会去掉，例如 a2a/',
+          value: pluginDraft.modelPrefix, placeholder: t('可选：界面上的模型前缀，发上游前会去掉，例如 a2a/'),
           onChange: e => setPluginDraft(d => ({ ...d, modelPrefix: e.target.value }))
         }),
         h(Input.Password, {
           value: pluginDraft.key,
-          placeholder: pluginDraft.directory ? '写入同目录 key.txt；留空表示不改' : '写入同目录 key.txt，可留空',
+          placeholder: pluginDraft.directory ? t('写入同目录 key.txt；留空表示不改') : t('写入同目录 key.txt，可留空'),
           onChange: e => setPluginDraft(d => ({ ...d, key: e.target.value }))
         }),
         pluginDraft.directory
-          ? h(Muted, null, `清单声明了 ${pluginDraft.models || 0} 个模型，这里不改 models 与工具/MCP 字段。`)
-          : h(Muted, null, '只建 provider 贡献，模型清单靠 ModelsUrl 自动发现。')) : null),
+          ? h(Muted, null, tf('清单声明了 {n} 个模型，这里不改 models 与工具/MCP 字段。', { n: pluginDraft.models || 0 }))
+          : h(Muted, null, t('只建 provider 贡献，模型清单靠 ModelsUrl 自动发现。'))) : null),
     h(Modal, {
-      open: propsModel != null, title: '模型属性', okText: '确定', cancelText: '取消',
+      open: propsModel != null, title: t('模型属性'), okText: t('确定'), cancelText: t('取消'),
       onOk: applyProps, onCancel: () => setPropsModel(null), width: 420
     },
       h('div', { style: { display: 'grid', gap: 10, paddingTop: 8 } },
         h(Muted, null, propsModel),
         h(Input, {
-          value: propsDraft.name, placeholder: '显示名称（留空沿用模型 id）',
+          value: propsDraft.name, placeholder: t('显示名称（留空沿用模型 id）'),
           onChange: e => setPropsDraft(p => ({ ...p, name: e.target.value }))
         }),
         h(Input, {
-          value: String(propsDraft.contextLimit || ''), placeholder: '上下文上限（token，0 表示自动）',
+          value: String(propsDraft.contextLimit || ''), placeholder: t('上下文上限（token，0 表示自动）'),
           onChange: e => setPropsDraft(p => ({ ...p, contextLimit: parseInt(e.target.value, 10) || 0 }))
         }))));
 }
@@ -1447,6 +1801,9 @@ function App() {
   const [snapshot, setSnapshot] = useState(null);
   const [project, setProject] = useState(null);
   const [shot, setShot] = useState(localStorage.getItem('openloop.shot') === '1');
+  // 语言：setLang 只为了让整棵树用新的 LANG 重渲染
+  const [, setLang] = useState('zh');
+  const pickLanguage = value => setLang(applyLanguage(value));
   const [newOpen, setNewOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1459,6 +1816,10 @@ function App() {
   useEffect(() => { localStorage.setItem('openloop.tabs', JSON.stringify(tabs)); }, [tabs]);
 
   const activeId = activeKey !== 'overview' && activeKey !== 'loop' ? activeKey : null;
+
+  useEffect(() => {
+    api('/api/settings').then(s => pickLanguage(s?.language)).catch(() => { /* 设置还没就绪就按系统的来 */ });
+  }, []);
 
   const reloadSessions = async () => {
     try { setSessions(await api('/api/sessions') || []); } catch { /* A 未就绪 */ }
@@ -1478,7 +1839,7 @@ function App() {
             setRecent(m?.recent || []);
           } catch { /* 模型目录可能未就绪 */ }
         }
-      } catch (e) { setStatus('拿不到能力位：' + e.message); }
+      } catch (e) { setStatus(t('拿不到能力位：') + e.message); }
     })();
   }, []);
 
@@ -1537,15 +1898,15 @@ function App() {
             setSnapshot(null);
             setTabs(prev => prev.filter(t => t !== activeId));
             setActiveKey('overview');
-            setStatus('会话已删除：' + activeId);
+            setStatus(t('会话已删除：') + activeId);
           }
           return;
         }
         if (row.live !== false) { if (alive) setTimeout(tick, 800); return; }
         try {
           const again = await post('/api/sessions', { id: activeId, workspace: row.workspace || '', model: row.model || '' });
-          if (alive && again) { setSnapshot(again); setStatus('已重连 ' + activeId); }
-        } catch (e) { if (alive) setStatus('会话读取失败：' + e.message); }
+          if (alive && again) { setSnapshot(again); setStatus(t('已重连 ') + activeId); }
+        } catch (e) { if (alive) setStatus(t('会话读取失败：') + e.message); }
       }
       if (alive) setTimeout(tick, 800);
     };
@@ -1576,7 +1937,7 @@ function App() {
         try {
           const pending = await api('/api/puppet/pending');
           if (pending) await post('/api/puppet/shot', { id: pending.id, png: await capturePage(pending) });
-        } catch (e) { setStatus('Puppet 截图失败：' + e.message); }
+        } catch (e) { setStatus(t('Puppet 截图失败：') + e.message); }
       }
       if (alive) setTimeout(tick, 1000);
     };
@@ -1590,28 +1951,28 @@ function App() {
       setTabs(prev => prev.filter(t => t !== id));
       if (activeKey === id) { setActiveKey('overview'); setSnapshot(null); }
       await reloadSessions();
-      message.success('已删除会话 ' + id);
-    } catch (e) { message.error('删除失败：' + e.message); }
+      message.success(t('已删除会话 ') + id);
+    } catch (e) { message.error(t('删除失败：') + e.message); }
   };
 
   const createSession = async () => {
-    if (!newWorkspace.trim()) return message.warning('先填工作目录');
+    if (!newWorkspace.trim()) return message.warning(t('先填工作目录'));
     try {
       const created = await post('/api/sessions', { workspace: newWorkspace.trim(), model: newModel.trim() });
       setNewOpen(false);
       setNewModel('');
       await reloadSessions();
       await openSession(created.id);
-    } catch (e) { message.error('新建失败：' + e.message); }
+    } catch (e) { message.error(t('新建失败：') + e.message); }
   };
 
   const items = [
-    { key: 'new', label: '新建会话' },
-    { key: 'list', label: '会话列表' },
+    { key: 'new', label: t('新建会话') },
+    { key: 'list', label: t('会话列表') },
     { key: 'loop', label: 'Harness' },
     { type: 'divider' },
-    { key: 'settings', label: '设置' },
-    { key: 'about', label: '关于' }
+    { key: 'settings', label: t('设置') },
+    { key: 'about', label: t('关于') }
   ];
 
   const menu = {
@@ -1635,14 +1996,14 @@ function App() {
   const onTabMenu = key => {
     if (key === 'openactive') {
       const running = sessions.filter(s => s.state === 'running').map(s => s.id);
-      if (running.length === 0) return message.info('没有运行中的会话');
+      if (running.length === 0) return message.info(t('没有运行中的会话'));
       setTabs(prev => {
         const next = [...prev];
         running.forEach(id => { if (!next.includes(id)) next.push(id); });
         return next;
       });
     } else if (key === 'closenactive') {
-      if (sessions.length === 0) return message.warning('会话列表还没加载完');
+      if (sessions.length === 0) return message.warning(t('会话列表还没加载完'));
       const keep = tabs.filter(isRunningTab);
       setTabs(keep);
       if (!keep.includes(activeKey) && activeKey !== 'overview' && activeKey !== 'loop') setActiveKey('overview');
@@ -1653,9 +2014,9 @@ function App() {
   };
   const tabMenu = {
     items: [
-      { key: 'openactive', label: '打开所有活动会话' },
-      { key: 'closenactive', label: '关闭所有非活动会话' },
-      { key: 'closeworker', label: '关闭所有 Worker 会话' }
+      { key: 'openactive', label: t('打开所有活动会话') },
+      { key: 'closenactive', label: t('关闭所有非活动会话') },
+      { key: 'closeworker', label: t('关闭所有 Worker 会话') }
     ],
     onClick: ({ key }) => onTabMenu(key)
   };
@@ -1674,12 +2035,12 @@ function App() {
   };
 
   const tabItems = caps?.worker
-    ? [{ key: 'overview', label: tabLabel('会话'), closable: false }, ...tabs.map(sessionTab)]
+    ? [{ key: 'overview', label: tabLabel(t('会话')), closable: false }, ...tabs.map(sessionTab)]
     : [];
   if (caps?.loop) tabItems.push({ key: 'loop', label: 'Harness', closable: false });
 
   let page;
-  if (caps == null) page = h('div', { style: { padding: 40, textAlign: 'center' } }, h(Muted, null, status || '正在连接…'));
+  if (caps == null) page = h('div', { style: { padding: 40, textAlign: 'center' } }, h(Muted, null, status || t('正在连接…')));
   else if (activeKey === 'overview') {
     page = h(OverviewPage, {
       sessions, project, setProject, onOpen: openSession,
@@ -1719,26 +2080,26 @@ function App() {
       h('div', { style: { flex: 1, minHeight: 0, background: '#fff' } }, page),
       status ? h('div', { style: { position: 'fixed', right: 16, bottom: 8, fontSize: 12, color: '#8c8c8c' } }, status) : null,
       h(Modal, {
-        open: newOpen, title: '新建会话', okText: '创建', cancelText: '取消',
+        open: newOpen, title: t('新建会话'), okText: t('创建'), cancelText: t('取消'),
         onOk: createSession, onCancel: () => setNewOpen(false)
       },
         h('div', { style: { display: 'grid', gap: 8 } },
-          h(Input, { value: newWorkspace, onChange: e => setNewWorkspace(e.target.value), placeholder: '工作目录（绝对路径）' }),
-          h(Input, { value: newModel, onChange: e => setNewModel(e.target.value), placeholder: '模型，如 opencode/xxx（留空用默认）' }))),
+          h(Input, { value: newWorkspace, onChange: e => setNewWorkspace(e.target.value), placeholder: t('工作目录（绝对路径）') }),
+          h(Input, { value: newModel, onChange: e => setNewModel(e.target.value), placeholder: t('模型，如 opencode/xxx（留空用默认）') }))),
       h(Modal, {
-        open: settingsOpen, title: '设置', width: 960, footer: null,
+        open: settingsOpen, title: t('设置'), width: 960, footer: null,
         onCancel: () => setSettingsOpen(false), destroyOnClose: true
       },
-        h(SettingsPanel, { caps, onClose: () => setSettingsOpen(false) })),
+        h(SettingsPanel, { caps, onClose: () => setSettingsOpen(false), onLanguage: pickLanguage })),
       h(Modal, {
-        open: aboutOpen, title: '关于', footer: null, onCancel: () => setAboutOpen(false)
+        open: aboutOpen, title: t('关于'), footer: null, onCancel: () => setAboutOpen(false)
       },
         h('div', { style: { display: 'grid', gap: 6 } },
-          h('div', null, 'OpenLoop 浏览器壳'),
-          h(Muted, null, '角色：' + (caps?.worker ? 'Worker + Loop' : caps?.loop ? 'Loop' : '—')),
-          h(Muted, null, '默认工作区：' + (caps?.workspace || '—')),
-          h(Muted, null, '模型目录：' + (models.length ? models.length + ' 个' : '未就绪')),
-          h(Muted, null, '会话：' + sessions.length + ' 个'),
+          h('div', null, t('OpenLoop 浏览器壳')),
+          h(Muted, null, t('角色：') + (caps?.worker ? 'Worker + Loop' : caps?.loop ? 'Loop' : '—')),
+          h(Muted, null, t('默认工作区：') + (caps?.workspace || '—')),
+          h(Muted, null, t('模型目录：') + (models.length ? models.length + t(' 个') : t('未就绪'))),
+          h(Muted, null, t('会话：') + sessions.length + t(' 个')),
           h(PuppetRow, { shot, setShot })))));
 }
 

@@ -49,311 +49,35 @@
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
   </resheader>
-  <resheader name="version">
-    <value>2.0</value>
-  </resheader>
-  <resheader name="reader">
-    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
-  </resheader>
-  <resheader name="writer">
-    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
-  </resheader>
-  <data name="AppTitle" xml:space="preserve">
-    <value>OpenLoop</value>
+  <data name="Accept" xml:space="preserve">
+    <value>Accept</value>
   </data>
-  <data name="AppSubtitle" xml:space="preserve">
-    <value>A self-iterating open agent</value>
+  <data name="Add" xml:space="preserve">
+    <value>Add</value>
   </data>
-  <data name="MenuNewSession" xml:space="preserve">
-    <value>New session…</value>
+  <data name="AddFailed" xml:space="preserve">
+    <value>Add failed</value>
   </data>
-  <data name="MenuSessionList" xml:space="preserve">
-    <value>Sessions</value>
+  <data name="AddModel" xml:space="preserve">
+    <value>Add model</value>
   </data>
-  <data name="MenuLoop" xml:space="preserve">
-    <value>Loop chat</value>
+  <data name="AddModelBody" xml:space="preserve">
+    <value>Add model "{0}" to "{1}"?</value>
   </data>
-  <data name="MenuThemeLight" xml:space="preserve">
-    <value>Theme: Light</value>
+  <data name="AgentBack" xml:space="preserve">
+    <value>← Back</value>
   </data>
-  <data name="MenuThemeDark" xml:space="preserve">
-    <value>Theme: Dark</value>
+  <data name="AgentsHint" xml:space="preserve">
+    <value>Inject global and project AGENTS.md into the system prompt</value>
   </data>
-  <data name="MenuThemeGrayBlue" xml:space="preserve">
-    <value>Theme: Gray blue</value>
-  </data>
-  <data name="MenuLanguageZh" xml:space="preserve">
-    <value>Language: 中文</value>
-  </data>
-  <data name="MenuLanguageEn" xml:space="preserve">
-    <value>Language: English</value>
-  </data>
-  <data name="MenuAbout" xml:space="preserve">
-    <value>About</value>
-  </data>
-  <data name="MenuSettings" xml:space="preserve">
-    <value>Settings…</value>
-  </data>
-  <data name="MenuExit" xml:space="preserve">
-    <value>Exit</value>
-  </data>
-  <data name="TabOverview" xml:space="preserve">
-    <value>Sessions</value>
-  </data>
-  <data name="Projects" xml:space="preserve">
-    <value>Projects</value>
-  </data>
-  <data name="SearchSessions" xml:space="preserve">
-    <value>Search sessions</value>
-  </data>
-  <data name="NewSession" xml:space="preserve">
-    <value>New session</value>
-  </data>
-  <data name="ColState" xml:space="preserve">
-    <value>State</value>
-  </data>
-  <data name="ColSession" xml:space="preserve">
-    <value>Session</value>
-  </data>
-  <data name="ColStarted" xml:space="preserve">
-    <value>Started</value>
-  </data>
-  <data name="ColSteps" xml:space="preserve">
-    <value>Steps</value>
-  </data>
-  <data name="EmptySessions" xml:space="preserve">
-    <value>No sessions in this project yet</value>
-  </data>
-  <data name="Settings" xml:space="preserve">
-    <value>Settings</value>
-  </data>
-  <data name="Send" xml:space="preserve">
-    <value>Send</value>
-  </data>
-  <data name="Continue" xml:space="preserve">
-    <value>Continue</value>
-  </data>
-  <data name="ContinuePrompt" xml:space="preserve">
-    <value>continue</value>
-  </data>
-  <data name="Stop" xml:space="preserve">
-    <value>Stop</value>
-  </data>
-  <data name="FreeOnly" xml:space="preserve">
-    <value>Free only</value>
-  </data>
-  <data name="Provider" xml:space="preserve">
-    <value>Provider</value>
+  <data name="AiConfig" xml:space="preserve">
+    <value>Configure with AI</value>
   </data>
   <data name="AllProviders" xml:space="preserve">
     <value>All providers</value>
   </data>
-  <data name="ModeTask" xml:space="preserve">
-    <value>Task</value>
-  </data>
-  <data name="ComposerHint" xml:space="preserve">
-    <value>Describe a task (Enter=send after this step, Ctrl+Enter=send after this turn, Shift+Enter=soft newline)</value>
-  </data>
-  <data name="TabLoop" xml:space="preserve">
-    <value>Loop</value>
-  </data>
-  <data name="TabDetail" xml:space="preserve">
-    <value>Details</value>
-  </data>
-  <data name="Evolve" xml:space="preserve">
-    <value>Evolve one round</value>
-  </data>
-  <data name="Rollback" xml:space="preserve">
-    <value>Roll back</value>
-  </data>
-  <data name="OpenLoopChat" xml:space="preserve">
-    <value>Open Loop chat</value>
-  </data>
-  <data name="LoopSubtitle" xml:space="preserve">
-    <value>Observe the Worker and user verdicts, accumulate the next version</value>
-  </data>
-  <data name="LoopHint" xml:space="preserve">
-    <value>Talk to the Loop: share friction, complaints or improvement ideas (Enter=send after this step, Ctrl+Enter=send after this turn, Shift+Enter=soft newline)</value>
-  </data>
-  <data name="NewSessionSubtitle" xml:space="preserve">
-    <value>Pick a project, describe a task, start a new session</value>
-  </data>
-  <data name="NewSessionHint" xml:space="preserve">
-    <value>Describe a task, e.g. add a README for this project (Enter to send, Shift+Enter for a new line)</value>
-  </data>
-  <data name="Start" xml:space="preserve">
-    <value>Start</value>
-  </data>
-  <data name="NewProject" xml:space="preserve">
-    <value>+ New project…</value>
-  </data>
-  <data name="PickProject" xml:space="preserve">
-    <value>Pick a project, or create one</value>
-  </data>
-  <data name="LanguageChanged" xml:space="preserve">
-    <value>Language saved. Restart OpenLoop to apply.</value>
-  </data>
-  <data name="ThemeChanged" xml:space="preserve">
-    <value>Saved. Restart OpenLoop to apply.</value>
-  </data>
-  <data name="Status" xml:space="preserve">
-    <value>Status</value>
-  </data>
-  <data name="StateIdle" xml:space="preserve">
-    <value>Pending</value>
-  </data>
-  <data name="Model" xml:space="preserve">
-    <value>Model</value>
-  </data>
-  <data name="Effort" xml:space="preserve">
-    <value>Effort</value>
-  </data>
-  <data name="Cost" xml:space="preserve">
-    <value>Cost</value>
-  </data>
-  <data name="Trace" xml:space="preserve">
-    <value>trace</value>
-  </data>
-  <data name="EvolveIdle" xml:space="preserve">
-    <value>Ready</value>
-  </data>
-  <data name="StateDone" xml:space="preserve">
-    <value>Done</value>
-  </data>
-  <data name="StateRunning" xml:space="preserve">
-    <value>Running</value>
-  </data>
-  <data name="StateInterrupted" xml:space="preserve">
-    <value>Interrupted</value>
-  </data>
-  <data name="Context" xml:space="preserve">
-    <value>Context</value>
-  </data>
-  <data name="Workspace" xml:space="preserve">
-    <value>Workspace</value>
-  </data>
-  <data name="EvolveRunning" xml:space="preserve">
-    <value>Running</value>
-  </data>
-  <data name="Tasks" xml:space="preserve">
-    <value>Eval tasks</value>
-  </data>
-  <data name="EffortHigh" xml:space="preserve">
-    <value>High</value>
-  </data>
-  <data name="EffortAuto" xml:space="preserve">
-    <value>Auto</value>
-  </data>
-  <data name="EffortLow" xml:space="preserve">
-    <value>Low</value>
-  </data>
-  <data name="EffortMedium" xml:space="preserve">
-    <value>Medium</value>
-  </data>
-  <data name="Features" xml:space="preserve">
-    <value>features</value>
-  </data>
-  <data name="NoMessages" xml:space="preserve">
-    <value>No messages yet</value>
-  </data>
-  <data name="Rules" xml:space="preserve">
-    <value>rules</value>
-  </data>
-  <data name="StatusEvolveFailed" xml:space="preserve">
-    <value>Evolve failed</value>
-  </data>
-  <data name="FetchFreeModels" xml:space="preserve">
-    <value>Free models</value>
-  </data>
-  <data name="SettingsModel" xml:space="preserve">
-    <value>Model</value>
-  </data>
-  <data name="SettingsSave" xml:space="preserve">
-    <value>Save</value>
-  </data>
-  <data name="StatusThinking" xml:space="preserve">
-    <value>Thinking…</value>
-  </data>
-  <data name="StatusProposing" xml:space="preserve">
-    <value>Proposing…</value>
-  </data>
-  <data name="SettingsTest" xml:space="preserve">
-    <value>Test connection</value>
-  </data>
-  <data name="SettingsNote" xml:space="preserve">
-    <value>The key is encrypted with DPAPI for the current Windows user and stored only in %APPDATA%\\OpenLoop\\settings.json.</value>
-  </data>
-  <data name="SettingsTitle" xml:space="preserve">
-    <value>Settings</value>
-  </data>
-  <data name="SettingsKey" xml:space="preserve">
-    <value>API key</value>
-  </data>
-  <data name="SettingsBaseUrl" xml:space="preserve">
-    <value>Base URL</value>
-  </data>
-  <data name="StatusRolledBack" xml:space="preserve">
-    <value>Rolled back to v{0} (new version v{1})</value>
-  </data>
-  <data name="SettingsCancel" xml:space="preserve">
-    <value>Cancel</value>
-  </data>
-  <data name="StatusPaused" xml:space="preserve">
-    <value>Paused</value>
-  </data>
-  <data name="SettingsModel" xml:space="preserve">
-    <value>Model</value>
-  </data>
-  <data name="StatusProposing" xml:space="preserve">
-    <value>Proposing…</value>
-  </data>
-  <data name="StatusThinking" xml:space="preserve">
-    <value>Thinking…</value>
-  </data>
-  <data name="SettingsSave" xml:space="preserve">
-    <value>Save</value>
-  </data>
-  <data name="FetchFreeModels" xml:space="preserve">
-    <value>Free models</value>
-  </data>
-  <data name="SettingsTest" xml:space="preserve">
-    <value>Test connection</value>
-  </data>
-  <data name="SettingsKey" xml:space="preserve">
-    <value>API key</value>
-  </data>
-  <data name="SettingsTitle" xml:space="preserve">
-    <value>Settings</value>
-  </data>
-  <data name="SettingsBaseUrl" xml:space="preserve">
-    <value>Base URL</value>
-  </data>
-  <data name="StatusEvolveFailed" xml:space="preserve">
-    <value>Evolve failed</value>
-  </data>
-  <data name="StatusPaused" xml:space="preserve">
-    <value>Paused</value>
-  </data>
-  <data name="SettingsCancel" xml:space="preserve">
-    <value>Cancel</value>
-  </data>
-  <data name="StatusRolledBack" xml:space="preserve">
-    <value>Rolled back to v{0} (new version v{1})</value>
-  </data>
-  <data name="TasksUnit" xml:space="preserve">
-    <value>tasks</value>
-  </data>
-  <data name="StatusReviewing" xml:space="preserve">
-    <value>Reviewing {0} tasks ({1} runs)…</value>
-  </data>
-  <data name="Steps" xml:space="preserve">
-    <value>steps</value>
-  </data>
-  <data name="MenuLanguageAuto" xml:space="preserve">
-    <value>Language: System</value>
-  </data>
-  <data name="ApproveTitle" xml:space="preserve">
-    <value>Confirmation</value>
+  <data name="AlreadyFirstVersion" xml:space="preserve">
+    <value>This is already the earliest version.</value>
   </data>
   <data name="ApproveCommand" xml:space="preserve">
     <value>About to run a command ({0}):
@@ -362,73 +86,2280 @@
 
 Allow?</value>
   </data>
-  <data name="EmptyBlocked" xml:space="preserve">
-    <value>(The upstream blocked this answer by content policy; no body was returned.)</value>
+  <data name="ApproveTitle" xml:space="preserve">
+    <value>Confirmation</value>
   </data>
-  <data name="EmptySafetyOnly" xml:space="preserve">
-    <value>(The model returned only a safety verdict, no body; retried once and still empty.)</value>
+  <data name="AppSubtitle" xml:space="preserve">
+    <value>A self-iterating open agent</value>
   </data>
-  <data name="EmptyNoBody" xml:space="preserve">
-    <value>(The model returned no body.)</value>
+  <data name="AppTitle" xml:space="preserve">
+    <value>OpenLoop</value>
   </data>
-  <data name="RawResponse" xml:space="preserve">
-    <value>Raw response:</value>
+  <data name="AutoApprove" xml:space="preserve">
+    <value>Auto approve</value>
   </data>
-  <data name="ReviewPending" xml:space="preserve">
-    <value>Pending</value>
+  <data name="AutoApproveHint" xml:space="preserve">
+    <value>No tool call needs approval (including outside-workspace access and risky actions)</value>
   </data>
-  <data name="AgentBack" xml:space="preserve">
-    <value>← Back</value>
+  <data name="AutoEvolve" xml:space="preserve">
+    <value>Auto evolve</value>
   </data>
-  <data name="TaskDrafts" xml:space="preserve">
-    <value>Task drafts</value>
+  <data name="AutoEvolveHint" xml:space="preserve">
+    <value>Changes behavior versions: Prompt / Skill / Rule / Limit / Guard; runs evals once enough untriaged findings accumulate</value>
   </data>
-  <data name="EvalReports" xml:space="preserve">
-    <value>Eval reports</value>
+  <data name="AutoIterate" xml:space="preserve">
+    <value>Auto iterate</value>
   </data>
-  <data name="Accept" xml:space="preserve">
-    <value>Accept</value>
+  <data name="AutoIterateHint" xml:space="preserve">
+    <value>Bumps and swaps A/I after enough source commits (asks when sessions run; off by default)</value>
   </data>
-  <data name="Discard" xml:space="preserve">
-    <value>Discard</value>
-  </data>
-  <data name="EditDraft" xml:space="preserve">
-    <value>Edit</value>
-  </data>
-  <data name="SaveDraft" xml:space="preserve">
-    <value>Save changes</value>
-  </data>
-  <data name="Close" xml:space="preserve">
-    <value>Close</value>
-  </data>
-  <data name="DraftsEmpty" xml:space="preserve">
-    <value>No drafts yet. Tasks drafted by Loop from observed failures will appear here.</value>
-  </data>
-  <data name="PickDraft" xml:space="preserve">
-    <value>Pick a draft on the left.</value>
-  </data>
-  <data name="ReportsEmpty" xml:space="preserve">
-    <value>No reports yet. Run an evolution round to create one.</value>
-  </data>
-  <data name="OpenWorkspace" xml:space="preserve">
-    <value>Open workspace</value>
-  </data>
-  <data name="OpenFolder" xml:space="preserve">
-    <value>Open report folder</value>
-  </data>
-  <data name="BaselineSmoke" xml:space="preserve">
-    <value>Run baseline after accepting</value>
-  </data>
-  <data name="DraftAccepted" xml:space="preserve">
-    <value>Added to task set: </value>
-  </data>
-  <data name="BaselineRunning" xml:space="preserve">
-    <value>Running baseline…</value>
+  <data name="BaselineFailed" xml:space="preserve">
+    <value>Baseline failed: kept as a regression task.</value>
   </data>
   <data name="BaselinePassed" xml:space="preserve">
     <value>Baseline passed: this task may not discriminate; consider stricter checks.</value>
   </data>
-  <data name="BaselineFailed" xml:space="preserve">
-    <value>Baseline failed: kept as a regression task.</value>
+  <data name="BaselineRunning" xml:space="preserve">
+    <value>Running baseline…</value>
+  </data>
+  <data name="BaselineSmoke" xml:space="preserve">
+    <value>Run baseline after accepting</value>
+  </data>
+  <data name="CannotOpen" xml:space="preserve">
+    <value>Cannot open</value>
+  </data>
+  <data name="ClearedModels" xml:space="preserve">
+    <value>Cleared {0} models</value>
+  </data>
+  <data name="ClearModels" xml:space="preserve">
+    <value>Clear all</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="ColContribution" xml:space="preserve">
+    <value>Provides</value>
+  </data>
+  <data name="ColDescription" xml:space="preserve">
+    <value>Description</value>
+  </data>
+  <data name="ColFrom" xml:space="preserve">
+    <value>From</value>
+  </data>
+  <data name="CollabNote" xml:space="preserve">
+    <value>Collab sessions are sibling sessions, not sub-agents: they do not share the initiator's tool call stack and each works one slice in the same workspace. Once started, the initiator stops doing the work itself and only monitors and coordinates; monitor reports enter its queue as user-like messages (marked with a special background) and stop automatically when every session has ended or aborted unrecoverably. Cross-workspace collaboration is not supported yet.</value>
+  </data>
+  <data name="CollabPoll" xml:space="preserve">
+    <value>Monitor interval</value>
+  </data>
+  <data name="CollabReuse" xml:space="preserve">
+    <value>Reuse context</value>
+  </data>
+  <data name="CollabReuseHint" xml:space="preserve">
+    <value>Collab sessions carry the initiator's finished turns to reuse the prompt cache (same model only)</value>
+  </data>
+  <data name="ColParams" xml:space="preserve">
+    <value>Params</value>
+  </data>
+  <data name="ColSession" xml:space="preserve">
+    <value>Session</value>
+  </data>
+  <data name="ColStarted" xml:space="preserve">
+    <value>Started</value>
+  </data>
+  <data name="ColState" xml:space="preserve">
+    <value>State</value>
+  </data>
+  <data name="ColSteps" xml:space="preserve">
+    <value>Steps</value>
+  </data>
+  <data name="ColVersion" xml:space="preserve">
+    <value>Version</value>
+  </data>
+  <data name="ComposerHint" xml:space="preserve">
+    <value>Describe a task (Enter=send after this step, Ctrl+Enter=send after this turn, Shift+Enter=soft newline)</value>
+  </data>
+  <data name="ConnectionFailed" xml:space="preserve">
+    <value>Connection failed</value>
+  </data>
+  <data name="ConnectionOk" xml:space="preserve">
+    <value>Connection OK</value>
+  </data>
+  <data name="Context" xml:space="preserve">
+    <value>Context</value>
+  </data>
+  <data name="Continue" xml:space="preserve">
+    <value>Continue</value>
+  </data>
+  <data name="ContinuePrompt" xml:space="preserve">
+    <value>continue</value>
+  </data>
+  <data name="Cost" xml:space="preserve">
+    <value>Cost</value>
+  </data>
+  <data name="CurrentVersion" xml:space="preserve">
+    <value>Current version v{0}</value>
+  </data>
+  <data name="CurrentWorkspace" xml:space="preserve">
+    <value>current-workspace</value>
+  </data>
+  <data name="CustomPreset" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="DeleteProvider" xml:space="preserve">
+    <value>Delete provider "{0}"?</value>
+  </data>
+  <data name="Disabled" xml:space="preserve">
+    <value>Disabled</value>
+  </data>
+  <data name="Discard" xml:space="preserve">
+    <value>Discard</value>
+  </data>
+  <data name="DisplayNameLabel" xml:space="preserve">
+    <value>Display name</value>
+  </data>
+  <data name="DraftAccepted" xml:space="preserve">
+    <value>Added to task set: </value>
+  </data>
+  <data name="DraftsEmpty" xml:space="preserve">
+    <value>No drafts yet. Tasks drafted by Loop from observed failures will appear here.</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="EditDraft" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="Effort" xml:space="preserve">
+    <value>Effort</value>
+  </data>
+  <data name="EffortAuto" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="EffortHigh" xml:space="preserve">
+    <value>High</value>
+  </data>
+  <data name="EffortLow" xml:space="preserve">
+    <value>Low</value>
+  </data>
+  <data name="EffortMedium" xml:space="preserve">
+    <value>Medium</value>
+  </data>
+  <data name="EmptyBlocked" xml:space="preserve">
+    <value>(The upstream blocked this answer by content policy; no body was returned.)</value>
+  </data>
+  <data name="EmptyNoBody" xml:space="preserve">
+    <value>(The model returned no body.)</value>
+  </data>
+  <data name="EmptySafetyOnly" xml:space="preserve">
+    <value>(The model returned only a safety verdict, no body; retried once and still empty.)</value>
+  </data>
+  <data name="EmptySessions" xml:space="preserve">
+    <value>No sessions in this project yet</value>
+  </data>
+  <data name="En" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="EnableCollab" xml:space="preserve">
+    <value>Enable collaboration</value>
+  </data>
+  <data name="EnableCollabHint" xml:space="preserve">
+    <value>Gives Worker and Loop sessions CollabStart / CollabMonitor / ReadSession</value>
+  </data>
+  <data name="Enabled" xml:space="preserve">
+    <value>Enabled</value>
+  </data>
+  <data name="EvalReports" xml:space="preserve">
+    <value>Eval reports</value>
+  </data>
+  <data name="Evolve" xml:space="preserve">
+    <value>Evolve one round</value>
+  </data>
+  <data name="EvolveFailed" xml:space="preserve">
+    <value>Evolution failed</value>
+  </data>
+  <data name="EvolveIdle" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="EvolveRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="Features" xml:space="preserve">
+    <value>features</value>
+  </data>
+  <data name="FetchedModels" xml:space="preserve">
+    <value>Fetched {0} models</value>
+  </data>
+  <data name="FetchFailed" xml:space="preserve">
+    <value>Fetch failed</value>
+  </data>
+  <data name="FetchFreeModels" xml:space="preserve">
+    <value>Free models</value>
+  </data>
+  <data name="FetchingModels" xml:space="preserve">
+    <value>Fetching models…</value>
+  </data>
+  <data name="FetchModels" xml:space="preserve">
+    <value>Fetch models</value>
+  </data>
+  <data name="FollowSystem" xml:space="preserve">
+    <value>Follow system</value>
+  </data>
+  <data name="FreeOnly" xml:space="preserve">
+    <value>Free only</value>
+  </data>
+  <data name="FullAccess" xml:space="preserve">
+    <value>Full access</value>
+  </data>
+  <data name="FullAccessConfirm" xml:space="preserve">
+    <value>Full access turns off path boundaries, command approval and environment variable isolation: child processes may see keys and can reach the network and any path. Enable it?</value>
+  </data>
+  <data name="FullAccessHint" xml:space="preserve">
+    <value>Turns off path boundaries, command approval and env isolation; network is directly reachable</value>
+  </data>
+  <data name="GeneralNote" xml:space="preserve">
+    <value>Theme and language apply after restarting OpenLoop; full access, auto approve, auto evolve and auto iterate apply immediately.</value>
+  </data>
+  <data name="HarnessAdopted" xml:space="preserve">
+    <value>Replaced</value>
+  </data>
+  <data name="HarnessContentLabel" xml:space="preserve">
+    <value>Content: </value>
+  </data>
+  <data name="HarnessCurrentHeader" xml:space="preserve">
+    <value>Current version v{0} · {1} · {2}</value>
+  </data>
+  <data name="HarnessDefsTitle" xml:space="preserve">
+    <value>Features and rules</value>
+  </data>
+  <data name="HarnessDefUninitialized" xml:space="preserve">
+    <value>— (initialized after the first run)</value>
+  </data>
+  <data name="HarnessDirLabel" xml:space="preserve">
+    <value>Directory: </value>
+  </data>
+  <data name="HarnessDormant" xml:space="preserve">
+    <value>Not enabled ({0})</value>
+  </data>
+  <data name="HarnessEnabled" xml:space="preserve">
+    <value>Enabled ({0})</value>
+  </data>
+  <data name="HarnessHint" xml:space="preserve">
+    <value>Harness changes only this workspace's five evolvable object kinds (Prompt / Skill / Rule / Limit / Guard); other workspaces are unaffected. Edit the prompt and AGENTS.md through /prompt and /agents by talking to the model. A candidate is adopted only when its A/B eval is better.</value>
+  </data>
+  <data name="HarnessKept" xml:space="preserve">
+    <value>Kept</value>
+  </data>
+  <data name="HarnessNeedEndpointAndModel" xml:space="preserve">
+    <value>Set the base URL and model in Settings first.</value>
+  </data>
+  <data name="HarnessNoActivation" xml:space="preserve">
+    <value>No activation set</value>
+  </data>
+  <data name="HarnessNoActivationBaseline" xml:space="preserve">
+    <value>No activation version; the baseline was not run.</value>
+  </data>
+  <data name="HarnessNoActivationBody" xml:space="preserve">
+    <value>Run once so the ledger initializes, then look again.</value>
+  </data>
+  <data name="HarnessNoEndpointBaseline" xml:space="preserve">
+    <value>Missing endpoint configuration; the baseline was not run.</value>
+  </data>
+  <data name="HarnessNoModel" xml:space="preserve">
+    <value>Pick a model in Settings first.</value>
+  </data>
+  <data name="HarnessParamsLabel" xml:space="preserve">
+    <value>Params: </value>
+  </data>
+  <data name="HarnessProblemLabel" xml:space="preserve">
+    <value>Problem: </value>
+  </data>
+  <data name="HarnessPromptLabel" xml:space="preserve">
+    <value>Prompt: </value>
+  </data>
+  <data name="HarnessReadFailed" xml:space="preserve">
+    <value>Read failed</value>
+  </data>
+  <data name="HarnessReadFeaturesFailed" xml:space="preserve">
+    <value>Failed to read features</value>
+  </data>
+  <data name="HarnessReadTasksFailed" xml:space="preserve">
+    <value>Failed to read eval tasks</value>
+  </data>
+  <data name="HarnessRollbackAsk" xml:space="preserve">
+    <value>Go back to v{0}? It is written as v{1}; old version files stay.</value>
+  </data>
+  <data name="HarnessRollbackTitle" xml:space="preserve">
+    <value>Roll back</value>
+  </data>
+  <data name="HarnessScore" xml:space="preserve">
+    <value>candidate {0}/{1}, baseline {2}/{3}</value>
+  </data>
+  <data name="HarnessTaskCount" xml:space="preserve">
+    <value>{0} tasks</value>
+  </data>
+  <data name="HarnessTaskLine" xml:space="preserve">
+    <value>{0}  [{1}]  {2} checks</value>
+  </data>
+  <data name="HarnessTasksTitle" xml:space="preserve">
+    <value>Eval tasks</value>
+  </data>
+  <data name="HarnessTipDef" xml:space="preserve">
+    <value>Click to view features and rules</value>
+  </data>
+  <data name="HarnessTipTasks" xml:space="preserve">
+    <value>Click to view eval tasks</value>
+  </data>
+  <data name="Install" xml:space="preserve">
+    <value>Install…</value>
+  </data>
+  <data name="InstallSkill" xml:space="preserve">
+    <value>Install skill</value>
+  </data>
+  <data name="IntervalMinutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="IntervalSeconds" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
+  <data name="IterActBump" xml:space="preserve">
+    <value>bump</value>
+  </data>
+  <data name="IterActKeep" xml:space="preserve">
+    <value>keep</value>
+  </data>
+  <data name="IterActRebuild" xml:space="preserve">
+    <value>rebuild</value>
+  </data>
+  <data name="IterAlreadyBefore" xml:space="preserve">
+    <value>Already at the pre-iteration version</value>
+  </data>
+  <data name="IterBusy" xml:space="preserve">
+    <value>Running…</value>
+  </data>
+  <data name="IterCancelled" xml:space="preserve">
+    <value>Cancelled</value>
+  </data>
+  <data name="IterCancelledLog" xml:space="preserve">
+    <value>Cancelled.</value>
+  </data>
+  <data name="IterColAction" xml:space="preserve">
+    <value>Action</value>
+  </data>
+  <data name="IterColCurrent" xml:space="preserve">
+    <value>Current</value>
+  </data>
+  <data name="IterColPart" xml:space="preserve">
+    <value>Part</value>
+  </data>
+  <data name="IterColTarget" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="IterCommitErrorLog" xml:space="preserve">
+    <value>Commit error: </value>
+  </data>
+  <data name="IterCommitFailed" xml:space="preserve">
+    <value>Commit failed</value>
+  </data>
+  <data name="IterCommitOnly" xml:space="preserve">
+    <value>Commit only</value>
+  </data>
+  <data name="IterCommitPartial" xml:space="preserve">
+    <value>Not everything was committed (see progress)</value>
+  </data>
+  <data name="IterCommitPush" xml:space="preserve">
+    <value>Commit and push</value>
+  </data>
+  <data name="IterCommitted" xml:space="preserve">
+    <value>Committed</value>
+  </data>
+  <data name="IterCommittedPush" xml:space="preserve">
+    <value>Committed and pushed</value>
+  </data>
+  <data name="IterCommitting" xml:space="preserve">
+    <value>Committing…</value>
+  </data>
+  <data name="IterCommittingPush" xml:space="preserve">
+    <value>Committing and pushing…</value>
+  </data>
+  <data name="IterErrorLog" xml:space="preserve">
+    <value>Error: </value>
+  </data>
+  <data name="IterFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="IterFailedRolledBack" xml:space="preserve">
+    <value>Failed, rolled back</value>
+  </data>
+  <data name="IterFrameworkDependent" xml:space="preserve">
+    <value>Framework-dependent</value>
+  </data>
+  <data name="IterLog" xml:space="preserve">
+    <value>Progress</value>
+  </data>
+  <data name="IterModeFramework" xml:space="preserve">
+    <value>Framework-dependent: the target needs .NET 10; the three exes share one framework</value>
+  </data>
+  <data name="IterModeLabel" xml:space="preserve">
+    <value>Build form</value>
+  </data>
+  <data name="IterModeSelfContained" xml:space="preserve">
+    <value>Self-contained: each exe carries its runtime; no .NET needed on the target</value>
+  </data>
+  <data name="IterNoChanges" xml:space="preserve">
+    <value>No changes</value>
+  </data>
+  <data name="IterNoChangesLog" xml:space="preserve">
+    <value>The worktree is clean; nothing to commit.</value>
+  </data>
+  <data name="IterNoRestartLog" xml:space="preserve">
+    <value>Shell not restarted: the new shell is published; click "Restart shell" after sessions finish to switch.</value>
+  </data>
+  <data name="IterNoUpdates" xml:space="preserve">
+    <value>Nothing to update: iteration is only needed when sources or dependencies changed.</value>
+  </data>
+  <data name="IterOk" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="IterOkNoRestart" xml:space="preserve">
+    <value>OK (shell not restarted): click "Restart shell" once sessions finish</value>
+  </data>
+  <data name="IterPreviewRepo" xml:space="preserve">
+    <value>Preview {0} ({1}, {2} files)</value>
+  </data>
+  <data name="IterPushed" xml:space="preserve">
+    <value> (pushed)</value>
+  </data>
+  <data name="IterPushFailed" xml:space="preserve">
+    <value> (push failed: {0})</value>
+  </data>
+  <data name="IterReadyHint" xml:space="preserve">
+    <value>Starts after you confirm: A and I are never swapped together; the shell restarts last.</value>
+  </data>
+  <data name="IterRebuildOnly" xml:space="preserve">
+    <value>rebuild only</value>
+  </data>
+  <data name="IterRepoFail" xml:space="preserve">
+    <value>FAIL {0}: {1}</value>
+  </data>
+  <data name="IterRestarting" xml:space="preserve">
+    <value>Restarting the shell: the UI exits and comes back here after restart</value>
+  </data>
+  <data name="IterRestartLog" xml:space="preserve">
+    <value>Restarting the shell in 3 seconds (A/I are done; the shell goes last).</value>
+  </data>
+  <data name="IterRestartShell" xml:space="preserve">
+    <value>Restart shell</value>
+  </data>
+  <data name="IterRollback" xml:space="preserve">
+    <value>Back to previous version</value>
+  </data>
+  <data name="IterRollbackAsk" xml:space="preserve">
+    <value>Go back to the previous version?
+{0}
+The shell stays on its current version.</value>
+  </data>
+  <data name="IterRollbackErrorLog" xml:space="preserve">
+    <value>Rollback error: </value>
+  </data>
+  <data name="IterRollbackFailed" xml:space="preserve">
+    <value>Rollback failed</value>
+  </data>
+  <data name="IterRollbackLog" xml:space="preserve">
+    <value>Rollback: </value>
+  </data>
+  <data name="IterRollbackPartial" xml:space="preserve">
+    <value>The rollback did not fully succeed; if the worker is busy, retry after this round finishes</value>
+  </data>
+  <data name="IterRolledBack" xml:space="preserve">
+    <value>Rolled back to the previous version (shell unchanged)</value>
+  </data>
+  <data name="IterRolledBackLog" xml:space="preserve">
+    <value>Rolled back: </value>
+  </data>
+  <data name="IterRolledBackToBefore" xml:space="preserve">
+    <value>; rolled back to the pre-iteration version</value>
+  </data>
+  <data name="IterRollingBack" xml:space="preserve">
+    <value>Rolling back…</value>
+  </data>
+  <data name="IterRunning" xml:space="preserve">
+    <value>Running…</value>
+  </data>
+  <data name="IterSelfContained" xml:space="preserve">
+    <value>Self-contained</value>
+  </data>
+  <data name="IterShellRestarted" xml:space="preserve">
+    <value> (shell restarted)</value>
+  </data>
+  <data name="IterSkipRepo" xml:space="preserve">
+    <value>Skipped {0}: {1}</value>
+  </data>
+  <data name="IterStart" xml:space="preserve">
+    <value>Start iteration</value>
+  </data>
+  <data name="IterStartLog" xml:space="preserve">
+    <value>Start: </value>
+  </data>
+  <data name="IterSummary" xml:space="preserve">
+    <value>Changes</value>
+  </data>
+  <data name="IterTitle" xml:space="preserve">
+    <value>Iteration</value>
+  </data>
+  <data name="IterTitleConfirm" xml:space="preserve">
+    <value>Confirm iteration</value>
+  </data>
+  <data name="IterTitleDone" xml:space="preserve">
+    <value>Iteration done</value>
+  </data>
+  <data name="IterTitleFailed" xml:space="preserve">
+    <value>Iteration failed</value>
+  </data>
+  <data name="IterUpstreamAsk" xml:space="preserve">
+    <value>Upstream has updates; update the sources first.
+Iterate with the local code anyway?</value>
+  </data>
+  <data name="IterUpstreamStatus" xml:space="preserve">
+    <value>Upstream has updates; update the sources first. You can still iterate with the local code.</value>
+  </data>
+  <data name="IterUpstreamTitle" xml:space="preserve">
+    <value>Upstream updated</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="LanguageChanged" xml:space="preserve">
+    <value>Language saved. Restart OpenLoop to apply.</value>
+  </data>
+  <data name="LedgerReadFailed" xml:space="preserve">
+    <value>Failed to read the ledger</value>
+  </data>
+  <data name="ListSep" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="LoopAppColPath" xml:space="preserve">
+    <value>Path</value>
+  </data>
+  <data name="LoopAppCount" xml:space="preserve">
+    <value>showing {0} / {1} · {2}</value>
+  </data>
+  <data name="LoopAppDeleteAsk" xml:space="preserve">
+    <value>Delete "{0}"? The directory is removed with it:
+{1}</value>
+  </data>
+  <data name="LoopAppDeleteFailed" xml:space="preserve">
+    <value>Delete failed: </value>
+  </data>
+  <data name="LoopAppDeleteMenu" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="LoopAppDeleteTitle" xml:space="preserve">
+    <value>Delete LoopApp</value>
+  </data>
+  <data name="LoopAppEditMenu" xml:space="preserve">
+    <value>Edit name/usage</value>
+  </data>
+  <data name="LoopAppEditTitle" xml:space="preserve">
+    <value>Edit LoopApp</value>
+  </data>
+  <data name="LoopAppEmpty" xml:space="preserve">
+    <value>No LoopApps yet</value>
+  </data>
+  <data name="LoopAppEmptyHint" xml:space="preserve">
+    <value>No LoopApps yet: {0}</value>
+  </data>
+  <data name="LoopAppFilterPlaceholder" xml:space="preserve">
+    <value>Filter by name / usage / path</value>
+  </data>
+  <data name="LoopAppGone" xml:space="preserve">
+    <value>The directory is gone: </value>
+  </data>
+  <data name="LoopAppMetaFailed" xml:space="preserve">
+    <value>Cannot write app.json: </value>
+  </data>
+  <data name="LoopAppNameEmpty" xml:space="preserve">
+    <value>The name cannot be empty</value>
+  </data>
+  <data name="LoopAppNameLabel" xml:space="preserve">
+    <value>Name (directory name)</value>
+  </data>
+  <data name="LoopAppNameTaken" xml:space="preserve">
+    <value>An app with that name already exists: {0}</value>
+  </data>
+  <data name="LoopAppOpen" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="LoopAppPageHint" xml:space="preserve">
+    <value>LoopApps generated in this workspace</value>
+  </data>
+  <data name="LoopAppRenameFailed" xml:space="preserve">
+    <value>Rename failed: </value>
+  </data>
+  <data name="LoopAppUsageLabel" xml:space="preserve">
+    <value>Usage</value>
+  </data>
+  <data name="LoopHint" xml:space="preserve">
+    <value>Talk to the Loop: share friction, complaints or improvement ideas (Enter=send after this step, Ctrl+Enter=send after this turn, Shift+Enter=soft newline)</value>
+  </data>
+  <data name="LoopSubtitle" xml:space="preserve">
+    <value>Observe the Worker and user verdicts, accumulate the next version</value>
+  </data>
+  <data name="MenuAbout" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="MenuExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="MenuLanguageAuto" xml:space="preserve">
+    <value>Language: System</value>
+  </data>
+  <data name="MenuLanguageEn" xml:space="preserve">
+    <value>Language: English</value>
+  </data>
+  <data name="MenuLanguageZh" xml:space="preserve">
+    <value>Language: 中文</value>
+  </data>
+  <data name="MenuLoop" xml:space="preserve">
+    <value>Loop chat</value>
+  </data>
+  <data name="MenuNewSession" xml:space="preserve">
+    <value>New session…</value>
+  </data>
+  <data name="MenuSessionList" xml:space="preserve">
+    <value>Sessions</value>
+  </data>
+  <data name="MenuSettings" xml:space="preserve">
+    <value>Settings…</value>
+  </data>
+  <data name="MenuThemeDark" xml:space="preserve">
+    <value>Theme: Dark</value>
+  </data>
+  <data name="MenuThemeGrayBlue" xml:space="preserve">
+    <value>Theme: Gray blue</value>
+  </data>
+  <data name="MenuThemeLight" xml:space="preserve">
+    <value>Theme: Light</value>
+  </data>
+  <data name="MissingConfig" xml:space="preserve">
+    <value>Missing configuration</value>
+  </data>
+  <data name="MissingConfigBody" xml:space="preserve">
+    <value>A base URL and at least one model are required.</value>
+  </data>
+  <data name="MissingModelId" xml:space="preserve">
+    <value>Missing model id</value>
+  </data>
+  <data name="MissingModelIdBody" xml:space="preserve">
+    <value>The model id cannot be empty.</value>
+  </data>
+  <data name="MissingPluginId" xml:space="preserve">
+    <value>Missing plugin id</value>
+  </data>
+  <data name="MissingPluginIdBody" xml:space="preserve">
+    <value>The id cannot be empty.</value>
+  </data>
+  <data name="Model" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="ModelCtxAutoChoice" xml:space="preserve">
+    <value>Auto (catalog / built-in table / default)</value>
+  </data>
+  <data name="ModelCtxAutoHint" xml:space="preserve">
+    <value>Auto: catalog value → built-in table → default; currently resolves to {0}.</value>
+  </data>
+  <data name="ModelCtxFixed" xml:space="preserve">
+    <value>Compacts at a fixed {0}; actual capacity is up to the provider. The automatic value is {1}.</value>
+  </data>
+  <data name="ModelExists" xml:space="preserve">
+    <value>Model already exists</value>
+  </data>
+  <data name="ModelExistsBody" xml:space="preserve">
+    <value>The list already has {0}; pick another id.</value>
+  </data>
+  <data name="ModelIdLabel" xml:space="preserve">
+    <value>Model id</value>
+  </data>
+  <data name="ModelIdPlaceholder" xml:space="preserve">
+    <value>Model id sent to the provider, e.g. deepseek-flash-1017</value>
+  </data>
+  <data name="ModelListEmpty" xml:space="preserve">
+    <value>The model list is empty</value>
+  </data>
+  <data name="ModelNamePlaceholder" xml:space="preserve">
+    <value>Blank uses the catalog name or the model id</value>
+  </data>
+  <data name="ModelPropsTitle" xml:space="preserve">
+    <value>Model properties</value>
+  </data>
+  <data name="ModelSearchHint" xml:space="preserve">
+    <value>Type to search models; click Add to include one</value>
+  </data>
+  <data name="ModeTask" xml:space="preserve">
+    <value>Task</value>
+  </data>
+  <data name="Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="NewProject" xml:space="preserve">
+    <value>+ New project…</value>
+  </data>
+  <data name="NewSession" xml:space="preserve">
+    <value>New session</value>
+  </data>
+  <data name="NewSessionHint" xml:space="preserve">
+    <value>Describe a task, e.g. add a README for this project (Enter to send, Shift+Enter for a new line)</value>
+  </data>
+  <data name="NewSessionSubtitle" xml:space="preserve">
+    <value>Pick a project, describe a task, start a new session</value>
+  </data>
+  <data name="NoEarlierVersion" xml:space="preserve">
+    <value>No earlier version</value>
+  </data>
+  <data name="NoMessages" xml:space="preserve">
+    <value>No messages yet</value>
+  </data>
+  <data name="NoPlugins" xml:space="preserve">
+    <value>No plugins yet</value>
+  </data>
+  <data name="NotEditable" xml:space="preserve">
+    <value>Not editable</value>
+  </data>
+  <data name="NotEditableBody" xml:space="preserve">
+    <value>This manifest has no provider contribution; use "Open folder" to edit it.</value>
+  </data>
+  <data name="OnlyGlobalNoWorkspace" xml:space="preserve">
+    <value> (no workspace open; global only)</value>
+  </data>
+  <data name="OpenCodeApproval" xml:space="preserve">
+    <value>Permission approval</value>
+  </data>
+  <data name="OpenCodeHint" xml:space="preserve">
+    <value>When delegating to OpenCode, every action is approved by this app</value>
+  </data>
+  <data name="OpenCodeNote" xml:space="preserve">
+    <value>The service is discovered via ~/.local/state/opencode/service.json; it is not listed until ready.</value>
+  </data>
+  <data name="OpenFolder" xml:space="preserve">
+    <value>Open report folder</value>
+  </data>
+  <data name="OpenLoopChat" xml:space="preserve">
+    <value>Open Loop chat</value>
+  </data>
+  <data name="OpenPluginFolder" xml:space="preserve">
+    <value>Open folder</value>
+  </data>
+  <data name="OpenWorkspace" xml:space="preserve">
+    <value>Open workspace</value>
+  </data>
+  <data name="PickDraft" xml:space="preserve">
+    <value>Pick a draft on the left.</value>
+  </data>
+  <data name="PickModelFirst" xml:space="preserve">
+    <value>Pick a model first</value>
+  </data>
+  <data name="PickModelFirstBody" xml:space="preserve">
+    <value>Select a model in the list below before editing its properties.</value>
+  </data>
+  <data name="PickProject" xml:space="preserve">
+    <value>Pick a project, or create one</value>
+  </data>
+  <data name="PickSkillFolder" xml:space="preserve">
+    <value>Pick a skill folder (must contain SKILL.md)</value>
+  </data>
+  <data name="PickWorkspace" xml:space="preserve">
+    <value>Pick a working directory</value>
+  </data>
+  <data name="PluginAddTitle" xml:space="preserve">
+    <value>Add plugin</value>
+  </data>
+  <data name="PluginEditTitle" xml:space="preserve">
+    <value>Edit plugin</value>
+  </data>
+  <data name="PluginIdLabel" xml:space="preserve">
+    <value>Plugin id</value>
+  </data>
+  <data name="PluginIdPlaceholder" xml:space="preserve">
+    <value>Directory name and manifest id, e.g. agent2api</value>
+  </data>
+  <data name="PluginKeyPlaceholder" xml:space="preserve">
+    <value>Written to key.txt in the same directory; blank keeps it unchanged</value>
+  </data>
+  <data name="PluginManifest" xml:space="preserve">
+    <value>Plugin manifest</value>
+  </data>
+  <data name="PluginModelsUrlPlaceholder" xml:space="preserve">
+    <value>Optional: GET this URL and use data[].id as the model list</value>
+  </data>
+  <data name="PluginNamePlaceholder" xml:space="preserve">
+    <value>Name shown in the dropdown; blank uses the id</value>
+  </data>
+  <data name="PluginNoteCreate" xml:space="preserve">
+    <value>Creates a new directory: {0}. Only the provider contribution is written; the model list comes from ModelsUrl discovery.</value>
+  </data>
+  <data name="PluginNoteEdit" xml:space="preserve">
+    <value>The manifest declares {0} models; this page does not change models. A blank key keeps the existing key.txt. "{1}" expands to the manifest's directory when written.</value>
+  </data>
+  <data name="PluginPrefixLabel" xml:space="preserve">
+    <value>Model prefix</value>
+  </data>
+  <data name="PluginPrefixPlaceholder" xml:space="preserve">
+    <value>Optional: model prefix shown in the UI, stripped before sending upstream, e.g. a2a/</value>
+  </data>
+  <data name="PluginProviderBody" xml:space="preserve">
+    <value>It comes from a plugin manifest; uninstall it or edit the manifest on the Plugins page.</value>
+  </data>
+  <data name="PluginProviderTitle" xml:space="preserve">
+    <value>Plugin provider</value>
+  </data>
+  <data name="PluginsNote" xml:space="preserve">
+    <value>Workspace plugins live in &lt;workspace&gt;/.openloop/plugins, global plugins in %APPDATA%\OpenLoop\plugins (workspace wins on name clashes). Changes apply as soon as they are saved, and the provider dropdown picks them up within seconds. "Edit" only changes the URL and key of provider plugins; for tool/MCP plugins use "Open folder". "Add" writes into the current workspace; "Uninstall" moves the folder to the plugin recycle bin (%APPDATA%\OpenLoop\plugins-trash).</value>
+  </data>
+  <data name="PluginSuffix" xml:space="preserve">
+    <value> (plugin)</value>
+  </data>
+  <data name="PluginUrlPlaceholder" xml:space="preserve">
+    <value>OpenAI-compatible base URL, e.g. http://127.0.0.1:3065/v1</value>
+  </data>
+  <data name="ProjectOpencode" xml:space="preserve">
+    <value>Project .opencode</value>
+  </data>
+  <data name="Projects" xml:space="preserve">
+    <value>Projects</value>
+  </data>
+  <data name="Properties" xml:space="preserve">
+    <value>Properties</value>
+  </data>
+  <data name="Provider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="ProviderBuiltInHint" xml:space="preserve">
+    <value>Built-in provider: click "Fetch models" to sync its model list. Checked=enabled, unchecked=disabled (left out of model dropdowns).</value>
+  </data>
+  <data name="ProviderCustomHint" xml:space="preserve">
+    <value>Custom provider: add model ids one by one (e.g. gpt-4o-mini). Checked=enabled, unchecked=disabled (left out of model dropdowns).</value>
+  </data>
+  <data name="ProviderNone" xml:space="preserve">
+    <value>Add a provider first.</value>
+  </data>
+  <data name="ProviderPluginHint" xml:space="preserve">
+    <value>Plugin provider ({0}): the URL and key belong to the plugin manifest, and model changes are written back to its plugin.json. Checked=enabled, unchecked=disabled (left out of model dropdowns).</value>
+  </data>
+  <data name="ProviderPluginOfflineHint" xml:space="preserve">
+    <value>Plugin provider ({0}) is unavailable: its service/address is not ready. Models are still listed from the manifest, and you can disable it for now.</value>
+  </data>
+  <data name="PuppetBroadcast" xml:space="preserve">
+    <value>(broadcast)</value>
+  </data>
+  <data name="PuppetChatHint" xml:space="preserve">
+    <value>Puppet board: agents from each session talk here; you can join in too.</value>
+  </data>
+  <data name="PuppetCommandComplain" xml:space="preserve">
+    <value>Send a problem from this Puppet chat to the Loop (no context attached)</value>
+  </data>
+  <data name="PuppetComplainEmpty" xml:space="preserve">
+    <value>Write the actual problem after /complain.</value>
+  </data>
+  <data name="PuppetEmpty" xml:space="preserve">
+    <value>No actions available</value>
+  </data>
+  <data name="PuppetFiltered" xml:space="preserve">
+    <value> · {0} shown</value>
+  </data>
+  <data name="PuppetFilterPlaceholder" xml:space="preserve">
+    <value>Filter by action / params / description</value>
+  </data>
+  <data name="PuppetInputHint" xml:space="preserve">
+    <value>Speak on the board as the user; type / for commands</value>
+  </data>
+  <data name="PuppetListLoading" xml:space="preserve">
+    <value>Puppet actions · loading…</value>
+  </data>
+  <data name="PuppetListTitle" xml:space="preserve">
+    <value>Puppet actions</value>
+  </data>
+  <data name="PuppetMessages" xml:space="preserve">
+    <value> · {0} messages</value>
+  </data>
+  <data name="PuppetMissingTitle" xml:space="preserve">
+    <value>Missing content</value>
+  </data>
+  <data name="PuppetNoBoard" xml:space="preserve">
+    <value>No board available</value>
+  </data>
+  <data name="PuppetOnline" xml:space="preserve">
+    <value>Online {0}</value>
+  </data>
+  <data name="PuppetShellDisabled" xml:space="preserve">
+    <value>Actions are listed once the shell enables Puppet (B face); the list comes from this process's /appagent/manifest.</value>
+  </data>
+  <data name="PuppetStatus" xml:space="preserve">
+    <value>Puppet actions · instance {0} · {1} actions</value>
+  </data>
+  <data name="PuppetUnreadable" xml:space="preserve">
+    <value>Cannot read the list: </value>
+  </data>
+  <data name="PuppetUsage" xml:space="preserve">
+    <value>Double-click a row to put the command into the composer: /puppet &lt;action&gt; &lt;params…&gt; (write params in natural language; the model maps them)</value>
+  </data>
+  <data name="PuppetUsageShort" xml:space="preserve">
+    <value>Double-click a row to put the command into the composer: /puppet &lt;action&gt; &lt;params…&gt;</value>
+  </data>
+  <data name="RawResponse" xml:space="preserve">
+    <value>Raw response:</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="Remove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="RemoveSelected" xml:space="preserve">
+    <value>Remove selected</value>
+  </data>
+  <data name="ReportsEmpty" xml:space="preserve">
+    <value>No reports yet. Run an evolution round to create one.</value>
+  </data>
+  <data name="ReviewPending" xml:space="preserve">
+    <value>Pending</value>
+  </data>
+  <data name="Rollback" xml:space="preserve">
+    <value>Roll back</value>
+  </data>
+  <data name="RollbackFailed" xml:space="preserve">
+    <value>Rollback failed</value>
+  </data>
+  <data name="RolledBack" xml:space="preserve">
+    <value>Rolled back</value>
+  </data>
+  <data name="RuleAddTitle" xml:space="preserve">
+    <value>Add rule</value>
+  </data>
+  <data name="RuleBodyLabel" xml:space="preserve">
+    <value>Rule text</value>
+  </data>
+  <data name="RuleBodyPlaceholder" xml:space="preserve">
+    <value>One rule for the Worker, e.g. read a file with ReadFile before changing it.</value>
+  </data>
+  <data name="RuleEmpty" xml:space="preserve">
+    <value>Empty rule</value>
+  </data>
+  <data name="RuleEmptyOptimizeBody" xml:space="preserve">
+    <value>Write a rule before asking the AI to improve it.</value>
+  </data>
+  <data name="RuleEmptySaveBody" xml:space="preserve">
+    <value>Fill in the rule text.</value>
+  </data>
+  <data name="RuleHint" xml:space="preserve">
+    <value>Registered rules start dormant and may be enabled by the next evolution; the id hashes the name and text, so any edit makes a new id.</value>
+  </data>
+  <data name="RuleNameLabel" xml:space="preserve">
+    <value>Rule name</value>
+  </data>
+  <data name="RuleNamePlaceholder" xml:space="preserve">
+    <value>Optional, e.g. read before write</value>
+  </data>
+  <data name="RuleOptimize" xml:space="preserve">
+    <value>AI improve</value>
+  </data>
+  <data name="RuleOptimized" xml:space="preserve">
+    <value>Improved; review it before registering (it is not saved automatically).</value>
+  </data>
+  <data name="RuleOptimizeEmpty" xml:space="preserve">
+    <value>The model returned no rule; keeping the original.</value>
+  </data>
+  <data name="RuleOptimizeFailed" xml:space="preserve">
+    <value>Improve failed: </value>
+  </data>
+  <data name="RuleOptimizing" xml:space="preserve">
+    <value>Improving…</value>
+  </data>
+  <data name="RuleRegister" xml:space="preserve">
+    <value>Register</value>
+  </data>
+  <data name="RuleRegistered" xml:space="preserve">
+    <value>Rule registered</value>
+  </data>
+  <data name="RuleRegisteredBody" xml:space="preserve">
+    <value>{0}\nThe current version is unchanged; the next evolution may enable it.</value>
+  </data>
+  <data name="RuleRegisterFailed" xml:space="preserve">
+    <value>Failed to register the rule</value>
+  </data>
+  <data name="Rules" xml:space="preserve">
+    <value>rules</value>
+  </data>
+  <data name="SaveDraft" xml:space="preserve">
+    <value>Save changes</value>
+  </data>
+  <data name="SaveFailed" xml:space="preserve">
+    <value>Save failed</value>
+  </data>
+  <data name="ScopeGlobal" xml:space="preserve">
+    <value>Global</value>
+  </data>
+  <data name="ScopeProject" xml:space="preserve">
+    <value>Project</value>
+  </data>
+  <data name="SearchSessions" xml:space="preserve">
+    <value>Search sessions</value>
+  </data>
+  <data name="Send" xml:space="preserve">
+    <value>Send</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="SettingsBaseUrl" xml:space="preserve">
+    <value>Base URL</value>
+  </data>
+  <data name="SettingsCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="SettingsKey" xml:space="preserve">
+    <value>API key</value>
+  </data>
+  <data name="SettingsModel" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="SettingsSave" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="SettingsTest" xml:space="preserve">
+    <value>Test connection</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="SkillDisable" xml:space="preserve">
+    <value>Disable</value>
+  </data>
+  <data name="SkillEnable" xml:space="preserve">
+    <value>Enable</value>
+  </data>
+  <data name="SkillsEmptyGlobal" xml:space="preserve">
+    <value>No global skills yet</value>
+  </data>
+  <data name="SkillsEmptyProject" xml:space="preserve">
+    <value>No skills in this workspace yet</value>
+  </data>
+  <data name="SkillsHint" xml:space="preserve">
+    <value>"Global" edits %APPDATA%\OpenLoop\skills, "Project" edits &lt;workspace&gt;/.openloop/skills (also reads OpenCode's &lt;workspace&gt;/.opencode/skills); on name clashes .openloop &gt; .opencode &gt; global, and the global switch only affects skills not configured in the project. Ctrl/Shift-click rows to select several and toggle them together.</value>
+  </data>
+  <data name="SkillsNoneManageable" xml:space="preserve">
+    <value>No skills to manage</value>
+  </data>
+  <data name="SkillsNoWorkspace" xml:space="preserve">
+    <value>Open a session in a project first, or switch to Global to manage global skills</value>
+  </data>
+  <data name="SkillToggle" xml:space="preserve">
+    <value>Enable / disable</value>
+  </data>
+  <data name="Start" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="StateDone" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="StateIdle" xml:space="preserve">
+    <value>Pending</value>
+  </data>
+  <data name="StateInterrupted" xml:space="preserve">
+    <value>Interrupted</value>
+  </data>
+  <data name="StateRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="StatusAdopted" xml:space="preserve">
+    <value>: adopted v{0}</value>
+  </data>
+  <data name="StatusEvolveFailed" xml:space="preserve">
+    <value>Evolve failed</value>
+  </data>
+  <data name="StatusKeptOld" xml:space="preserve">
+    <value>: kept the previous version</value>
+  </data>
+  <data name="StatusPaused" xml:space="preserve">
+    <value>Paused</value>
+  </data>
+  <data name="StatusPreparing" xml:space="preserve">
+    <value>: preparing…</value>
+  </data>
+  <data name="StatusPreparingPhase" xml:space="preserve">
+    <value>preparing…</value>
+  </data>
+  <data name="StatusProposing" xml:space="preserve">
+    <value>Proposing…</value>
+  </data>
+  <data name="StatusProposingPhase" xml:space="preserve">
+    <value>proposing…</value>
+  </data>
+  <data name="StatusReviewing" xml:space="preserve">
+    <value>Reviewing {0} tasks ({1} runs)…</value>
+  </data>
+  <data name="StatusRolledBack" xml:space="preserve">
+    <value>Rolled back to v{0} (new version v{1})</value>
+  </data>
+  <data name="StatusRolledBackTo" xml:space="preserve">
+    <value>: rolled back to v{0} (new version v{1})</value>
+  </data>
+  <data name="StatusStopped" xml:space="preserve">
+    <value>: stopped</value>
+  </data>
+  <data name="StatusThinking" xml:space="preserve">
+    <value>Thinking…</value>
+  </data>
+  <data name="Steps" xml:space="preserve">
+    <value>steps</value>
+  </data>
+  <data name="Stop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="TabCollab" xml:space="preserve">
+    <value>Collaboration</value>
+  </data>
+  <data name="TabDetail" xml:space="preserve">
+    <value>Details</value>
+  </data>
+  <data name="TabGeneral" xml:space="preserve">
+    <value>General</value>
+  </data>
+  <data name="TabLoop" xml:space="preserve">
+    <value>Loop</value>
+  </data>
+  <data name="TabModels" xml:space="preserve">
+    <value>Models</value>
+  </data>
+  <data name="TabOverview" xml:space="preserve">
+    <value>Sessions</value>
+  </data>
+  <data name="TabPlugins" xml:space="preserve">
+    <value>Plugins</value>
+  </data>
+  <data name="TabSideWork" xml:space="preserve">
+    <value>Side work</value>
+  </data>
+  <data name="TabSkills" xml:space="preserve">
+    <value>Skills</value>
+  </data>
+  <data name="TabTools" xml:space="preserve">
+    <value>Tools</value>
+  </data>
+  <data name="TaskDrafts" xml:space="preserve">
+    <value>Task drafts</value>
+  </data>
+  <data name="Tasks" xml:space="preserve">
+    <value>Eval tasks</value>
+  </data>
+  <data name="TasksUnit" xml:space="preserve">
+    <value>tasks</value>
+  </data>
+  <data name="TestingConnection" xml:space="preserve">
+    <value>Testing connection…</value>
+  </data>
+  <data name="ThemeAccent" xml:space="preserve">
+    <value>Accent color</value>
+  </data>
+  <data name="ThemeChanged" xml:space="preserve">
+    <value>Saved. Restart OpenLoop to apply.</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="ThemeGrayBlue" xml:space="preserve">
+    <value>Gray blue</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="Thinking" xml:space="preserve">
+    <value>Reasoning</value>
+  </data>
+  <data name="ThinkingHint" xml:space="preserve">
+    <value>New replies show reasoning and tool steps expanded</value>
+  </data>
+  <data name="ToolsNote" xml:space="preserve">
+    <value>Intranet and loopback addresses are refused; only text/HTML/JSON/XML, 2 MB per page, 6000 chars by default. Applies to both Worker and Loop.</value>
+  </data>
+  <data name="Trace" xml:space="preserve">
+    <value>trace</value>
+  </data>
+  <data name="Uninstall" xml:space="preserve">
+    <value>Uninstall</value>
+  </data>
+  <data name="UninstallFailed" xml:space="preserve">
+    <value>Uninstall failed</value>
+  </data>
+  <data name="UninstallGlobalFirst" xml:space="preserve">
+    <value>Switch to Global to uninstall global skills</value>
+  </data>
+  <data name="UninstallOneOnly" xml:space="preserve">
+    <value>Uninstall one skill at a time</value>
+  </data>
+  <data name="UninstallOpencodeOwned" xml:space="preserve">
+    <value>This skill lives in .opencode/skills and is installed by opencode; delete it there</value>
+  </data>
+  <data name="UninstallPlugin" xml:space="preserve">
+    <value>Uninstall plugin</value>
+  </data>
+  <data name="UninstallPluginBody" xml:space="preserve">
+    <value>Move the whole {0} plugin {1} folder to the plugin recycle bin? You can move it back by hand if needed.</value>
+  </data>
+  <data name="UninstallSkill" xml:space="preserve">
+    <value>Uninstall skill</value>
+  </data>
+  <data name="UninstallSkillConfirm" xml:space="preserve">
+    <value>Uninstall skill "{0}"?
+
+The whole folder will be deleted and cannot be restored:
+{1}</value>
+  </data>
+  <data name="Unknown" xml:space="preserve">
+    <value>unknown</value>
+  </data>
+  <data name="Unnamed" xml:space="preserve">
+    <value>Unnamed</value>
+  </data>
+  <data name="WebFetchAllow" xml:space="preserve">
+    <value>No approval (default)</value>
+  </data>
+  <data name="WebFetchAsk" xml:space="preserve">
+    <value>Ask every time</value>
+  </data>
+  <data name="WebFetchHint" xml:space="preserve">
+    <value>Read-only fetch of http/https page bodies into plain text; no JavaScript, content is treated as untrusted</value>
+  </data>
+  <data name="WebFetchOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Workspace" xml:space="preserve">
+    <value>Workspace</value>
+  </data>
+  <data name="WorkspaceMissing" xml:space="preserve">
+    <value>Working directory does not exist: </value>
+  </data>
+  <data name="Zh" xml:space="preserve">
+    <value>Chinese</value>
+  </data>
+  <data name="状态: " xml:space="preserve">
+    <value>Status: </value>
+  </data>
+  <data name="草稿: " xml:space="preserve">
+    <value>Draft: </value>
+  </data>
+  <data name="题目 id: " xml:space="preserve">
+    <value>Task id: </value>
+  </data>
+  <data name="问题: " xml:space="preserve">
+    <value>Problem: </value>
+  </data>
+  <data name="理由: " xml:space="preserve">
+    <value>Reason: </value>
+  </data>
+  <data name="来源: " xml:space="preserve">
+    <value>Source: </value>
+  </data>
+  <data name="创建: " xml:space="preserve">
+    <value>Created: </value>
+  </data>
+  <data name="提示词:" xml:space="preserve">
+    <value>Prompt:</value>
+  </data>
+  <data name="起始文件:" xml:space="preserve">
+    <value>Seed files:</value>
+  </data>
+  <data name=" 字符)" xml:space="preserve">
+    <value> chars)</value>
+  </data>
+  <data name="  （无）" xml:space="preserve">
+    <value>  (none)</value>
+  </data>
+  <data name="判定条件:" xml:space="preserve">
+    <value>Checks:</value>
+  </data>
+  <data name="JSON 解析失败：" xml:space="preserve">
+    <value>JSON parse failed: </value>
+  </data>
+  <data name="已保存修改。" xml:space="preserve">
+    <value>Changes saved.</value>
+  </data>
+  <data name="正在编辑 JSON；保存后回到预览。" xml:space="preserve">
+    <value>Editing JSON; save to return to the preview.</value>
+  </data>
+  <data name="基线试跑失败：" xml:space="preserve">
+    <value>Baseline run failed: </value>
+  </data>
+  <data name="丢弃草稿" xml:space="preserve">
+    <value>Discard draft</value>
+  </data>
+  <data name="」？不会删除已有题集。" xml:space="preserve">
+    <value>"? Existing tasks are not deleted.</value>
+  </data>
+  <data name="丢弃草稿「" xml:space="preserve">
+    <value>Discard draft "</value>
+  </data>
+  <data name="待确认" xml:space="preserve">
+    <value>Pending</value>
+  </data>
+  <data name="已采纳" xml:space="preserve">
+    <value>Accepted</value>
+  </data>
+  <data name="已丢弃" xml:space="preserve">
+    <value>Discarded</value>
+  </data>
+  <data name="只读 · 尚未运行" xml:space="preserve">
+    <value>Read-only · not started</value>
+  </data>
+  <data name="在输入框里用 /btw &lt;请求&gt; 跑一个只读的旁路任务" xml:space="preserve">
+    <value>Run a read-only side task from the composer with /btw &lt;request&gt;</value>
+  </data>
+  <data name="等当前旁路任务结束再发。" xml:space="preserve">
+    <value>Wait for the current side task to finish.</value>
+  </data>
+  <data name="旁路任务进行中" xml:space="preserve">
+    <value>A side task is running</value>
+  </data>
+  <data name="工作区目录不存在：" xml:space="preserve">
+    <value>Workspace directory does not exist: </value>
+  </data>
+  <data name="项目不可用" xml:space="preserve">
+    <value>Project unavailable</value>
+  </data>
+  <data name="先在设置里填写接口地址与模型。" xml:space="preserve">
+    <value>Set the base URL and model in Settings first.</value>
+  </data>
+  <data name="缺少配置" xml:space="preserve">
+    <value>Missing configuration</value>
+  </data>
+  <data name="读取账本失败" xml:space="preserve">
+    <value>Failed to read the ledger</value>
+  </data>
+  <data name="创建 trace 失败" xml:space="preserve">
+    <value>Failed to create trace</value>
+  </data>
+  <data name="（已停止）" xml:space="preserve">
+    <value>(stopped)</value>
+  </data>
+  <data name="只读 · stopped" xml:space="preserve">
+    <value>Read-only · stopped</value>
+  </data>
+  <data name="只读 · error" xml:space="preserve">
+    <value>Read-only · error</value>
+  </data>
+  <data name="旁路执行失败" xml:space="preserve">
+    <value>Side task failed</value>
+  </data>
+  <data name="只读 · 运行中…" xml:space="preserve">
+    <value>Read-only · running…</value>
+  </data>
+  <data name="继续执行？" xml:space="preserve">
+    <value>Continue?</value>
+  </data>
+  <data name="打开会话" xml:space="preserve">
+    <value>Open session</value>
+  </data>
+  <data name="模型" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="生图模型" xml:space="preserve">
+    <value>Image model</value>
+  </data>
+  <data name="自动" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="低" xml:space="preserve">
+    <value>Low</value>
+  </data>
+  <data name="中" xml:space="preserve">
+    <value>Medium</value>
+  </data>
+  <data name="高" xml:space="preserve">
+    <value>High</value>
+  </data>
+  <data name="选择" xml:space="preserve">
+    <value>Select</value>
+  </data>
+  <data name="操作" xml:space="preserve">
+    <value>Actions</value>
+  </data>
+  <data name="复制" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="转给 worker" xml:space="preserve">
+    <value>Hand to worker</value>
+  </data>
+  <data name="删除" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="迭代" xml:space="preserve">
+    <value>Iterate</value>
+  </data>
+  <data name="提交" xml:space="preserve">
+    <value>Commit</value>
+  </data>
+  <data name="提交并推送" xml:space="preserve">
+    <value>Commit and push</value>
+  </data>
+  <data name="退回上一个版本" xml:space="preserve">
+    <value>Revert to the previous version</value>
+  </data>
+  <data name="解锁：允许你自己点按网页" xml:space="preserve">
+    <value>Unlock: let you use the page yourself</value>
+  </data>
+  <data name="锁定：网页由 Agent 控制" xml:space="preserve">
+    <value>Locked: the Agent controls the page</value>
+  </data>
+  <data name="OpenLoop 浏览器" xml:space="preserve">
+    <value>OpenLoop browser</value>
+  </data>
+  <data name="地址为空" xml:space="preserve">
+    <value>The address is empty</value>
+  </data>
+  <data name="导航失败：" xml:space="preserve">
+    <value>Navigation failed: </value>
+  </data>
+  <data name="脚本为空" xml:space="preserve">
+    <value>The script is empty</value>
+  </data>
+  <data name="执行脚本超时" xml:space="preserve">
+    <value>Script execution timed out</value>
+  </data>
+  <data name="执行脚本失败：" xml:space="preserve">
+    <value>Script execution failed: </value>
+  </data>
+  <data name="截图超时" xml:space="preserve">
+    <value>Screenshot timed out</value>
+  </data>
+  <data name="截图失败：" xml:space="preserve">
+    <value>Screenshot failed: </value>
+  </data>
+  <data name="WebView2 初始化超时：检查是否装了 WebView2 Runtime" xml:space="preserve">
+    <value>WebView2 init timed out: check that the WebView2 Runtime is installed</value>
+  </data>
+  <data name="WebView2 初始化失败：" xml:space="preserve">
+    <value>WebView2 init failed: </value>
+  </data>
+  <data name="浏览器视图已关闭" xml:space="preserve">
+    <value>The browser view is closed</value>
+  </data>
+  <data name="打开系统浏览器失败：" xml:space="preserve">
+    <value>Failed to open the system browser: </value>
+  </data>
+  <data name="会话" xml:space="preserve">
+    <value>Session</value>
+  </data>
+  <data name="转给 Loop" xml:space="preserve">
+    <value>Hand to Loop</value>
+  </data>
+  <data name="考核题: —" xml:space="preserve">
+    <value>Tasks: —</value>
+  </data>
+  <data name="新增规则" xml:space="preserve">
+    <value>New rule</value>
+  </data>
+  <data name="待答 0" xml:space="preserve">
+    <value>Pending 0</value>
+  </data>
+  <data name="没有打开的网页页" xml:space="preserve">
+    <value>No browser page is open</value>
+  </data>
+  <data name="没有网页页" xml:space="preserve">
+    <value>No browser page</value>
+  </data>
+  <data name="没有打开的会话" xml:space="preserve">
+    <value>No open session</value>
+  </data>
+  <data name="报告: " xml:space="preserve">
+    <value>Report: </value>
+  </data>
+  <data name="时间: " xml:space="preserve">
+    <value>Time: </value>
+  </data>
+  <data name="失败" xml:space="preserve">
+    <value>failed</value>
+  </data>
+  <data name="通过" xml:space="preserve">
+    <value>passed</value>
+  </data>
+  <data name="：基线 " xml:space="preserve">
+    <value>: baseline </value>
+  </data>
+  <data name="，候选 " xml:space="preserve">
+    <value>, candidate </value>
+  </data>
+  <data name="  基线: " xml:space="preserve">
+    <value>  baseline: </value>
+  </data>
+  <data name="  候选: " xml:space="preserve">
+    <value>  candidate: </value>
+  </data>
+  <data name="保留" xml:space="preserve">
+    <value>Kept</value>
+  </data>
+  <data name="采纳" xml:space="preserve">
+    <value>Accept</value>
+  </data>
+  <data name="立即：插到下一步（当前轮在下一个 step 前收尾）" xml:space="preserve">
+    <value>Now: joins the next step (this turn wraps up before it)</value>
+  </data>
+  <data name="等本轮：等这一轮返回（Ctrl+Enter 发送）" xml:space="preserve">
+    <value>After turn: waits for this turn to return (Ctrl+Enter)</value>
+  </data>
+  <data name="📎 附件" xml:space="preserve">
+    <value>📎 Attachments</value>
+  </data>
+  <data name="编辑" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="立即" xml:space="preserve">
+    <value>Now</value>
+  </data>
+  <data name="自动：agent 插入（立即发送）" xml:space="preserve">
+    <value>Auto: inserted by the agent (sent immediately)</value>
+  </data>
+  <data name="允许" xml:space="preserve">
+    <value>Allow</value>
+  </data>
+  <data name="拒绝" xml:space="preserve">
+    <value>Deny</value>
+  </data>
+  <data name="工作区外访问" xml:space="preserve">
+    <value>Outside-workspace access</value>
+  </data>
+  <data name="后续同类操作都许可" xml:space="preserve">
+    <value>Allow all similar operations from now on</value>
+  </data>
+  <data name="（可在设置 →「普通」里关闭）" xml:space="preserve">
+    <value>(can be turned off in Settings → General)</value>
+  </data>
+  <data name="打开文件夹" xml:space="preserve">
+    <value>Open folder</value>
+  </data>
+  <data name="打开文件" xml:space="preserve">
+    <value>Open file</value>
+  </data>
+  <data name="打开失败：" xml:space="preserve">
+    <value>Failed to open: </value>
+  </data>
+  <data name="路径不存在" xml:space="preserve">
+    <value>Path not found</value>
+  </data>
+  <data name="复制失败：" xml:space="preserve">
+    <value>Copy failed: </value>
+  </data>
+  <data name="路径无效：" xml:space="preserve">
+    <value>Invalid path: </value>
+  </data>
+  <data name="文件不存在：" xml:space="preserve">
+    <value>File not found: </value>
+  </data>
+  <data name="读取失败：" xml:space="preserve">
+    <value>Read failed: </value>
+  </data>
+  <data name="这是二进制文件，不预览。" xml:space="preserve">
+    <value>Binary file; not previewed.</value>
+  </data>
+  <data name="解码失败：" xml:space="preserve">
+    <value>Decode failed: </value>
+  </data>
+  <data name="Loop 会话（全部项目）· 关于OpenLoop自身迭代和演进的所有会话" xml:space="preserve">
+    <value>Loop sessions (all projects) · every session about OpenLoop's own iteration and evolution</value>
+  </data>
+  <data name="Puppet 是 OpenLoop 各组件内嵌自调试机制。OpenLoop 的主驱动服务：A(Worker) 和 I(Loop) 两个实例各有一个 Puppet 实例，均允许 Agent 连接交流。Puppet 留言板 · 各会话的 Agent 在同一块板上自行对话（默认 @A，A 不可达时转 @I），没有主 Agent 驱动" xml:space="preserve">
+    <value>Puppet is the self-debug mechanism embedded in every OpenLoop component. OpenLoop has two main driving services, A (Worker) and I (Loop), each with its own Puppet instance that agents may connect to. Puppet board · agents of all sessions talk on one shared board (defaults to @A, falls back to @I when A is unreachable) with no primary agent driving it</value>
+  </data>
+  <data name="打开工作区路径" xml:space="preserve">
+    <value>Open workspace path</value>
+  </data>
+  <data name="复制路径" xml:space="preserve">
+    <value>Copy path</value>
+  </data>
+  <data name="新建会话" xml:space="preserve">
+    <value>New session</value>
+  </data>
+  <data name="删除项目" xml:space="preserve">
+    <value>Delete project</value>
+  </data>
+  <data name="前往" xml:space="preserve">
+    <value>Go</value>
+  </data>
+  <data name="独立窗口：把网页搬进独立窗口" xml:space="preserve">
+    <value>Separate window: move the page into its own window</value>
+  </data>
+  <data name="用系统默认浏览器打开" xml:space="preserve">
+    <value>Open in the system default browser</value>
+  </data>
+  <data name="选择作为新项目的工作区文件夹" xml:space="preserve">
+    <value>Pick a workspace folder to add as a new project</value>
+  </data>
+  <data name="请先描述任务" xml:space="preserve">
+    <value>Describe the task first</value>
+  </data>
+  <data name="请选择项目或新建项目" xml:space="preserve">
+    <value>Select a project or create a new one</value>
+  </data>
+  <data name="【引用会话「" xml:space="preserve">
+    <value>[Referenced session "</value>
+  </data>
+  <data name="参考上下文（用户 @ 引用的同工作区会话）：" xml:space="preserve">
+    <value>Referenced context (same-workspace sessions the user @-mentioned):</value>
+  </data>
+  <data name="内容为空，没有提交" xml:space="preserve">
+    <value>Content is empty, nothing submitted</value>
+  </data>
+  <data name="队列拒绝接收" xml:space="preserve">
+    <value>The queue refused it</value>
+  </data>
+  <data name="已发送" xml:space="preserve">
+    <value>Sent</value>
+  </data>
+  <data name="已入队，本轮结束后发送" xml:space="preserve">
+    <value>Queued: sends when this turn ends</value>
+  </data>
+  <data name="已收起网页页" xml:space="preserve">
+    <value>Browser page collapsed</value>
+  </data>
+  <data name="待发送 0" xml:space="preserve">
+    <value>Pending 0</value>
+  </data>
+  <data name="Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行" xml:space="preserve">
+    <value>Enter=send after this step, Ctrl+Enter=send after this turn, Shift+Enter=soft newline</value>
+  </data>
+  <data name="新会话" xml:space="preserve">
+    <value>New session</value>
+  </data>
+  <data name="Loop工作区" xml:space="preserve">
+    <value>Loop workspace</value>
+  </data>
+  <data name="旁路" xml:space="preserve">
+    <value>Side task</value>
+  </data>
+  <data name="只读" xml:space="preserve">
+    <value>Read-only</value>
+  </data>
+  <data name="技能：" xml:space="preserve">
+    <value>Skills: </value>
+  </data>
+  <data name="免费" xml:space="preserve">
+    <value>Free</value>
+  </data>
+  <data name="删除选中" xml:space="preserve">
+    <value>Delete selected</value>
+  </data>
+  <data name="DraftDecisionLine" xml:space="preserve">
+    <value>Decision: {0} · {1} · {2}</value>
+  </data>
+  <data name="SideWorkStatus" xml:space="preserve">
+    <value>Read-only · {0} · {1} steps</value>
+  </data>
+  <data name="SessionNotFound" xml:space="preserve">
+    <value>Session not found: {0}</value>
+  </data>
+  <data name="EvalVerdictAdopted" xml:space="preserve">
+    <value>Verdict: adopted v{0}</value>
+  </data>
+  <data name="EvalVerdictKept" xml:space="preserve">
+    <value>Verdict: kept v{0}</value>
+  </data>
+  <data name="EvalPassedLine" xml:space="preserve">
+    <value>Passed: baseline {0}/{1}, candidate {2}/{3}</value>
+  </data>
+  <data name="PendingCount" xml:space="preserve">
+    <value>Pending {0}</value>
+  </data>
+  <data name="ApproveOutsideWorkspace" xml:space="preserve">
+    <value>{0}
+
+Tool: {1}
+Allow this access?</value>
+  </data>
+  <data name="AskOpenWithDefault" xml:space="preserve">
+    <value>Open with the default program?
+</value>
+  </data>
+  <data name="AskCopyPath" xml:space="preserve">
+    <value>Path not found: {0}
+
+Copy this path?</value>
+  </data>
+  <data name="FileTooLarge" xml:space="preserve">
+    <value>File too large ({0:0.#} MB); not previewed.</value>
+  </data>
+  <data name="BrowserLockedOverlay" xml:space="preserve">
+    <value>Locked: the Agent controls the page
+Click Unlock above to use it yourself</value>
+  </data>
+  <data name="MentionRow" xml:space="preserve">
+    <value>{0} turns · {1}</value>
+  </data>
+  <data name="PickAttachments" xml:space="preserve">
+    <value>Pick attachments (up to {0})</value>
+  </data>
+  <data name="AttachmentSummary" xml:space="preserve">
+    <value>📎 {0}/{1}: {2} (click to clear)</value>
+  </data>
+  <data name="暂无对话" xml:space="preserve">
+    <value>No conversation yet</value>
+  </data>
+  <data name="思考中…" xml:space="preserve">
+    <value>Thinking…</value>
+  </data>
+  <data name="TiledUserPrefix" xml:space="preserve">
+    <value>User: 
+</value>
+  </data>
+  <data name="移除项目" xml:space="preserve">
+    <value>Remove project</value>
+  </data>
+  <data name="重命名" xml:space="preserve">
+    <value>Rename</value>
+  </data>
+  <data name="打开所有活动会话" xml:space="preserve">
+    <value>Open all active sessions</value>
+  </data>
+  <data name="关闭所有非活动会话" xml:space="preserve">
+    <value>Close all inactive sessions</value>
+  </data>
+  <data name="平铺视图" xml:space="preserve">
+    <value>Tiled view</value>
+  </data>
+  <data name="关闭右侧所有页面" xml:space="preserve">
+    <value>Close all right-side pages</value>
+  </data>
+  <data name="关闭左侧所有页面" xml:space="preserve">
+    <value>Close all left-side pages</value>
+  </data>
+  <data name="关闭所有 Worker 会话" xml:space="preserve">
+    <value>Close all Worker sessions</value>
+  </data>
+  <data name="关闭所有 Loop 会话" xml:space="preserve">
+    <value>Close all Loop sessions</value>
+  </data>
+  <data name="关闭其他页面" xml:space="preserve">
+    <value>Close other pages</value>
+  </data>
+  <data name="关闭全部页面" xml:space="preserve">
+    <value>Close all pages</value>
+  </data>
+  <data name="用当前模型重新总结会话标题" xml:space="preserve">
+    <value>Re-summarize the session title with the current model</value>
+  </data>
+  <data name="添加附件（也可拖放或粘贴文件/图片）" xml:space="preserve">
+    <value>Add attachments (drag-drop or paste files/images)</value>
+  </data>
+  <data name="（点击在资源管理器中打开）" xml:space="preserve">
+    <value> (click to open in Explorer)</value>
+  </data>
+  <data name="点击查看特征与规则" xml:space="preserve">
+    <value>Click to view features and rules</value>
+  </data>
+  <data name="点击查看考核题" xml:space="preserve">
+    <value>Click to view tasks</value>
+  </data>
+  <data name="网页" xml:space="preserve">
+    <value>Page</value>
+  </data>
+  <data name="关闭网页" xml:space="preserve">
+    <value>Close page</value>
+  </data>
+  <data name="无法打开网址" xml:space="preserve">
+    <value>Cannot open the URL</value>
+  </data>
+  <data name="文件" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="标题已更新" xml:space="preserve">
+    <value>Title updated</value>
+  </data>
+  <data name="标题未变化" xml:space="preserve">
+    <value>Title unchanged</value>
+  </data>
+  <data name="总结失败" xml:space="preserve">
+    <value>Summarize failed</value>
+  </data>
+  <data name="/btw 后面要写具体请求，例如：/btw 顺便看看还有哪些调用点。" xml:space="preserve">
+    <value>/btw needs a concrete request, e.g. /btw also check for other call sites.</value>
+  </data>
+  <data name="缺少请求" xml:space="preserve">
+    <value>Missing request</value>
+  </data>
+  <data name="/complain 后面要写具体不满，例如：/complain 它没查调用点就改了方法签名。" xml:space="preserve">
+    <value>/complain needs a concrete complaint, e.g. /complain it changed the method signature without checking call sites.</value>
+  </data>
+  <data name="缺少内容" xml:space="preserve">
+    <value>Missing content</value>
+  </data>
+  <data name="/report 后面要写观察，例如：/report 改模型后按钮仍显示旧值。" xml:space="preserve">
+    <value>/report needs an observation, e.g. /report the button still shows the old value after switching models.</value>
+  </data>
+  <data name="请先停止当前任务，再压缩上下文。" xml:space="preserve">
+    <value>Stop the current task before compacting context.</value>
+  </data>
+  <data name="正在运行" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="上一次压缩还没结束，请稍候。" xml:space="preserve">
+    <value>The previous compaction is still running; wait a moment.</value>
+  </data>
+  <data name="正在压缩" xml:space="preserve">
+    <value>Compacting</value>
+  </data>
+  <data name="/fork 后面要写具体请求，例如：/fork 继续把第二项改完。" xml:space="preserve">
+    <value>/fork needs a concrete request, e.g. /fork finish the second item.</value>
+  </data>
+  <data name="Worker 不认识这个会话。" xml:space="preserve">
+    <value>The Worker does not know this session.</value>
+  </data>
+  <data name="压缩失败" xml:space="preserve">
+    <value>Compaction failed</value>
+  </data>
+  <data name="没有可压缩的上下文。" xml:space="preserve">
+    <value>Nothing to compact.</value>
+  </data>
+  <data name="未压缩" xml:space="preserve">
+    <value>Not compacted</value>
+  </data>
+  <data name="未执行" xml:space="preserve">
+    <value>Not executed</value>
+  </data>
+  <data name="已交给会话执行" xml:space="preserve">
+    <value>Handed to the session</value>
+  </data>
+  <data name="未记录" xml:space="preserve">
+    <value>Not recorded</value>
+  </data>
+  <data name="已记录" xml:space="preserve">
+    <value>Recorded</value>
+  </data>
+  <data name="自动（目录 / 内置表）" xml:space="preserve">
+    <value>Auto (catalog / built-in table)</value>
+  </data>
+  <data name="工作目录不存在：" xml:space="preserve">
+    <value>Working directory does not exist: </value>
+  </data>
+  <data name="请选择工作目录" xml:space="preserve">
+    <value>Pick a working directory</value>
+  </data>
+  <data name="附件不可用" xml:space="preserve">
+    <value>Attachments unavailable</value>
+  </data>
+  <data name="本次执行到达步数上限。" xml:space="preserve">
+    <value>Step limit reached.</value>
+  </data>
+  <data name="预算用尽" xml:space="preserve">
+    <value>Budget exhausted</value>
+  </data>
+  <data name="执行失败" xml:space="preserve">
+    <value>Run failed</value>
+  </data>
+  <data name="先运行一次，账本初始化后再看。" xml:space="preserve">
+    <value>Run once; come back after the ledger initializes.</value>
+  </data>
+  <data name="暂无激活集" xml:space="preserve">
+    <value>No activation set yet</value>
+  </data>
+  <data name="读取失败" xml:space="preserve">
+    <value>Read failed</value>
+  </data>
+  <data name="先在设置里选择模型。" xml:space="preserve">
+    <value>Pick a model in Settings first.</value>
+  </data>
+  <data name="未更替" xml:space="preserve">
+    <value>Not adopted</value>
+  </data>
+  <data name="已更替" xml:space="preserve">
+    <value>Adopted</value>
+  </data>
+  <data name="演进失败" xml:space="preserve">
+    <value>Evolution failed</value>
+  </data>
+  <data name="当前已是最早版本。" xml:space="preserve">
+    <value>This is already the earliest version.</value>
+  </data>
+  <data name="没有更早的版本" xml:space="preserve">
+    <value>No earlier version</value>
+  </data>
+  <data name="回滚失败" xml:space="preserve">
+    <value>Rollback failed</value>
+  </data>
+  <data name="登记规则失败" xml:space="preserve">
+    <value>Failed to register the rule</value>
+  </data>
+  <data name="先打开「选择」并勾选要处理的对话。" xml:space="preserve">
+    <value>Open "Select" and tick the conversations to work on.</value>
+  </data>
+  <data name="未选择对话" xml:space="preserve">
+    <value>No conversation selected</value>
+  </data>
+  <data name="宿主没有提供 Loop 入口。" xml:space="preserve">
+    <value>The host provides no Loop entry.</value>
+  </data>
+  <data name="无法转交" xml:space="preserve">
+    <value>Cannot hand over</value>
+  </data>
+  <data name="请先停止当前任务，再删除对话。" xml:space="preserve">
+    <value>Stop the current task before deleting conversations.</value>
+  </data>
+  <data name="请先停止当前任务，再撤回对话。" xml:space="preserve">
+    <value>Stop the current task before reverting conversations.</value>
+  </data>
+  <data name="撤回完成" xml:space="preserve">
+    <value>Revert finished</value>
+  </data>
+  <data name="继续？" xml:space="preserve">
+    <value>Continue?</value>
+  </data>
+  <data name="先出计划（谁升版、改了什么），确认后编译并换 A/I，最后重启壳（界面会短暂退出）" xml:space="preserve">
+    <value>Plan first (who is bumped, what changed), then compile and swap A/I once confirmed, and finally restart the shell (the UI briefly exits)</value>
+  </data>
+  <data name="提交托管仓库里的改动（工作树干净时不可用）" xml:space="preserve">
+    <value>Commit changes in the managed repos (unavailable with a clean tree)</value>
+  </data>
+  <data name="提交并推送到远端（工作树干净时不可用）" xml:space="preserve">
+    <value>Commit and push to the remote (unavailable with a clean tree)</value>
+  </data>
+  <data name="把 A/I 退回上一版本，壳保持当前版本（没有上一版本时不可用）" xml:space="preserve">
+    <value>Revert A/I to the previous version, keeping the current shell (unavailable when there is no previous version)</value>
+  </data>
+  <data name="请先在设置里填写接口地址、模型。" xml:space="preserve">
+    <value>Set the base URL and model in Settings first.</value>
+  </data>
+  <data name="状态: 运行中" xml:space="preserve">
+    <value>Status: running</value>
+  </data>
+  <data name="状态: error" xml:space="preserve">
+    <value>Status: error</value>
+  </data>
+  <data name="Loop 执行失败" xml:space="preserve">
+    <value>Loop run failed</value>
+  </data>
+  <data name="状态: stopped" xml:space="preserve">
+    <value>Status: stopped</value>
+  </data>
+  <data name="/complain 后面要写具体不满，例如：/complain 它没看证据就下了结论。" xml:space="preserve">
+    <value>/complain needs a concrete complaint, e.g. /complain it concluded without looking at the evidence.</value>
+  </data>
+  <data name="/report 后面要写观察，例如：/report harness 思考链闪现太快。" xml:space="preserve">
+    <value>/report needs an observation, e.g. /report the reasoning flash is too fast.</value>
+  </data>
+  <data name="请先停止当前任务，再分叉对话。" xml:space="preserve">
+    <value>Stop the current task before forking the conversation.</value>
+  </data>
+  <data name="当前会话还没有历史。" xml:space="preserve">
+    <value>This session has no history yet.</value>
+  </data>
+  <data name="没有可压缩的上下文" xml:space="preserve">
+    <value>Nothing to compact</value>
+  </data>
+  <data name="请先选择模型。" xml:space="preserve">
+    <value>Pick a model first.</value>
+  </data>
+  <data name="状态: 压缩上下文…" xml:space="preserve">
+    <value>Status: compacting context…</value>
+  </data>
+  <data name="上下文太短，没有可压缩的中间部分。" xml:space="preserve">
+    <value>The context is too short to compact a middle section.</value>
+  </data>
+  <data name="宿主没有提供 Worker 入口。" xml:space="preserve">
+    <value>The host provides no Worker entry.</value>
+  </data>
+  <data name="状态: 正在提交…" xml:space="preserve">
+    <value>Status: committing…</value>
+  </data>
+  <data name="状态: 正在提交并推送…" xml:space="preserve">
+    <value>Status: committing and pushing…</value>
+  </data>
+  <data name="状态: 没有改动" xml:space="preserve">
+    <value>Status: no changes</value>
+  </data>
+  <data name="工作树是干净的，没有可提交的改动。" xml:space="preserve">
+    <value>The working tree is clean; nothing to commit.</value>
+  </data>
+  <data name="提交失败" xml:space="preserve">
+    <value>Commit failed</value>
+  </data>
+  <data name="状态: 提交失败" xml:space="preserve">
+    <value>Status: commit failed</value>
+  </data>
+  <data name="状态: 当前已经是上一轮之前的版本" xml:space="preserve">
+    <value>Status: already at the version before the previous round</value>
+  </data>
+  <data name="状态: 正在退回…" xml:space="preserve">
+    <value>Status: reverting…</value>
+  </data>
+  <data name="状态: 已退回上一版本（壳未变）" xml:space="preserve">
+    <value>Status: reverted to the previous version (shell unchanged)</value>
+  </data>
+  <data name="（壳未变）" xml:space="preserve">
+    <value> (shell unchanged)</value>
+  </data>
+  <data name="已退回上一版本" xml:space="preserve">
+    <value>Reverted to the previous version</value>
+  </data>
+  <data name="状态: 退回未全部成功" xml:space="preserve">
+    <value>Status: revert did not fully succeed</value>
+  </data>
+  <data name="worker 忙就等这一轮跑完再试。" xml:space="preserve">
+    <value>If the worker is busy, wait for this turn to finish and retry.</value>
+  </data>
+  <data name="退回失败" xml:space="preserve">
+    <value>Revert failed</value>
+  </data>
+  <data name="状态: 退回失败" xml:space="preserve">
+    <value>Status: revert failed</value>
+  </data>
+  <data name="状态: 迭代中…" xml:space="preserve">
+    <value>Status: iterating…</value>
+  </data>
+  <data name="状态: 迭代失败" xml:space="preserve">
+    <value>Status: iteration failed</value>
+  </data>
+  <data name="迭代失败" xml:space="preserve">
+    <value>Iteration failed</value>
+  </data>
+  <data name="TooManyAttachmentsBody" xml:space="preserve">
+    <value>The current model allows at most {0} attachments</value>
+  </data>
+  <data name="CopiedTurns" xml:space="preserve">
+    <value>Copied {0} conversations.</value>
+  </data>
+  <data name="StepsCostLine" xml:space="preserve">
+    <value>{0} steps · cost {1}</value>
+  </data>
+  <data name="RolledBackTo" xml:space="preserve">
+    <value>: reverted to v{0} (new version v{1})</value>
+  </data>
+  <data name="StatusStepsCost" xml:space="preserve">
+    <value>{0} · {1} steps · cost {2}</value>
+  </data>
+  <data name="RevertedTurns" xml:space="preserve">
+    <value>Reverted {0} conversations</value>
+  </data>
+  <data name="ConfirmRevert" xml:space="preserve">
+    <value>Revert one version?
+{0}
+The shell keeps its current version.</value>
+  </data>
+  <data name="RevertRestoreFailed" xml:space="preserve">
+    <value>
+Restore failed</value>
+  </data>
+  <data name="，工作区已还原（.gitignore 除外）" xml:space="preserve">
+    <value>, the workspace was restored (except .gitignore)</value>
+  </data>
+  <data name="（该轮没有可用快照，未还原文件）" xml:space="preserve">
+    <value>(that round has no usable snapshot, so no files were restored)</value>
+  </data>
+  <data name="附件太多" xml:space="preserve">
+    <value>Too many attachments</value>
+  </data>
+  <data name="已压缩上下文" xml:space="preserve">
+    <value>Context compacted</value>
+  </data>
+  <data name="已复制" xml:space="preserve">
+    <value>Copied</value>
+  </data>
+  <data name="退回上一版本" xml:space="preserve">
+    <value>Revert one version</value>
+  </data>
+  <data name="任务完成" xml:space="preserve">
+    <value>Task finished</value>
+  </data>
+  <data name="已回滚" xml:space="preserve">
+    <value>Rolled back</value>
+  </data>
+  <data name="规则已登记" xml:space="preserve">
+    <value>Rule registered</value>
+  </data>
+  <data name="请先打开一个会话，Loop 需要工作区。" xml:space="preserve">
+    <value>Open a session first; Loop needs a workspace.</value>
+  </data>
+  <data name="准备自动更新" xml:space="preserve">
+    <value>Preparing auto-update</value>
+  </data>
+  <data name="自动更新 A/I" xml:space="preserve">
+    <value>Auto-update A/I</value>
+  </data>
+  <data name="开始构建并换版 A/I，期间别关界面。" xml:space="preserve">
+    <value>Building and swapping A/I; do not close the window meanwhile.</value>
+  </data>
+  <data name="自动更新" xml:space="preserve">
+    <value>Auto-update</value>
+  </data>
+  <data name="自动更新未完成" xml:space="preserve">
+    <value>Auto-update did not finish</value>
+  </data>
+  <data name="未找到 git" xml:space="preserve">
+    <value>git not found</value>
+  </data>
+  <data name="上游有更新" xml:space="preserve">
+    <value>Upstream has updates</value>
+  </data>
+  <data name="源码有更新" xml:space="preserve">
+    <value>Source has updates</value>
+  </data>
+  <data name="源码过旧" xml:space="preserve">
+    <value>Source is older</value>
+  </data>
+  <data name=" 同步失败" xml:space="preserve">
+    <value> sync failed</value>
+  </data>
+  <data name=" 已换 fork" xml:space="preserve">
+    <value> switched to a fork</value>
+  </data>
+  <data name="还有会话在运行" xml:space="preserve">
+    <value>Sessions are still running</value>
+  </data>
+  <data name="没有可复制的对话。" xml:space="preserve">
+    <value>Nothing to copy.</value>
+  </data>
+  <data name="删除会话" xml:space="preserve">
+    <value>Delete session</value>
+  </data>
+  <data name="已保存，重启 OpenLoop 后生效。" xml:space="preserve">
+    <value>Saved; takes effect after restarting OpenLoop.</value>
+  </data>
+  <data name="主题" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="设置失败" xml:space="preserve">
+    <value>Settings failed</value>
+  </data>
+  <data name="保存失败" xml:space="preserve">
+    <value>Save failed</value>
+  </data>
+  <data name="回滚" xml:space="preserve">
+    <value>Roll back</value>
+  </data>
+  <data name="删除对话" xml:space="preserve">
+    <value>Delete conversations</value>
+  </data>
+  <data name="撤回对话" xml:space="preserve">
+    <value>Revert conversations</value>
+  </data>
+  <data name="HarnessPromptObject" xml:space="preserve">
+    <value>Edit prompt</value>
+  </data>
+  <data name="HarnessAgentsObject" xml:space="preserve">
+    <value>Edit AGENTS.md</value>
+  </data>
+  <data name="Harness 只改当前工作区的可演进对象（Prompt / Skill / Rule / Limit / Guard）；" xml:space="preserve">
+    <value>Harness only changes this workspace's evolvable objects (Prompt / Skill / Rule / Limit / Guard); </value>
+  </data>
+  <data name="系统提示词与 AGENTS.md 经目标会话由模型落盘；考核题 A/B 更好才采纳。" xml:space="preserve">
+    <value>the system prompt and AGENTS.md are written by the model through the target session; a task is adopted only if A/B shows it is better.</value>
+  </data>
+  <data name="在右侧栏用当前上下文跑一个只读旁路任务" xml:space="preserve">
+    <value>Run a read-only side task in the right panel with the current context</value>
+  </data>
+  <data name="把对 Worker 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）" xml:space="preserve">
+    <value>Send a complaint about the Worker's behavior to the Loop (no context attached; the Loop reads the source session as needed)</value>
+  </data>
+  <data name="把一条值得改进的观察记入 findings（不立即处理，演进时分诊）" xml:space="preserve">
+    <value>Record an improvement observation as a finding (not handled immediately; triaged during evolution)</value>
+  </data>
+  <data name="打开目标会话：左栏显示系统提示词模板，用聊天让 agent 改" xml:space="preserve">
+    <value>Open on the target session: the system prompt template shows on the left; ask the agent to edit it in chat</value>
+  </data>
+  <data name="打开目标会话：左栏显示 AGENTS.md，用聊天让 agent 改" xml:space="preserve">
+    <value>Open on the target session: AGENTS.md shows on the left; ask the agent to edit it in chat</value>
+  </data>
+  <data name="把较早的对话压缩成摘要，省下上下文" xml:space="preserve">
+    <value>Compact earlier turns into a summary to save context</value>
+  </data>
+  <data name="复制当前上下文开一个新会话（可继续对话）并跳转" xml:space="preserve">
+    <value>Fork the current context into a new session (keeps chatting) and jump to it</value>
+  </data>
+  <data name="打开右侧 Puppet Action 清单；/puppet &lt;action&gt; &lt;参数&gt; 直接执行" xml:space="preserve">
+    <value>Open the Puppet action list in the right panel; /puppet &lt;action&gt; &lt;params&gt; runs one directly</value>
+  </data>
+  <data name="开一个新会话，沿用当前的模型与强度" xml:space="preserve">
+    <value>Start a new session with the current model and effort</value>
+  </data>
+  <data name="把对 Loop 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）" xml:space="preserve">
+    <value>Send a complaint about the Loop's own behavior (no context attached; it reads the source session as needed)</value>
+  </data>
+  <data name="复制当前上下文开一个新的 Loop 会话（可继续对话）并跳转" xml:space="preserve">
+    <value>Fork the current context into a new Loop session (keeps chatting) and jump to it</value>
+  </data>
+  <data name="盘点来源会话的避坑经验与各组件优化点，新开 Loop 会话等确认后实施" xml:space="preserve">
+    <value>Inventory the source session's pitfalls and each component's improvements in a new Loop session, and act after confirmation</value>
+  </data>
+  <data name="盘点同上并直接实施（不切会话）" xml:space="preserve">
+    <value>Same inventory, but act right away (no session switch)</value>
+  </data>
+  <data name="开一个新的 Loop 会话，沿用当前的模型与强度" xml:space="preserve">
+    <value>Start a new Loop session with the current model and effort</value>
+  </data>
+  <data name="自动更新完成" xml:space="preserve">
+    <value>Auto-update finished</value>
+  </data>
+  <data name="壳：" xml:space="preserve">
+    <value>Shell: </value>
+  </data>
+  <data name="配置写入本地。" xml:space="preserve">
+    <value>Saved locally.</value>
+  </data>
+  <data name="设置已保存" xml:space="preserve">
+    <value>Settings saved</value>
+  </data>
+  <data name="SessionsStillRunning" xml:space="preserve">
+    <value>These sessions are still running:
+</value>
+  </data>
+  <data name="ConfirmAutoUpdateBusy" xml:space="preserve">
+    <value>
+
+Updating now interrupts them. Continue?</value>
+  </data>
+  <data name="ConfirmRestartBusy" xml:space="preserve">
+    <value>
+
+Restarting the shell now interrupts them. Continue anyway?</value>
+  </data>
+  <data name="（有会话在跑，到时会先问你）" xml:space="preserve">
+    <value> (sessions are running; it will ask first)</value>
+  </data>
+  <data name="撤回对话、迭代与版本溯源都依赖 git，请安装并加入 PATH 后重启。" xml:space="preserve">
+    <value>Reverting turns, iteration and version tracing all need git; install it, add it to PATH and restart.</value>
+  </data>
+  <data name="更新源码、放弃迭代，或用 Puppet 自愈。" xml:space="preserve">
+    <value>Update the sources, skip iteration, or heal it through Puppet.</value>
+  </data>
+  <data name="无需升版" xml:space="preserve">
+    <value>No bump needed</value>
+  </data>
+  <data name="已有迭代在跑" xml:space="preserve">
+    <value>An iteration is already running</value>
+  </data>
+  <data name="新壳没起来，已回退旧版本" xml:space="preserve">
+    <value>The new shell did not start; rolled back to the old version</value>
+  </data>
+  <data name="无会话" xml:space="preserve">
+    <value>No session</value>
+  </data>
+  <data name="未知" xml:space="preserve">
+    <value>unknown</value>
+  </data>
+  <data name="反馈 " xml:space="preserve">
+    <value>Feedback </value>
+  </data>
+  <data name="分叉 " xml:space="preserve">
+    <value>Fork </value>
+  </data>
+  <data name="转交 " xml:space="preserve">
+    <value>Handover </value>
+  </data>
+  <data name="配置 " xml:space="preserve">
+    <value>Settings </value>
+  </data>
+  <data name="[立即] " xml:space="preserve">
+    <value>[Now] </value>
+  </data>
+  <data name="[等本轮] " xml:space="preserve">
+    <value>[After turn] </value>
   </data>
 </root>
