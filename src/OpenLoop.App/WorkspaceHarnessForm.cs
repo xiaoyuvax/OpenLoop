@@ -136,14 +136,14 @@ namespace OpenLoop.App
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, Dip(44)));
 
             var table = new AntdUI.Table
             {
                 Dock = DockStyle.Fill,
                 Bordered = false,
                 VisibleHeader = true,
-                RowHeight = 40,
+                RowHeight = Dip(40),
                 MultipleRows = true,
                 EmptyText = Localization.T("HarnessObjectsEmpty"),
                 Margin = new Padding(0, 0, 0, 4)
@@ -189,16 +189,20 @@ namespace OpenLoop.App
             page.Controls.Add(layout);
         }
 
+        /// <summary>96-DPI 设计值 → 本屏物理像素（运行期 new 的控件不参与设计器自动缩放）。</summary>
+        private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
+
         private AntdUI.Button MakeButton(string text, string icon, int width)
         {
-            // AntdUI.Button 放进 FlowLayoutPanel 也要显式给尺寸，否则会算成 0
+            // AntdUI.Button 放进 FlowLayoutPanel 也要显式给尺寸，否则会算成 0；尺寸必须是物理像素，
+            // 否则 250% 下按钮只有一半大、字号却按设计器缩放过，文字就被裁掉、行高也压住下一行
             var button = new AntdUI.Button
             {
                 Text = text,
-                Radius = 8,
-                Size = new Size(width, 30),
+                Radius = Dip(8),
+                Size = new Size(Dip(width), Dip(30)),
                 IconSvg = UiIcons.Of(icon, UiStyle.Text),
-                Margin = new Padding(0, 4, 8, 4)
+                Margin = new Padding(0, Dip(4), Dip(8), Dip(4))
             };
             return button;
         }

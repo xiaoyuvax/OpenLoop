@@ -89,6 +89,9 @@
   <data name="ApproveTitle" xml:space="preserve">
     <value>需要确认</value>
   </data>
+  <data name="AboutVersions" xml:space="preserve">
+    <value>组件版本</value>
+  </data>
   <data name="AppSubtitle" xml:space="preserve">
     <value>一个可自我迭代的开放式Agent</value>
   </data>

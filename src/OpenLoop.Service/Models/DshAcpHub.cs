@@ -192,35 +192,13 @@ namespace OpenLoop.Service.Models
         }
 
         /// <summary>
-        /// 把 <c>dsh</c> 解析成真正能 CreateProcess 的东西：.exe 直接跑；
-        /// npm 的 .cmd/.bat 垫片交给 <c>cmd.exe /c &lt;shim&gt;</c>（CreateProcess 只补 .exe）。
+        /// 把 <c>dsh</c> 解析成真正能 CreateProcess 的东西。规则与 Shell 工具共用
+        /// <see cref="OpenLoop.Core.Safety.ExecutableResolver"/>：.exe 直接跑，npm 的 .cmd/.bat 垫片走 cmd.exe /c。
         /// </summary>
         internal static (string Command, List<string> PrefixArgs) ResolveCommand(string command)
         {
-            if (string.IsNullOrWhiteSpace(command)) return (command, []);
-            bool hasPath = command.Contains(Path.DirectorySeparatorChar) || command.Contains('/');
-
-            if (hasPath)
-            {
-                bool shim = command.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
-                            command.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
-                return shim ? ("cmd.exe", ["/c", command]) : (command, []);
-            }
-
-            bool windows = OperatingSystem.IsWindows();
-            string[] extensions = windows ? [".exe", ".cmd", ".bat", ""] : [""];
-            foreach (string dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
-            {
-                if (string.IsNullOrWhiteSpace(dir)) continue;
-                foreach (string extension in extensions)
-                {
-                    string candidate = Path.Combine(dir.Trim('"'), command + extension);
-                    if (!File.Exists(candidate)) continue;
-                    if (extension is ".cmd" or ".bat") return ("cmd.exe", ["/c", candidate]);
-                    return (candidate, []);
-                }
-            }
-            return (command, []);
+            var (fileName, prefix, error) = OpenLoop.Core.Safety.ExecutableResolver.Resolve(command);
+            return error == null ? (fileName, prefix) : (command, []);
         }
     }
 }

@@ -45,6 +45,8 @@ namespace OpenLoop.App
         private AntdUI.TabPage _tabDragDown;
         private Point _tabDragFrom;
         /// <summary>拖入进行中：把「平铺视图」页签头画成可落点高亮。</summary>
+        private bool _tabDragActive;
+        /// <summary>拖入光标正压住「平铺视图」页签头：强高亮 + Hand。</summary>
         private bool _tabDragToTiled;
         /// <summary>拖出进行中：平铺视图报上来的悬停页签，画成可落点高亮（null = 不画）。</summary>
         private AntdUI.TabPage _tabDropTarget;
@@ -2340,11 +2342,13 @@ namespace OpenLoop.App
             _tabDragDown = e.Button == MouseButtons.Left ? _tabs.ContainsTabPage(e.X, e.Y) : null;
             _tabDragFrom = e.Location;
             _tabDragToTiled = false;
+            _tabDragActive = false;
             _tabDropTarget = null;
         }
 
         /// <summary>
-        /// 拖动中的视觉反馈：指针随落点变化，「平铺视图」页签头进入可落区时高亮。
+        /// 拖动中的视觉反馈：一离开原位就进入可拖入态（指针 SizeAll），
+        /// 压住「平铺视图」页签头 = 指针变 Hand + 页签头高亮（可落点）。
         /// 按下后系统自动 Capture，MouseMove 全程发回 _tabs，这里按客户坐标判悬停。
         /// </summary>
         private void OnTabTiledDragMove(object sender, MouseEventArgs e)
@@ -2352,6 +2356,11 @@ namespace OpenLoop.App
             if (_tabDragDown == null || e.Button != MouseButtons.Left) return;
             if (Math.Abs(e.X - _tabDragFrom.X) < 4 && Math.Abs(e.Y - _tabDragFrom.Y) < 4) return;
             if (_tiledPage == null || _tabDragDown == _tiledPage) return;
+            if (!_tabDragActive)
+            {
+                _tabDragActive = true;
+                _tabs.Invalidate();
+            }
             bool overTiled = _tabs.ContainsTabPage(e.X, e.Y) == _tiledPage;
             if (overTiled != _tabDragToTiled)
             {
@@ -2366,6 +2375,7 @@ namespace OpenLoop.App
         {
             _tabDragDown = null;
             _tabDragToTiled = false;
+            _tabDragActive = false;
             _tabDropTarget = null;
             _tabs.Invalidate();
             Cursor = Cursors.Default;
@@ -2380,15 +2390,25 @@ namespace OpenLoop.App
         private void OnTabsPaintDropHint(object sender, AntdUI.DrawEventArgs e)
         {
             AntdUI.TabPage hint = null;
-            if (_tabDragToTiled) hint = _tiledPage;
-            else if (_tabDropTarget != null) hint = _tabDropTarget;
+            bool strong = false;
+            if (_tabDragToTiled) { hint = _tiledPage; strong = true; }
+            else if (_tabDragActive) { hint = _tiledPage; }   // 拖入全程：弱高亮提示落区
+            else if (_tabDropTarget != null) { hint = _tabDropTarget; strong = true; }
             if (hint == null) return;
             int index = _tabs.Pages.IndexOf(hint);
             if (index < 0) return;
             var rect = _tabs.Style?.GetTabRect(index).Rect ?? Rectangle.Empty;
             if (rect.Width <= 0) return;
-            using var pen = new Pen(UiStyle.Accent, 2);
-            e.Canvas.Draw(pen, rect);
+            if (strong)
+            {
+                using var pen = new Pen(UiStyle.Accent, 2);
+                e.Canvas.Draw(pen, rect);
+            }
+            else
+            {
+                using var soft = new Pen(Color.FromArgb(120, UiStyle.Accent), 1);
+                e.Canvas.Draw(soft, rect);
+            }
         }
 
         private void OnTabTiledDragUp(object sender, MouseEventArgs e)
@@ -2398,8 +2418,12 @@ namespace OpenLoop.App
             if (page == null || e.Button != MouseButtons.Left) return;
             if (Math.Abs(e.X - _tabDragFrom.X) < 4 && Math.Abs(e.Y - _tabDragFrom.Y) < 4) return;
             if (page == _tiledPage || page.Tag is not (Session or LoopView)) return;
-            // 落点必须正好压在「平铺视图」页签头上
-            if (_tiledPage == null || _tabs.ContainsTabPage(e.X, e.Y) != _tiledPage) return;
+            // 落点在标签栏内的任意位置都算拖入：拖动的页正处于选中态，
+            // 平铺内容区看不见，页签头那一小条对准太苛刻；
+            // 要「拖出」到具体页签的路径走 OnTiledDetach（平铺方块 → 标签头），方向不同
+            if (_tiledPage == null) return;
+            if (!_tabs.RectangleToScreen(_tabs.ClientRectangle)
+                .Contains(_tabs.PointToScreen(e.Location))) return;
             // AntdUI 还要在这次 MouseUp 里做 DragOrder 内部重排：别在它处理集合时同步改
             // Pages（IndexOf 会拿到 -1），把收编与选中留到消息循环下一轮
             BeginInvoke(new Action(() =>
@@ -2726,8 +2750,8 @@ namespace OpenLoop.App
 
         private void OnSettings(object sender, EventArgs e) => OpenSettings();
 
-        /// <summary>Puppet 用：与「关于」弹窗同一份版本数据（壳 / Worker / Loop）。</summary>
-        public string Versions => string.Join(" | ", VersionLines());
+        /// <summary>Puppet 用：与「关于」窗口同一份版本数据（壳 / Worker / Loop）。</summary>
+        public string Versions => string.Join(" | ", AboutForm.VersionLines());
 
         /// <summary>Puppet 用：主菜单的条目文本（确认「关于」在菜单里）。</summary>
         public string MenuTexts
@@ -2742,47 +2766,10 @@ namespace OpenLoop.App
         }
 
         private void ShowAbout()
-            => MessageBox.Show(this, string.Join(Environment.NewLine, VersionLines()),
-                Localization.T("MenuAbout"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-        /// <summary>各部件版本：壳取自身 exe，A/I 取运行中的 runtime/&lt;role&gt;.json，没跑就退回 exe。</summary>
-        private string[] VersionLines() =>
-        [
-            Localization.T("壳：") + OrUnknown(ExeVersion(Application.ExecutablePath)),
-            "Worker：" + OrUnknown(RoleVersion(global::OpenLoop.Service.Bus.BusRoles.A)),
-            "Loop：" + OrUnknown(RoleVersion(global::OpenLoop.Service.Bus.BusRoles.I))
-        ];
-
-        private static string RoleVersion(string role)
         {
-            var runtime = global::OpenLoop.Service.Runtime.RuntimeInfo.TryLoad(
-                global::OpenLoop.Service.Runtime.AppPaths.RuntimeFile(role));
-            if (!string.IsNullOrWhiteSpace(runtime?.Version)) return runtime.Version;
-
-            var store = new global::OpenLoop.Service.Shell.VersionStore();
-            string exe = store.Exe(role);
-            if (string.IsNullOrWhiteSpace(exe))
-                exe = System.IO.Path.Combine(AppContext.BaseDirectory, "backends",
-                    global::OpenLoop.Service.Shell.VersionStore.ExeName(role));
-            return ExeVersion(exe);
+            using var dialog = new AboutForm();
+            dialog.ShowDialog(this);
         }
-
-        private static string ExeVersion(string exe)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe)) return "";
-                string raw = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe).ProductVersion ?? "";
-                return global::OpenLoop.Service.Source.SourceSync.ParseVersion(raw);
-            }
-            catch
-            {
-                return "";
-            }
-        }
-
-        private static string OrUnknown(string version)
-            => string.IsNullOrWhiteSpace(version) ? Localization.T("未知") : version;
 
         private void ApplyLanguage(string language)
         {

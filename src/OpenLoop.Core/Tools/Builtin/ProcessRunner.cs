@@ -12,15 +12,21 @@ namespace OpenLoop.Core.Tools.Builtin
             IReadOnlyList<string> argv, string workingDirectory, int timeoutSeconds, CancellationToken ct,
             bool inheritEnvironment = false)
         {
+            // PATH 里的 npm 垫片（ocr、npx…）只补扩展名找不到，CreateProcess 直接报「找不到文件」
+            var (fileName, prefix, resolveError) = ExecutableResolver.Resolve(
+                argv[0], argv.Skip(1).ToList());
+            if (resolveError != null) return AgentToolResult.Failure("拒绝执行：" + resolveError);
+
             var psi = new ProcessStartInfo
             {
-                FileName = argv[0],
+                FileName = fileName,
                 WorkingDirectory = workingDirectory,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
+            foreach (string arg in prefix) psi.ArgumentList.Add(arg);
             for (int i = 1; i < argv.Count; i++) psi.ArgumentList.Add(argv[i]);
             ChildEnvironment.Apply(psi, inheritEnvironment);
 

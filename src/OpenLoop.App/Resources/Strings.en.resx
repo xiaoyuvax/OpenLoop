@@ -89,6 +89,9 @@ Allow?</value>
   <data name="ApproveTitle" xml:space="preserve">
     <value>Confirmation</value>
   </data>
+  <data name="AboutVersions" xml:space="preserve">
+    <value>Component versions</value>
+  </data>
   <data name="AppSubtitle" xml:space="preserve">
     <value>A self-iterating open agent</value>
   </data>
