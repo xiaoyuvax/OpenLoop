@@ -71,7 +71,7 @@
     <value>把全局与项目 AGENTS.md 注入系统提示词</value>
   </data>
   <data name="AiConfig" xml:space="preserve">
-    <value>让 AI 帮我配置</value>
+    <value>让Agent辅助我配置</value>
   </data>
   <data name="AllProviders" xml:space="preserve">
     <value>全部提供商</value>
@@ -2400,5 +2400,65 @@
   </data>
   <data name="[等本轮] " xml:space="preserve">
     <value>[等本轮] </value>
+  </data>
+  <data name="HarnessConfigTitle" xml:space="preserve">
+    <value>Harness 配置（本工作区）</value>
+  </data>
+  <data name="HarnessConfigObject" xml:space="preserve">
+    <value>Harness 配置</value>
+  </data>
+  <data name="HarnessTabRules" xml:space="preserve">
+    <value>规则</value>
+  </data>
+  <data name="HarnessTabLimits" xml:space="preserve">
+    <value>限制</value>
+  </data>
+  <data name="HarnessTabGuards" xml:space="preserve">
+    <value>护栏</value>
+  </data>
+  <data name="HarnessColName" xml:space="preserve">
+    <value>对象</value>
+  </data>
+  <data name="HarnessColParams" xml:space="preserve">
+    <value>参数</value>
+  </data>
+  <data name="HarnessObjectsEmpty" xml:space="preserve">
+    <value>这一类还没有对象</value>
+  </data>
+  <data name="HarnessEditParams" xml:space="preserve">
+    <value>改参数</value>
+  </data>
+  <data name="HarnessResetDefault" xml:space="preserve">
+    <value>参数恢复默认</value>
+  </data>
+  <data name="HarnessResetKind" xml:space="preserve">
+    <value>恢复这一类默认值</value>
+  </data>
+  <data name="HarnessResetKindAsk" xml:space="preserve">
+    <value>把「{0}」整类恢复成出厂默认？当前这一类里你自己加的项会被移除，其它类不受影响。</value>
+  </data>
+  <data name="HarnessApplied" xml:space="preserve">
+    <value>已生效：{0}（新激活版本 v{0}）</value>
+  </data>
+  <data name="HarnessApplyFailed" xml:space="preserve">
+    <value>没改成：</value>
+  </data>
+  <data name="HarnessPickOne" xml:space="preserve">
+    <value>改参数一次只能选一行。</value>
+  </data>
+  <data name="HarnessEnableFirst" xml:space="preserve">
+    <value>这个对象还没启用：先启用再改参数。</value>
+  </data>
+  <data name="HarnessNoParams" xml:space="preserve">
+    <value>这个对象没有可改的参数。</value>
+  </data>
+  <data name="HarnessParamsPlaceholder" xml:space="preserve">
+    <value>名字=值, 名字=值（例：max=2, enabled=true）</value>
+  </data>
+  <data name="HarnessKindCount" xml:space="preserve">
+    <value>本类已启用 {0} / {1} 件对象 · 勾选行用下面的按钮启停或改参数</value>
+  </data>
+  <data name="HarnessConfigPrompt" xml:space="preserve">
+    <value>Harness 配置</value>
   </data>
 </root>

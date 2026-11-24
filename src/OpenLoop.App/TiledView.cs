@@ -56,6 +56,33 @@ namespace OpenLoop.App
             if (_items.Count > 0 && !_tick.Enabled) _tick.Start();
         }
 
+        /// <summary>拖入一个普通标签页：追加成方块（同一会话已在平铺里就不重复收）。</summary>
+        internal void Add(object owner, AntdUI.TabPage page)
+        {
+            if (owner == null || page == null) return;
+            if (_items.Any(i => ReferenceEquals(i.Owner, owner))) return;
+            var item = new TiledItem
+            {
+                Owner = owner,
+                Page = page,
+                Book = owner switch
+                {
+                    Session session => session.Book,
+                    LoopView loop => loop.Book,
+                    _ => null
+                },
+                Title = () => page.Text,
+                Icon = () => page.IconSvg
+            };
+            _items.Add(item);
+            var tile = CreateTile(item);
+            _tiles.Add(tile);
+            _host.Controls.Add(tile);
+            LayoutTiles();
+            RefreshContent();
+            if (!_tick.Enabled) _tick.Start();
+        }
+
         /// <summary>去掉一个方块（拖出、关闭、删除会话）；没了就通知宿主收页。</summary>
         internal void Remove(TiledItem item)
         {

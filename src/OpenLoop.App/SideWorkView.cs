@@ -186,7 +186,7 @@ namespace OpenLoop.App
             var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess,
                 OpenCodeTools.For(_workspace, approve, settings.OpenCodeAskPermissions)
                     .Concat(DshTools.For(settings, _workspace, approve)),
-                settings.WebFetchMode);
+                settings.WebFetchMode, FeatureCatalog.WebFetchesOf(_workspace));
             TraceWriter trace;
             try
             {

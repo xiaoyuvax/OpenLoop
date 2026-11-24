@@ -404,6 +404,7 @@ namespace OpenLoop.App
             _sideBtw.ActivatePage = () => ActivatePage?.Invoke() ?? false;
             _targetPane.CloseRequested += CloseTarget;
             _harness.EditTargetRequested += OpenTarget;
+            _harness.AssistRequested += page => HarnessAssistRequested?.Invoke(page);
             ApplyDetail();
             UpdateSendButton();
             _ = RefreshRepoActionsAsync();
@@ -416,6 +417,9 @@ namespace OpenLoop.App
             _loopClient?.Dispose();
         };
         }
+
+        /// <summary>Harness 配置窗体里点了「让Agent辅助我配置」：宿主另起一个 Loop 会话按那一页逐项改。</summary>
+        internal Action<string> HarnessAssistRequested;
 
         private void OnSummarize(object sender, EventArgs e) => _ = SummarizeTitleAsync();
 
@@ -886,7 +890,7 @@ namespace OpenLoop.App
                                 includeReadSession: false))
                             // LoopApp：与 Worker 同一份工具，owner 是本 Loop 会话
                             .Concat(OpenLoop.Service.Worker.WorkerScopeRules.LoopApp(_workspace, _sessionId)),
-                        settings.WebFetchMode);
+                        settings.WebFetchMode, FeatureCatalog.WebFetchesOf(_workspace));
                     var registry = new ToolRegistry(loopTools.Tools.Concat(
                         [new OpenLoop.Core.Tools.Builtin.AskUserTool(_workspace, () => SessionTarget?.Invoke() ?? ("", -1))]));
                     string snapshot = Snapshots.Create(writeScope.Root, "loop");

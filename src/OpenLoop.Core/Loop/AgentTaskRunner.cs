@@ -68,7 +68,9 @@ namespace OpenLoop.Core.Loop
                 throw new InvalidOperationException(
                     $"任务 {task.Id} 的技能不可用：{string.Join("；", skillProblems)}");
 
-            var tools = ToolRegistry.Workspace(scope, null, skills, extra: _extraTools, webFetch: _webFetch);
+            // 上限随候选激活集走：A/B 才考得出 limit.web_fetches 变化的行为差
+            var tools = ToolRegistry.Workspace(scope, null, skills, extra: _extraTools, webFetch: _webFetch,
+                maxWebFetches: FeatureCatalog.ValueOf(activation, _features, FeatureCatalog.WebFetches, FeatureCatalog.DefaultWebFetches));
             var loop = new AgentLoop(tools, _reasonerFor(dir),
                 FeatureCatalog.PolicyFrom(activation, _features), skills: skills);
             // 基线/候选各用自己激活集里的 Prompt 与 AGENTS.md：A/B 才考得出候选文本的差别

@@ -983,7 +983,7 @@ function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot
  * 用户直配 = 改动下一个会话直接生效；A/B 评测 = Prompt / AGENTS.md 先暂存为候选包，
  * 过考核题并严格更好才激活。workspace 变了才重新拉一次，避免每次输入都请求。
  */
-function HarnessModeRow({ workspace }) {
+function HarnessModeRow({ workspace, onMode }) {
   const ws = (workspace || '').trim();
   const [mode, setMode] = useState('direct');
   const [pending, setPending] = useState([]);
@@ -997,6 +997,7 @@ function HarnessModeRow({ workspace }) {
     } catch { /* 读不到就保持默认，不打扰用户 */ }
   };
   useEffect(() => { load(); }, [ws]);
+  useEffect(() => { onMode && onMode(mode); }, [mode]);
 
   const toggle = async () => {
     if (!ws) return message.warning(t('先填工作目录'));
@@ -1014,10 +1015,10 @@ function HarnessModeRow({ workspace }) {
   return h('div', { style: { display: 'grid', gap: 6 } },
     h(Button, { size: 'small', block: true, onClick: toggle },
       mode === 'eval' ? t('模式：A/B 评测') : t('模式：用户直配')),
-    h(Muted, { style: { wordBreak: 'break-all' } },
+    mode === 'eval' ? h(Muted, { style: { wordBreak: 'break-all' } },
       pending.length
         ? t('候选包待评估：') + pending.map(k => k === 'agents' ? 'AGENTS.md' : t('系统提示词')).join(' / ')
-        : t('没有待评估的候选包')));
+        : t('没有待评估的候选包')) : null);
 }
 
 function LoopPage({ defaultWorkspace, shot, setShot }) {
@@ -1030,6 +1031,8 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
   const [model, setModel] = useState('');
   const [ruleName, setRuleName] = useState('');
   const [ruleText, setRuleText] = useState('');
+  // 直配模式下候选包 / 考核题 / 评估报告 / 演进 / 回滚都不展开（与 WinForms Harness 页同一套）
+  const [evalMode, setEvalMode] = useState(false);
   const [shellIncluded, setShellIncluded] = useState(true);
   const [publishMode, setPublishMode] = useState('framework');
   const wsRef = useRef(workspace);
@@ -1110,117 +1113,119 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
         onBlur: () => { refresh(); pollEvolve(); pollIteration(); }
       }),
       h(Muted, { style: { display: 'block', margin: '6px 0 10px' } }, ledger || '—'),
-      h(HarnessModeRow, { workspace }),
+      h(HarnessModeRow, { workspace, onMode: setEvalMode }),
 
-      h('div', { className: 'ol-section-title', style: { marginTop: 16 } }, t('演进')),
-      h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
-        t('Harness 管当前工作区的五类对象：Prompt（系统提示词模板 + AGENTS.md）、Skill、Rule、Limit、Guard（含连接重试、免费额度恢复等自愈参数）；')
-        + t('改提示词与 AGENTS.md 在桌面壳里用 /sysprompt、/agentsmd 让模型改，用户不直接编辑文本。')),
-      h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
-        t('演进是攒够证据后的一次集中分诊：harness 类出候选并过考核题，源码类写派单，未知留到下一批。')
-        + t('观察用 /report <内容> 记入 findings，只落账、不立即处理。')),
-      h(Space, { wrap: true, style: { marginBottom: 6 } },
-        h(Input, { value: model, onChange: e => setModel(e.target.value), placeholder: t('模型（留空用默认）'), style: { width: 280 } }),
-        h(Button, {
-          type: 'primary', disabled: evolve?.state === 'running',
-          onClick: async () => {
-            const ws = workspace.trim();
-            if (!ws) return message.warning(t('先填工作目录'));
-            try {
-              setEvolve(await post('/api/loop/evolve', { workspace: ws, model: model.trim(), effort: '' }));
-              setTimeout(pollEvolve, 2000);
-            } catch (e) { message.error(t('演进启动失败：') + e.message); }
-          }
-        }, t('演进')),
-        h(Button, {
-          disabled: evolve?.state !== 'running',
-          onClick: () => post('/api/loop/evolve/stop', { workspace: workspace.trim() }).catch(e => message.error(e.message))
-        }, t('停止')),
-        h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
-          h(Switch, {
-            size: 'small', checked: !!evolve?.autoEnabled,
-            onChange: async enabled => {
+      evalMode ? h('div', { style: { display: 'contents' } },
+        h('div', { className: 'ol-section-title', style: { marginTop: 16 } }, t('演进')),
+        h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
+          t('Harness 管当前工作区的五类对象：Prompt（系统提示词模板 + AGENTS.md）、Skill、Rule、Limit、Guard（含连接重试、免费额度恢复等自愈参数）；')
+          + t('改提示词与 AGENTS.md 在桌面壳里用 /sysprompt、/agentsmd 让模型改，用户不直接编辑文本。')),
+        h(Muted, { style: { display: 'block', margin: '0 0 8px' } },
+          t('演进是攒够证据后的一次集中分诊：harness 类出候选并过考核题，源码类写派单，未知留到下一批。')
+          + t('观察用 /report <内容> 记入 findings，只落账、不立即处理。')),
+        h(Space, { wrap: true, style: { marginBottom: 6 } },
+          h(Input, { value: model, onChange: e => setModel(e.target.value), placeholder: t('模型（留空用默认）'), style: { width: 280 } }),
+          h(Button, {
+            type: 'primary', disabled: evolve?.state === 'running',
+            onClick: async () => {
+              const ws = workspace.trim();
+              if (!ws) return message.warning(t('先填工作目录'));
               try {
-                const r = await post('/api/loop/auto', { workspace: workspace.trim(), enabled });
-                message.success(r.enabled ? t('自动演进已开启') : t('自动演进已关闭'));
-                pollEvolve();
-              } catch (e) { message.error(t('设置失败：') + e.message); }
+                setEvolve(await post('/api/loop/evolve', { workspace: ws, model: model.trim(), effort: '' }));
+                setTimeout(pollEvolve, 2000);
+              } catch (e) { message.error(t('演进启动失败：') + e.message); }
             }
-          }), t('自动演进'))),
-      h(Muted, { style: { display: 'block', marginBottom: 16 } }, evolveText),
+          }, t('演进')),
+          h(Button, {
+            disabled: evolve?.state !== 'running',
+            onClick: () => post('/api/loop/evolve/stop', { workspace: workspace.trim() }).catch(e => message.error(e.message))
+          }, t('停止')),
+          h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
+            h(Switch, {
+              size: 'small', checked: !!evolve?.autoEnabled,
+              onChange: async enabled => {
+                try {
+                  const r = await post('/api/loop/auto', { workspace: workspace.trim(), enabled });
+                  message.success(r.enabled ? t('自动演进已开启') : t('自动演进已关闭'));
+                  pollEvolve();
+                } catch (e) { message.error(t('设置失败：') + e.message); }
+              }
+            }), t('自动演进'))),
+        h(Muted, { style: { display: 'block', marginBottom: 16 } }, evolveText),
 
-      h('div', { className: 'ol-section-title' }, t('规则与回滚')),
-      h(Space, { wrap: true, style: { marginBottom: 16 } },
-        h(Input, { value: ruleName, onChange: e => setRuleName(e.target.value), placeholder: t('规则 id，如 rule.style'), style: { width: 220 } }),
-        h(Input, { value: ruleText, onChange: e => setRuleText(e.target.value), placeholder: t('规则内容'), style: { width: 320 } }),
-        h(Button, {
-          onClick: async () => {
-            const ws = workspace.trim();
-            if (!ws || !ruleName.trim()) return message.warning(t('工作目录和规则 id 都要填'));
-            try {
-              const r = await post('/api/loop/rule', { workspace: ws, name: ruleName.trim(), text: ruleText.trim() });
-              setRuleName(''); setRuleText('');
-              message.success(t('已登记 ') + r.id);
-              refresh();
-            } catch (e) { message.error(t('登记失败：') + e.message); }
-          }
-        }, t('登记规则')),
-        h(Popconfirm, {
-          title: t('回滚到上一版？'), description: t('会写成新版本，旧版本文件不动。'),
-          okText: t('回滚'), cancelText: t('取消'),
-          onConfirm: async () => {
-            try {
-              const r = await post('/api/loop/rollback', { workspace: workspace.trim() });
-              message.success(t('已回滚，当前 v') + r.version);
-              refresh();
-            } catch (e) { message.error(t('回滚失败：') + e.message); }
-          }
-        }, h(Button, null, t('回滚上一版')))),
+        h('div', { className: 'ol-section-title' }, t('规则与回滚')),
+        h(Space, { wrap: true, style: { marginBottom: 16 } },
+          h(Input, { value: ruleName, onChange: e => setRuleName(e.target.value), placeholder: t('规则 id，如 rule.style'), style: { width: 220 } }),
+          h(Input, { value: ruleText, onChange: e => setRuleText(e.target.value), placeholder: t('规则内容'), style: { width: 320 } }),
+          h(Button, {
+            onClick: async () => {
+              const ws = workspace.trim();
+              if (!ws || !ruleName.trim()) return message.warning(t('工作目录和规则 id 都要填'));
+              try {
+                const r = await post('/api/loop/rule', { workspace: ws, name: ruleName.trim(), text: ruleText.trim() });
+                setRuleName(''); setRuleText('');
+                message.success(t('已登记 ') + r.id);
+                refresh();
+              } catch (e) { message.error(t('登记失败：') + e.message); }
+            }
+          }, t('登记规则')),
+          h(Popconfirm, {
+            title: t('回滚到上一版？'), description: t('会写成新版本，旧版本文件不动。'),
+            okText: t('回滚'), cancelText: t('取消'),
+            onConfirm: async () => {
+              try {
+                const r = await post('/api/loop/rollback', { workspace: workspace.trim() });
+                message.success(t('已回滚，当前 v') + r.version);
+                refresh();
+              } catch (e) { message.error(t('回滚失败：') + e.message); }
+            }
+          }, h(Button, null, t('回滚上一版')))),
 
-      h('div', { className: 'ol-section-title' }, t('迭代')),
-      h(Space, { wrap: true, style: { marginBottom: 6 } },
-        h(Button, {
-          type: 'primary', disabled: iteration?.state === 'running',
-          onClick: async () => {
-            const ws = workspace.trim();
-            if (!ws) return message.warning(t('先填工作目录'));
-            try {
-              setIteration(await post('/api/loop/iteration', { workspace: ws, shell: shellIncluded, publishMode }));
-              setTimeout(pollIteration, 2000);
-            } catch (e) { message.error(t('迭代启动失败：') + e.message); }
-          }
-        }, t('开始迭代')),
-        h(Button, {
-          disabled: iteration?.state === 'running',
-          onClick: async () => {
-            const ws = workspace.trim();
-            if (!ws) return message.warning(t('先填工作目录'));
-            try {
-              const r = await api('/api/loop/iteration/plan?workspace=' + encodeURIComponent(ws));
-              const lines = [];
-              if (r.summary) lines.push(r.summary);
-              for (const p of r.plan || []) lines.push(`${p.role} → ${p.target}${p.update === false ? t('（跳过）') : ''}`);
-              setPlan(lines.join('\n'));
-            } catch (e) { message.error(t('生成计划失败：') + e.message); }
-          }
-        }, t('生成计划')),
-        h(Button, {
-          disabled: iteration?.state !== 'running',
-          onClick: () => post('/api/loop/iteration/stop', {}).catch(e => message.error(e.message))
-        }, t('停止')),
-        h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
-          h(Switch, { size: 'small', checked: shellIncluded, onChange: setShellIncluded }), t('连壳')),
-        h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
-          t('形态'),
-          h(Select, {
-            size: 'small', style: { width: 200 }, value: publishMode, onChange: setPublishMode,
+        h('div', { className: 'ol-section-title' }, t('迭代')),
+        h(Space, { wrap: true, style: { marginBottom: 6 } },
+          h(Button, {
+            type: 'primary', disabled: iteration?.state === 'running',
+            onClick: async () => {
+              const ws = workspace.trim();
+              if (!ws) return message.warning(t('先填工作目录'));
+              try {
+                setIteration(await post('/api/loop/iteration', { workspace: ws, shell: shellIncluded, publishMode }));
+                setTimeout(pollIteration, 2000);
+              } catch (e) { message.error(t('迭代启动失败：') + e.message); }
+            }
+          }, t('开始迭代')),
+          h(Button, {
             disabled: iteration?.state === 'running',
-            options: [
-              { value: 'framework', label: t('框架依赖（需装 .NET）') },
-              { value: 'selfcontained', label: t('自带框架') }
-            ]
-          }))),
-      h(Muted, { style: { display: 'block', marginBottom: 8 } }, iterationText),
+            onClick: async () => {
+              const ws = workspace.trim();
+              if (!ws) return message.warning(t('先填工作目录'));
+              try {
+                const r = await api('/api/loop/iteration/plan?workspace=' + encodeURIComponent(ws));
+                const lines = [];
+                if (r.summary) lines.push(r.summary);
+                for (const p of r.plan || []) lines.push(`${p.role} → ${p.target}${p.update === false ? t('（跳过）') : ''}`);
+                setPlan(lines.join('\n'));
+              } catch (e) { message.error(t('生成计划失败：') + e.message); }
+            }
+          }, t('生成计划')),
+          h(Button, {
+            disabled: iteration?.state !== 'running',
+            onClick: () => post('/api/loop/iteration/stop', {}).catch(e => message.error(e.message))
+          }, t('停止')),
+          h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
+            h(Switch, { size: 'small', checked: shellIncluded, onChange: setShellIncluded }), t('连壳')),
+          h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8c8c8c' } },
+            t('形态'),
+            h(Select, {
+              size: 'small', style: { width: 200 }, value: publishMode, onChange: setPublishMode,
+              disabled: iteration?.state === 'running',
+              options: [
+                { value: 'framework', label: t('框架依赖（需装 .NET）') },
+                { value: 'selfcontained', label: t('自带框架') }
+              ]
+            }))),
+        h(Muted, { style: { display: 'block', marginBottom: 8 } }, iterationText),
+      ) : null,
       plan ? h('pre', { className: 'ol-tools' }, plan) : null),
 
     h('div', {

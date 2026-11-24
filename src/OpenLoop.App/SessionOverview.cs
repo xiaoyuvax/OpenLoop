@@ -27,6 +27,9 @@ namespace OpenLoop.App
         /// <summary>本次启动后活跃过的留言板：停下后显示「正常停止」，启动前的历史仍是灰色。</summary>
         private readonly HashSet<string> _puppetLive = new(StringComparer.Ordinal);
 
+        /// <summary>上一轮的行对象（按 Id）：[Loop]/[Puppet] 页重建行时复用，保住复选列写回对象上的勾选状态。</summary>
+        private readonly Dictionary<string, Session> _prevRows = new(StringComparer.Ordinal);
+
         /// <summary>上一次真正重建的项目菜单与表格行；相同就不动控件（切标签会连续触发两次刷新）。</summary>
         private List<string> _builtProjects = [];
         private readonly List<(string Id, SessionState State, string Title, int Steps)> _shownRows = [];
@@ -156,6 +159,9 @@ namespace OpenLoop.App
         private void RefreshRows()
         {
             string q = _txtSearch.Text?.Trim() ?? "";
+            // 先把上一轮行对象收进 _prevRows（复选列勾选写在这些对象上），再重建行
+            _prevRows.Clear();
+            foreach (var row in _rows) _prevRows[row.Id] = row;
             _rows.Clear();
 
             if (_project == PuppetTag)
@@ -163,20 +169,18 @@ namespace OpenLoop.App
                 foreach (var s in OpenLoop.Service.Web.PuppetBoard.Sessions())
                 {
                     string title = string.IsNullOrWhiteSpace(s.LastText) ? "" : OneLine(s.LastText);
+                    string pid = "puppet:" + s.Host + "|" + s.Id;
                     if (q.Length > 0 && !(s.Host + " " + title).Contains(q, StringComparison.OrdinalIgnoreCase)) continue;
                     if (s.Live) _puppetLive.Add(s.Host);
-                    _rows.Add(new Session
-                    {
-                        Id = "puppet:" + s.Host + "|" + s.Id,
-                        Workspace = s.Host,
-                        IsPuppet = true,
-                        CustomTitle = title,
-                        StartedAt = s.LastAt,
-                        LastActiveAt = s.LastAt,
-                        State = s.Live ? SessionState.Running
-                            : _puppetLive.Contains(s.Host) ? SessionState.Done : SessionState.Idle,
-                        Steps = s.Steps?.Length ?? 0
-                    });
+                    // 复选列勾选写回 Session.Selected：复用行对象保住勾选，只更新可变字段
+                    if (!_prevRows.TryGetValue(pid, out var row) || !row.IsPuppet)
+                        _prevRows[pid] = row = new Session { Id = pid, Workspace = s.Host, IsPuppet = true };
+                    row.CustomTitle = title;
+                    row.LastActiveAt = s.LastAt;
+                    row.State = s.Live ? SessionState.Running
+                        : _puppetLive.Contains(s.Host) ? SessionState.Done : SessionState.Idle;
+                    row.Steps = s.Steps?.Length ?? 0;
+                    _rows.Add(row);
                 }
             }
             else if (_project == LoopTag)
@@ -187,17 +191,15 @@ namespace OpenLoop.App
                                          (l.Title ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
                              .OrderByDescending(l => l.UpdatedAt))
                 {
-                    _rows.Add(new Session
-                    {
-                        Id = "loop:" + loop.SessionId,
-                        Workspace = loop.Workspace,
-                        IsLoop = true,
-                        CustomTitle = loop.Title,
-                        StartedAt = loop.UpdatedAt.LocalDateTime,
-                        LastActiveAt = loop.UpdatedAt.LocalDateTime,
-                        State = LoopState?.Invoke(loop.Workspace, loop.SessionId) ?? SessionState.Idle,
-                        Steps = loop.Steps
-                    });
+                    // 复选列勾选写回 Session.Selected：复用行对象保住勾选，只更新可变字段
+                    string lid = "loop:" + loop.SessionId;
+                    if (!_prevRows.TryGetValue(lid, out var row) || !row.IsLoop)
+                        _prevRows[lid] = row = new Session { Id = lid, Workspace = loop.Workspace, IsLoop = true };
+                    row.CustomTitle = loop.Title;
+                    row.LastActiveAt = loop.UpdatedAt.LocalDateTime;
+                    row.State = LoopState?.Invoke(loop.Workspace, loop.SessionId) ?? SessionState.Idle;
+                    row.Steps = loop.Steps;
+                    _rows.Add(row);
                 }
             }
             else

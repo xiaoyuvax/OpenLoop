@@ -749,6 +749,7 @@ namespace OpenLoop.App
             {
                 _btnMode.Text = Localization.T("HarnessModeDirect");
                 _lblCandidate.Text = Localization.T("HarnessCandidateNone");
+                ApplyModeVisibility(false);
                 FitLoopLabels();
                 return;
             }
@@ -759,7 +760,23 @@ namespace OpenLoop.App
                 ? Localization.T("HarnessCandidateNone")
                 : Localization.T("HarnessCandidatePending").Replace("{0}",
                     string.Join(" / ", pending.Select(DescribeKind)));
+            ApplyModeVisibility(eval);
             FitLoopLabels();
+        }
+
+        /// <summary>
+        /// 直配模式下候选包、考核题、评估报告、演进、回滚都不是本轮的形态，留着重只会误导，整组收起；
+        /// 切回 A/B 评测时原样放出（与 Loop 侧的 Harness 页同一套判据）。
+        /// </summary>
+        private void ApplyModeVisibility(bool eval)
+        {
+            _lblTasks.Visible = eval;
+            _btnDrafts.Visible = eval;
+            _btnReport.Visible = eval;
+            _btnEvolve.Visible = eval;
+            _btnRollback.Visible = eval;
+            _btnRule.Visible = eval;   // 新增规则与演进同组：直配下规则走「Harness 配置」窗体
+            _lblCandidate.Visible = eval;
         }
 
         private static string DescribeKind(string kind)
@@ -2586,6 +2603,19 @@ namespace OpenLoop.App
         private void OnEditPrompt(object sender, EventArgs e) => OpenTarget(TargetSpec.PromptKind);
 
         private void OnEditAgents(object sender, EventArgs e) => OpenTarget(TargetSpec.AgentsKind);
+
+        /// <summary>「Harness 配置」：打开本工作区的配置窗体（技能 / 规则 / 限制 / 护栏）。</summary>
+        private void OnWorkspaceConfig(object sender, EventArgs e)
+        {
+            string workspace = Session?.Workspace?.Trim() ?? "";
+            WorkspaceHarnessForm.Open(FindForm(), workspace, HarnessObjects.Skill, AskHarnessAssist);
+            RefreshLedgerInfo();
+        }
+
+        /// <summary>配置窗体里点了「让Agent辅助我配置」：交给宿主起一个 Loop 会话，按那一页逐项改。</summary>
+        internal Action<string> HarnessAssistRequested;
+
+        private void AskHarnessAssist(string page) => HarnessAssistRequested?.Invoke(page);
 
         private void OnOpenReports(object sender, EventArgs e)
         {

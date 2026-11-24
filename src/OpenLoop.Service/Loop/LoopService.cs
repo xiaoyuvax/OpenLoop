@@ -54,7 +54,7 @@ namespace OpenLoop.Service.Loop
     /// Loop 侧的写操作（演进、回滚、登记规则）。账本的写入口收敛在这里，
     /// 界面只调用、不自己写——单写者由进程边界保证。
     /// </summary>
-    public sealed class LoopService
+    public sealed partial class LoopService
     {
         private readonly object _lock = new();
         private readonly Dictionary<string, Job> _jobs = new(StringComparer.OrdinalIgnoreCase);

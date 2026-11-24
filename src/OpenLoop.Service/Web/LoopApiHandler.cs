@@ -187,6 +187,47 @@ namespace OpenLoop.Service.Web
                     return Json(req, new { ok = true });
                 }
 
+                case "objects":
+                {
+                    // 工作区 Harness 配置页：GET = 列某一类对象；POST = 改一件（或整类恢复默认）
+                    if (method == "GET")
+                    {
+                        try
+                        {
+                            return Json(req, new
+                            {
+                                ok = true,
+                                items = _loop.ListObjects(Query(req, "workspace"), Query(req, "kind"))
+                            });
+                        }
+                        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException)
+                        {
+                            return Json(req, new { ok = false, error = ex.Message }, 400);
+                        }
+                    }
+
+                    if (method != "POST") return NotFound(req);
+                    var body = ReadBody<ObjectRequest>(req);
+                    if (body == null || string.IsNullOrWhiteSpace(body.Workspace) || string.IsNullOrWhiteSpace(body.Kind))
+                        return Json(req, new { ok = false, error = "invalid body" }, 400);
+                    try
+                    {
+                        if (string.Equals(body.Action, "reset", StringComparison.OrdinalIgnoreCase))
+                            return Json(req, new { ok = true, version = _loop.ResetKind(body.Workspace, body.Kind) });
+                        if (string.IsNullOrWhiteSpace(body.Id))
+                            return Json(req, new { ok = false, error = "缺 id" }, 400);
+                        return Json(req, new
+                        {
+                            ok = true,
+                            version = _loop.SetObject(body.Workspace, body.Kind, body.Id, body.Action, body.Params)
+                        });
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException)
+                    {
+                        return Json(req, new { ok = false, error = ex.Message }, 400);
+                    }
+                }
+
                 case "spool":
                 {
                     if (method != "POST" || parts.Length != 4 || parts[3] != "drain") return NotFound(req);
@@ -274,6 +315,19 @@ namespace OpenLoop.Service.Web
             public string Workspace { get; set; }
             public string Name { get; set; }
             public bool Enabled { get; set; }
+        }
+
+        private sealed class ObjectRequest
+        {
+            public string Workspace { get; set; }
+            public string Kind { get; set; }
+            public string Id { get; set; }
+
+            /// <summary>enable / disable / params / default / reset（整类恢复默认）。</summary>
+            public string Action { get; set; }
+
+            /// <summary>改参数时的「名字=值, 名字=值」文本；其他动作忽略。</summary>
+            public string Params { get; set; }
         }
 
         private sealed class ModeRequest

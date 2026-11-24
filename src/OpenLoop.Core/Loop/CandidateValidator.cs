@@ -109,6 +109,9 @@ namespace OpenLoop.Core.Loop
                     case FeatureCatalog.CheckpointInterval:
                         CheckNumber(problems, reference, feature, "value", 5, 600);
                         break;
+                    case FeatureCatalog.WebFetches:
+                        CheckNumber(problems, reference, feature, "value", 1, 100);
+                        break;
                     case FeatureCatalog.Poll:
                         CheckNumber(problems, reference, feature, "max", 1, 100);
                         CheckNumber(problems, reference, feature, "total", 1, 500);
@@ -142,6 +145,7 @@ namespace OpenLoop.Core.Loop
             FeatureCatalog.MaxSteps or FeatureCatalog.ToolResultLimit or FeatureCatalog.CompressAt
                 or FeatureCatalog.OutputTokenRatio or FeatureCatalog.MentionTurns
                 or FeatureCatalog.FlashInterval or FeatureCatalog.BrowserIdle or FeatureCatalog.CheckpointInterval
+                or FeatureCatalog.WebFetches
                 => ["value"],
             _ => ["enabled"]
         };

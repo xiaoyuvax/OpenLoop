@@ -71,7 +71,7 @@
     <value>Inject global and project AGENTS.md into the system prompt</value>
   </data>
   <data name="AiConfig" xml:space="preserve">
-    <value>Configure with AI</value>
+    <value>Let the Agent help me configure</value>
   </data>
   <data name="AllProviders" xml:space="preserve">
     <value>All providers</value>
@@ -2400,5 +2400,65 @@ Restarting the shell now interrupts them. Continue anyway?</value>
   </data>
   <data name="[等本轮] " xml:space="preserve">
     <value>[After turn] </value>
+  </data>
+  <data name="HarnessConfigTitle" xml:space="preserve">
+    <value>Harness settings (this workspace)</value>
+  </data>
+  <data name="HarnessConfigObject" xml:space="preserve">
+    <value>Harness settings</value>
+  </data>
+  <data name="HarnessTabRules" xml:space="preserve">
+    <value>Rules</value>
+  </data>
+  <data name="HarnessTabLimits" xml:space="preserve">
+    <value>Limits</value>
+  </data>
+  <data name="HarnessTabGuards" xml:space="preserve">
+    <value>Guards</value>
+  </data>
+  <data name="HarnessColName" xml:space="preserve">
+    <value>Object</value>
+  </data>
+  <data name="HarnessColParams" xml:space="preserve">
+    <value>Parameters</value>
+  </data>
+  <data name="HarnessObjectsEmpty" xml:space="preserve">
+    <value>Nothing of this kind yet</value>
+  </data>
+  <data name="HarnessEditParams" xml:space="preserve">
+    <value>Edit parameters</value>
+  </data>
+  <data name="HarnessResetDefault" xml:space="preserve">
+    <value>Reset parameters</value>
+  </data>
+  <data name="HarnessResetKind" xml:space="preserve">
+    <value>Reset this kind</value>
+  </data>
+  <data name="HarnessResetKindAsk" xml:space="preserve">
+    <value>Reset all "{0}" to the factory defaults? Items you added in this kind are removed; other kinds are untouched.</value>
+  </data>
+  <data name="HarnessApplied" xml:space="preserve">
+    <value>Applied: {0} (new activation version v{0})</value>
+  </data>
+  <data name="HarnessApplyFailed" xml:space="preserve">
+    <value>Not applied: </value>
+  </data>
+  <data name="HarnessPickOne" xml:space="preserve">
+    <value>Select exactly one row to edit parameters.</value>
+  </data>
+  <data name="HarnessEnableFirst" xml:space="preserve">
+    <value>This object is not enabled yet: enable it before editing parameters.</value>
+  </data>
+  <data name="HarnessNoParams" xml:space="preserve">
+    <value>This object has no editable parameters.</value>
+  </data>
+  <data name="HarnessParamsPlaceholder" xml:space="preserve">
+    <value>name=value, name=value (e.g. max=2, enabled=true)</value>
+  </data>
+  <data name="HarnessKindCount" xml:space="preserve">
+    <value>{0} of {1} objects enabled · select rows and use the buttons below</value>
+  </data>
+  <data name="HarnessConfigPrompt" xml:space="preserve">
+    <value>Harness settings</value>
   </data>
 </root>

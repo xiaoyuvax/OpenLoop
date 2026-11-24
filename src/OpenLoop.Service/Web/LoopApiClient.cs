@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using OpenLoop.Core.Store;
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Loop;
 using OpenLoop.Service.Runtime;
@@ -139,8 +140,36 @@ namespace OpenLoop.Service.Web
         public ActivationPayload GetActivation(string workspace)
             => GetActivationAsync(workspace).GetAwaiter().GetResult();
 
+        /// <summary>工作区 Harness 配置页：列某一类对象（skill / rule / limit / guard）。</summary>
+        public async Task<List<HarnessItem>> ListObjectsAsync(string workspace, string kind, CancellationToken ct = default)
+            => (await SendAsync<ObjectListResult>(HttpMethod.Get,
+                "/api/loop/objects?workspace=" + Uri.EscapeDataString(workspace ?? "") +
+                "&kind=" + Uri.EscapeDataString(kind ?? ""), null, ct).ConfigureAwait(false))?.Items ?? [];
+
+        /// <summary>改一件对象（enable / disable / params / default），或整类恢复默认（reset）。返回新激活版本。</summary>
+        public async Task<int> SetObjectAsync(string workspace, string kind, string id, string action,
+            string parameters = null, CancellationToken ct = default)
+            => (await PostAsync<ObjectResult>("/api/loop/objects",
+                new { workspace, kind, id, action, @params = parameters }, ct).ConfigureAwait(false))?.Version ?? 0;
+
+        private sealed class ObjectListResult
+        {
+            public List<HarnessItem> Items { get; set; } = [];
+        }
+
+        private sealed class ObjectResult
+        {
+            public int Version { get; set; }
+        }
+
         public void SetSkill(string workspace, string name, bool enabled)
             => SetSkillAsync(workspace, name, enabled).GetAwaiter().GetResult();
+
+        public List<HarnessItem> ListObjects(string workspace, string kind)
+            => ListObjectsAsync(workspace, kind).GetAwaiter().GetResult();
+
+        public int SetObject(string workspace, string kind, string id, string action, string parameters = null)
+            => SetObjectAsync(workspace, kind, id, action, parameters).GetAwaiter().GetResult();
 
         private Task<T> PostAsync<T>(string path, object body, CancellationToken ct) where T : class
             => SendAsync<T>(HttpMethod.Post, path, body, ct);

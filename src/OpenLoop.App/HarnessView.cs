@@ -38,6 +38,9 @@ namespace OpenLoop.App
         /// <summary>切了直配 / A/B 模式：宿主据此重开左栏目标（编辑面从正式文件换成候选包，反之亦然）。</summary>
         internal event Action ModeChanged;
 
+        /// <summary>用户在「Harness 配置」窗体里点了「让Agent辅助我配置」：宿主按页名起一个 Loop 会话。</summary>
+        internal event Action<string> AssistRequested;
+
         internal void Initialize(Func<string> workspace, Func<AppSettings> settings,
             Func<string> model, Func<string> effort, Action<string, string, bool> notify)
         {
@@ -58,7 +61,7 @@ namespace OpenLoop.App
         {
             _busy = busy;
             _btnDrafts.Enabled = _btnReport.Enabled = _btnRollback.Enabled = _btnRule.Enabled = !busy;
-            _btnPrompt.Enabled = _btnAgents.Enabled = !busy;
+            _btnPrompt.Enabled = _btnAgents.Enabled = _btnWorkspaceConfig.Enabled = !busy;
             UpdateEvolveEnabled();
         }
 
@@ -113,6 +116,22 @@ namespace OpenLoop.App
                 ? Localization.T("HarnessCandidateNone")
                 : Localization.T("HarnessCandidatePending").Replace("{0}",
                     string.Join(" / ", pending.Select(DescribeKind)));
+            ApplyModeVisibility(eval);
+        }
+
+        /// <summary>
+        /// 直配模式下这些都不是本轮的形态，留着重只会误导：候选包、题目草稿、评估报告、演进、回滚全收起。
+        /// 切回 A/B 评测时原样放出来（演进就是评测的入口，直配下没有候选包可评）。
+        /// </summary>
+        private void ApplyModeVisibility(bool eval)
+        {
+            _lblTasks.Visible = eval;
+            _btnDrafts.Visible = eval;
+            _btnReport.Visible = eval;
+            _btnEvolve.Visible = eval;
+            _btnRollback.Visible = eval;
+            _btnRule.Visible = eval;   // 新增规则与演进同组：直配下规则走「Harness 配置」窗体
+            _lblCandidate.Visible = eval;
         }
 
         private static string DescribeKind(string kind)
@@ -396,6 +415,21 @@ namespace OpenLoop.App
                 AppLog.Error(Localization.T("RuleRegisterFailed"), ex);
                 Notify(Localization.T("RuleRegisterFailed"), ex.Message, error: true);
             }
+        }
+
+        /// <summary>「Harness 配置」：打开本工作区的配置窗体（技能 / 规则 / 限制 / 护栏）。</summary>
+        private void OnWorkspaceConfig(object sender, EventArgs e)
+        {
+            string workspace = Workspace;
+            if (!Directory.Exists(workspace))
+            {
+                Notify(Localization.T("PickWorkspace"), Localization.T("WorkspaceMissing") + workspace, error: true);
+                return;
+            }
+
+            WorkspaceHarnessForm.Open(FindForm(), workspace, HarnessObjects.Skill,
+                page => AssistRequested?.Invoke(page));
+            Reload();
         }
 
         private void OnShowDefinitions(object sender, EventArgs e)

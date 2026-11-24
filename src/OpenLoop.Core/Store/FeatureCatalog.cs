@@ -43,6 +43,11 @@ namespace OpenLoop.Core.Store
 
         public const int DefaultCheckpointSeconds = 60;
 
+        /// <summary>一轮 WebFetch 的抓取次数上限：查外部资料密集的任务（库源码、文档比对）8 次很快用满。</summary>
+        public const string WebFetches = "limit.web_fetches";
+
+        public const int DefaultWebFetches = 8;
+
         public static IReadOnlyList<FeatureRecord> SeedFeatures() =>
         [
             new FeatureRecord
@@ -173,6 +178,12 @@ namespace OpenLoop.Core.Store
             },
             new FeatureRecord
             {
+                Id = WebFetches, Kind = "limit", Source = "user", CreatedAt = Now(),
+                Problem = "查外部资料密集的任务（查库源码、比对文档）一轮 8 次很快用满，被迫中断改道；写死在源码里也没法按工作区配置与演化。",
+                Payload = J(new { value = DefaultWebFetches })
+            },
+            new FeatureRecord
+            {
                 Id = "rule.read_before_write", Kind = "rule", Source = "user", CreatedAt = Now(),
                 Problem = "不先读现场就写，覆盖掉不知道的内容。",
                 Payload = JsonSerializer.SerializeToElement("写文件前先用 ListDir / ReadFile 看清现场；不确定是否存在或内容时，先读再改。")
@@ -220,6 +231,7 @@ namespace OpenLoop.Core.Store
                 Ref(BrowserIdle, ("value", DefaultBrowserIdleMinutes)),
                 Ref(FlashInterval, ("value", DefaultFlashInterval)),
                 Ref(CheckpointInterval, ("value", DefaultCheckpointSeconds)),
+                Ref(WebFetches, ("value", DefaultWebFetches)),
                 Ref("rule.read_before_write"),
                 Ref("rule.answer_first"),
                 Ref("rule.ask_when_unsure")
@@ -325,6 +337,24 @@ namespace OpenLoop.Core.Store
             catch
             {
                 return new AgentPolicy();
+            }
+        }
+
+        /// <summary>一轮 WebFetch 的抓取上限：读工作区账本 limit.web_fetches，读不到用默认（只读，不建目录）。</summary>
+        public static int WebFetchesOf(string workspace)
+        {
+            int fallback = DefaultWebFetches;
+            if (string.IsNullOrWhiteSpace(workspace)) return fallback;
+            try
+            {
+                var ledger = Ledger.Open(workspace);
+                return Math.Clamp(ValueOf(ledger.Current,
+                    ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal),
+                    WebFetches, fallback), 1, 100);
+            }
+            catch
+            {
+                return fallback;
             }
         }
 

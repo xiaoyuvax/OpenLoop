@@ -47,6 +47,7 @@ namespace OpenLoop.App
         private AntdUI.Button _btnRule;
         private AntdUI.Button _btnPrompt;
         private AntdUI.Button _btnAgents;
+        private AntdUI.Button _btnWorkspaceConfig;
         private AntdUI.Button _btnMode;
         private AntdUI.Label _lblCandidate;
         private TableLayoutPanel _inputArea;
@@ -122,6 +123,7 @@ namespace OpenLoop.App
             _btnRule = new AntdUI.Button();
             _btnPrompt = new AntdUI.Button();
             _btnAgents = new AntdUI.Button();
+            _btnWorkspaceConfig = new AntdUI.Button();
             _btnMode = new AntdUI.Button();
             _lblCandidate = new AntdUI.Label();
             _inputArea = new TableLayoutPanel();
@@ -436,6 +438,16 @@ namespace OpenLoop.App
             _btnAgents.Margin = new Padding(0, 0, 0, 4);
             _btnAgents.Click += OnEditAgents;
 
+            //「Harness 配置」：与 Loop 侧同名同位——就在「编辑 AGENTS.md」下方
+            _btnWorkspaceConfig.Name = "btnWorkspaceConfig";
+            _btnWorkspaceConfig.Text = Localization.T("HarnessConfigObject");
+            _btnWorkspaceConfig.Radius = 8;
+            _btnWorkspaceConfig.Height = 34;
+            _btnWorkspaceConfig.Width = 236;
+            _btnWorkspaceConfig.IconSvg = UiIcons.Of(UiIcons.Settings, UiStyle.Text);
+            _btnWorkspaceConfig.Margin = new Padding(0, 0, 0, 8);
+            _btnWorkspaceConfig.Click += OnWorkspaceConfig;
+
             _lblCandidate.AutoSize = false;
             _lblCandidate.TextMultiLine = true;
             _lblCandidate.Width = 236;
@@ -512,6 +524,7 @@ namespace OpenLoop.App
             _loopFlow.Controls.Add(_btnRule);
             _loopFlow.Controls.Add(_btnPrompt);
             _loopFlow.Controls.Add(_btnAgents);
+            _loopFlow.Controls.Add(_btnWorkspaceConfig);
             _loopFlow.Controls.Add(_lblCandidate);
             // 说明文字放最后：所有按钮之下，占住底部空白区
             _loopFlow.Controls.Add(_lblEvolveHint);

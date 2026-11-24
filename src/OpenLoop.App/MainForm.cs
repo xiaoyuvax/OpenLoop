@@ -41,6 +41,10 @@ namespace OpenLoop.App
         private bool _closing;
         private bool _restoringTabs;
 
+        /// <summary>标签拖进平铺视图的进行态：MouseDown 记住按下的页与落点，MouseUp 落在平铺视图内容区就收进来。</summary>
+        private AntdUI.TabPage _tabDragDown;
+        private Point _tabDragFrom;
+
         /// <summary>3 秒一次的同步和打开会话都复用它：每次 new 一个客户端等于每次新建 HttpClient。</summary>
         private WorkerApiClient _workerClient;
 
@@ -719,6 +723,7 @@ namespace OpenLoop.App
             view.SessionTarget = () => (Current?.Id ?? "", (Current?.Book.Turns.Count ?? 1) - 1);
             view.Sessions = () => _sessions;
             view.Iterate = () => ShowIterationAsync(target);
+            view.HarnessAssistRequested += page => OpenHarnessAssistant(target, page);
             view.TransferToWorker = turns => TransferToWorker(target, turns, view.Model, view.Effort);
             view.ForkRequested += ForkLoop;
             view.NewSessionRequested += NewLoopSession;
@@ -1609,6 +1614,7 @@ namespace OpenLoop.App
                 view.Model, view.Effort);
             view.TitleChanged += OnSessionTitleChanged;
             view.SideWorkEvicted += OnSideWorkEvicted;
+            view.HarnessAssistRequested += page => OpenHarnessAssistant(session.Workspace, page);
             // 会话通知上的「打开会话」：页签关掉了就重新挂上再选中
             view.ActivatePage = () =>
             {
@@ -2293,6 +2299,42 @@ namespace OpenLoop.App
             return true;
         }
 
+        /// <summary>
+        /// 拖普通标签进平铺视图：MouseDown 记住按下的页，MouseUp 落在「平铺视图」页签头上就收进去。
+        /// AntdUI 的 DragOrder 重排没有对外钩子，但按下后系统自动 Capture，整个拖动的
+        /// MouseUp 都发回 _tabs，正好在这里判落点。拖动时被拖页处于选中态，平铺的内容区
+        /// 看不见，页签头是唯一稳定的落点；落点不在页签头上就交给 AntdUI 换位。
+        /// </summary>
+        private void OnTabTiledDragDown(object sender, MouseEventArgs e)
+        {
+            _tabDragDown = e.Button == MouseButtons.Left ? _tabs.ContainsTabPage(e.X, e.Y) : null;
+            _tabDragFrom = e.Location;
+        }
+
+        private void OnTabTiledDragUp(object sender, MouseEventArgs e)
+        {
+            var page = _tabDragDown;
+            _tabDragDown = null;
+            if (page == null || e.Button != MouseButtons.Left) return;
+            if (Math.Abs(e.X - _tabDragFrom.X) < 4 && Math.Abs(e.Y - _tabDragFrom.Y) < 4) return;
+            if (page == _tiledPage || page.Tag is not (Session or LoopView)) return;
+            // 落点必须正好压在「平铺视图」页签头上
+            if (_tiledPage == null || _tabs.ContainsTabPage(e.X, e.Y) != _tiledPage) return;
+            // AntdUI 还要在这次 MouseUp 里做 DragOrder 内部重排：别在它处理集合时同步改
+            // Pages（IndexOf 会拿到 -1），把收编与选中留到消息循环下一轮
+            BeginInvoke(new Action(() =>
+            {
+                if (_tiled == null || _tiledPage == null) return;
+                if (page.Tag is not (Session or LoopView)) return;
+                if (page.Parent != null) _tabs.Pages.Remove(page);
+                // 与 OpenTiledView 收页同口径：会话页被收走就释放 WebView2，页面重开时由 ShowBrowser 重建
+                if (page.Tag is Session dropSession) dropSession.View?.CloseBrowserPage();
+                _tiled.Add(page.Tag, page);
+                _tabs.SelectTab(_tiledPage);
+                SaveOpenTabs();
+            }));
+        }
+
         private void OnTabMouseUp(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Right) return;
@@ -2731,6 +2773,38 @@ namespace OpenLoop.App
             view?.Post(SettingsPrompt(page));
         }
 
+        /// <summary>
+        /// Harness 配置窗体的「让Agent辅助我配置」：另起一个 Loop 会话，按当前页先把现状讲清，
+        /// 再逐项问、逐项改（改的是本工作区激活集，走 I 的 /api/loop/objects）。
+        /// </summary>
+        private void OpenHarnessAssistant(string workspace, string page)
+        {
+            string target = string.IsNullOrWhiteSpace(workspace)
+                ? (_settings.Projects.FirstOrDefault() ?? "")
+                : workspace;
+            if (string.IsNullOrWhiteSpace(target)) return;
+
+            var view = EnsureLoop(target, select: true, sessionId: "",
+                title: Localization.T("HarnessConfigPrompt") + " " + DateTime.Now.ToString("HH:mm"),
+                seedTitle: true);
+            view?.Post(HarnessPrompt(page, target));
+        }
+
+        private static string HarnessPrompt(string page, string workspace) => $"""
+            用户在工作区 Harness 配置窗体里点了「让Agent辅助我配置」，现在停在「{page}」页，工作区是 {workspace}。
+
+            做法：
+            1. 先读现状：Puppet(target=self, action=get, instance=MainForm, path=HarnessSummary)，用两三行说明这一页现在有什么、缺什么，不要复述整份清单。
+            2. 一次只问一个必要参数，给出可选项与默认值。用户没说的不要编造。
+            3. 用户答复后自己动手改，不要直接编辑 .openloop/ledger.jsonl（账本归 I 写，手改会让激活记录与特征对不上）：
+               - 列表：Puppet(target=self, action=invoke, instance=MainForm, method=ListHarnessObjects, args=["{workspace}","skill|rule|limit|guard"])。
+               - 改一件：method=SetHarnessObject，args=[工作区, 类, id, 动作, 参数文本]；
+                 动作是 enable / disable / params（参数文本形如 "max=2, enabled=true"）/ default（参数回默认值）。
+               - 整类回默认：method=ResetHarnessObjects，args=[工作区, 类]。
+            4. 改完再读一次列表与 HarnessSummary，把实际生效的值告诉用户；用户要回退就用 Harness 页的「回滚上一版」。
+            5. 规则正文与提示词文本只能由用户确认后再写：拿不准就问，不要猜。
+            """;
+
         private static string SettingsPrompt(string page) => $"""
             用户点了设置页的「让 AI 帮我配置」，现在停在「{page}」页。
 
@@ -2745,6 +2819,113 @@ namespace OpenLoop.App
             5. 技能页的启用/停用/安装只能由用户点按钮，你负责说清该动哪个（技能名与来源），用户改完请他确认。
             拿不准就问，不要猜。
             """;
+
+        /// <summary>
+        /// B 面：本工作区 Harness 激活集的摘要（配置页的「让Agent辅助我配置」先读它）。
+        /// 只报每类启用件数与当前版本，不复述整份清单。
+        /// </summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string HarnessSummary
+        {
+            get
+            {
+                string workspace = Current?.Workspace ?? _lastSession?.Workspace
+                    ?? _settings.Projects.FirstOrDefault() ?? "";
+                if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(workspace))
+                    return "没有工作区";
+                try
+                {
+                    var ledger = global::OpenLoop.Core.Store.Ledger.Open(workspace);
+                    var current = ledger.Current;
+                    var features = ledger.Features().ToDictionary(f => f.Id, StringComparer.Ordinal);
+                    var active = (current?.Features ?? [])
+                        .Where(r => r != null)
+                        .GroupBy(r => features.TryGetValue(r.Id, out var f)
+                            ? f.Kind
+                            : global::OpenLoop.Core.Store.HarnessObjects.KindOfSeedId(r.Id))
+                        .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+                    var lines = new List<string>
+                    {
+                        "Workspace=" + workspace,
+                        "HarnessMode=" + global::OpenLoop.Core.Store.HarnessMode.Get(workspace),
+                        "ActivationVersion=v" + (current?.Version ?? 0)
+                    };
+                    foreach (string kind in global::OpenLoop.Core.Store.HarnessObjects.Kinds)
+                        lines.Add($"{kind}={active.GetValueOrDefault(kind)} 启用 / " +
+                            $"{features.Values.Count(f => f.Kind == kind)} 登记");
+                    return string.Join("\n", lines);
+                }
+                catch (Exception ex)
+                {
+                    return "读取 Harness 失败：" + ex.Message;
+                }
+            }
+        }
+
+        /// <summary>Puppet：列某一类 Harness 对象（kind = skill / rule / limit / guard）。</summary>
+        [PuppetAction(Desc = "列本工作区某一类 Harness 对象：kind = skill / rule / limit / guard")]
+        public OperationResult ListHarnessObjects(string workspace, string kind)
+        {
+            string ws = ResolveWorkspace(workspace);
+            if (!Directory.Exists(ws)) return OperationResult.Failure("工作区不存在：" + ws);
+            try
+            {
+                using var loop = new global::OpenLoop.Service.Web.LoopApiClient();
+                var items = loop.ListObjects(ws, kind);
+                string text = string.Join("\n", items.Select(item =>
+                    $"{item.Id} | {item.Name} | {(item.Active ? "启用" : "停用")} | " +
+                    (item.ParamsText.Length == 0 ? "无参数" : item.ParamsText) +
+                    (!item.Active && item.Text.Length > 0 ? " | " + item.Text : "")));
+                return OperationResult.Success(text.Length == 0 ? "这一类没有对象" : text);
+            }
+            catch (Exception ex)
+            {
+                return OperationResult.Failure(ex.Message);
+            }
+        }
+
+        /// <summary>Puppet：改一件 Harness 对象（enable / disable / params / default）。</summary>
+        [PuppetAction(Desc = "改一件 Harness 对象：action = enable / disable / params / default（参数回默认值）")]
+        public OperationResult SetHarnessObject(string workspace, string kind, string id, string action, string parameters = null)
+        {
+            string ws = ResolveWorkspace(workspace);
+            if (!Directory.Exists(ws)) return OperationResult.Failure("工作区不存在：" + ws);
+            try
+            {
+                using var loop = new global::OpenLoop.Service.Web.LoopApiClient();
+                int version = loop.SetObject(ws, kind, id, action, parameters);
+                return OperationResult.Success($"已生效：新激活版本 v{version}");
+            }
+            catch (Exception ex)
+            {
+                return OperationResult.Failure(ex.Message);
+            }
+        }
+
+        /// <summary>Puppet：把某一类整体恢复成出厂默认（技能没有默认值）。</summary>
+        [PuppetAction(Desc = "把某一类 Harness 对象整体恢复成出厂默认：kind = rule / limit / guard")]
+        public OperationResult ResetHarnessObjects(string workspace, string kind)
+        {
+            string ws = ResolveWorkspace(workspace);
+            if (!Directory.Exists(ws)) return OperationResult.Failure("工作区不存在：" + ws);
+            try
+            {
+                using var loop = new global::OpenLoop.Service.Web.LoopApiClient();
+                int version = loop.SetObject(ws, kind, "", "reset", null);
+                return OperationResult.Success($"已恢复默认：新激活版本 v{version}");
+            }
+            catch (Exception ex)
+            {
+                return OperationResult.Failure(ex.Message);
+            }
+        }
+
+        /// <summary>空工作区就是当前会话的工作区（界面里的调用不传）。</summary>
+        private string ResolveWorkspace(string workspace)
+        {
+            if (!string.IsNullOrWhiteSpace(workspace)) return workspace.Trim();
+            return Current?.Workspace ?? _lastSession?.Workspace ?? "";
+        }
 
         /// <summary>B 面：当前设置摘要（密钥只报是否已设置），AI 配置页先读它。</summary>
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]

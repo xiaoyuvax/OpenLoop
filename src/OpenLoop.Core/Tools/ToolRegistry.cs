@@ -57,14 +57,15 @@ namespace OpenLoop.Core.Tools
         public static ToolRegistry Workspace(
             WorkspaceScope scope, ApprovalHandler approve = null,
             IReadOnlyList<SkillInfo> skills = null, bool fullAccess = false, IEnumerable<ITool> extra = null,
-            string webFetch = null)
-            => new(Common(scope, approve, skills, fullAccess, webFetch).Concat(extra ?? []));
+            string webFetch = null, int maxWebFetches = 8)
+            => new(Common(scope, approve, skills, fullAccess, webFetch, maxWebFetches).Concat(extra ?? []));
 
         /// <summary>Loop 的工具集：读用 read 边界、写用 write 边界，外加只读证据通道 + 发现落账。</summary>
         public static ToolRegistry Loop(
             WorkspaceScope read, WorkspaceScope write, string workspaceRoot, ApprovalHandler approve = null,
-            IReadOnlyList<SkillInfo> skills = null, IEnumerable<ITool> extra = null, string webFetch = null)
-            => new(Common(read, write, approve, skills, fullAccess: false, webFetch).Concat(
+            IReadOnlyList<SkillInfo> skills = null, IEnumerable<ITool> extra = null, string webFetch = null,
+            int maxWebFetches = 8)
+            => new(Common(read, write, approve, skills, fullAccess: false, webFetch, maxWebFetches).Concat(
             [
                 new Builtin.ReadEvidenceTool(workspaceRoot),
                 new Builtin.RecordFindingTool(workspaceRoot),
@@ -73,12 +74,12 @@ namespace OpenLoop.Core.Tools
 
         private static IEnumerable<ITool> Common(
             WorkspaceScope scope, ApprovalHandler approve, IReadOnlyList<SkillInfo> skills,
-            bool fullAccess, string webFetch)
-            => Common(scope, scope, approve, skills, fullAccess, webFetch);
+            bool fullAccess, string webFetch, int maxWebFetches)
+            => Common(scope, scope, approve, skills, fullAccess, webFetch, maxWebFetches);
 
         private static IEnumerable<ITool> Common(
             WorkspaceScope read, WorkspaceScope write, ApprovalHandler approve,
-            IReadOnlyList<SkillInfo> skills, bool fullAccess, string webFetch)
+            IReadOnlyList<SkillInfo> skills, bool fullAccess, string webFetch, int maxWebFetches)
         {
             yield return new Builtin.ReadFileTool(read);
             yield return new Builtin.WriteFileTool(write);
@@ -88,7 +89,7 @@ namespace OpenLoop.Core.Tools
 
             string mode = Builtin.WebFetchTool.NormalizeMode(webFetch);
             if (mode != "off")
-                yield return new Builtin.WebFetchTool(approve, mode == "ask");
+                yield return new Builtin.WebFetchTool(approve, mode == "ask", maxWebFetches);
             if (skills is { Count: > 0 })
             {
                 yield return new Builtin.ReadSkillTool(skills);

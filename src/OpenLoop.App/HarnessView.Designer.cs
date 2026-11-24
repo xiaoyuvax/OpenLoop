@@ -15,6 +15,7 @@ namespace OpenLoop.App
         private AntdUI.Button _btnRule;
         private AntdUI.Button _btnPrompt;
         private AntdUI.Button _btnAgents;
+        private AntdUI.Button _btnWorkspaceConfig;
         private AntdUI.Button _btnMode;
         private AntdUI.Label _lblCandidate;
         private AntdUI.Label _lblHint;
@@ -48,6 +49,7 @@ namespace OpenLoop.App
             _btnRule = new AntdUI.Button();
             _btnPrompt = new AntdUI.Button();
             _btnAgents = new AntdUI.Button();
+            _btnWorkspaceConfig = new AntdUI.Button();
             _btnMode = new AntdUI.Button();
             _lblCandidate = new AntdUI.Label();
             _lblHint = new AntdUI.Label();
@@ -161,6 +163,17 @@ namespace OpenLoop.App
             _btnAgents.Margin = new Padding(0, 0, 0, 4);
             _btnAgents.Click += (_, _) => EditTargetRequested?.Invoke("agents");
 
+            //「Harness 配置」：工作区 Harness 配置窗体（技能 / 规则 / 限制 / 护栏四类），
+            //放在「编辑 AGENTS.md」下方——两者都是本工作区可演进对象的入口
+            _btnWorkspaceConfig.Name = "btnWorkspaceConfig";
+            _btnWorkspaceConfig.Text = Localization.T("HarnessConfigObject");
+            _btnWorkspaceConfig.Radius = 8;
+            _btnWorkspaceConfig.Height = 34;
+            _btnWorkspaceConfig.Width = 236;
+            _btnWorkspaceConfig.IconSvg = UiIcons.Of(UiIcons.Settings, UiStyle.Text);
+            _btnWorkspaceConfig.Margin = new Padding(0, 0, 0, 8);
+            _btnWorkspaceConfig.Click += OnWorkspaceConfig;
+
             _lblCandidate.AutoSize = false;
             _lblCandidate.TextMultiLine = true;
             _lblCandidate.Width = 236;
@@ -190,6 +203,7 @@ namespace OpenLoop.App
             _flow.Controls.Add(_btnRule);
             _flow.Controls.Add(_btnPrompt);
             _flow.Controls.Add(_btnAgents);
+            _flow.Controls.Add(_btnWorkspaceConfig);
             _flow.Controls.Add(_lblCandidate);
             _flow.Controls.Add(_lblHint);
 
