@@ -32,6 +32,16 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void Windows_environment_note_only_on_windows()
+        {
+            string prompt = SystemPromptBuilder.Build([new NamedTool("ReadFile")], 10, workspace: ".");
+            if (OperatingSystem.IsWindows())
+                Assert.Contains("PowerShell 5.1", prompt);
+            else
+                Assert.DoesNotContain("PowerShell 5.1", prompt);
+        }
+
+        [Fact]
         public void Default_template_fills_every_placeholder()
         {
             string prompt = SystemPromptBuilder.Build([new NamedTool("ReadFile")], 10, workspace: ".");

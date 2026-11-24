@@ -934,7 +934,11 @@ namespace OpenLoop.App
             if (!string.IsNullOrWhiteSpace(Startup.Loop)) OpenLoop(Startup.Loop);
             if (Startup.Iteration) ShowIterationReportOnStartup();
             else if (IterationRunner.TakeShellFailure())
+            {
                 ExitTrace.Write("壳重启失败：新壳没起来，已回退旧版本");   // 非迭代重启的失败标记别带到下一轮迭代
+                MessageBox.Show(this, Localization.T("上一次换壳没有完成：当前仍是旧版本。可重新执行迭代。"),
+                    Localization.T("迭代"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
 
             _workerSync.Tick += OnWorkerSyncTick;
             _workerSync.Start();

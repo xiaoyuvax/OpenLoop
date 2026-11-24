@@ -54,9 +54,16 @@ namespace OpenLoop.Core.Agent
         private static string Environment(string workspace)
         {
             if (string.IsNullOrWhiteSpace(workspace)) return "";
-            return Section("# 环境",
+            var sb = new StringBuilder();
+            sb.AppendLine(Section("# 环境",
                 $"- 工作目录：{workspace}",
-                $"- 今天日期：{DateTime.Now:yyyy-MM-dd}。") + "\n";
+                $"- 今天日期：{DateTime.Now:yyyy-MM-dd}。"));
+            if (OperatingSystem.IsWindows())
+            {
+                // PowerShell 5.1 把无 BOM 文件按 ANSI 读，含中文的脚本编辑常把全文搞乱（AGENTS.md 写了也防不住，须进系统提示词）。
+                sb.AppendLine("- Windows：PowerShell 5.1 会把无 BOM 的文本按 ANSI 读，含中文的文件用它的脚本按行读写会整段变乱码或挤行；优先用文件工具（ReadFile/WriteFile）读写文本，必须走 Shell 时显式指定 UTF-8（如 [IO.File]::ReadAllText(p,[Text.Encoding]::UTF8)），改完先 ReadFile 核对再继续。");
+            }
+            return sb.ToString() + "\n";
         }
 
         private static string Access(bool hasWebFetch, string access)

@@ -101,6 +101,7 @@ namespace OpenLoop.Service.Shell
             {
                 // 旧壳还活着就覆盖安装目录只会撞文件锁，留下半新半旧的产物
                 Log("old shell still running, skip update " + DateTimeOffset.Now.ToString("O") + " pid=" + pid);
+                SkipUpdate(install, workspace, pid);
                 return 4;
             }
             try
@@ -132,6 +133,40 @@ namespace OpenLoop.Service.Shell
                     try { Start(install, workspace); } catch { }
                 }
                 return 3;
+            }
+        }
+
+        /// <summary>
+        /// 换壳被跳过（旧壳在等待窗口内没退出）：把已写盘的迭代报告标成失败、留 ShellFailedPath，
+        /// 再等一小段——旧壳若随后退出就拉起安装目录里的旧版本壳兜底，避免「没人接手」。
+        /// 0.1.55 事故：skip 分支静默返回，报告仍是 Ok=true，用户以为换版已生效（F-c8d5af6b）。
+        /// </summary>
+        private static void SkipUpdate(string install, string workspace, int pid)
+        {
+            try
+            {
+                var report = IterationRunner.TakeReport(TimeSpan.FromHours(1));
+                if (report != null)
+                {
+                    report.Ok = false;
+                    report.Steps.Add(new Iteration.Step("restart shell", false,
+                        "旧壳（pid=" + pid + "）未在等待窗口内退出，换壳已跳过，仍是旧版本"));
+                    IterationRunner.WriteReport(report);
+                }
+            }
+            catch { }
+            try { File.WriteAllText(IterationRunner.ShellFailedPath, "shell update skipped: old shell (pid=" + pid + ") still running"); } catch { }
+
+            var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(2);
+            while (IsAlive(pid) && DateTime.UtcNow < deadline) Thread.Sleep(1000);
+            if (!IsAlive(pid))
+            {
+                try
+                {
+                    Log("old shell exited after skip, starting previous shell " + DateTimeOffset.Now.ToString("O"));
+                    Start(install, workspace, iteration: false);
+                }
+                catch (Exception ex) { Log("start previous shell failed " + ex.Message); }
             }
         }
 

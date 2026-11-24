@@ -256,6 +256,21 @@ namespace OpenLoop.App
                 var r = new Rectangle(1, 1, tile.Width - 3, tile.Height - 3);
                 e.Graphics.DrawRectangle(hot, r);
             };
+            // Overlay 只保留四条边框条（Region 镂空中间）：WinForms 的 Color.Transparent
+            // 只透父控件背景、不透兄弟控件，整面盖住会把正文/标题全遮成白板。
+            Action syncOverlayRegion = () =>
+            {
+                int w = tile.Overlay.Width, h = tile.Overlay.Height, d = Dip(3) + 2;
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                path.AddRectangle(new Rectangle(0, 0, w, d));
+                path.AddRectangle(new Rectangle(0, h - d, w, d));
+                path.AddRectangle(new Rectangle(0, 0, d, h));
+                path.AddRectangle(new Rectangle(w - d, 0, d, h));
+                tile.Overlay.Region = new Region(path);
+            };
+            tile.Overlay.Resize += (_, _) => syncOverlayRegion();
+            tile.Resize += (_, _) => syncOverlayRegion();
+            syncOverlayRegion();
 
             // AntdUI 的 Enter 在 WM_KEYDOWN 里先被消化成换行（早于 KeyDown）：只能在这里拦。
             // 单行输入框：Enter（运行中=插队）与 Ctrl+Enter（等本轮）都发送，Shift+Enter 让它换行去。

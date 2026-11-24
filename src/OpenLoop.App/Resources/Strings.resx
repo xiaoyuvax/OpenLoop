@@ -2374,6 +2374,9 @@
   <data name="无需升版" xml:space="preserve">
     <value>无需升版</value>
   </data>
+  <data name="上一次换壳没有完成：当前仍是旧版本。可重新执行迭代。" xml:space="preserve">
+    <value>上一次换壳没有完成：当前仍是旧版本。可重新执行迭代。</value>
+  </data>
   <data name="已有迭代在跑" xml:space="preserve">
     <value>已有迭代在跑</value>
   </data>

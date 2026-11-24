@@ -97,7 +97,17 @@ namespace OpenLoop.App
         }
 
         private void OnTabChanged(object sender, AntdUI.IntEventArgs e)
-            => ApplyPage(PageKind(e?.Value ?? 0));
+        {
+            string kind = PageKind(e?.Value ?? 0);
+            ApplyPage(kind);
+            // 刚被选中的页签这时才有真实尺寸：重排一次列宽，别让它在 1x1 时算出的宽度留着
+            BeginInvoke(new Action(() =>
+            {
+                if (IsDisposed) return;
+                FitColumns(kind);
+                Rebind(kind);
+            }));
+        }
 
         private void ApplyPage(string kind)
         {
@@ -154,7 +164,8 @@ namespace OpenLoop.App
             };
             table.Columns.Add(new AntdUI.Column("On", Localization.T("Status")));
             table.Columns.Add(new AntdUI.Column("Name", Localization.T("HarnessColName")));
-            table.Columns.Add(new AntdUI.Column("Params", Localization.T("HarnessColParams")));
+            // Ellipsis：内容超宽就省略号截断。行高按单行固定，折行的另一半靠它兜住
+            table.Columns.Add(new AntdUI.Column("Params", Localization.T("HarnessColParams")) { Ellipsis = true });
             table.Columns.Add(new AntdUI.Column("Note", Localization.T("ColDescription")) { Ellipsis = true });
             table.Columns[0].Render = (_, data, _) => Badge(data as ObjectRow);
             table.DataSource = _rows[kind] = [];
@@ -254,10 +265,14 @@ namespace OpenLoop.App
         }
 
         /// <summary>
-        /// 列宽按内容给：前几列取「表头 + 各单元格」的最大文字宽度加内边距，最后一列（说明）吃掉剩余宽度。
-        /// AntdUI 的 Width="auto" 是按可用宽度摊比例（会把大半屏给参数列），所以自己量。
-        /// 单位：Column.Width 是 DIP（框架内部再乘 Dpi），MeasureText 给的是物理像素，要先除回去。
-        /// 注意必须在绑定数据前设好列宽——Column.Width 是普通属性，改它不会触发重排。
+        /// 列宽按内容给：前三列取「表头 + 各单元格」的最大文字宽度加内边距（不折行所以要装得下整行），
+        /// 说明列吃掉剩余宽度，总宽严格等于可见宽度——不然会有留白或横向滚动条。
+        ///
+        /// 两个必须记住的坑：
+        /// 1) Column.Width 是 DIP（框架内部再乘 Dpi），MeasureText 给的是物理像素，要先除回去；
+        ///    而且它是普通属性，改它不会触发重排，必须在绑 DataSource 之前设好。
+        /// 2) 没被选中的页签里，表格尺寸还是 1x1，拿 table.ClientSize 会算成 0（上一版就因此
+        ///    让规则/限制/护栏三页全部落到最小值、只占 58% 宽度）。可见宽度一律取所在页签的宽度。
         /// </summary>
         private void FitColumns(string kind)
         {
@@ -274,24 +289,28 @@ namespace OpenLoop.App
                 return (int)Math.Ceiling(width / scale) + 24;
             }
 
-            var rows = _rows[kind];
-            // 先按内容定前三列，再把这不到的那部分让出去：说明列吃掉剩余宽度。
-            // 总宽严格等于可用宽度，否则会出现横向滚动条（AntdUI 不会自动收回超出的列）。
-            int available = (int)(table.ClientSize.Width / scale);
-            int on = Math.Clamp(Need(Localization.T("Status")), 72, 120);
-            int name = Math.Clamp(rows.Select(r => Need(r.Name, Localization.T("HarnessColName")))
-                .DefaultIfEmpty(96).Max(), 100, 260);
-            int parameters = Math.Clamp(rows.Select(r => Need(r.Params, Localization.T("HarnessColParams")))
-                .DefaultIfEmpty(96).Max(), 100, 340);
+            // 可见宽度：优先用表格自己的（已排过版时最准），否则退回所在页签的内宽
+            int available = (int)((table.ClientSize.Width > Dip(80)
+                    ? table.ClientSize.Width
+                    : PageWidth(table)) / scale);
+            if (available < 240) return;   // 还没布局：等下一次 Rebind
 
-            const int minNote = 160;
+            var rows = _rows[kind];
+            // 前三列按内容，但给个下限免得表头挤成两行；说明列最后吃掉剩余
+            int on = Math.Clamp(Need(Localization.T("Status")), 64, 140);
+            int name = Math.Clamp(rows.Select(r => Need(r.Name, Localization.T("HarnessColName")))
+                .DefaultIfEmpty(80).Max(), 80, 320);
+            int parameters = Math.Clamp(rows.Select(r => Need(r.Params, Localization.T("HarnessColParams")))
+                .DefaultIfEmpty(80).Max(), 80, 400);
+
+            const int minNote = 120;
             int slack = available - on - name - parameters - minNote;
             if (slack < 0)
             {
                 // 窗口太窄：先压参数列，再压对象名列，说明列保住下限
-                parameters = Math.Max(100, parameters + slack);
+                parameters = Math.Max(80, parameters + slack);
                 slack = available - on - name - parameters - minNote;
-                if (slack < 0) name = Math.Max(100, name + slack);
+                if (slack < 0) name = Math.Max(80, name + slack);
             }
             int note = Math.Max(minNote, available - on - name - parameters);
 
@@ -299,6 +318,15 @@ namespace OpenLoop.App
             table.Columns[1].Width = name.ToString();
             table.Columns[2].Width = parameters.ToString();
             table.Columns[3].Width = note.ToString();
+        }
+
+        /// <summary>表格所在页签的内宽（页签没选中时表格自己还是 1x1，只能问容器）。</summary>
+        private int PageWidth(AntdUI.Table table)
+        {
+            for (Control parent = table.Parent; parent != null; parent = parent.Parent)
+                if (parent is AntdUI.TabPage page && page.Width > Dip(80))
+                    return page.Width;
+            return _tabs.Width;
         }
 
         private List<ObjectRow> Selected(string kind)
