@@ -1551,6 +1551,28 @@ namespace OpenLoop.App
             _layoutReady = true;
         }
 
+        /// <summary>
+        /// Prompt / AGENTS.md 实际生效的工作区：与运行期同一口径（源码根，见下方 BuildSystemPrompt 的调用）。
+        /// 不能按会话工作区找：Loop 从 /complain 起时会话工作区是别人的项目，部署态下安装根里
+        /// 也没有仓库那份 AGENTS.md（2026-11-24：Harness 页「编辑 AGENTS.md」打开后一片空白）。
+        /// </summary>
+        private string InstructionRoot
+        {
+            get
+            {
+                try
+                {
+                    string root = OpenLoop.Service.Source.LoopScope.SourceRoot;
+                    if (!string.IsNullOrWhiteSpace(root) && Directory.Exists(root)) return root;
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warn("解析源码根失败：" + ex.Message);
+                }
+                return _workspace;
+            }
+        }
+
         /// <summary>TargetCentricSession：左栏挂可修订目标（与 Worker 侧同一套 TargetPane 语义）。</summary>
         internal void OpenTarget(string kind)
         {
@@ -1561,12 +1583,23 @@ namespace OpenLoop.App
                 return;
             }
 
+            // 直配模式编辑运行期真正注入的那份（源码根）；A/B 评测模式改的是本工作区的候选包
+            // （播种来源仍是源码根那份），考核通过后才覆盖正式文件。
+            // 「实际」页去会话工作区找 trace：Loop 的 trace 一直写在会话工作区。
+            string seed = InstructionRoot;
+            string target = HarnessMode.IsEval(workspace) ? workspace : seed;
+            if (!Directory.Exists(target))
+            {
+                Notify("请选择工作目录", "工作目录不存在：" + target, error: true);
+                return;
+            }
+
             TargetSpec spec;
             try
             {
                 spec = kind == PromptCatalog.AgentsKind
-                    ? TargetSpec.Agents(workspace)
-                    : TargetSpec.Prompt(workspace);
+                    ? TargetSpec.Agents(target, seed)
+                    : TargetSpec.Prompt(target, seed, actualWorkspace: workspace);
             }
             catch (Exception ex)
             {
@@ -1574,7 +1607,7 @@ namespace OpenLoop.App
                 return;
             }
 
-            _targetPane.Bind(spec, _ => SyncTarget(kind, workspace));
+            _targetPane.Bind(spec, _ => SyncTarget(kind, target));
             _targetSplit.Panel1Collapsed = false;
             ApplyTargetLayout();
         }

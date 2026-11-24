@@ -637,6 +637,35 @@ namespace OpenLoop.Core.Tests
         public void Final_Marker_Is_Stripped_From_The_Answer()
             => Assert.Equal("结论：不需要改动。", AgentLoop.StripFinalMarker("结论：不需要改动。\n\n[final]"));
 
+        [Theory]
+        [InlineData("结论如下。\n[failed]")]
+        [InlineData("结论如下。\n[done]")]
+        [InlineData("结论如下。\n[complete]")]
+        public void Detects_Final_Marker_Impostors(string text)
+            => Assert.True(AgentLoop.HasFinalMarkerImpostor(text));
+
+        [Theory]
+        [InlineData("结论如下。\n[final]")]
+        [InlineData("正文里提到 [failed] 这个词，但不在末尾。")]
+        [InlineData("参考 [OpenLoop 文档](https://example.com)。")]
+        [InlineData("[1] 前面的引用编号不算标记。")]
+        [InlineData("")]
+        public void Does_Not_Flag_Final_Marker_Legit_Uses(string text)
+            => Assert.False(AgentLoop.HasFinalMarkerImpostor(text));
+
+        [Fact]
+        public async Task Final_Marker_Impostor_Is_Nudged_Then_Closes_With_Final()
+        {
+            var reasoner = new ScriptedReasoner("结论已给出，但本轮被打断。\n[failed]", "失败原因已在正文说明。\n[final]");
+            var loop = Loops.Build(new FakeTool(), reasoner);
+
+            var result = await loop.RunAsync([], "总结这次任务");
+
+            Assert.Equal(1, result.Guards.MarkerNudges);
+            Assert.Equal("失败原因已在正文说明。", result.FinalAnswer);
+            Assert.Equal(2, reasoner.Calls.Count);
+        }
+
         [Fact]
         public async Task Final_Marker_Suppresses_Promise_Nudge_And_Is_Stripped()
         {

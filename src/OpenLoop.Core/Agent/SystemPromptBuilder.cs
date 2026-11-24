@@ -176,7 +176,7 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("下一轮你会收到 tool-result: 开头的 JSON（多个调用时按顺序回填多行）：");
             sb.AppendLine("成功为 {\"ok\":true,\"data\":...}，失败为 {\"ok\":false,\"error\":...}。");
             sb.AppendLine("任务完成或无需工具时，直接输出面向用户的最终回答（语言与用户最近一条消息一致，不要输出 tool-call 行）。");
-            sb.AppendLine("给出最终回答时，在最后一行单独输出 [final]；系统据此确认你已经收尾，并会把这行从回答里去掉。输出 tool-call 的轮次不要写。");
+            sb.AppendLine("给出最终回答时，在最后一行单独输出 [final]；系统据此确认你已经收尾，并会把这行从回答里去掉。输出 tool-call 的轮次不要写。[final] 是唯一的收尾标记：不要自造 [failed]/[done] 这类变体，收尾标记只表示「已收尾」、不表示成败——任务失败就在正文里说明原因，然后照常输出 [final]。");
             sb.AppendLine();
             return sb.ToString();
         }

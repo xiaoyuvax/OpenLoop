@@ -165,6 +165,14 @@ namespace OpenLoop.Core.Agent
                 ? content.TrimEnd()[..^FinalMarker.Length].TrimEnd()
                 : content;
 
+        /// <summary>模型把收尾标记写成自造变体（如 [failed]/[done]）：结尾是单个方括号词但不是 [final]。</summary>
+        internal static readonly System.Text.RegularExpressions.Regex FinalMarkerImpostorRegex =
+            new(@"\[(?<tag>[A-Za-z][A-Za-z_\-]{0,15})\]\s*$",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        internal static bool HasFinalMarkerImpostor(string content)
+            => !HasFinalMarker(content) && FinalMarkerImpostorRegex.IsMatch(content?.TrimEnd() ?? "");
+
         /// <summary>输出被上限截断（OpenAI 用 length，Anthropic 用 max_tokens）：这类坏 JSON 是缺尾巴，不是写坏。</summary>
         internal static bool IsLengthFinish(string finishReason)
             => string.Equals(finishReason, "length", StringComparison.OrdinalIgnoreCase)

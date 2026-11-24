@@ -686,6 +686,15 @@ namespace OpenLoop.Core.Agent
                         : "（系统提示·强制）你又一次声称完成了操作，但没有任何工具成功执行。这是最后一次纠正：要么本条只输出 tool-call 去真正执行，要么把答案里所有「已完成/已写入/已修改/已生成」改写成「未执行」，并说明原因。")));
             }
 
+            // 自造收尾标记（如 [failed]/[done]）不是协议：轻提示一次，防止残留正文显示给用户
+            if (state.MarkerNudges < 1 && !state.StepLimitReached && AgentLoop.HasFinalMarkerImpostor(content))
+            {
+                state.MarkerNudges++;
+                state.Result.Guards.MarkerNudges++;
+                return Task.FromResult(AgentStepResult.Continue(new AppendMessageEffect("user",
+                    "（系统提示）你在回答末尾输出了自造的方括号标记（如 [failed]/[done]）。收尾标记只有 [final]：它只表示「已收尾」，不表示成败；本轮失败就直接在正文里说明失败原因，不要发明标记。请重写最终回答，末尾单独一行输出 [final]。")));
+            }
+
             if (context.Policy.PromiseGuard
                 && !markedFinal
                 && state.PromiseNudges < context.Policy.MaxPromiseNudges

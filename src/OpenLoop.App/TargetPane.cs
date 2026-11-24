@@ -24,27 +24,30 @@ namespace OpenLoop.App
         /// <summary>编辑的是候选包（A/B 评测模式）：面板顶部浅黄底提示，别让人以为已生效。</summary>
         internal bool Candidate { get; init; }
 
-        internal static TargetSpec Prompt(string workspace)
+        /// <param name="seedSource">候选包的播种来源（正式文件可能不在本工作区，见 Loop）。</param>
+        /// <param name="actualWorkspace">「实际」页去哪个工作区找 trace；null = 本工作区。</param>
+        internal static TargetSpec Prompt(string workspace, string seedSource = null, string actualWorkspace = null)
         {
             bool eval = HarnessMode.IsEval(workspace);
             return new()
             {
                 Kind = PromptCatalog.SystemKind,
                 Title = eval ? "系统提示词模板（候选）" : "系统提示词模板",
-                Path = PromptCatalog.EditingPath(workspace, PromptCatalog.SystemKind),
-                Actual = () => NewestTracePrompt(workspace),
+                Path = PromptCatalog.EditingPath(workspace, PromptCatalog.SystemKind, seedSource),
+                Actual = () => NewestTracePrompt(actualWorkspace ?? workspace),
                 Candidate = eval
             };
         }
 
-        internal static TargetSpec Agents(string workspace)
+        /// <param name="seedSource">候选包的播种来源（Loop 的正式 AGENTS.md 在源码根，不在会话工作区）。</param>
+        internal static TargetSpec Agents(string workspace, string seedSource = null)
         {
             bool eval = HarnessMode.IsEval(workspace);
             return new()
             {
                 Kind = PromptCatalog.AgentsKind,
                 Title = eval ? "AGENTS.md（候选）" : "AGENTS.md",
-                Path = PromptCatalog.EditingPath(workspace, PromptCatalog.AgentsKind),
+                Path = PromptCatalog.EditingPath(workspace, PromptCatalog.AgentsKind, seedSource),
                 Candidate = eval
             };
         }
@@ -139,7 +142,8 @@ namespace OpenLoop.App
         {
             if (_spec == null || IsDisposed) return;
             string text = _actual ? _spec.Actual?.Invoke() : SafeRead(_spec.Path);
-            if (text == null && !_actual) text = "（还没有内容）";
+            // 空面板要能一眼看出「读的是哪个文件」：指错路径时不该只有一片空白
+            if (text == null && !_actual) text = "（还没有内容）" + Environment.NewLine + _spec.Path;
             if (string.Equals(text, _shown, StringComparison.Ordinal)) return;
             _shown = text;
             int caret = _text.SelectionStart;

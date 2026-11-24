@@ -29,9 +29,14 @@ namespace OpenLoop.App
         private TiledItem _dragItem;
         private Point _dragFrom;
         private bool _moved;
+        /// <summary>拖动中悬停的目标方块：外框画高亮（null = 不画）。</summary>
+        private TileBox _dragTarget;
 
         /// <summary>方块被拖到视图外：server 判断是否落在标签头区，是则脱离。</summary>
         internal event Action<TiledItem, Point> DetachRequested;
+
+        /// <summary>拖出进行中：光标悬停的标签页（null = 标签栏外或平铺内）；宿主画高亮用。</summary>
+        internal event Action<AntdUI.TabPage> DetachHoverChanged;
 
         /// <summary>宿主注入：按需建会话视图（平铺视图打开时页面被收走，队列管线可能还没建）。</summary>
         internal Func<Session, SessionView> HostEnsureView { get; set; }
@@ -237,6 +242,12 @@ namespace OpenLoop.App
             {
                 using var pen = new Pen(UiStyle.Border);
                 e.Graphics.DrawRectangle(pen, 0, 0, tile.Width - 1, tile.Height - 1);
+                // 拖动落点指示：目标方块外框高亮
+                if (ReferenceEquals(_dragTarget, tile))
+                {
+                    using var hot = new Pen(UiStyle.Accent, 2);
+                    e.Graphics.DrawRectangle(hot, 1, 1, tile.Width - 3, tile.Height - 3);
+                }
             };
 
             // AntdUI 的 Enter 在 WM_KEYDOWN 里先被消化成换行（早于 KeyDown）：只能在这里拦。
@@ -272,6 +283,7 @@ namespace OpenLoop.App
                     _moved = true;
                     Cursor = Cursors.SizeAll;
                 }
+                UpdateDragTarget(Cursor.Position);
             }
 
             void Up(object sender, MouseEventArgs e)
@@ -282,6 +294,7 @@ namespace OpenLoop.App
                 bool moved = _moved;
                 _dragItem = null;
                 _moved = false;
+                ClearDragTarget();
                 if (!moved) return;
                 var screen = Cursor.Position;
                 // 事件里别拆掉正在派发的方块：把重排/脱离留到消息循环下一轮
@@ -390,6 +403,40 @@ namespace OpenLoop.App
             tile.Mirrored = turn;
             tile.Mirror.Clear();
             if (turn != null) tile.Mirror.AddTurn(turn);
+        }
+
+        /// <summary>
+        /// 拖动中的落点指示：平铺内换位高亮目标方块外框；拖出时把悬停的标签页报给宿主。
+        /// </summary>
+        private void UpdateDragTarget(Point screen)
+        {
+            var client = _host.PointToClient(screen);
+            bool inside = _host.ClientRectangle.Contains(client);
+            var box = inside ? _tiles.Find(t => t.Bounds.Contains(client)) : null;
+            if (ReferenceEquals(box, _dragTarget))
+            {
+                // 方块没变也可能在标签栏上换页签：悬停目标照样上报
+                if (!inside) DetachHoverChanged?.Invoke(MainForm.HoveredTabAt(screen));
+                return;
+            }
+            var old = _dragTarget;
+            _dragTarget = box;
+            old?.Invalidate();
+            box?.Invalidate();
+            // 拖到视图外：目标方块不再高亮，标签栏落点交给宿主；拖回平铺内则取消指示
+            if (!inside) DetachHoverChanged?.Invoke(MainForm.HoveredTabAt(screen));
+            else DetachHoverChanged?.Invoke(null);
+        }
+
+        private void ClearDragTarget()
+        {
+            if (_dragTarget != null)
+            {
+                var old = _dragTarget;
+                _dragTarget = null;
+                old.Invalidate();
+            }
+            DetachHoverChanged?.Invoke(null);
         }
 
         private void Drop(TiledItem item, Point screen)

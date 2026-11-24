@@ -38,6 +38,7 @@ namespace OpenLoop.Core.Agent
         public int ExplorationNudges { get; set; }
         public int ClaimNudges { get; set; }
         public int PromiseNudges { get; set; }
+        public int MarkerNudges { get; set; }
         public int EmptyRetries { get; set; }
         public int MalformedRetries { get; set; }
 

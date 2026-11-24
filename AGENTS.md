@@ -18,7 +18,7 @@
 - **Harness 是工作区级的五类对象**：**Prompt**（系统提示词模板 + `AGENTS.md`）、**Skill**、**Rule**、**Limit**、**Guard**；Limit/Guard 含自愈参数（连接重试、免费额度恢复、退化输出、参数修复）。同一二进制在不同工作区可以是不同形态。
 - **演进 = 非即时集中分析**：findings 与运行证据先攒着，到点集中分诊一次，判 `harness / source / unknown`；harness 类出激活集候选并过 Gate，source 类写 `loop/dispatch/<batch>.md` 派单，状态记 `loop/triage.jsonl`（追加式，按 id 取最后一条）。`/report` 只落账、不触发演进。
 - **findings 只记「尚未处置、且能分派到某个对象」的观察**（当场修好的写进回复/提交）；用户入口是 `/report [harness|prompt|skill|rule|limit|guard|code] <观察>`，WinForms 与 Web 共用 `FindingTriage.Report`。
-- **TargetCentricSession**：会话可绑定一个唯一编辑目标（系统提示词模板 `prompts/system.md` 与 `AGENTS.md`；以后可扩到 SVG/网页等）。实现是 `TargetPane` + `TargetSpec`（Kind/Title/Path/Actual），左栏只读呈现、文件 watcher 驱动刷新、可 undock 成独立窗体；用户用聊天让模型改、模型落盘，用户不直接改文本。加新目标类型 = 新 Kind + 呈现控件 + Bind，不改会话主流程。入口 `/sysprompt`、`/agentsmd`。系统提示词模板按内容哈希登记为账本 `kind=prompt` 特征，未登记的内容不采用。
+- **TargetCentricSession**：会话可绑定一个唯一编辑目标（系统提示词模板 `prompts/system.md` 与 `AGENTS.md`；以后可扩到 SVG/网页等）。实现是 `TargetPane` + `TargetSpec`（Kind/Title/Path/Actual），左栏只读呈现、文件 watcher 驱动刷新、可 undock 成独立窗体；用户用聊天让模型改、模型落盘，用户不直接改文本。加新目标类型 = 新 Kind + 呈现控件 + Bind，不改会话主流程。入口 `/sysprompt`、`/agentsmd`。系统提示词模板按内容哈希登记为账本 `kind=prompt` 特征，未登记的内容不采用。**Loop 侧这两个入口指运行期实际生效的那份**（源码根，`LoopScope.SourceRoot`）：Loop 从 `/complain` 起时会话工作区是别人的项目，部署态下安装根里也没有仓库那份约定文件——`LoopView.OpenTarget` 直配模式编辑源码根、评测模式编辑本工作区候选包（播种来源仍取源码根）。
 - **Harness 两种生效方式**（`HarnessMode`，`loop/harness.json` 存 mode，Harness 页与 Web 同一颗切换按钮）：`direct` = 用户直配，Prompt / `AGENTS.md` 改了下个会话直接生效；`eval` = A/B 评测，改动先落候选包 `.openloop/eval/candidates/pending/`（编辑面换成候选文件，左栏标题带「（候选）」），演进时叠到候选激活集上过考核题，严格更好才 `CommitPending` 覆盖正式文件。候选未采纳前正式文件与当前激活集都不变。
 
 ## 构建与验证

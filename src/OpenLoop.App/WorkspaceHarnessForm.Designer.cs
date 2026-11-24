@@ -107,6 +107,12 @@ namespace OpenLoop.App
             _buttons.Controls.Add(_btnClose);
             _buttons.Controls.Add(_btnAiConfig);
 
+            // 页面必须显式登记到 Tabs.Pages：只 new 出来不 Add，窗体上就一个页签都没有
+            _tabs.Pages.Add(_pageSkills);
+            _tabs.Pages.Add(_pageRules);
+            _tabs.Pages.Add(_pageLimits);
+            _tabs.Pages.Add(_pageGuards);
+
             _root.Controls.Add(_tabs, 0, 0);
             _root.Controls.Add(_lblStatus, 0, 1);
             _root.Controls.Add(_buttons, 0, 2);

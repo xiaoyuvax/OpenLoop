@@ -44,7 +44,8 @@ namespace OpenLoop.Core.Store
             => kind == AgentsKind ? AgentsPath(workspace) : FilePath(workspace);
 
         /// <summary>目标面板要编辑的文件：直配=正式文件，评测=候选包（首次从正式文件播种）。</summary>
-        public static string EditingPath(string workspace, string kind)
+        /// <param name="seedSource">候选包的播种来源；null = 本工作区的正式文件。</param>
+        public static string EditingPath(string workspace, string kind, string seedSource = null)
         {
             if (!HarnessMode.IsEval(workspace))
             {
@@ -56,7 +57,7 @@ namespace OpenLoop.Core.Store
             string path = CandidatePath(workspace, kind);
             if (File.Exists(path)) return path;
 
-            string seed = ReadText(LivePath(workspace, kind))
+            string seed = ReadText(seedSource ?? LivePath(workspace, kind))
                           ?? (kind == AgentsKind ? "" : Agent.PromptTemplate.Default);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             File.WriteAllText(path, seed, new UTF8Encoding(false));

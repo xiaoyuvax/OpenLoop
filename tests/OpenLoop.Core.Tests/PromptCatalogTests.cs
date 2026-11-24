@@ -69,6 +69,25 @@ public sealed class PromptCatalogTests : IDisposable
     }
 
     [Fact]
+    public void Eval_candidate_can_be_seeded_from_another_directory()
+    {
+        // Loop 的正式 AGENTS.md 在源码根，候选包落在会话工作区：播种来源要能另外指定
+        Directory.CreateDirectory(_root);
+        HarnessMode.Set(_root, HarnessMode.Eval);
+        string source = Path.Combine(_root, "source");
+        Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "AGENTS.md"), "源码根的约定");
+
+        string editing = PromptCatalog.EditingPath(
+            _root, PromptCatalog.AgentsKind, PromptCatalog.AgentsPath(source));
+
+        Assert.Equal(PromptCatalog.CandidatePath(_root, PromptCatalog.AgentsKind), editing);
+        Assert.Equal("源码根的约定", File.ReadAllText(editing).Trim());
+        // 本工作区的正式文件没有被顺手创建
+        Assert.False(File.Exists(Path.Combine(_root, "AGENTS.md")));
+    }
+
+    [Fact]
     public void Sync_registers_and_activates_once_per_content()
     {
         Directory.CreateDirectory(_root);

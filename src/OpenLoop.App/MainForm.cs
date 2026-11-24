@@ -44,6 +44,10 @@ namespace OpenLoop.App
         /// <summary>标签拖进平铺视图的进行态：MouseDown 记住按下的页与落点，MouseUp 落在平铺视图内容区就收进来。</summary>
         private AntdUI.TabPage _tabDragDown;
         private Point _tabDragFrom;
+        /// <summary>拖入进行中：把「平铺视图」页签头画成可落点高亮。</summary>
+        private bool _tabDragToTiled;
+        /// <summary>拖出进行中：平铺视图报上来的悬停页签，画成可落点高亮（null = 不画）。</summary>
+        private AntdUI.TabPage _tabDropTarget;
 
         /// <summary>3 秒一次的同步和打开会话都复用它：每次 new 一个客户端等于每次新建 HttpClient。</summary>
         private WorkerApiClient _workerClient;
@@ -60,6 +64,12 @@ namespace OpenLoop.App
             // 异常退出前的兜底：Loop 的正文只有壳自己写（A 的 Persist 只管 Worker 会话）
             Program.EmergencySave = EmergencySave;
             _tabPulse.Tick += OnTabPulseTick;
+            HoveredTabRequested = screen =>
+            {
+                if (!_tabs.RectangleToScreen(_tabs.ClientRectangle).Contains(screen)) return null;
+                var hit = _tabs.PointToClient(screen);
+                return _tabs.ContainsTabPage(hit.X, hit.Y);
+            };
             UiHeartbeat.Start();   // UI 线程心跳：卡死留痕
         }
 
@@ -2181,6 +2191,7 @@ namespace OpenLoop.App
 
             var view = new TiledView { Dock = DockStyle.Fill };
             view.DetachRequested += OnTiledDetach;
+            view.DetachHoverChanged += OnTiledDetachHover;
             view.Emptied += OnTiledEmptied;
             view.HostEnsureView = session => EnsureView(session);
             var page = new AntdUI.TabPage
@@ -2210,6 +2221,16 @@ namespace OpenLoop.App
             if (_tiledPage != null) CloseTab(_tiledPage);
         }
 
+        /// <summary>平铺方块拖出中：悬停到哪个页签头就高亮哪个，离开标签栏就都取消。</summary>
+        private void OnTiledDetachHover(AntdUI.TabPage hover)
+        {
+            if (ReferenceEquals(_tabDropTarget, hover)) return;
+            _tabDropTarget = hover;
+            _tabs.Invalidate();
+            // 指针跟着可落点变：压住页签头（可脱离）是手型，其余保持 SizeAll
+            Cursor = hover != null ? Cursors.Hand : Cursors.SizeAll;
+        }
+
         /// <summary>方块拖出视图：落在标签页头才脱离（开回普通标签页），否则方块不动。</summary>
         private void OnTiledDetach(TiledItem item, Point screen)
         {
@@ -2221,6 +2242,15 @@ namespace OpenLoop.App
                 case LoopView loop: EnsureLoop(loop.Workspace, select: true, sessionId: loop.SessionId); break;
             }
         }
+
+        /// <summary>屏幕坐标下悬停的标签页；标签栏外返回 null（平铺视图拖出指示用）。</summary>
+        internal static AntdUI.TabPage HoveredTabAt(Point screen)
+        {
+            return HoveredTabRequested?.Invoke(screen);
+        }
+
+        /// <summary>HoveredTabAt 的实现（主窗体构造时把自己的 _tabs 转出来）。</summary>
+        internal static Func<Point, AntdUI.TabPage> HoveredTabRequested;
 
         /// <summary>落点在标签页头（选中页内容区之上）才算「拖到标签栏」。</summary>
         private bool IsTabHeaderPoint(Point screen)
@@ -2309,12 +2339,62 @@ namespace OpenLoop.App
         {
             _tabDragDown = e.Button == MouseButtons.Left ? _tabs.ContainsTabPage(e.X, e.Y) : null;
             _tabDragFrom = e.Location;
+            _tabDragToTiled = false;
+            _tabDropTarget = null;
+        }
+
+        /// <summary>
+        /// 拖动中的视觉反馈：指针随落点变化，「平铺视图」页签头进入可落区时高亮。
+        /// 按下后系统自动 Capture，MouseMove 全程发回 _tabs，这里按客户坐标判悬停。
+        /// </summary>
+        private void OnTabTiledDragMove(object sender, MouseEventArgs e)
+        {
+            if (_tabDragDown == null || e.Button != MouseButtons.Left) return;
+            if (Math.Abs(e.X - _tabDragFrom.X) < 4 && Math.Abs(e.Y - _tabDragFrom.Y) < 4) return;
+            if (_tiledPage == null || _tabDragDown == _tiledPage) return;
+            bool overTiled = _tabs.ContainsTabPage(e.X, e.Y) == _tiledPage;
+            if (overTiled != _tabDragToTiled)
+            {
+                _tabDragToTiled = overTiled;
+                _tabs.Invalidate();
+            }
+            Cursor = overTiled ? Cursors.Hand : Cursors.SizeAll;
+        }
+
+        /// <summary>拖动结束（MouseUp/捕获丢失）清掉高亮与指针。</summary>
+        private void OnTabTiledDragEnd()
+        {
+            _tabDragDown = null;
+            _tabDragToTiled = false;
+            _tabDropTarget = null;
+            _tabs.Invalidate();
+            Cursor = Cursors.Default;
+        }
+
+        /// <summary>
+        /// 拖动落点的页签头高亮（画在 AntdUI 自绘之上）：
+        /// 拖普通标签进平铺 = 高亮「平铺视图」页签头；平铺方块拖出 = 高亮悬停的页签头。
+        /// 页签矩形走 _tabs.Style.GetTabRect（AntdUI 每次布局后保存的绘制矩形，
+        /// 含滚动偏移，与 ContainsTabPage 同一坐标系）。
+        /// </summary>
+        private void OnTabsPaintDropHint(object sender, AntdUI.DrawEventArgs e)
+        {
+            AntdUI.TabPage hint = null;
+            if (_tabDragToTiled) hint = _tiledPage;
+            else if (_tabDropTarget != null) hint = _tabDropTarget;
+            if (hint == null) return;
+            int index = _tabs.Pages.IndexOf(hint);
+            if (index < 0) return;
+            var rect = _tabs.Style?.GetTabRect(index).Rect ?? Rectangle.Empty;
+            if (rect.Width <= 0) return;
+            using var pen = new Pen(UiStyle.Accent, 2);
+            e.Canvas.Draw(pen, rect);
         }
 
         private void OnTabTiledDragUp(object sender, MouseEventArgs e)
         {
             var page = _tabDragDown;
-            _tabDragDown = null;
+            OnTabTiledDragEnd();
             if (page == null || e.Button != MouseButtons.Left) return;
             if (Math.Abs(e.X - _tabDragFrom.X) < 4 && Math.Abs(e.Y - _tabDragFrom.Y) < 4) return;
             if (page == _tiledPage || page.Tag is not (Session or LoopView)) return;

@@ -188,6 +188,8 @@ namespace OpenLoop.App
             _tabs.MouseUp += OnTabMouseUp;
             _tabs.MouseDown += OnTabTiledDragDown;
             _tabs.MouseUp += OnTabTiledDragUp;
+            _tabs.MouseMove += OnTabTiledDragMove;
+            _tabs.Draw += OnTabsPaintDropHint;
             _tabs.SelectedIndexChanged += OnSelectedTabChanged;
 
             _overviewPage.Name = "overviewPage";
