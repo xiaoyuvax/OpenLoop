@@ -123,6 +123,27 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task ReadLineLimitTellsNextOffsetAndResumes()
+        {
+            // 900 行短行 > 默认 limit 400，但字符数不超 6000：此前只报行数、不给续读 offset
+            var scope = new WorkspaceScope(_root);
+            await File.WriteAllLinesAsync(Path.Combine(_root, "many.txt"),
+                Enumerable.Range(1, 900).Select(i => $"line {i}"));
+            var read = new ReadFileTool(scope);
+
+            var result = await read.ExecuteAsync(Args(("path", "many.txt")), default);
+
+            Assert.True(result.Ok);
+            Assert.Contains("第 1-400 行，共 900 行", result.Data);
+            Assert.Contains("offset=401", result.Data);
+
+            var rest = await read.ExecuteAsync(Args(("path", "many.txt"), ("offset", "401")), default);
+            Assert.True(rest.Ok, rest.Error);
+            Assert.Contains("line 401", rest.Data);
+            Assert.Contains("line 900", rest.Data);
+        }
+
+        [Fact]
         public async Task ReadRejectsMissingFile()
         {
             var read = new ReadFileTool(new WorkspaceScope(_root));

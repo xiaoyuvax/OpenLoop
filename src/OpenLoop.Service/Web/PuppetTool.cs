@@ -238,8 +238,7 @@ namespace OpenLoop.Service.Web
                 ? AgentToolResult.Success(text)
                 : AgentToolResult.Failure($"HTTP {status}: {text}");
         }
-        /// <summary>识别 PuppetArtifact 图片 (result.Content = base64).</summary>
-        /// <summary>璇嗗埆 /agent/invoke 杩斿洖鐨?PuppetArtifact 鍥剧墖锛坮esult.Content 鏄?base64 PNG锛夈€?/summary>
+        /// <summary>识别 PuppetArtifact 图片（result.Content 是 base64）。</summary>
         internal static ToolAttachment ExtractImage(string body)
         {
             if (string.IsNullOrEmpty(body) || body.Length < 200 || !body.Contains("Puppet.Core.AppAgent.PuppetArtifact"))

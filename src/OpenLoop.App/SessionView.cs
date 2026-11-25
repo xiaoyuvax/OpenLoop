@@ -1739,12 +1739,17 @@ namespace OpenLoop.App
         private void FitLoopLabels()
         {
             int width = Math.Max(Dip(120), _loopFlow.ClientSize.Width - Dip(28));
-            foreach (var label in new[] { _lblDef, _lblTasks, _lblCost, _lblStatus })
-                label.MaximumSize = new Size(width, 0);
 
+            // 多行说明统一走 FitWrapped：AutoSize=true 时 AntdUI.Label 只按单行量高度，
+            // 长句（def/考核题/状态行）在窄侧栏下会被裁成一行（F-20ed0f28）。
+            FitWrapped(_lblDef, width);
+            FitWrapped(_lblTasks, width);
+            FitWrapped(_lblStatus, width);
             FitWrapped(_lblTrace, width);
             FitWrapped(_lblCandidate, width);
             FitWrapped(_lblEvolveHint, width);
+            // 单行短标签保持 AutoSize：内容短、没有裁行风险，交回自动量宽更省心
+            _lblCost.MaximumSize = new Size(width, 0);
         }
 
         /// <summary>多行说明标签按换行宽度重新量高度：AutoSize 只量单行，长句会被裁掉（侧栏越窄越明显）。</summary>

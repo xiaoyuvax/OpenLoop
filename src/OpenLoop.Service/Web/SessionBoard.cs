@@ -125,7 +125,7 @@ namespace OpenLoop.Service.Web
         /// 是否还在干活看 PeerInfo.IdleSeconds。工作区按登记时的 Purpose 后缀精确比对。
         /// </summary>
 
-        /// <summary>鍚屽伐浣滃尯鍑虹幇鏂颁細璇濇椂濉炶繘杈撳叆闃熷垪鐨勪竴鏉℃彁绀猴細涓庣敤鎴疯緭鍏ュ悓涓€鏉￠槦鍒楋紝鐢ㄦ埛鍙互鎾ゅ洖銆?/summary>
+        /// <summary>同工作区出现新会话时塞进输入队列的一条提示：与用户输入同一条队列，用户可以撤回。</summary>
         public static string PeerNotice(IReadOnlyList<string> peers)
             => PeerNoticeText.For(peers);
 

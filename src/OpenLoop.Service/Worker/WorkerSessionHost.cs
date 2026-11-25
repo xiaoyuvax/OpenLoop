@@ -397,6 +397,7 @@ namespace OpenLoop.Service.Worker
         /// <summary>当前轮该在下一个 step 前收尾吗：显式软停止，或队列里还有「立即」项。</summary>
         private bool ShouldStopRun(Session session)
         {
+            // 只有「立即」项才算插队：同伴播报这类顺带告知排在队尾、不标 Immediate（F-e5cec5a7）
             lock (_lock) return session.Interrupt || session.Pending.Exists(p => p.Immediate);
         }
 
@@ -636,13 +637,15 @@ namespace OpenLoop.Service.Worker
             // 把已经停手的会话当成「新会话已启动」播报出去，别的会话会收到毫无用处的一条提示。
             var fresh = peers.Where(p => p.Active).Where(p => session.PeersAnnounced.Add(p.Id)).ToList();
             if (fresh.Count == 0) return;
-            // 协作提示与监测汇报同一时机：插到队首、标 Immediate，当前轮在下一个 step 前收尾后先发
-            session.Pending.Insert(0, new PendingSend
+            // 播报只是「顺带告知」，排在队尾、不标 Immediate：
+            // 标 Immediate 会被 ShouldStopRun 当成用户插队，于是会话一开轮就被自己刚塞进去的
+            // 同伴提示截断、收尾后又立刻续跑一轮（F-e5cec5a7）。
+            // 真正的「立即」语义留给用户消息与 EnqueueAuto 的监测汇报。
+            session.Pending.Add(new PendingSend
             {
                 Text = OpenLoop.Service.Web.SessionBoard.PeerNotice(fresh.Select(p => p.Summary()).ToList()),
                 Tag = "collab",
-                Auto = true,
-                Immediate = true
+                Auto = true
             });
             session.Revision++;
         }

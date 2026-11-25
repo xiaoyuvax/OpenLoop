@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace OpenLoop.Core.Safety
 {
@@ -207,6 +208,10 @@ namespace OpenLoop.Core.Safety
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                // git 默认按本地码页输出，中文路径（文件名/工作区名）会变乱码，
+                // 快照清单比对与 Restore 会因此错删/漏删（F-b2fe2b62）；与 GitService.RunGit 同一写法。
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
             };
             foreach (string arg in args) psi.ArgumentList.Add(arg);
             ChildEnvironment.Apply(psi);

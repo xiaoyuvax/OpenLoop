@@ -56,9 +56,16 @@ namespace OpenLoop.Core.Tools.Builtin
 
             string relative = _scope.Relative(full);
             string text = sb.ToString();
-            string header = $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行）\n";
+
+            // limit 用完但文件还有剩余：明确给出续读 offset，别让模型自己试探
+            if (end < lines.Length && text.Length <= MaxChars)
+                return Task.FromResult(AgentToolResult.Success(
+                    $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行；limit 到顶，" +
+                    $"第 {end + 1}-{lines.Length} 行未显示，继续读请设 offset={end + 1}）\n" + text));
+
             if (text.Length <= MaxChars)
-                return Task.FromResult(AgentToolResult.Success(header + text));
+                return Task.FromResult(AgentToolResult.Success(
+                    $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行）\n" + text));
 
             int cut = text.LastIndexOf('\n', MaxChars);
             if (cut <= 0)

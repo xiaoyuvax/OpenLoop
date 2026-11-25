@@ -265,6 +265,42 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public async Task Peer_notice_does_not_truncate_the_running_turn()
+        {
+            // F-e5cec5a7：同伴播报只是顺带告知，不能标 Immediate ——
+            // 否则 ShouldStop 为真，会话一开轮就被自己刚塞进去的提示截断。
+            // 播报由 Start 里的 AnnouncePeers 塞进队列，所以同伴必须在开轮前就登记在板上。
+            string peer = "A-peer" + Guid.NewGuid().ToString("N")[..8];
+            WorkerRunRequest seen = null;
+            var gate = new TaskCompletionSource<WorkerRunResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            try
+            {
+                // 与 NewSession 同一工作区（SessionBoard 按 Purpose 后缀比对工作区）
+                AgentBook.Heartbeat(peer, "Worker 会话 · " + _workspace, "改 ChatFlow",
+                    SessionBoard.RunningWaitSeconds, "openloop");
+
+                var host = NewHost((request, ct) => { seen = request; return gate.Task; });
+                var session = NewSession(host);
+
+                host.Send(session.Id, "task", "first");
+                await WaitAsync(() => seen != null);
+
+                // 核心不变量：同伴播报（Auto + 非 Immediate）不能让当前轮收尾。
+                // 修前这里为 true —— ShouldStopRun 只要见到 Immediate 项就截断本轮，
+                // 而 AnnouncePeers 当时正是标 Immediate 插到队首的（F-e5cec5a7）。
+                Assert.False(seen.ShouldStop());
+
+                gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });
+                await WaitAsync(() => host.Get(session.Id).State == WorkerSessionHost.Done);
+            }
+            finally
+            {
+                AgentBook.Release(peer);
+                gate.TrySetResult(new WorkerRunResult { Outcome = "ok" });
+            }
+        }
+
+        [Fact]
         public async Task Removing_the_last_immediate_pending_item_retracts_the_soft_stop()
         {
             WorkerRunRequest seen = null;

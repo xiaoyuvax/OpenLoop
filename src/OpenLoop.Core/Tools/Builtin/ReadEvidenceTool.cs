@@ -13,6 +13,13 @@ namespace OpenLoop.Core.Tools.Builtin
         private const int DefaultLimit = 200;
         private const int MaxEntries = 200;
 
+        /// <summary>
+        /// 单次读取的字符上限。账本是逐行 JSON，6000 字符只够 8-10 条 finding，
+        /// 模型只能反复试探分块读（84 条要走十几次），一轮的工具步数被迫膨胀。
+        /// 这里给到 16000，并在任何截断处明确写出续读 offset。
+        /// </summary>
+        private const int ReadMaxChars = 16000;
+
         private readonly WorkspaceScope _scope;
 
         public ReadEvidenceTool(string workspaceRoot)
@@ -70,13 +77,43 @@ namespace OpenLoop.Core.Tools.Builtin
             int limit = Math.Clamp(args.Int("limit", DefaultLimit), 1, 5000);
             int start = Math.Min(offset - 1, lines.Length);
             int end = Math.Min(lines.Length, start + limit);
+            string relative = _scope.Relative(full);
 
             var sb = new StringBuilder();
-            sb.AppendLine($"{_scope.Relative(full)}（第 {start + 1}-{end} 行，共 {lines.Length} 行）");
             for (int i = start; i < end; i++)
                 sb.Append(i + 1).Append(": ").AppendLine(lines[i]);
+            string text = sb.ToString();
 
-            return AgentToolResult.Success(ToolText.Truncate(sb.ToString(), 6000));
+            // limit 用完但文件还有剩余：明确给出续读 offset，别让模型猜
+            if (end < lines.Length && text.Length <= ReadMaxChars)
+            {
+                return AgentToolResult.Success(
+                    $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行；limit 到顶，"
+                    + $"第 {end + 1}-{lines.Length} 行未显示，继续读请设 offset={end + 1}）\n" + text);
+            }
+
+            if (text.Length <= ReadMaxChars)
+            {
+                return AgentToolResult.Success(
+                    $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行）\n" + text);
+            }
+
+            // 字符上限截断按行边界切：不要在一条 finding 的 JSON 中间断掉，
+            // 并把续读 offset 直接写进首行，免得模型靠反复试探找出该从哪一行接着读。
+            int cut = text.LastIndexOf('\n', ReadMaxChars);
+            if (cut <= 0)
+            {
+                return AgentToolResult.Success(
+                    $"{relative}（第 {start + 1} 行，共 {lines.Length} 行；单行超过 {ReadMaxChars} 字符，已截断）\n"
+                    + ToolText.Truncate(text, ReadMaxChars));
+            }
+
+            string shown = text[..(cut + 1)];
+            int shownLines = shown.Count(c => c == '\n');
+            int shownEnd = start + shownLines;
+            return AgentToolResult.Success(
+                $"{relative}（第 {start + 1}-{shownEnd} 行，共 {lines.Length} 行；单次上限 {ReadMaxChars} 字符，"
+                + $"第 {shownEnd + 1}-{end} 行未显示，继续读请设 offset={shownEnd + 1}）\n" + shown);
         }
     }
 }

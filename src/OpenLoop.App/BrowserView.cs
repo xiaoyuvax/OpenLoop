@@ -209,6 +209,10 @@ namespace OpenLoop.App
         private CallResult ScreenshotCore()
         {
             if (!EnsureCore(out string initError)) return new CallResult(false, null, initError);
+            // 页面没摆在侧栏前台时 CapturePreviewAsync 会一直挂到超时：先给明确错误，
+            // 调用方先 OpenBrowser 切页再截图（F-ec9cff39）。
+            if (!Visible && !IsUndocked)
+                return new CallResult(false, null, Localization.T("网页页未激活：先调 OpenBrowser 切到网页页再截图"));
             string file = Path.Combine(Path.GetTempPath(), "openloop-shot-" + Guid.NewGuid().ToString("N") + ".png");
             try
             {
@@ -216,7 +220,13 @@ namespace OpenLoop.App
                 {
                     var task = _web.CoreWebView2.CapturePreviewAsync(
                         CoreWebView2CapturePreviewImageFormat.Png, stream);
-                    if (!Pump(task)) return new CallResult(false, null, Localization.T("截图超时"));
+                    if (!Pump(task))
+                    {
+                        string reason = PumpFailure(task);
+                        return new CallResult(false, null, reason != null
+                            ? Localization.T("截图失败：") + reason
+                            : Localization.T("截图超时"));
+                    }
                 }
                 Touch();
                 return new CallResult(true, Convert.ToBase64String(File.ReadAllBytes(file)), null);
@@ -292,6 +302,18 @@ namespace OpenLoop.App
                 Thread.Sleep(5);
             }
             return task.IsCompletedSuccessfully;
+        }
+
+        /// <summary>Pump 判失败后取真实原因：task faulted / canceled 不是「超时」，别把异常吞成截图超时（F-ec9cff39）。</summary>
+        private static string PumpFailure(Task task)
+        {
+            if (task.IsFaulted)
+            {
+                var ex = task.Exception?.InnerException ?? task.Exception;
+                return ex?.Message ?? "task faulted";
+            }
+            if (task.IsCanceled) return "task canceled";
+            return null;   // 真超时
         }
 
         private static string Normalize(string url)

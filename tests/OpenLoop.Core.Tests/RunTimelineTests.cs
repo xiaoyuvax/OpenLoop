@@ -111,5 +111,35 @@ namespace OpenLoop.Core.Tests
             timeline.FeedAnswerTail("完全对不上的文本");
             Assert.Equal("前半后半", timeline.RenderPhases()[0].Answer);
         }
+
+        [Fact]
+        public void AnswerAndToolBumpVersionForPhasesDirty()
+        {
+            var timeline = new RunTimeline();
+            int v0 = timeline.Version;
+            timeline.Thinking("想");
+            int v1 = timeline.Version;
+            Assert.True(v1 > v0, "Thinking must bump Version");
+
+            timeline.Answer("正文");
+            Assert.True(timeline.Version > v1,
+                "Answer must bump Version, otherwise SyncPhases dirty flag stays equal and phases never refresh");
+
+            int v2 = timeline.Version;
+            timeline.Tool("Read(a) · 1s");
+            Assert.True(timeline.Version > v2, "Tool must bump Version");
+        }
+
+        [Fact]
+        public void FeedAnswerTailBumpsVersionSoSyncPhasesPicksUpTail()
+        {
+            var timeline = new RunTimeline();
+            timeline.Answer("前半");
+            int before = timeline.Version;
+            timeline.FeedAnswerTail("前半后半");
+
+            Assert.True(timeline.Version > before, "FeedAnswerTail must bump Version");
+            Assert.Equal("前半后半", timeline.RenderPhases()[0].Answer);
+        }
     }
 }

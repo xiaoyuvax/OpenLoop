@@ -310,7 +310,10 @@ namespace OpenLoop.App
             _puppetView = new PuppetActionView { Dock = DockStyle.Fill, Visible = false };
             _loopAppView = new LoopAppView { Dock = DockStyle.Fill, Visible = false };
 
-            _lblDef.AutoSize = true;
+            // 多行说明：AutoSize 只按单行量高度，长句会被裁成一行（F-20ed0f28）；
+            // 宽高由 SessionView.FitLoopLabels 按换行重算，与 trace / evolve 标签同一套做法
+            _lblDef.AutoSize = false;
+            _lblDef.TextMultiLine = true;
             _lblDef.MaximumSize = new Size(260, 0);
             _lblDef.Text = "def: —";
             _lblDef.Font = new Font("Segoe UI", 9F);
@@ -319,7 +322,8 @@ namespace OpenLoop.App
             _lblDef.Cursor = Cursors.Hand;
             _lblDef.Click += OnShowDefinitions;
 
-            _lblTasks.AutoSize = true;
+            _lblTasks.AutoSize = false;
+            _lblTasks.TextMultiLine = true;
             _lblTasks.MaximumSize = new Size(260, 0);
             _lblTasks.Text = Localization.T("考核题: —");
             _lblTasks.Font = new Font("Segoe UI", 9F);
@@ -346,7 +350,8 @@ namespace OpenLoop.App
             _lblCost.ForeColor = UiStyle.Muted;
             _lblCost.Margin = new Padding(0, 0, 0, 8);
 
-            _lblStatus.AutoSize = true;
+            _lblStatus.AutoSize = false;
+            _lblStatus.TextMultiLine = true;
             _lblStatus.MaximumSize = new Size(260, 0);
             _lblStatus.Text = Localization.T("Status") + ": —";
             _lblStatus.Font = new Font("Segoe UI", 9F);

@@ -39,6 +39,7 @@ namespace OpenLoop.Core.Agent
             if (string.IsNullOrEmpty(piece)) return;
             if (_blocks.Count == 0 || !_blocks[^1].Answer)
                 _blocks.Add(new Block { Answer = true });
+            Version++;
             _blocks[^1].Text.Append(piece);
         }
 
@@ -48,6 +49,7 @@ namespace OpenLoop.Core.Agent
             if (string.IsNullOrEmpty(line)) return;
             var block = new Block { Tool = true };
             block.Text.Append(line);
+            Version++;
             _blocks.Add(block);
         }
 

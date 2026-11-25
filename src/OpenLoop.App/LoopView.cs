@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Text;
 using ChatFlow;
 using OpenLoop.Core.Agent;
@@ -46,6 +46,8 @@ namespace OpenLoop.App
         // 上下文占比的实时估算：本轮请求的 prompt + 已生成内容（按增量累加）
         private int _promptTokens, _liveTokens;
         private bool _running;
+        /// <summary>stop source of the current turn (user-stop / shutdown / external-cancel), written into trace (F-4c02aae4).</summary>
+        private string _stopSource;
 
         /// <summary>上一次自动总结标题（计入收尾）时的轮数：轮次结束时只在之后又聊过才再更新一次。</summary>
         private int _titleTurnCount;
@@ -657,6 +659,7 @@ namespace OpenLoop.App
         public void Stop()
         {
             _userEpoch++;
+            _stopSource = "user-stop";
             _queue.Paused = true;
             _cts?.Cancel();
         }
@@ -664,6 +667,7 @@ namespace OpenLoop.App
         public void Shutdown()
         {
             _userEpoch++;
+            _stopSource = "shutdown";
             _closed = true;
             _cts?.Cancel();
             _collab?.Stop();
@@ -858,6 +862,7 @@ namespace OpenLoop.App
             // 提前建好取消令牌：准备阶段也能点「停止」，准备完会立刻按已取消处理
             _cts = new CancellationTokenSource();
             var ct = _cts.Token;
+            _stopSource = null;   // cleared per turn: only a stop inside this turn records a source
 
             IReadOnlyList<SkillInfo> skills;
             IReadOnlyList<string> skillProblems;
@@ -1169,7 +1174,8 @@ namespace OpenLoop.App
                 outcome = result.BudgetExhausted ? "budget"
                     : result.StoppedByUser || result.StoppedByGuard ? "stopped"
                     : "ok";
-                trace.Finish(outcome, turn.AssistantText, result.ChatCost, result.Guards);
+                trace.Finish(outcome, turn.AssistantText, result.ChatCost, result.Guards,
+                    SoftStopSource(outcome, result.StoppedByGuard));
                 _lastCost = result.ChatCost?.ToString("0.0000") ?? "—";
                 _contextTokens = result.ContextTokens ?? _contextTokens;
                 _lblStatus.Text = Localization.T("状态: ") + string.Format(Localization.T("StatusStepsCost"), outcome, result.Steps.Count, _lastCost);
@@ -1183,7 +1189,9 @@ namespace OpenLoop.App
                 turn.ToolStatusText = null;
                 lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
                 if (string.IsNullOrEmpty(turn.AssistantText)) turn.AssistantText = Localization.T("（已停止）");
-                trace.Finish("stopped", turn.AssistantText);
+                var stopSource = _stopSource ?? "user-stop";
+                AppLog.Info($"Loop 轮被停止：{_sessionId} 来源={stopSource}");
+                trace.Finish("stopped", turn.AssistantText, stopSource: stopSource);
                 _lblStatus.Text = Localization.T("状态: stopped");
                 SetState(SessionState.Interrupted);
             }
@@ -1242,6 +1250,20 @@ namespace OpenLoop.App
         /// <summary>失败轮的正文：只写失败原因，跑了几步看思维链区。</summary>
         internal static string FailedText(string error)
             => OpenLoop.Core.Messages.ServerNotice.FailedPrefix + error;
+
+        /// <summary>
+        /// 软停止的来源：队列里有「立即」项（用户插队 / 自动提示）还是守卫拦截。
+        /// 硬取消（点停止、关标签）由 catch 里的 _stopSource 记；都不记的话事后只看到 outcome=stopped，
+        /// 分不清是谁打断了这一轮（F-4c02aae4）。
+        /// </summary>
+        private string SoftStopSource(string outcome, bool byGuard)
+        {
+            if (outcome != "stopped") return null;
+            if (!string.IsNullOrEmpty(_stopSource)) return _stopSource;
+            if (byGuard) return "guard";
+            var immediate = _queue.Items.FirstOrDefault(i => i.Immediate);
+            return immediate == null ? "soft-stop" : immediate.Auto ? "notice-immediate" : "queue-immediate";
+        }
 
         /// <summary>把时间线的分段同步进回话数据；分段正文过一遍安全行清洗，与正文区一致。</summary>
         private static void SyncPhases(ChatTurn turn, RunTimeline timeline)
