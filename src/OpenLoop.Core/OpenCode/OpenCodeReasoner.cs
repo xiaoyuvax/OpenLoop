@@ -78,6 +78,8 @@ namespace OpenLoop.Core.OpenCode
         {
             OnProgress?.Invoke(new OpenAiCompatibleReasoner.ReasonerProgress("等待 OpenCode 响应", 0, TimeSpan.Zero));
             string prompt = Flatten(messages);
+            // 图片附件: 取历史末尾的 tool-result 图片，随本轮 prompt 的 files 发给上游。
+            var attachments = messages?.LastOrDefault(m => m?.Attachments is { Count: > 0 })?.Attachments;
             // 免费模型保留工具表只为过上游门禁；原生工具按宿主审批执行，调用与结果实时上报。
             var decide = _decide;
             var native = new List<OpenCodeNativeTool>();
@@ -98,7 +100,7 @@ namespace OpenLoop.Core.OpenCode
                 {
                     return await RetryConnectAsync(
                         () => _client.RunTurnAsync(text, _model, _workspace, onDelta, onReasoning,
-                            timeoutSeconds: _idleSeconds, decide: decide, keepTools: _keepTools,
+                            timeoutSeconds: _idleSeconds, decide: decide, keepTools: _keepTools, attachments: attachments,
                             onNativeTool: nativeSink, ct: ct, onNotice: OnNotice, shouldStop: ShouldStop),
                         ct, onRestart);
                 }

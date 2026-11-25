@@ -113,7 +113,7 @@ namespace OpenLoop.Core.Acp
             try
             {
                 await _client.RequestAsync("session/prompt",
-                    new { sessionId, prompt = new[] { new { type = "text", text = Prompt(messages) } } }, ct)
+                    new { sessionId, prompt = PromptBlocks(messages) }, ct)
                     .ConfigureAwait(false);
             }
             finally
@@ -314,6 +314,19 @@ namespace OpenLoop.Core.Acp
         }
 
         /// <summary>把历史压成一条 prompt：ACP 的会话有自己的历史，宿主只负责把这次要说的话送进去。</summary>
+        /// <summary>prompt content blocks：文本块 + 附件（图片）块；附件走模型附件通道，不进正文。</summary>
+        private static object[] PromptBlocks(IReadOnlyList<LlmMessage> messages)
+        {
+            var blocks = new List<object> { new { type = "text", text = Prompt(messages) } };
+            var attachments = messages?.LastOrDefault(m => m?.Attachments is { Count: > 0 })?.Attachments;
+            if (attachments != null)
+                foreach (var attachment in attachments)
+                {
+                    if (string.IsNullOrEmpty(attachment.Base64)) continue;
+                    blocks.Add(new { type = "image", data = attachment.Base64, mimeType = attachment.MimeType });
+                }
+            return blocks.ToArray();
+        }
         private static string Prompt(IReadOnlyList<LlmMessage> messages)
         {
             var sb = new StringBuilder();

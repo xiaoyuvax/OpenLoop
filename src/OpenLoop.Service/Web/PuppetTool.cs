@@ -240,7 +240,7 @@ namespace OpenLoop.Service.Web
         }
         /// <summary>识别 PuppetArtifact 图片 (result.Content = base64).</summary>
         /// <summary>璇嗗埆 /agent/invoke 杩斿洖鐨?PuppetArtifact 鍥剧墖锛坮esult.Content 鏄?base64 PNG锛夈€?/summary>
-        private static ToolImage ExtractImage(string body)
+        private static ToolAttachment ExtractImage(string body)
         {
             if (string.IsNullOrEmpty(body) || body.Length < 200 || !body.Contains("Puppet.Core.AppAgent.PuppetArtifact"))
                 return null;
@@ -256,7 +256,7 @@ namespace OpenLoop.Service.Web
                 string mime = result.TryGetProperty("ContentType", out var ct) && ct.ValueKind == JsonValueKind.String
                     ? ct.GetString()
                     : "image/png";
-                return new ToolImage { MimeType = mime, Base64 = b64 };
+                return new ToolAttachment { MimeType = mime, Base64 = b64 };
             }
             catch (JsonException)
             {

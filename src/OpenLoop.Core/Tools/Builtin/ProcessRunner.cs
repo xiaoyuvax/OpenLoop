@@ -6,8 +6,11 @@ using OpenLoop.Core.Safety;
 namespace OpenLoop.Core.Tools.Builtin
 {
     /// <summary>argv 执行器（不经 shell）：子进程只拿环境白名单，超时杀进程树，输出截断。</summary>
-    internal static class ProcessRunner
+    public static class ProcessRunner
     {
+        /// <summary>长命令进度通报（参数为状态文本，null = 清除）；宿主接到状态行。</summary>
+        public static event Action<string> SlowCommand;
+
         public static async Task<AgentToolResult> RunAsync(
             IReadOnlyList<string> argv, string workingDirectory, int timeoutSeconds, CancellationToken ct,
             bool inheritEnvironment = false)
@@ -51,6 +54,20 @@ namespace OpenLoop.Core.Tools.Builtin
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
 
+            // 长命令给用户交代：超过 5 秒未返回就把「仍在执行」报给状态行，
+            // 免得用户把长命令当成界面卡死（命令在后台线程跑，UI 停顿另有原因，但两者同时出现时分不清）。
+            var slow = Task.Run(async () =>
+            {
+                await Task.Delay(5000, linked.Token);
+                int waited = 5;
+                while (!linked.IsCancellationRequested)
+                {
+                    SlowCommand?.Invoke($"命令仍在执行…{waited} 秒（可点停止）");
+                    await Task.Delay(10000, linked.Token);
+                    waited += 10;
+                }
+            }, linked.Token);
+
             try
             {
                 await process.WaitForExitAsync(linked.Token);
@@ -62,6 +79,11 @@ namespace OpenLoop.Core.Tools.Builtin
 
                 return AgentToolResult.Failure(
                     $"命令超时（{timeoutSeconds}s），已终止进程树。\n{ToolText.Truncate(stdout.ToString(), 3000)}");
+            }
+            finally
+            {
+                SlowCommand?.Invoke(null);   // 命令结束/超时/取消：清掉「仍在执行」状态
+                try { await slow.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
             }
 
             var sb = new StringBuilder();

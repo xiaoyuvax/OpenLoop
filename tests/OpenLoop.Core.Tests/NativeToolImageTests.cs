@@ -16,7 +16,7 @@ namespace OpenLoop.Core.Tests
         };
 
         [Fact]
-        public void Tool_result_message_with_image_becomes_image_url_part()
+        public void Tool_result_with_attachment_becomes_image_url_part()
         {
             var history = new List<LlmMessage>
             {
@@ -24,7 +24,7 @@ namespace OpenLoop.Core.Tests
                 new("assistant", "tool-call: {\"tool\":\"Puppet\",\"args\":{\"method\":\"CaptureAction\"}}"),
                 new("user", "tool-result: {\"ok\":true,\"data\":\"x\"}")
                 {
-                    Images = [new ToolImage { MimeType = "image/png", Base64 = "aGVsbG8=" }]
+                    Attachments = [new ToolAttachment { MimeType = "image/png", Base64 = "aGVsbG8=" }]
                 }
             };
 

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Text;
 using ChatFlow;
 using OpenLoop.Core.Agent;
@@ -918,6 +918,7 @@ namespace OpenLoop.App
                 _cts?.Dispose();
                 _cts = null;
                 // 准备阶段就失败也算这一轮结束：留言板上不能一直挂着「运行中」
+                UnhookSlow();
                 OpenLoop.Service.Web.SessionBoard.Finished(BoardId(), remote: true);
                 SetRunning(false);
                 _lblStatus.Text = Localization.T("状态: error");
@@ -1014,6 +1015,15 @@ namespace OpenLoop.App
                     RefreshChat();
                 });
             }
+
+            // 长命令交代：Shell/技能脚本超 5 秒时把「仍在执行」写进同一个状态行
+            void ShowSlow(string s) => RunOnUi(() =>
+            {
+                turn.ToolStatusText = string.IsNullOrEmpty(s) ? null : s;
+                RefreshChat();
+            });
+            OpenLoop.Core.Tools.Builtin.ProcessRunner.SlowCommand += ShowSlow;
+            void UnhookSlow() => OpenLoop.Core.Tools.Builtin.ProcessRunner.SlowCommand -= ShowSlow;
 
             // 宿主接线（与 Worker 共用 ReasonerWiring）：即时通报 → 状态行；原生工具 → trace + 步骤流。
             // 此前 Loop 漏接这两条，免费模型长等待时界面一片空白（2026-11-25 用户反馈）。
@@ -1198,8 +1208,9 @@ namespace OpenLoop.App
                 SetRunning(false);
                 // 这一轮收尾：留言板上改回空闲，同工作区后开的会话不会再把它当成「正在跑的新会话」播报。
                 // 队列里还有要发的（马上开下一轮）就不归零：两边的写都是后台任务，顺序会反过来。
+                UnhookSlow();
                 if (outcome == "error" || IsDisposed || _queue.Count == 0)
-                    OpenLoop.Service.Web.SessionBoard.Finished(BoardId(), remote: true);
+                OpenLoop.Service.Web.SessionBoard.Finished(BoardId(), remote: true);
                 RefreshChat();
                 // 正常收尾：长正文从头读（流式期间已跟随到底），避免用户打开就落在末尾
                 if (outcome == "ok" && !IsDisposed && IsHandleCreated)
@@ -1545,6 +1556,11 @@ namespace OpenLoop.App
         }
 
         private void ApplyDetail()
+        {
+            UiTiming.Measure("ApplyDetail", () => ApplyDetailCore());
+        }
+
+        private void ApplyDetailCore()
         {
             string effort = _effort switch
             {
@@ -2675,7 +2691,7 @@ namespace OpenLoop.App
             BeginInvoke(new Action(() =>
             {
                 _chatRefreshQueued = false;
-                if (!IsDisposed) _book.RaiseTextChanged();
+                if (!IsDisposed) UiTiming.Measure("RefreshChat(RaiseTextChanged)", () => _book.RaiseTextChanged());
             }));
         }
 

@@ -284,6 +284,14 @@ namespace OpenLoop.App
                 });
             }
 
+            // 长命令交代：与 Loop 同一做法，Shell 超 5 秒时报状态
+            void ShowSlow(string s) => RunOnUi(() =>
+            {
+                turn.ToolStatusText = string.IsNullOrEmpty(s) ? null : s;
+                RefreshChat();
+            });
+            OpenLoop.Core.Tools.Builtin.ProcessRunner.SlowCommand += ShowSlow;
+
             // 宿主接线（与 Worker/Loop 共用 ReasonerWiring）：即时通报 → 状态行；原生工具 → trace + 步骤流。
             ReasonerWiring.Attach(reasoner, new ReasonerWiring.Host
             {
@@ -422,6 +430,7 @@ namespace OpenLoop.App
             }
             finally
             {
+                OpenLoop.Core.Tools.Builtin.ProcessRunner.SlowCommand -= ShowSlow;
                 trace.Dispose();
                 _cts?.Dispose();
                 _cts = null;

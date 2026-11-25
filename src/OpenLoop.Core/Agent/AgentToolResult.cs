@@ -1,7 +1,7 @@
 namespace OpenLoop.Core.Agent
 {
     /// <summary>一张随工具结果返回的图片（内存 base64，不落盘）。</summary>
-    public sealed class ToolImage
+    public sealed class ToolAttachment
     {
         public string MimeType { get; init; } = "image/png";
         public string Base64 { get; init; }
@@ -17,12 +17,12 @@ namespace OpenLoop.Core.Agent
         public string Error { get; init; }
 
         /// <summary>随结果返回的图片（走模型附件通道，不进正文；未接附件通道的模型拿占位文本）。</summary>
-        public IReadOnlyList<ToolImage> Images { get; init; }
+        public IReadOnlyList<ToolAttachment> Attachments { get; init; }
 
         public static AgentToolResult Success(string data) => new() { Ok = true, Data = data };
 
-        public static AgentToolResult Success(string data, IReadOnlyList<ToolImage> images)
-            => new() { Ok = true, Data = data, Images = images };
+        public static AgentToolResult Success(string data, IReadOnlyList<ToolAttachment> attachments)
+            => new() { Ok = true, Data = data, Attachments = attachments };
 
         public static AgentToolResult Failure(string error) => new() { Ok = false, Error = error };
     }

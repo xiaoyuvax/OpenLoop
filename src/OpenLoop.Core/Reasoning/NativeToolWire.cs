@@ -178,19 +178,19 @@ namespace OpenLoop.Core.Reasoning
                 }
 
                 // 图片走附件通道：把结果消息里的图片变成 user 消息的 image_url 部分。
-                var images = messages[i + 1].Images;
+                var attachments = messages[i + 1].Attachments;
                 var notes = new List<string>(results.Value.Notes);
                 for (int c = calls.Count; c < results.Value.Payloads.Count; c++)
                     notes.Add($"tool-result: {results.Value.Payloads[c]}");
-                if (images is { Count: > 0 })
+                if (attachments is { Count: > 0 })
                 {
                     var parts = new List<object>();
                     if (notes.Count > 0) parts.Add(new Dictionary<string, object> { ["type"] = "text", ["text"] = string.Join("\n", notes) });
-                    foreach (var image in images)
+                    foreach (var attachment in attachments)
                         parts.Add(new Dictionary<string, object>
                         {
                             ["type"] = "image_url",
-                            ["image_url"] = new Dictionary<string, object> { ["url"] = image.DataUrl }
+                            ["image_url"] = new Dictionary<string, object> { ["url"] = attachment.DataUrl }
                         });
                     wire.Add(new Dictionary<string, object> { ["role"] = "user", ["content"] = parts });
                 }

@@ -1,8 +1,9 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenLoop.Core.Reasoning;
+using OpenLoop.Core.Agent;
 
 namespace OpenLoop.Core.OpenCode
 {
@@ -163,6 +164,7 @@ namespace OpenLoop.Core.OpenCode
             Action<string> onDelta = null, Action<string> onReasoning = null,
             int timeoutSeconds = 600, Func<OpenCodePermission, bool> decide = null,
             bool keepTools = false, Action<OpenCodeNativeTool> onNativeTool = null,
+            IReadOnlyList<ToolAttachment> attachments = null,
             CancellationToken ct = default, Action<string> onNotice = null, Func<bool> shouldStop = null)
         {
             // shortcut: 免费模型用 ask 保留工具表；原生工具在工作区内放行、shell 与工作区外一律拒绝，
@@ -212,7 +214,7 @@ namespace OpenLoop.Core.OpenCode
 
             try
             {
-                await PromptAsync(sessionID, prompt, ct);
+                await PromptAsync(sessionID, prompt, attachments, ct);
 
                 OpenCodeSessionSnapshot snapshot = null;
                 string latestSummary = "";
@@ -633,10 +635,34 @@ namespace OpenLoop.Core.OpenCode
             return OpenCodeEndpoint.Str(info, "id");
         }
 
+        private static string ExtOf(string mimeType)
+            => mimeType switch
+            {
+                "image/png" => ".png",
+                "image/jpeg" => ".jpg",
+                "image/gif" => ".gif",
+                "image/webp" => ".webp",
+                "application/pdf" => ".pdf",
+                _ => ""
+            };
         public async Task PromptAsync(string sessionID, string text, CancellationToken ct = default)
+            => PromptAsync(sessionID, text, null, ct);
+
+        /// <summary>发一轮 prompt；图片作为 files 附件（data: URL）随请求提交，模型端按附件通道消费。</summary>
+        public async Task PromptAsync(string sessionID, string text, IReadOnlyList<ToolAttachment> attachments, CancellationToken ct = default)
         {
-            using var _ = await SendAsync(HttpMethod.Post, $"/api/session/{sessionID}/prompt",
-                new Dictionary<string, object> { ["text"] = text ?? "" }, ct);
+            var body = new Dictionary<string, object> { ["text"] = text ?? "" };
+            if (attachments is { Count: > 0 })
+            {
+                var files = new List<object>();
+                foreach (var attachment in attachments)
+                {
+                    if (string.IsNullOrEmpty(attachment.Base64)) continue;
+                    files.Add(new Dictionary<string, object> { ["uri"] = attachment.DataUrl, ["name"] = "tool-result" + ExtOf(attachment.MimeType) });
+                }
+                if (files.Count > 0) body["files"] = files;
+            }
+            using var _ = await SendAsync(HttpMethod.Post, $"/api/session/{sessionID}/prompt", body, ct);
         }
 
         public async Task<OpenCodeSessionSnapshot> GetSessionAsync(string sessionID, CancellationToken ct = default)

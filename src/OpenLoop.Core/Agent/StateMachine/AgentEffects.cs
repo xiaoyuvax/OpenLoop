@@ -17,10 +17,10 @@ namespace OpenLoop.Core.Agent
 
 
         /// <summary>带图片的消息：图片不进正文，在线上翻译成附件 content part。</summary>
-        public AppendMessageEffect(string role, string content, IReadOnlyList<ToolImage> images)
+        public AppendMessageEffect(string role, string content, IReadOnlyList<ToolAttachment> attachments)
             : this(role, content)
         {
-            if (images is { Count: > 0 }) _message.Images = new List<ToolImage>(images);
+            if (attachments is { Count: > 0 }) _message.Attachments = new List<ToolAttachment>(attachments);
         }
 
         public void Apply(AgentState state, AgentRunContext context)
