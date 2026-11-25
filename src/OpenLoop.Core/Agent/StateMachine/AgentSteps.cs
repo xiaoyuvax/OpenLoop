@@ -420,7 +420,9 @@ namespace OpenLoop.Core.Agent
             state.ProgressChecked = false;
 
             if (notes.Count > 0) payloads.AddRange(notes);
-            effects.Add(new AppendMessageEffect("user", string.Join("\n", payloads)));
+            // 图片走附件通道：不进正文, 不计截断
+            var images = executed.SelectMany(e => e.Result.Images ?? []).ToList();
+            effects.Add(new AppendMessageEffect("user", string.Join("\n", payloads), images));
             return AgentStepResult.Continue(effects.ToArray());
         }
 

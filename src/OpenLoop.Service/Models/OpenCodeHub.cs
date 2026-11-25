@@ -1,4 +1,4 @@
-using OpenLoop.Core.OpenCode;
+﻿using OpenLoop.Core.OpenCode;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Logging;
 
@@ -43,15 +43,16 @@ namespace OpenLoop.Service.Models
         private static DateTimeOffset _nextRetry = DateTimeOffset.MinValue;
 
         /// <summary>
-        /// A/I 是无人刷新模型目录的进程（只有壳会定时刷新）：解析 opencode/* 之前按需拉一次，
-        /// 失败后 30 秒内不再重试，免得每次调用都等超时。
+        /// A/I 是无人刷新模型目录的进程（只有壳会定时刷新）：解析 opencode/* 之前按需触发一次后台刷新，
+        /// 不阻塞调用线程（此前的同步等待在服务半死时会拖住调用方几十秒）。
+        /// 失败后 30 秒内不再重试；刷新完成走 <see cref="Changed"/> 事件，调用方下次进来即命中就绪缓存。
         /// </summary>
         public static void EnsureFresh()
         {
             if (_endpoint is { IsReady: true }) return;
             if (DateTimeOffset.Now < _nextRetry) return;
-            try { Task.Run(async () => await RefreshAsync()).GetAwaiter().GetResult(); } catch { }
-            if (_endpoint is not { IsReady: true }) _nextRetry = DateTimeOffset.Now.AddSeconds(30);
+            _nextRetry = DateTimeOffset.Now.AddSeconds(30);
+            _ = Task.Run(async () => await RefreshAsync());
         }
 
         public static OpenCodeClient RequireClient()

@@ -224,12 +224,45 @@ namespace OpenLoop.Service.Web
         private AgentToolResult Result(int status, string body)
         {
             string text = string.IsNullOrWhiteSpace(body) ? "(no body)" : body;
+            // 截图类产物: PuppetArtifact -> base64
+            var image = ExtractImage(text);
+            if (image != null)
+            {
+                return status is 200 or 204
+                    ? AgentToolResult.Success("截图完成：图片已附件返回", new[] { image })
+                    : AgentToolResult.Failure($"HTTP {status}: (image)");
+            }
+
             text = ToolText.Clip(text, _maxBytes);
             return status is 200 or 204
                 ? AgentToolResult.Success(text)
                 : AgentToolResult.Failure($"HTTP {status}: {text}");
         }
-
+        /// <summary>识别 PuppetArtifact 图片 (result.Content = base64).</summary>
+        /// <summary>璇嗗埆 /agent/invoke 杩斿洖鐨?PuppetArtifact 鍥剧墖锛坮esult.Content 鏄?base64 PNG锛夈€?/summary>
+        private static ToolImage ExtractImage(string body)
+        {
+            if (string.IsNullOrEmpty(body) || body.Length < 200 || !body.Contains("Puppet.Core.AppAgent.PuppetArtifact"))
+                return null;
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+                if (!root.TryGetProperty("result", out var result)) return null;
+                if (!result.TryGetProperty("Content", out var content)) return null;
+                if (content.ValueKind != JsonValueKind.String) return null;
+                string b64 = content.GetString();
+                if (string.IsNullOrEmpty(b64) || b64.Length < 100) return null;
+                string mime = result.TryGetProperty("ContentType", out var ct) && ct.ValueKind == JsonValueKind.String
+                    ? ct.GetString()
+                    : "image/png";
+                return new ToolImage { MimeType = mime, Base64 = b64 };
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
         private static string RawJson(object value)
         {
             return value switch

@@ -54,7 +54,8 @@ namespace OpenLoop.App
             var config = AntdUI.Modal.config(form, title, (object)panel);
             config.OkText = Localization.T("允许");
             config.CancelText = Localization.T("拒绝");
-            bool ok = AntdUI.Modal.open(config) == DialogResult.OK;
+            // 模态框期间 UI 线程本来就停着：计一条，卡死排查时才能把它与真卡死区分开
+            bool ok = UiTiming.Measure("审批弹框", () => AntdUI.Modal.open(config) == DialogResult.OK);
             if (!ok) return ApprovalDecision.Deny;
 
             return remember.Checked ? AllowAlways(settings, request) : ApprovalDecision.AllowOnce;

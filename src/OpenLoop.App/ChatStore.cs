@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using ChatFlow;
 using OpenLoop.Core.Messages;
 using OpenLoop.Service.Storage;
@@ -20,6 +20,13 @@ namespace OpenLoop.App
         /// </summary>
         private static readonly ConditionalWeakTable<ChatTurn, string> DeferredFiles = new();
 
+        /// <summary>
+        /// 解析过但没对上号的轮次（弱引用持有，轮次被回收就一起消失）：不再重读该文件。
+        /// UserText 对不上就该认——每次重试都是整份几十 MB 的 JSON 重新解析，UI 线程上就是卡顿。
+        /// </summary>
+        private static readonly ConditionalWeakTable<ChatTurn, object> DeferredMisses = new();
+        private static readonly object MissMark = new();
+
         /// <summary>记下这一轮结束时的消息列表；下一次 Save 会一起落盘，BuildHistory 用它当上下文。</summary>
         public static void AttachTranscript(ChatTurn turn, IReadOnlyList<LlmMessage> messages)
         {
@@ -29,7 +36,11 @@ namespace OpenLoop.App
                     && !string.IsNullOrEmpty(m.Content))
                 .Select(m => new LlmMessage(m.Role, m.Content))
                 .ToList();
-            if (list.Count > 0) Transcripts.AddOrUpdate(turn, list);
+            if (list.Count > 0)
+            {
+                Transcripts.AddOrUpdate(turn, list);
+                DeferredMisses.Remove(turn);
+            }
         }
 
         /// <summary>
@@ -41,8 +52,10 @@ namespace OpenLoop.App
             if (Transcripts.TryGetValue(turn, out var list)) return list;
             if (DeferredFiles.TryGetValue(turn, out var file))
             {
-                DeferredFiles.Remove(turn);
-                LoadTranscriptsFor(turn, file);
+                // 解析过但没对上号的不再重读；WarmTranscripts 按文件去重，同一份只解析一遍
+                if (DeferredMisses.TryGetValue(turn, out _)) return null;
+                DeferredMisses.Add(turn, MissMark);
+                WarmTranscripts([turn]);
                 return Transcripts.TryGetValue(turn, out list) ? list : null;
             }
             return null;
@@ -78,12 +91,42 @@ namespace OpenLoop.App
         public static int WarmTranscripts(IEnumerable<ChatTurn> turns)
         {
             if (turns == null) return 0;
-            int warmed = 0;
+            // 按文件分组：同一份对话文件只解析一遍（几十 MB 的 JSON，逐轮解析就是几十遍）
+            var pending = new Dictionary<string, List<ChatTurn>>(StringComparer.OrdinalIgnoreCase);
             foreach (var turn in turns)
             {
                 if (turn == null || !DeferredFiles.TryGetValue(turn, out var file)) continue;
-                LoadTranscriptsFor(turn, file);
-                warmed++;
+                if (DeferredMisses.TryGetValue(turn, out _)) continue;   // 已确认对不上号：不再解析
+                if (!pending.TryGetValue(file, out var list)) pending[file] = list = [];
+                list.Add(turn);
+            }
+
+            int warmed = 0;
+            foreach (var pair in pending)
+            {
+                List<ChatEntry> entries;
+                try
+                {
+                    if (!File.Exists(pair.Key)) continue;
+                    entries = ChatHistory.ReadEntries(pair.Key);
+                }
+                catch
+                {
+                    continue;
+                }
+                foreach (var turn in pair.Value)
+                {
+                    var match = entries.FirstOrDefault(e => e?.Messages is { Count: > 0 }
+                        && string.Equals(e.User, turn.UserText, StringComparison.Ordinal));
+                    if (match == null) continue;
+                    DeferredFiles.Remove(turn);
+                    DeferredMisses.Remove(turn);
+                    AttachTranscript(turn, match.Messages
+                        .Where(m => !string.IsNullOrEmpty(m?.Content))
+                        .Select(m => new LlmMessage(m.Role ?? "user", m.Content))
+                        .ToList());
+                    warmed++;
+                }
             }
             return warmed;
         }

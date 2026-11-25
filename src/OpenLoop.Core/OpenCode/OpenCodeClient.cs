@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -218,6 +218,17 @@ namespace OpenLoop.Core.OpenCode
                 string latestSummary = "";
                 string progress = "";
                 bool stopped = false;
+                // 静默期周期交代：免费模型排队/上游无输出时用户不能只看到一片空白。
+                // 有输出（onNotice 清空）就重新计时；超时判挂与等待语义不变。
+                long lastNotice = DateTime.UtcNow.Ticks;
+                void NoticeIfSilent()
+                {
+                    if (onNotice == null) return;
+                    var idle = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - Interlocked.Read(ref lastNotice));
+                    if (idle < TimeSpan.FromSeconds(15)) return;
+                    Interlocked.Exchange(ref lastNotice, DateTime.UtcNow.Ticks);
+                    onNotice($"等待 OpenCode 响应已 {idle.TotalSeconds:0} 秒（可点停止）");
+                }
                 while (!completed.Task.IsCompleted)
                 {
                     // 软停止：一次调用内部会连着跑很多原生工具，只在调用之间查就太迟了。
@@ -238,6 +249,7 @@ namespace OpenLoop.Core.OpenCode
                         throw new OpenCodeStalledException(sessionID, idleLimit.TotalSeconds, latestSummary);
                     }
 
+                    NoticeIfSilent();
                     await Task.Delay(700, ct);
                     try
                     {
@@ -247,6 +259,8 @@ namespace OpenLoop.Core.OpenCode
                         {
                             progress = now;
                             Touch();
+                            Interlocked.Exchange(ref lastNotice, DateTime.UtcNow.Ticks);
+                            onNotice?.Invoke(null);
                         }
                         // 上游压完上下文也算「还在动」：摘要是本轮历史，挂住重试时要把它带回去。
                         string compacted = LastCompaction(polled);

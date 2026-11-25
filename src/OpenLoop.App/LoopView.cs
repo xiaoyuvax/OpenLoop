@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text;
 using ChatFlow;
 using OpenLoop.Core.Agent;
@@ -711,12 +711,10 @@ namespace OpenLoop.App
                 return;
             }
             _lastCheckpointUtc = DateTime.UtcNow;
-            // 快照只取「本轮各字段的当前引用」（浅拷贝，微秒级）：投影与 JSON 序列化都在后台做。
-            // 界面对已存在轮次只会替换字段引用、不会原地改写旧字符串，写盘途中读到的都是一致值；
-            // 快照不含新增轮次 —— 它们会进下一次保存，丢失窗口只是一个节流间隔。
-            var snapshot = _book.Turns
-                .Select(t => (Turn: t, Transcript: ChatStore.Transcript(t)))
-                .ToList();
+            var saveWatch = Environment.TickCount64;
+            // UI 线程只取轮次引用（浅快照）：transcript 回读与 JSON 序列化都在后台做。
+            // 回读以前在 UI 线程逐轮触发整份文件解析（几十 MB × N 轮），是「保存时整块界面冻住」的来源。
+            var turns = _book.Turns.ToList();
             // 步数取「上一轮」与「正在跑的这轮」的较大者，与 Worker 的 Persist 同口径
             int steps = Math.Max(_book.Turns.LastOrDefault()?.ToolStepCount ?? 0,
                 _book.Turns.Count > 1 ? _book.Turns[^2].ToolStepCount : 0);
@@ -724,9 +722,15 @@ namespace OpenLoop.App
             // 索引文件很小，留在 UI 线程写（它没有跨线程锁，别和界面的改名/删除抢读-改-写）
             LoopIndex.Touch(workspace, sessionId, steps);
             _chatWrite = _chatWrite.ContinueWith(_ =>
+            {
+                // 批量预热：同一份对话文件只解析一遍，后面逐轮取 transcript 就不再各解析一遍
+                ChatStore.WarmTranscripts(turns);
+                var snapshot = turns.Select(t => (Turn: t, Transcript: ChatStore.Transcript(t))).ToList();
                 OpenLoop.Service.Storage.ChatHistory.Write(workspace, sessionId,
-                    ChatStore.EntriesFromSnapshot(snapshot, model, effort)),
-                CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+                    ChatStore.EntriesFromSnapshot(snapshot, model, effort));
+            }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            var saveMs = Environment.TickCount64 - saveWatch;
+            if (saveMs > 1000) OpenLoop.Service.Logging.AppLog.Warn($"[UI 卡顿] SaveLoopChat 快照排队 {saveMs} ms（含 _chatWrite 等待）");
         }
 
         /// <summary>
@@ -812,7 +816,8 @@ namespace OpenLoop.App
 
             // 先把用户消息挂上并让界面画出来：技能扫描、工具注册、快照（多次 git 子进程）和 trace 都放后台，
             // 否则按下 Enter 到消息出现之间会卡好几秒。
-            var history = BuildHistory();   // 不含本轮：本轮文本随 RunAsync 单独传入
+            // 历史组装可能要回读几十 MB 的 transcript：UI 线程只拍轮次引用，读盘挪进下面的后台准备块
+            var historyTurns = _book.Turns.ToList();   // 不含本轮：本轮文本随 RunAsync 单独传入
 
             var turn = new ChatTurn
             {
@@ -852,10 +857,13 @@ namespace OpenLoop.App
             string checkpoint;
             IReasoner reasoner;
             TraceWriter trace;
+            List<LlmMessage> history;
             try
             {
-                (skills, skillProblems, tools, root, checkpoint, reasoner, trace) = await Task.Run(() =>
+                (skills, skillProblems, tools, root, checkpoint, reasoner, trace, history) = await Task.Run(() =>
                 {
+                    // 历史组装可能回读几十 MB 的 transcript：在后台做（UI 线程只拍了轮次引用 historyTurns）
+                    var history = ChatStore.History(historyTurns);
                     var skillCatalog = SkillCatalog.Load(_workspace, AppSettings.GlobalSkillsPath);
                     // 与 Worker/旁路一致：策略来自当前工作区的激活集（拿不到就保持默认策略）
                     try
@@ -898,7 +906,7 @@ namespace OpenLoop.App
                     if (snapshot != null) AppLog.Info("snapshot " + snapshot);
                     var created = Reasoners.Create(settings, model, _effort, writeScope.Root, approve);
                     var writer = TraceWriter.Start(_workspace, "loop", text, model);
-                    return (activeSkills, problems, registry, writeScope.Root, snapshot, created, writer);
+                    return (activeSkills, problems, registry, writeScope.Root, snapshot, created, writer, history);
                 });
             }
             catch (Exception ex)
@@ -1039,22 +1047,32 @@ namespace OpenLoop.App
                 ShouldStop = () => ct.IsCancellationRequested || _interrupt
             });
 
+            // 原生工具密集时 onStep 可能每秒十几次：Render/SyncPhases/RefreshChat 的合计量随轮次线性涨，
+            // 全部直投 UI 会把队列灌满（11-25 冻结的合成因素之一）。数据实时累计，界面按 200ms 合并刷新。
+            long lastStepUi = 0;
+            void ApplyStepUi(AgentStepRecord s)
+            {
+                turn.ToolStepCount++;
+                turn.ToolTotalMs += s.DurationMs;
+                string line = s.DisplayLine;
+                turn.ToolCallLines = string.IsNullOrEmpty(turn.ToolCallLines)
+                    ? line
+                    : turn.ToolCallLines + "\n" + line;
+                turn.ToolTraceText = turn.ToolCallLines;
+                lock (timeline) timeline.Tool(line);
+                lock (timeline) turn.TimelineText = timeline.Render();
+                lock (timeline) SyncPhases(turn, timeline);
+                turn.ToolsFinished();
+            }
             var loop = new AgentLoop(tools, reasoner, policy,
                 onStep: step =>
                 {
-                    RunOnUi(() =>
+                    ApplyStepUi(step);
+                    long now = Environment.TickCount64;
+                    bool due = now - Interlocked.Read(ref lastStepUi) >= 200;
+                    if (due) Interlocked.Exchange(ref lastStepUi, now);
+                    if (due) RunOnUi(() =>
                     {
-                        turn.ToolStepCount++;
-                        turn.ToolTotalMs += step.DurationMs;
-                        string line = step.DisplayLine;
-                        turn.ToolCallLines = string.IsNullOrEmpty(turn.ToolCallLines)
-                            ? line
-                            : turn.ToolCallLines + "\n" + line;
-                        turn.ToolTraceText = turn.ToolCallLines;
-                        lock (timeline) timeline.Tool(line);
-                        lock (timeline) turn.TimelineText = timeline.Render();
-                        lock (timeline) SyncPhases(turn, timeline);
-                        turn.ToolsFinished();
                         RefreshChat();
                         CheckpointLoopChat();
                     });

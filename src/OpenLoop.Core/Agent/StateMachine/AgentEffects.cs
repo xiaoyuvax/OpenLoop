@@ -15,6 +15,14 @@ namespace OpenLoop.Core.Agent
         public AppendMessageEffect(string role, string content)
             => _message = new LlmMessage(role, content);
 
+
+        /// <summary>带图片的消息：图片不进正文，在线上翻译成附件 content part。</summary>
+        public AppendMessageEffect(string role, string content, IReadOnlyList<ToolImage> images)
+            : this(role, content)
+        {
+            if (images is { Count: > 0 }) _message.Images = new List<ToolImage>(images);
+        }
+
         public void Apply(AgentState state, AgentRunContext context)
             => state.Messages.Add(_message);
     }

@@ -44,21 +44,22 @@ namespace OpenLoop.App
         }
 
         private static void Beat()
-        {
-            try
+            => UiTiming.Measure("UI 心跳写盘", () =>
             {
-                lock (Sync)
+                try
                 {
-                    Directory.CreateDirectory(Dir);
-                    File.AppendAllText(CurrentPath,
-                        $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} [pid {Environment.ProcessId}]{Environment.NewLine}");
+                    lock (Sync)
+                    {
+                        Directory.CreateDirectory(Dir);
+                        File.AppendAllText(CurrentPath,
+                            $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} [pid {Environment.ProcessId}]{Environment.NewLine}");
+                    }
                 }
-            }
-            catch
-            {
-                // 心跳失败不影响运行
-            }
-        }
+                catch
+                {
+                    // 心跳失败不影响运行
+                }
+            });
 
         /// <summary>上一条心跳距今超过阈值：上次会话末尾有一段 UI 卡死，把区间写进 exit.log。</summary>
         private static void ReportPreviousGap()
