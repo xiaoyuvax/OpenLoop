@@ -645,7 +645,7 @@ namespace OpenLoop.Core.OpenCode
                 "application/pdf" => ".pdf",
                 _ => ""
             };
-        public async Task PromptAsync(string sessionID, string text, CancellationToken ct = default)
+        public Task PromptAsync(string sessionID, string text, CancellationToken ct = default)
             => PromptAsync(sessionID, text, null, ct);
 
         /// <summary>发一轮 prompt；图片作为 files 附件（data: URL）随请求提交，模型端按附件通道消费。</summary>

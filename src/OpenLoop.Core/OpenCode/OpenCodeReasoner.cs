@@ -16,23 +16,43 @@ namespace OpenLoop.Core.OpenCode
     /// </summary>
     public sealed class OpenCodeReasoner : IReasoner, IStreamingReasoner, INativeToolObserver, INoticeObserver
     {
-        private readonly OpenCodeClient _client;
-        private readonly OpenCodeModelRef _model;
+        private OpenCodeClient _client;
+        private OpenCodeModelRef _model;
         private readonly string _workspace;
         private readonly Func<OpenCodePermission, bool> _decide;
-        private readonly bool _keepTools;
+        private bool _keepTools;
+        private readonly Func<CancellationToken, Task<(OpenCodeClient Client, OpenCodeModelRef Model)>> _resolve;
+        private readonly Func<bool> _keepToolsNow;
         /// <summary>连续多久没有新输出就判挂住；同模型挂过一次后按学到的更短上限起步。</summary>
         private int _idleSeconds = 600;
 
         public OpenCodeReasoner(OpenCodeClient client, OpenCodeModelRef model, string workspace = null,
             ApprovalHandler approve = null, bool keepTools = false)
+            : this(OpenCodeModelId.Format(model), workspace, approve, keepTools)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _model = model;
+        }
+
+        /// <summary>
+        /// 目录还没加载好（A/I 刚起、opencode 刚重启）：首轮先等就绪再调用，不占线程也不算失败。
+        /// 等待期间用 <see cref="OnNotice"/> 交代；<paramref name="keepTools"/> 在就绪后按模型是否免费现算。
+        /// </summary>
+        public OpenCodeReasoner(
+            Func<CancellationToken, Task<(OpenCodeClient Client, OpenCodeModelRef Model)>> resolve,
+            string modelId, string workspace = null, ApprovalHandler approve = null, Func<bool> keepTools = null)
+            : this(modelId, workspace, approve, false)
+        {
+            _resolve = resolve ?? throw new ArgumentNullException(nameof(resolve));
+            _keepToolsNow = keepTools;
+        }
+
+        private OpenCodeReasoner(string modelId, string workspace, ApprovalHandler approve, bool keepTools)
+        {
             _workspace = string.IsNullOrWhiteSpace(workspace) ? Environment.CurrentDirectory : workspace;
             _decide = OpenCodePermissions.Decider(_workspace, approve);
             _keepTools = keepTools;
-            int learned = OpenCodeStallBudget.IdleSeconds(OpenCodeModelId.Format(model));
+            int learned = OpenCodeStallBudget.IdleSeconds(modelId);
             if (learned > 0) _idleSeconds = Math.Min(_idleSeconds, learned);
         }
 
@@ -48,7 +68,8 @@ namespace OpenLoop.Core.OpenCode
         public Func<bool> ShouldStop { get; set; }
 
         /// <summary>清掉遗留的临时会话（上次进程超时/被杀没删掉的）；不 await，不影响本轮。</summary>
-        public Task SweepStaleSessions() => _client.SweepStaleSessionsAsync(CancellationToken.None);
+        public Task SweepStaleSessions()
+            => _client?.SweepStaleSessionsAsync(CancellationToken.None) ?? Task.CompletedTask;
 
         // 协议块紧跟 system，保证每轮 prompt 前缀逐字一致（上游前缀缓存靠这个），也避免在尾部每次追加。
         private const string Protocol =
@@ -77,9 +98,20 @@ namespace OpenLoop.Core.OpenCode
             Action onRestart = null)
         {
             OnProgress?.Invoke(new OpenAiCompatibleReasoner.ReasonerProgress("等待 OpenCode 响应", 0, TimeSpan.Zero));
+            if (_client == null)
+            {
+                // 服务刚起/刚重启：等目录就绪再发请求，否则会被发到别的端点（模型名不认）而直接报错。
+                OnNotice?.Invoke("等待 OpenCode 服务就绪…");
+                var ready = await _resolve(ct);
+                _client = ready.Client;
+                _model = ready.Model;
+                if (_keepToolsNow != null) _keepTools = _keepToolsNow();
+                OnNotice?.Invoke(null);
+            }
             string prompt = Flatten(messages);
-            // 图片附件: 取历史末尾的 tool-result 图片，随本轮 prompt 的 files 发给上游。
-            var attachments = messages?.LastOrDefault(m => m?.Attachments is { Count: > 0 })?.Attachments;
+            // 附件随当轮 prompt 的 files 发给上游：只认最后一条消息（刚产生的 tool-result），
+            // 不从更早的历史里捞——否则同一张图会在后面每一轮重复上传。
+            var attachments = messages?.LastOrDefault()?.Attachments;
             // 免费模型保留工具表只为过上游门禁；原生工具按宿主审批执行，调用与结果实时上报。
             var decide = _decide;
             var native = new List<OpenCodeNativeTool>();

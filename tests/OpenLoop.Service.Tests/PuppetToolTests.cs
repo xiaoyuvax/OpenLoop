@@ -34,5 +34,26 @@ namespace OpenLoop.Service.Tests
                 PuppetRegistry.Unregister(WebPuppet.InstanceName);
             }
         }
+
+        [Fact]
+        public void CaptureAction_response_becomes_attachment_instead_of_body_text()
+        {
+            string b64 = new string('A', 200);
+            string body = $"{{\"ok\":true,\"result\":{{\"FileName\":\"capture.png\",\"ContentType\":\"image/png\","
+                          + $"\"Content\":\"{b64}\"}},\"returnType\":\"Puppet.Core.AppAgent.PuppetArtifact\"}}";
+
+            var attachment = PuppetTool.ExtractImage(body);
+
+            Assert.NotNull(attachment);
+            Assert.Equal("image/png", attachment.MimeType);
+            Assert.Equal(b64, attachment.Base64);
+            Assert.StartsWith("data:image/png;base64,", attachment.DataUrl);
+        }
+
+        [Fact]
+        public void Ordinary_invoke_response_is_not_treated_as_attachment()
+        {
+            Assert.Null(PuppetTool.ExtractImage("{\"ok\":true,\"result\":{\"ok\":true}}"));
+        }
     }
 }

@@ -34,6 +34,20 @@ public sealed class OpenCodeTests
         Assert.False(OpenCodeModelId.TryParse(null, out _));
     }
 
+    /// <summary>目录未就绪时延迟解析：等待发生在首轮开头，解析失败要如实抛给宿主，不能被吞成空回复。</summary>
+    [Fact]
+    public async Task Deferred_reasoner_resolves_client_before_calling()
+    {
+        Func<CancellationToken, Task<(OpenCodeClient Client, OpenCodeModelRef Model)>> resolve =
+            _ => throw new InvalidOperationException("服务没在运行");
+        var reasoner = new OpenCodeReasoner(resolve, "opencode/deepseek-flash-free@opencode");
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => reasoner.CompleteAsync([new LlmMessage("user", "hi")]));
+
+        Assert.Contains("服务没在运行", error.Message);
+    }
+
     [Fact]
     public void Flatten_keeps_role_labels()
     {

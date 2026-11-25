@@ -55,6 +55,29 @@ namespace OpenLoop.Service.Models
             _ = Task.Run(async () => await RefreshAsync());
         }
 
+        /// <summary>
+        /// opencode/* 在目录还没加载好时（A/I 刚起、opencode 刚重启）用它等就绪：异步轮询探活，不占线程、
+        /// 不判失败。服务没在运行（没有 service.json）或已就绪却没有这个模型时给出可执行的错误，不空等。
+        /// </summary>
+        public static async Task<(OpenCodeClient Client, OpenCodeModelRef Model)> WaitModelAsync(
+            string model, CancellationToken ct = default)
+        {
+            string id = (model ?? "").Trim();
+            while (true)
+            {
+                EnsureFresh();
+                if (_endpoint is { IsReady: true })
+                {
+                    if (_byId.TryGetValue(id, out var reference)) return (_endpoint.CreateClient(), reference);
+                    throw new InvalidOperationException($"OpenCode 没有提供这个模型：{id}");
+                }
+                if (_endpoint is { Status: OpenCodeStatus.Absent })
+                    throw new InvalidOperationException("OpenCode 服务没在运行（没有 service.json），先启动 opencode"
+                        + (string.IsNullOrWhiteSpace(_endpoint.Detail) ? "" : $"：{_endpoint.Detail}"));
+                await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            }
+        }
+
         public static OpenCodeClient RequireClient()
         {
             var client = TryClient();
@@ -114,7 +137,11 @@ namespace OpenLoop.Service.Models
             LoadCatalogueAsync(OpenCodeEndpoint endpoint, CancellationToken ct)
         {
             using var client = endpoint.CreateClient();
-            var models = await client.ListModelsAsync(ct);
+            // 共享 HttpClient 超时是 30 分钟（单次调用没有总时限）：目录刷新只是本机接口，卡住 20 秒就
+            // 放掉刷新闸门，下轮 EnsureFresh 还能重试，不会因为一次半死的服务长期占着不刷新。
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            var models = await client.ListModelsAsync(timeout.Token);
             var byId = new Dictionary<string, OpenCodeModelRef>(StringComparer.OrdinalIgnoreCase);
             var infos = new List<ModelInfo>();
             foreach (var model in models)

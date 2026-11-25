@@ -19,12 +19,18 @@ namespace OpenLoop.Service.Models
                 return DshAcpHub.Reasoner(settings, model, workspace);
 
             if (model != null && model.StartsWith(OpenCodeModelId.Prefix, StringComparison.OrdinalIgnoreCase))
+            {
                 OpenCodeHub.EnsureFresh();
+                string scope = string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace;
+                if (OpenCodeHub.Resolve(model) is { } reference)
+                    return new OpenCodeReasoner(OpenCodeHub.RequireClient(), reference, scope, approve,
+                        keepTools: keepTools ?? OpenCodeHub.IsFree(model));
 
-            if (OpenCodeHub.Resolve(model) is { } reference)
-                return new OpenCodeReasoner(OpenCodeHub.RequireClient(), reference,
-                    string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace, approve,
-                    keepTools: keepTools ?? OpenCodeHub.IsFree(model));
+                // 目录还没加载好：首轮等就绪再调用，别把 opencode/* 的请求发到别的端点去换一个「模型不存在」。
+                string pendingId = model.Trim();
+                return new OpenCodeReasoner(ct => OpenCodeHub.WaitModelAsync(pendingId, ct), pendingId, scope,
+                    approve, () => keepTools ?? OpenCodeHub.IsFree(pendingId));
+            }
 
             string pluginWorkspace = string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace;
             if (PluginCatalog.TryProvider(pluginWorkspace, model, out var provider))
