@@ -287,7 +287,7 @@ public sealed class AgentPolicy
 
 - 所有路径过 `WorkspaceScope.Resolve()`，越界即失败（返回 `AgentToolResult.Failure`，不抛异常）
 - `Shell` 用 `ProcessStartInfo` + 超时 + 捕获 stdout/stderr；不做 shell 解释器包装以外的沙箱（v0 明示无沙箱）
-- 单次工具输出回填模型前截断 6000 字符（沿用 VAgent 的上限）
+- 单次工具输出回填模型前按 2000 行 / 51200 字节（UTF-8）截断（对齐 OpenCode 的 `tool_output`；账本 `limit.tool_result` 只调字节上限，行数上限固定）；Puppet 响应另有 `limit.puppet_result`（默认同值），可单独收紧（会话板、日志、截图 base64 都在这一条通道上）
 
 ### 5.6 测试
 

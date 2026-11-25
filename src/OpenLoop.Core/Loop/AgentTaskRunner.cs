@@ -25,6 +25,7 @@ namespace OpenLoop.Core.Loop
         private readonly int _contextLimit;
         private readonly IReadOnlyList<ITool> _extraTools;
         private readonly string _webFetch;
+        private readonly Func<int, IEnumerable<ITool>> _puppetTools;
 
         public AgentTaskRunner(
             Func<string, IReasoner> reasonerFor,
@@ -32,7 +33,8 @@ namespace OpenLoop.Core.Loop
             string workspaceRoot, string evidenceRoot, string globalAgentsPath = null,
             bool useAgentsMd = true, string globalSkillsPath = null,
             int contextLimit = AgentContext.DefaultContextLimit,
-            IEnumerable<ITool> extraTools = null, string webFetch = null)
+            IEnumerable<ITool> extraTools = null, string webFetch = null,
+            Func<int, IEnumerable<ITool>> puppetTools = null)
         {
             _reasonerFor = reasonerFor ?? throw new ArgumentNullException(nameof(reasonerFor));
             _features = features ?? throw new ArgumentNullException(nameof(features));
@@ -43,6 +45,7 @@ namespace OpenLoop.Core.Loop
             _contextLimit = contextLimit > 0 ? contextLimit : AgentContext.DefaultContextLimit;
             _extraTools = (extraTools ?? []).ToList();
             _webFetch = webFetch;
+            _puppetTools = puppetTools;
             _catalog = SkillCatalog.Load(_workspaceRoot, globalSkillsPath);
         }
 
@@ -69,7 +72,14 @@ namespace OpenLoop.Core.Loop
                     $"任务 {task.Id} 的技能不可用：{string.Join("；", skillProblems)}");
 
             // 上限随候选激活集走：A/B 才考得出 limit.web_fetches 变化的行为差
-            var tools = ToolRegistry.Workspace(scope, null, skills, extra: _extraTools, webFetch: _webFetch,
+            var extra = _extraTools;
+            if (_puppetTools != null)
+            {
+                int bytes = FeatureCatalog.ValueOf(
+                    activation, _features, FeatureCatalog.PuppetResultLimit, ToolText.ModelBytes);
+                extra = extra.Concat(_puppetTools(bytes)).ToList();
+            }
+            var tools = ToolRegistry.Workspace(scope, null, skills, extra: extra, webFetch: _webFetch,
                 maxWebFetches: FeatureCatalog.ValueOf(activation, _features, FeatureCatalog.WebFetches, FeatureCatalog.DefaultWebFetches));
             var loop = new AgentLoop(tools, _reasonerFor(dir),
                 FeatureCatalog.PolicyFrom(activation, _features), skills: skills);

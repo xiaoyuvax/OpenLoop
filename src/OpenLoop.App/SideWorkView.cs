@@ -284,6 +284,36 @@ namespace OpenLoop.App
                 });
             }
 
+            // 宿主接线（与 Worker/Loop 共用 ReasonerWiring）：即时通报 → 状态行；原生工具 → trace + 步骤流。
+            ReasonerWiring.Attach(reasoner, new ReasonerWiring.Host
+            {
+                Notice = s => RunOnUi(() =>
+                {
+                    turn.ToolStatusText = string.IsNullOrEmpty(s) ? null : s;
+                    RefreshChat();
+                }),
+                NativeTool = tool =>
+                {
+                    trace.NativeTool(tool);
+                    var step = ReasonerWiring.NativeStep(tool);
+                    RunOnUi(() =>
+                    {
+                        turn.ToolStepCount++;
+                        turn.ToolTotalMs += step.DurationMs;
+                        string line = step.DisplayLine;
+                        turn.ToolCallLines = string.IsNullOrEmpty(turn.ToolCallLines)
+                            ? line
+                            : turn.ToolCallLines + "\n" + line;
+                        turn.ToolTraceText = turn.ToolCallLines;
+                        lock (timeline) timeline.Tool(line);
+                        lock (timeline) turn.TimelineText = timeline.Render();
+                        lock (timeline) SyncPhases(turn, timeline);
+                        RefreshChat();
+                    });
+                },
+                ShouldStop = () => _cts?.IsCancellationRequested == true
+            });
+
             var loop = new AgentLoop(tools, reasoner, policy,
                 onStep: step =>
                 {

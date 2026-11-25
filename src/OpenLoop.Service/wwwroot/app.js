@@ -2054,7 +2054,8 @@ function App() {
     }
   };
 
-  // 标签栏右键（与 WinForms 壳同一组动作）：活动 = 正在跑的会话
+  // 标签栏右键（与 WinForms 壳同一组动作，同一套分组）：活动 = 正在跑的会话
+  // 分组：打开/关闭非活动 → 批量关闭 → 隔线，可关闭的 Tab 菜单没有针对自己的项（Web Tab 本身只承担切换）
   const isRunningTab = id => {
     const row = sessions.find(s => s.id === id);
     return (snapshot && snapshot.id === id ? snapshot.state : row?.state) === 'running';
@@ -2078,15 +2079,24 @@ function App() {
       if (activeKey !== 'overview' && activeKey !== 'loop') setActiveKey('overview');
     }
   };
-  const tabMenu = {
+  const tabMenu = id => ({
     items: [
+      ...(id ? [{ key: 'close', label: t('关闭') }, { type: 'divider' }] : []),
       { key: 'openactive', label: t('打开所有活动会话') },
+      { type: 'divider' },
       { key: 'closenactive', label: t('关闭所有非活动会话') },
       { key: 'closeworker', label: t('关闭所有 Worker 会话') }
     ],
-    onClick: ({ key }) => onTabMenu(key)
-  };
-  const tabLabel = label => h(Dropdown, { trigger: ['contextMenu'], menu: tabMenu }, label);
+    onClick: ({ key }) => {
+      if (key === 'close' && id) {
+        setTabs(prev => prev.filter(x => x !== id));
+        if (activeKey === id) { setActiveKey('overview'); setSnapshot(null); }
+        return;
+      }
+      onTabMenu(key);
+    }
+  });
+  const tabLabel = (label, id) => h(Dropdown, { trigger: ['contextMenu'], menu: tabMenu(id) }, label);
 
   const sessionTab = id => {
     const row = sessions.find(s => s.id === id);
@@ -2096,7 +2106,7 @@ function App() {
       label: tabLabel(h('span', { style: { display: 'inline-flex', alignItems: 'center', maxWidth: 200 } },
         h(Dot, { state }),
         h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
-          snapshot && snapshot.id === id ? (snapshot.title || id) : (row?.title || row?.model || id))))
+          snapshot && snapshot.id === id ? (snapshot.title || id) : (row?.title || row?.model || id))), id)
     };
   };
 

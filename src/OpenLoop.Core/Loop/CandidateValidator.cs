@@ -91,6 +91,9 @@ namespace OpenLoop.Core.Loop
                     case FeatureCatalog.ToolResultLimit:
                         CheckNumber(problems, reference, feature, "value", 500, 200_000);
                         break;
+                    case FeatureCatalog.PuppetResultLimit:
+                        CheckNumber(problems, reference, feature, "value", 2000, 200_000);
+                        break;
                     case FeatureCatalog.CompressAt:
                         CheckNumber(problems, reference, feature, "value", 0.1, 0.95);
                         break;
@@ -143,6 +146,7 @@ namespace OpenLoop.Core.Loop
             FeatureCatalog.CompressKeep => ["messages", "tokens"],
             FeatureCatalog.CompressRetry => ["max"],
             FeatureCatalog.MaxSteps or FeatureCatalog.ToolResultLimit or FeatureCatalog.CompressAt
+                or FeatureCatalog.PuppetResultLimit
                 or FeatureCatalog.OutputTokenRatio or FeatureCatalog.MentionTurns
                 or FeatureCatalog.FlashInterval or FeatureCatalog.BrowserIdle or FeatureCatalog.CheckpointInterval
                 or FeatureCatalog.WebFetches

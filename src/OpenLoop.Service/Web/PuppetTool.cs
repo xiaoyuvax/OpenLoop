@@ -15,8 +15,15 @@ namespace OpenLoop.Service.Web
     /// </summary>
     public sealed class PuppetTool : ITool
     {
-        private const int MaxChars = 6000;
         private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
+
+        /// <summary>响应回填模型的字节上限（账本 limit.puppet_result，注入；0=默认）。</summary>
+        private readonly int _maxBytes;
+
+        public PuppetTool(int maxBytes = 0)
+        {
+            _maxBytes = maxBytes > 0 ? maxBytes : ToolText.ModelBytes;
+        }
 
         public string Name => "Puppet";
 
@@ -188,7 +195,7 @@ namespace OpenLoop.Service.Web
         /// 收尾：私信（say 带 to）在写板成功后主动投递到目标会话的队列；
         /// 读板结果按「私信只有发送方与目标可见」过滤掉别人的私信。
         /// </summary>
-        private static async Task<AgentToolResult> FinishAsync(int status, string body, string action,
+        private async Task<AgentToolResult> FinishAsync(int status, string body, string action,
             string recipient, string self, string saidText, CancellationToken ct)
         {
             bool board = action is "say" or "chat" or "book";
@@ -214,10 +221,10 @@ namespace OpenLoop.Service.Web
             return null;
         }
 
-        private static AgentToolResult Result(int status, string body)
+        private AgentToolResult Result(int status, string body)
         {
             string text = string.IsNullOrWhiteSpace(body) ? "(no body)" : body;
-            if (text.Length > MaxChars) text = text[..MaxChars] + "…(截断)";
+            text = ToolText.Clip(text, _maxBytes);
             return status is 200 or 204
                 ? AgentToolResult.Success(text)
                 : AgentToolResult.Failure($"HTTP {status}: {text}");
@@ -237,6 +244,7 @@ namespace OpenLoop.Service.Web
 
     public static class PuppetTools
     {
-        public static IEnumerable<ITool> For() => [new PuppetTool()];
+        /// <summary>maxBytes 取工作区账本 limit.puppet_result；不传则用默认上限。</summary>
+        public static IEnumerable<ITool> For(int maxBytes = 0) => [new PuppetTool(maxBytes)];
     }
 }

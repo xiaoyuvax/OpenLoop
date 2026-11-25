@@ -568,6 +568,9 @@ namespace OpenLoop.App
 
         private int Dip(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
 
+        /// <summary>目标面板（TCF 的 Puppet 动作按会话 id 转发到这里）。</summary>
+        internal TargetPane TargetPane => _targetPane;
+
         /// <summary>
         /// TargetCentricSession：左栏挂一个可修订目标（系统提示词模板 / AGENTS.md）。
         /// 面板只读，用户通过聊天让 agent 改；文件一变面板立刻刷新，模板同时登记进账本。
@@ -593,15 +596,17 @@ namespace OpenLoop.App
                 return;
             }
 
-            _targetPane.Bind(spec, _ => SyncTarget(kind, workspace));
+            // 启用提示的动作清单从 manifest 生成（不硬编码）；缓存没热就先用兜底句
+            _ = PuppetActions.LoadAsync();
+            if (!_targetPane.Bind(spec, Session?.Id ?? "", _ => SyncTarget(kind, workspace))) return;
             _targetSplit.Panel1Collapsed = false;
             ApplyTargetLayout();
         }
 
+        /// <summary>关闭只是折叠：内容与脏标志留在面板里（TCF 的「关闭=隐藏」）。</summary>
         private void CloseTarget()
         {
-            _targetPane.Shutdown();
-            _targetPane.Bind(null);
+            _targetPane.Collapse();
             _targetSplit.Panel1Collapsed = true;
         }
 
@@ -634,10 +639,8 @@ namespace OpenLoop.App
                 _targetSplit.SplitterDistance = distance;
         }
 
-        /// <summary>目标会话的每次输入都带上这句：编辑目标唯一，防止 agent 顺手改别的文件。</summary>
-        private string TargetDirective()
-            => $"[目标会话] 当前会话的唯一编辑目标是 {_targetPane.Path}（{_targetPane.Title}）："
-               + "要改就只改这个文件，不要动其它文件；改完说明改了什么。";
+        /// <summary>目标会话的每次输入都带上启用提示：唯一编辑目标 + 动作 + 保存语义。</summary>
+        private string TargetDirective() => _targetPane.Prompt("shell");
 
 
         private void ApplyLayout()

@@ -118,6 +118,14 @@ namespace OpenLoop.App
         public const string DotShape =
             "<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='7' fill='{0}'/></svg>";
 
+        /// <summary>保存（软盘，目标面板的四态状态位）。</summary>
+        public const string Save =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M5 3h11l3 3v15H5zm2 2v4h8V5zm0 8v6h10v-6z'/></svg>";
+
+        /// <summary>警告（保存失败 / 磁盘已变）。</summary>
+        public const string Warning =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 3l10 18H2zm0 4.6L5.7 19h12.6zM11 10h2v5h-2zm0 6h2v2h-2z'/></svg>";
+
         public static string Dot(Color color) => Of(DotShape, color);
 
         /// <summary>呼吸动画的帧数：运行中的标签页图标在底色与本色之间来回渐变。</summary>

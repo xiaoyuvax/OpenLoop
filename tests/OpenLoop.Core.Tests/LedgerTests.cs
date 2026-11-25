@@ -44,7 +44,8 @@ public sealed class LedgerTests : IDisposable
         Assert.Equal(2, policy.MaxRepeatCalls);
         Assert.True(policy.MalformedRetry);
         Assert.Equal(0, policy.MaxSteps);
-        Assert.Equal(6000, policy.ToolResultLimit);
+        Assert.Equal(51200, policy.ToolResultLimit);
+        Assert.Equal(51200, policy.PuppetResultLimit);
         Assert.Equal(8, policy.OutputTokenRatio);
         Assert.Equal(3, FeatureCatalog.RulesFrom(current, Map(ledger)).Count);
         Assert.Equal(2, policy.MaxPromiseNudges);

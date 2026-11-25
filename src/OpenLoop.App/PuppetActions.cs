@@ -62,6 +62,12 @@ namespace OpenLoop.App
             return sheet;
         }
 
+        /// <summary>已取到的清单（可能已过期）：启用提示要在同步路径里拼，不能等异步。</summary>
+        public static PuppetActionSheet Cached
+        {
+            get { lock (Gate) return _cache; }
+        }
+
         /// <summary>清掉缓存：换版/新窗口注册实例后清单会变。</summary>
         public static void Invalidate()
         {
@@ -74,6 +80,7 @@ namespace OpenLoop.App
         /// </summary>
         public static string NoticeText(PuppetActionSheet sheet, string request, string target = "shell")
         {
+            if (string.IsNullOrWhiteSpace(target)) target = "shell";
             string action = request ?? "";
             string args = "";
             int space = action.IndexOfAny([' ', '\t']);
@@ -107,11 +114,12 @@ namespace OpenLoop.App
             else
                 sb.AppendLine("用户没给参数：需要的参数按清单补齐，拿不准就先问，不要猜。");
             sb.AppendLine();
-            sb.Append("执行方式：调用 Puppet 工具 target=self、action=invoke、instance=")
+            sb.Append("执行方式：调用 Puppet 工具 target=").Append(target).Append("、action=invoke、instance=")
               .Append(sheet?.Instance ?? MainInstance)
               .Append("、method=").Append(action)
-              .AppendLine("、args=[按 A 面位置顺序传参]；参数像 JSON 对象（args={...}）时改用 action=action 更稳。");
-            sb.Append("清单与参数类型：Puppet 工具 action=describe、instance=").Append(sheet?.Instance ?? MainInstance)
+              .AppendLine("、args=[按 A 面位置顺序传参]；args 是 JSON 数组，不要包成对象。");
+            sb.Append("清单与参数类型：Puppet 工具 target=").Append(target)
+              .Append("、action=describe、instance=").Append(sheet?.Instance ?? MainInstance)
               .AppendLine("（或右侧「Puppet」页）。");
             sb.Append("执行完把结果一句话回报给用户；失败就原文给出错误，不要重试超过两次。");
             return sb.ToString().TrimEnd();

@@ -307,7 +307,7 @@ namespace OpenLoop.Service.Loop
                     s.Phase = "proposing";
                 });
 
-                var loopAgent = new LoopAgent(Reasoner(settings, model, effort, workspace));
+                var loopAgent = new LoopAgent(Reasoner(settings, model, effort, workspace, ct));
                 var proposal = await loopAgent.ProposeAsync(
                     loopAgent.BuildPacket(ledger, findings: harnessFindings), baseline, features, ct);
 
@@ -415,11 +415,17 @@ namespace OpenLoop.Service.Loop
             }
         }
 
-        private static IReasoner Reasoner(AppSettings settings, string model, string effort, string workspace)
+        private static IReasoner Reasoner(AppSettings settings, string model, string effort, string workspace, CancellationToken ct)
         {
             var command = settings.LoopCommand;
             if (command is { Count: > 0 }) return new ProcessReasoner(command[0], command.Skip(1));
-            return Reasoners.Create(settings, model, effort, workspace);
+            // 宿主接线（与 Worker/Loop/旁路共用 ReasonerWiring）：演进无界面，通报落日志、停止跟随任务取消
+            return ReasonerWiring.Attach(Reasoners.Create(settings, model, effort, workspace),
+                new ReasonerWiring.Host
+                {
+                    Notice = text => { if (!string.IsNullOrEmpty(text)) OpenLoop.Service.Logging.AppLog.Info("演进：" + text); },
+                    ShouldStop = () => ct.IsCancellationRequested
+                });
         }
 
         /// <summary>
@@ -437,7 +443,9 @@ namespace OpenLoop.Service.Loop
                 _ => Reasoners.Create(settings, model, effort, workspace),
                 features, workspace, ledger.EvalDir, AppSettings.GlobalAgentsPath, settings.UseAgentsMd,
                 AppSettings.GlobalSkillsPath, ModelCatalog.ContextLimit(model, settings),
-                OpenLoop.Service.Web.PuppetTools.For(), settings.WebFetchMode);
+                extraTools: null,
+                webFetch: settings.WebFetchMode,
+                puppetTools: max => OpenLoop.Service.Web.PuppetTools.For(max));
         }
 
         private static string DivergedWorkerExe()

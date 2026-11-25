@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.Reasoning;
+using OpenLoop.Core.Tools;
 
 namespace OpenLoop.Core.Agent
 {
@@ -355,7 +356,7 @@ namespace OpenLoop.Core.Agent
                 if (toolResult.Ok)
                 {
                     state.AnyToolSucceeded = true;
-                    dataOut = AgentLoop.Truncate(toolResult.Data, context.Policy.ToolResultLimit);
+                    dataOut = ToolText.Clip(toolResult.Data, context.Policy.ToolResultLimit);
                     if (repairNote != null) dataOut = repairNote + "\n" + dataOut;
                 }
                 else

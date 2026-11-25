@@ -42,8 +42,11 @@ namespace OpenLoop.Core.Agent
         /// <summary>自动追加步数的最多次数；超出后按预算耗尽收尾。</summary>
         public int MaxBudgetExtensions { get; set; } = 3;
 
-        /// <summary>回填给模型的单条工具结果上限（字符）。</summary>
-        public int ToolResultLimit { get; set; } = 6000;
+        /// <summary>回填给模型的单条工具结果上限（UTF-8 字节；行数上限固定 2000，对齐 OpenCode 的 tool_output）。</summary>
+        public int ToolResultLimit { get; set; } = Tools.ToolText.ModelBytes;
+
+        /// <summary>Puppet 单次响应上限（UTF-8 字节；默认与 ToolResultLimit 同源，账本 limit.puppet_result 可单独收紧）。</summary>
+        public int PuppetResultLimit { get; set; } = Tools.ToolText.ModelBytes;
 
         /// <summary>
         /// 单次任务的输出 token 总预算 = 上下文窗口 × 这个倍数（思维链 + 正文 + 工具片段合计）。

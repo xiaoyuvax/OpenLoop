@@ -139,8 +139,6 @@ namespace OpenLoop.Service.Worker
             if (checkpoint != null) AppLog.Info("snapshot " + checkpoint);
 
             var reasoner = Reasoners.Create(settings, request.Model, request.Effort, workspace, approve);
-            if (request.ModelProgress != null)
-                Reasoners.AttachProgress(reasoner, progress => request.ModelProgress(progress));
 
             var payload = request.Activation;
             var activation = payload?.Activation;
@@ -166,40 +164,30 @@ namespace OpenLoop.Service.Worker
                 OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions)
                     .Concat(DshTools.For(settings, workspace, approve))
                     .Concat(plugins.Tools())
-                    .Concat(OpenLoop.Service.Web.PuppetTools.For())
+                    .Concat(OpenLoop.Service.Web.PuppetTools.For(
+                        FeatureCatalog.PolicyOf(workspace).PuppetResultLimit))
                     .Concat(CollabTools.For(request.Collab, request.SessionId))
                     .Concat(WorkerScopeRules.LoopApp(workspace, request.SessionId))
                     .Concat(Media.ImageTools.For(workspace, settings, request.ImageModel, request.Attachments)),
                 settings.WebFetchMode, FeatureCatalog.WebFetchesOf(workspace));
 
             var trace = TraceWriter.Start(workspace, request.Tag, request.Text, request.Model);
-            // 上一轮疑似超时/被杀留下的临时会话：顺手清掉，别一直挂在 OpenCode 上占模型
-            if (reasoner is OpenCodeReasoner openCode)
+            // 宿主接线（与 Loop/旁路共用 ReasonerWiring）：通报、原生工具、进度、软停止一次接全。
+            ReasonerWiring.Attach(reasoner, new ReasonerWiring.Host
             {
-                _ = openCode.SweepStaleSessions();
-                // 「立即」是一次调用内部的工具边界：整轮只在 RunAsync 外查停止太迟
-                openCode.ShouldStop = request.ShouldStop;
-            }
-            // 等待审批之类的即时状态：写进界面状态行，期间不要是一片空白
-            if (reasoner is INoticeObserver noticeObserver)
-                noticeObserver.OnNotice = text => request.Notice?.Invoke(text);
-            // 原生工具调用发生在推理通道内部：边发生边写 trace（停止/超时也留证据），同时进步骤流。
-            if (reasoner is INativeToolObserver observer)
-                observer.OnNativeTool = tool =>
+                Notice = text => request.Notice?.Invoke(text),
+                // 原生工具调用发生在推理通道内部：边发生边写 trace（停止/超时也留证据），同时进步骤流。
+                NativeTool = tool =>
                 {
                     trace.NativeTool(tool);
-                    request.Step?.Invoke(new AgentStepRecord
-                    {
-                        Tool = "native:" + tool.Tool,
-                        ArgsSummary = Clip(tool.Input, 120),
-                        ArgsFull = tool.Input,
-                        Ok = tool.Ok,
-                        Summary = Clip(string.IsNullOrEmpty(tool.Output) ? tool.Status : tool.Output, 160),
-                        FullResult = "native-result: " + tool.Output,
-                        ResultFull = tool.Output,
-                        DurationMs = tool.DurationMs
-                    });
-                };
+                    request.Step?.Invoke(ReasonerWiring.NativeStep(tool));
+                },
+                ModelProgress = request.ModelProgress,
+                // 「立即」是一次调用内部的工具边界：整轮只在 RunAsync 外查停止太迟
+                ShouldStop = request.ShouldStop
+            });
+            // 上一轮疑似超时/被杀留下的临时会话：顺手清掉，别一直挂在 OpenCode 上占模型
+            if (reasoner is OpenCodeReasoner openCode) _ = openCode.SweepStaleSessions();
             var ctx = new WorkerRunContext
             {
                 Undo = undo,
@@ -327,9 +315,5 @@ namespace OpenLoop.Service.Worker
 
             return result;
         }
-
-        /// <summary>步骤流一行文本，超长截断。</summary>
-        private static string Clip(string text, int max)
-            => string.IsNullOrEmpty(text) || text.Length <= max ? text ?? "" : text[..max] + "…";
     }
 }

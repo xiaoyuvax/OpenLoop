@@ -118,6 +118,7 @@
 
 ## 工程规则
 
+- **宿主接线层共用 `ReasonerWiring`**（Service/Models）：reasoner 的 OnNotice / OnNativeTool / OnProgress / ShouldStop 接线与原生工具步骤记录只在这一份；Worker、Loop、旁路、演进 runner 都经 `ReasonerWiring.Attach` 接线。新增通知通道只改这里，不要在各宿主再写一份。
 - **读写分离**：只读方法不得写盘/建目录（判据：让它返回空，程序还能不能跑——能跑就不该“确保存在”）；需要“确保存在”的由显式写入口（界面/落盘）承担。
 - 请求体构建抽成 `internal` 纯函数并单测，不在 async 方法里内联拼字典；可空字段条件写入（`JsonIgnoreCondition.WhenWritingNull` 不作用于 `Dictionary` 的值）。
 - WinForms 菜单不要在 `Closed` 里同步 `Dispose`：`ModalMenuFilter` 关闭流程还会访问句柄，会抛 `ObjectDisposedException` 崩进程；用 `BeginInvoke` 延后销毁。

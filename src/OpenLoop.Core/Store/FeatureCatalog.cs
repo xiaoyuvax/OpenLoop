@@ -20,6 +20,9 @@ namespace OpenLoop.Core.Store
         public const string Degenerate = "guard.degenerate";
         public const string MaxSteps = "limit.steps";
         public const string ToolResultLimit = "limit.tool_result";
+
+        /// <summary>Puppet 单次响应上限（字节）；会话板/日志/截图 base64 都可能很长，与普通工具结果分开调。</summary>
+        public const string PuppetResultLimit = "limit.puppet_result";
         public const string CompressAt = "compress.at";
         public const string OutputTokenRatio = "limit.output_tokens";
         public const string MentionTurns = "limit.mention_turns";
@@ -120,7 +123,13 @@ namespace OpenLoop.Core.Store
             {
                 Id = ToolResultLimit, Kind = "limit", Source = "user", CreatedAt = Now(),
                 Problem = "单个工具结果过长，挤占上下文、推高成本。",
-                Payload = J(new { value = 6000 })
+                Payload = J(new { value = Tools.ToolText.ModelBytes })
+            },
+            new FeatureRecord
+            {
+                Id = PuppetResultLimit, Kind = "limit", Source = "user", CreatedAt = Now(),
+                Problem = "Puppet 单次响应过长（会话板、日志、截图 base64），挤占上下文。",
+                Payload = J(new { value = Tools.ToolText.ModelBytes })
             },
             new FeatureRecord
             {
@@ -221,7 +230,8 @@ namespace OpenLoop.Core.Store
                 Ref(Degenerate, ("enabled", true), ("max", 2)),
                 Ref(MaxSteps, ("value", 0)),
                 Ref(BudgetExtend, ("steps", 10), ("max", 3)),
-                Ref(ToolResultLimit, ("value", 6000)),
+                Ref(ToolResultLimit, ("value", Tools.ToolText.ModelBytes)),
+                Ref(PuppetResultLimit, ("value", Tools.ToolText.ModelBytes)),
                 Ref(OutputTokenRatio, ("value", 8)),
                 Ref(CompressAt, ("value", 0.8)),
                 Ref(CompressKeep, ("messages", AgentContext.KeepRecentMessages), ("tokens", AgentContext.KeepRecentTokens)),
@@ -297,6 +307,9 @@ namespace OpenLoop.Core.Store
                         break;
                     case ToolResultLimit:
                         policy.ToolResultLimit = Number(reference, feature, "value", policy.ToolResultLimit);
+                        break;
+                    case PuppetResultLimit:
+                        policy.PuppetResultLimit = Number(reference, feature, "value", policy.PuppetResultLimit);
                         break;
                     case OutputTokenRatio:
                         policy.OutputTokenRatio = Real(reference, feature, "value", policy.OutputTokenRatio);

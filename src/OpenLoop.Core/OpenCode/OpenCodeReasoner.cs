@@ -127,10 +127,6 @@ namespace OpenLoop.Core.OpenCode
             };
         }
 
-        // shortcut: 原生结果不跟随 AgentPolicy.ToolResultLimit（默认 6000），按 4 倍放宽；
-        // 免费模型窗口或上下文压力真的撞上时再改成可配置。
-        internal const int NativeResultLimit = 24000;
-
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
 
         /// <summary>
@@ -238,7 +234,7 @@ namespace OpenLoop.Core.OpenCode
         {
             string data = string.IsNullOrEmpty(tool.Output) ? tool.Status : tool.Output;
             return "tool-result: " + JsonSerializer.Serialize(
-                new { ok = tool.Ok, data = AgentLoop.Truncate(data, NativeResultLimit) },
+                new { ok = tool.Ok, data = Tools.ToolText.Clip(data) },
                 AgentLoop.ToolResultJson);
         }
 

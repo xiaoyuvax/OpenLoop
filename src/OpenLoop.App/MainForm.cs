@@ -2448,11 +2448,13 @@ namespace OpenLoop.App
             var page = _tabs.ContainsTabPage(e.X, e.Y) ?? _tabs.SelectedTab as AntdUI.TabPage;
             if (page == null) return;
 
-            //「会话」页标签没有「自己」可重命名/可相对关闭，只给全局动作
+            //「会话」页标签没有「自己」可关/可重命名，只给全局动作。
+            // 可关闭的标签第一项必须是「关闭」；菜单按 当前标签 → 视图与活动会话 → 批量关闭 → 全部关闭 分组，隔线隔开。
             bool global = page == _overviewPage;
             var items = new System.Collections.Generic.List<AntdUI.IContextMenuStripItem>();
             if (!global)
             {
+                items.Add(new AntdUI.ContextMenuStripItem(Localization.T("Close")) { ID = "close" });
                 items.Add(new AntdUI.ContextMenuStripItem(Localization.T("重命名")) { ID = "rename" });
                 items.Add(new AntdUI.ContextMenuStripItemDivider());
             }
@@ -2478,6 +2480,7 @@ namespace OpenLoop.App
         {
             switch (id)
             {
+                case "close": CloseTab(target); break;
                 case "rename": RenameTab(target); break;
                 case "openactive": OpenActiveTabs(); break;
                 case "closenactive": CloseTabsWhere(page => IsSessionTab(page) && !IsActiveTab(page)); break;

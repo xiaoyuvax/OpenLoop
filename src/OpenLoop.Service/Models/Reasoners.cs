@@ -35,15 +35,6 @@ namespace OpenLoop.Service.Models
             return new OpenAiCompatibleReasoner(baseUrl, model, apiKey, effort);
         }
 
-        public static void AttachProgress(
-            IReasoner reasoner, Action<OpenAiCompatibleReasoner.ReasonerProgress> handler)
-        {
-            switch (reasoner)
-            {
-                case OpenAiCompatibleReasoner http: http.OnProgress = handler; break;
-                case OpenCodeReasoner opencode: opencode.OnProgress = handler; break;
-            }
-        }
     }
 
     public static class OpenCodeTools

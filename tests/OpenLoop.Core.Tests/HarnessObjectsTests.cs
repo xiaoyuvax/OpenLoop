@@ -34,9 +34,13 @@ public sealed class HarnessObjectsTests : IDisposable
         Assert.All(limits, item => Assert.Equal(HarnessObjects.Limit, item.Kind));
         var toolResult = limits.First(item => item.Id == FeatureCatalog.ToolResultLimit);
         Assert.True(toolResult.Active);
-        Assert.Equal("6000", toolResult.Values["value"]);
-        Assert.Equal("6000", toolResult.Defaults["value"]);
-        Assert.Contains("value=6000", toolResult.ParamsText);
+        Assert.Equal("51200", toolResult.Values["value"]);
+        Assert.Equal("51200", toolResult.Defaults["value"]);
+        Assert.Contains("value=51200", toolResult.ParamsText);
+
+        var puppetResult = limits.First(item => item.Id == FeatureCatalog.PuppetResultLimit);
+        Assert.True(puppetResult.Active);
+        Assert.Equal("51200", puppetResult.Defaults["value"]);
 
         // 规则：正文与参数分开，规则没有参数
         var rules = HarnessObjects.List(ledger, HarnessObjects.Rule);

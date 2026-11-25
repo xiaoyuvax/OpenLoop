@@ -435,6 +435,40 @@ public sealed class GateTests : IDisposable
     }
 
     [Fact]
+    public async Task AgentTaskRunner_passes_candidate_puppet_limit_to_tool_factory()
+    {
+        var ledger = NewLedger();
+        var features = Map(ledger);
+        int captured = 0;
+        var runner = new AgentTaskRunner(_ => new ScriptedReasoner("完成"), features, _root,
+            Path.Combine(_root, ".openloop", "eval"),
+            puppetTools: max => { captured = max; return []; });
+
+        var activation = new ActivationRecord
+        {
+            Version = ledger.Current.Version + 1,
+            At = DateTimeOffset.UtcNow.ToString("O"),
+            By = "loop",
+            Features = ledger.Current.Features
+                .Where(r => r.Id != FeatureCatalog.PuppetResultLimit)
+                .Append(new FeatureRef
+                {
+                    Id = FeatureCatalog.PuppetResultLimit,
+                    Params = new Dictionary<string, JsonElement>
+                    {
+                        ["value"] = JsonSerializer.SerializeToElement(9000)
+                    }
+                })
+                .ToList()
+        };
+        var task = new EvalTask { Id = "puppet-limit", Prompt = "随便", Checks = [] };
+
+        await runner.RunAsync(task, activation, CancellationToken.None);
+
+        Assert.Equal(9000, captured);
+    }
+
+    [Fact]
     public async Task AgentTaskRunner_records_failed_run_instead_of_aborting()
     {
         var ledger = NewLedger();

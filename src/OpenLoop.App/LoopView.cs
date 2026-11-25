@@ -879,7 +879,8 @@ namespace OpenLoop.App
                     var loopTools = ToolRegistry.Loop(readScope, writeScope, _workspace, approve, activeSkills,
                         OpenCodeTools.For(writeScope.Root, approve, settings.OpenCodeAskPermissions)
                             .Concat(DshTools.For(settings, writeScope.Root, approve))
-                            .Concat(OpenLoop.Service.Web.PuppetTools.For())
+                            .Concat(OpenLoop.Service.Web.PuppetTools.For(
+                                FeatureCatalog.PolicyOf(_workspace).PuppetResultLimit))
                             .Concat(ImageTools.For(_workspace, settings, _imageModel, saved))
                             // 内存会话优先：文件里的对话记录可能几十 MB，按轮读内存不受上限影响
                             .Concat([new SessionMemoryTool((title, offset, count) =>
@@ -1005,6 +1006,38 @@ namespace OpenLoop.App
                     RefreshChat();
                 });
             }
+
+            // 宿主接线（与 Worker 共用 ReasonerWiring）：即时通报 → 状态行；原生工具 → trace + 步骤流。
+            // 此前 Loop 漏接这两条，免费模型长等待时界面一片空白（2026-11-25 用户反馈）。
+            ReasonerWiring.Attach(reasoner, new ReasonerWiring.Host
+            {
+                Notice = s => RunOnUi(() =>
+                {
+                    // 等待审批/等待响应等即时状态写进工具状态行；null = 清除
+                    turn.ToolStatusText = string.IsNullOrEmpty(s) ? null : s;
+                    RefreshChat();
+                }),
+                NativeTool = tool =>
+                {
+                    trace.NativeTool(tool);
+                    var step = ReasonerWiring.NativeStep(tool);
+                    RunOnUi(() =>
+                    {
+                        turn.ToolStepCount++;
+                        turn.ToolTotalMs += step.DurationMs;
+                        string line = step.DisplayLine;
+                        turn.ToolCallLines = string.IsNullOrEmpty(turn.ToolCallLines)
+                            ? line
+                            : turn.ToolCallLines + "\n" + line;
+                        turn.ToolTraceText = turn.ToolCallLines;
+                        lock (timeline) timeline.Tool(line);
+                        lock (timeline) turn.TimelineText = timeline.Render();
+                        lock (timeline) SyncPhases(turn, timeline);
+                        RefreshChat();
+                    });
+                },
+                ShouldStop = () => ct.IsCancellationRequested || _interrupt
+            });
 
             var loop = new AgentLoop(tools, reasoner, policy,
                 onStep: step =>
@@ -1573,6 +1606,9 @@ namespace OpenLoop.App
             }
         }
 
+        /// <summary>目标面板（TCF 的 Puppet 动作按会话 id 转发到这里）。</summary>
+        internal TargetPane TargetPane => _targetPane;
+
         /// <summary>TargetCentricSession：左栏挂可修订目标（与 Worker 侧同一套 TargetPane 语义）。</summary>
         internal void OpenTarget(string kind)
         {
@@ -1607,15 +1643,17 @@ namespace OpenLoop.App
                 return;
             }
 
-            _targetPane.Bind(spec, _ => SyncTarget(kind, target));
+            // 启用提示的动作清单从 manifest 生成（不硬编码）；缓存没热就先用兜底句
+            _ = PuppetActions.LoadAsync();
+            if (!_targetPane.Bind(spec, SessionId, _ => SyncTarget(kind, target))) return;
             _targetSplit.Panel1Collapsed = false;
             ApplyTargetLayout();
         }
 
+        /// <summary>关闭只是折叠：内容与脏标志留在面板里（TCF 的「关闭=隐藏」）。</summary>
         private void CloseTarget()
         {
-            _targetPane.Shutdown();
-            _targetPane.Bind(null);
+            _targetPane.Collapse();
             _targetSplit.Panel1Collapsed = true;
         }
 
@@ -1647,9 +1685,8 @@ namespace OpenLoop.App
                 _targetSplit.SplitterDistance = distance;
         }
 
-        private string TargetDirective()
-            => $"[目标会话] 当前会话的唯一编辑目标是 {_targetPane.Path}（{_targetPane.Title}）："
-               + "要改就只改这个文件，不要动其它文件；改完说明改了什么。";
+        /// <summary>目标会话的每次输入都带上启用提示：唯一编辑目标 + 动作 + 保存语义。</summary>
+        private string TargetDirective() => _targetPane.Prompt("self");
 
         /// <summary>提交输入框。immediate=true 时运行中会打断本轮，收尾后立刻发这一条（Enter 的语义）。</summary>
         private void Submit(bool immediate = false)
