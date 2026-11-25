@@ -1,4 +1,4 @@
-﻿using OpenLoop.Core.OpenCode;
+using OpenLoop.Core.OpenCode;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Logging;
 
@@ -57,18 +57,26 @@ namespace OpenLoop.Service.Models
 
         /// <summary>
         /// opencode/* 在目录还没加载好时（A/I 刚起、opencode 刚重启）用它等就绪：异步轮询探活，不占线程、
-        /// 不判失败。服务没在运行（没有 service.json）或已就绪却没有这个模型时给出可执行的错误，不空等。
+        /// 不判失败。端点就绪但模型不在缓存里时先强刷目录再判——opencode 服务重启会换模型清单，
+        /// Ready 状态下 EnsureFresh 不会刷新（见上），只有这里能追上。刷新几次仍没有才报错。
         /// </summary>
         public static async Task<(OpenCodeClient Client, OpenCodeModelRef Model)> WaitModelAsync(
             string model, CancellationToken ct = default)
         {
             string id = (model ?? "").Trim();
+            int missedRefreshes = 0;
             while (true)
             {
                 EnsureFresh();
                 if (_endpoint is { IsReady: true })
                 {
                     if (_byId.TryGetValue(id, out var reference)) return (_endpoint.CreateClient(), reference);
+                    if (missedRefreshes++ < 3)
+                    {
+                        await RefreshAsync(ct);
+                        await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+                        continue;
+                    }
                     throw new InvalidOperationException($"OpenCode 没有提供这个模型：{id}");
                 }
                 if (_endpoint is { Status: OpenCodeStatus.Absent })

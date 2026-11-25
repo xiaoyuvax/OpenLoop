@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.Encodings.Web;
 using OpenLoop.Core.Agent;
@@ -173,7 +173,7 @@ namespace OpenLoop.Core.Trace
             }
         }
 
-        public void Finish(string outcome, string finalAnswer, decimal? cost = null, AgentGuardStats guards = null)
+        public void Finish(string outcome, string finalAnswer, decimal? cost = null, AgentGuardStats guards = null, string stopSource = null)
         {
             lock (_gate)
             {
@@ -206,6 +206,7 @@ namespace OpenLoop.Core.Trace
                     skills = (_skills ?? []).Select(s => new { name = s.Name, sha256 = s.Sha256, source = s.Source }).ToArray(),
                     skillProblems = _skillProblems ?? [],
                     guards = guards ?? new AgentGuardStats(),
+                    stopSource = stopSource,
                     systemPrompt = new { sha256 = _systemPromptHash, chars = _systemPromptChars },
                     binary = RuntimeInfo.Version
                 };

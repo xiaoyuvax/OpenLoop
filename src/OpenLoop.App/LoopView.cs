@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text;
 using ChatFlow;
 using OpenLoop.Core.Agent;
@@ -231,6 +231,10 @@ namespace OpenLoop.App
         private string ReadSessions(string title, int offset, int count, WorkspaceScope read)
         {
             var sessions = Sessions?.Invoke() ?? [];
+            // Loop 会话也在场（含已停止但窗口仍开、可续跑的）：一并列出与查找，
+            // 否则 ReadSession 对 Loop 会话返回「没有找到」，表现如同被关闭（F-86e986d8）。
+            var loops = (Loops?.Invoke() ?? []).Where(v => v != null && !ReferenceEquals(v, this)
+                && Paths.Same(v.Workspace, _workspace)).ToList();
             var peers = _settings?.Invoke()?.EnableCollab == true
                 ? (CollabPeers?.Invoke() ?? []).Where(v => v != null && !ReferenceEquals(v, this)
                     && Paths.Same(v.Workspace, _workspace)).ToList()
@@ -250,9 +254,11 @@ namespace OpenLoop.App
             }
 
             var peer = peers.FirstOrDefault(v => string.Equals(v.SessionId, title, StringComparison.OrdinalIgnoreCase))
-                       ?? peers.FirstOrDefault(v => v.SessionId.StartsWith(title, StringComparison.OrdinalIgnoreCase));
+                       ?? peers.FirstOrDefault(v => v.SessionId.StartsWith(title, StringComparison.OrdinalIgnoreCase))
+                       ?? peers.FirstOrDefault(v => string.Equals(LoopCollabHost.PlainTitle(v), title, StringComparison.OrdinalIgnoreCase));
             if (peer == null)
-                return $"没有找到会话：{title}\n" + SessionMemoryTool.Listing(sessions);
+                return $"没有找到会话：{title}\n" + SessionMemoryTool.Listing(sessions)
+                       + (peers.Count > 0 ? "\n\n" + LoopCollabHost.Listing(peers) : "");
             return LoopCollabHost.Describe(peer, offset, count);
         }
 
@@ -599,6 +605,9 @@ namespace OpenLoop.App
 
         /// <summary>同工作区的其他 Loop 会话（宿主注入）：协作监测与读取用。</summary>
         internal Func<IReadOnlyList<LoopView>> CollabPeers { get; set; }
+
+        /// <summary>全部已登记的 Loop 会话（宿主注入）：ReadSession 要能看到 Loop 会话，不再只看 Worker 会话。</summary>
+        internal Func<IReadOnlyList<LoopView>> Loops { get; set; }
 
         private LoopCollabHost _collab;
 
@@ -1237,9 +1246,12 @@ namespace OpenLoop.App
         /// <summary>把时间线的分段同步进回话数据；分段正文过一遍安全行清洗，与正文区一致。</summary>
         private static void SyncPhases(ChatTurn turn, RunTimeline timeline)
         {
+            // RenderPhases 整段重拼 + 逐段正则清洗随轮次线性涨：timeline 没变就复用上一份结果
+            if (turn.PhasesDirty == timeline.Version) return;
             turn.Phases.Clear();
             foreach (var (thinking, answer) in timeline.RenderPhases())
                 turn.Phases.Add((thinking, LlmTextSanitizer.StripSafetyLines(answer ?? "")));
+            turn.PhasesDirty = timeline.Version;
         }
 
         private static string CleanAnswer(string text, string finishReason = null)

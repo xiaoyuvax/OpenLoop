@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using OpenLoop.Service.Runtime;
 using OpenLoop.Service.Source;
@@ -106,11 +106,14 @@ namespace OpenLoop.Service.Shell
             }
             try
             {
+                // 复制前立「进行中」标记：中途失败（含旧壳仍占文件锁）时留下明确痕迹，不再静默半新半旧
+                File.WriteAllText(IterationRunner.ShellFailedPath, "shell update in progress");
                 Copy(source, install, backup);
                 TryDelete(IterationRunner.ShellStartedPath);
                 var started = Start(install, workspace);
                 if (WaitStarted(started, StartedTimeout))
                 {
+                    TryDelete(IterationRunner.ShellFailedPath);
                     Log("restart ok " + DateTimeOffset.Now.ToString("O") + " pid=" + started.Id);
                     return 0;
                 }
@@ -125,11 +128,12 @@ namespace OpenLoop.Service.Shell
             catch (Exception ex)
             {
                 Log("restart failed " + DateTimeOffset.Now.ToString("O") + " " + ex.Message);
+                // 半成品必须留痕：安装目录现在可能半新半旧，不还原的话用户看到的「已生效」是假的（F-c8d5af6b）
+                try { File.WriteAllText(IterationRunner.ShellFailedPath, "shell update failed: " + ex.Message); } catch { }
+                try { Restore(backup, install); } catch { }
                 if (!IsAlive(pid))
                 {
-                    // 复制只做了一半：先把备份还原回去，再拉起旧壳
-                    try { Restore(backup, install); } catch { }
-                    try { File.WriteAllText(IterationRunner.ShellFailedPath, "shell update failed: " + ex.Message); } catch { }
+                    // 旧壳已退出：还原后拉起旧壳兜底，避免「没人接手」
                     try { Start(install, workspace); } catch { }
                 }
                 return 3;

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text;
 using ChatFlow;
 using OpenLoop.Core.Agent;
@@ -404,7 +404,8 @@ namespace OpenLoop.App
                 turn.ToolStatusText = null;
                 lock (reasoningBuffer) turn.ReasoningText = reasoningBuffer.ToString();
                 if (string.IsNullOrEmpty(turn.AssistantText)) turn.AssistantText = Localization.T("（已停止）");
-                trace.Finish("stopped", turn.AssistantText);
+                AppLog.Info("旁路轮被停止：来源=external-cancel");
+                trace.Finish("stopped", turn.AssistantText, stopSource: "external-cancel");
                 _lblStatus.Text = Localization.T("只读 · stopped");
             }
             catch (Exception ex)

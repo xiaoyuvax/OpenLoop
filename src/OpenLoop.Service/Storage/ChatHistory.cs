@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using OpenLoop.Service.Logging;
@@ -142,6 +142,21 @@ namespace OpenLoop.Service.Storage
         /// <summary>按文件路径读条目：延迟回读 transcript 时只传路径，不再重复算哈希。</summary>
         public static List<ChatEntry> ReadEntries(string path)
         {
+            if (string.IsNullOrWhiteSpace(path)) return [];
+            lock (ReadGate)
+            {
+                if (ReadCache.TryGetValue(path, out var cached)) return cached;
+            }
+            var entries = ReadEntriesUncached(path);
+            lock (ReadGate)
+            {
+                ReadCache[path] = entries;
+            }
+            return entries;
+        }
+
+        private static List<ChatEntry> ReadEntriesUncached(string path)
+        {
             try
             {
                 if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return [];
@@ -171,6 +186,18 @@ namespace OpenLoop.Service.Storage
         }
 
         /// <summary>同一进程内的写盘串行：中途快照与收尾保存可能同时在跑，别互相顶掉临时文件。</summary>
+        private static void InvalidateReadCache(string path)
+        {
+            lock (ReadGate)
+            {
+                ReadCache.Remove(path);
+            }
+        }
+
+        /// <summary>ReadEntries 的进程内缓存：同一份对话文件（几十 MB）一个读进程内只解析一次；写盘/删除时失效。</summary>
+        private static readonly object ReadGate = new();
+        private static readonly Dictionary<string, List<ChatEntry>> ReadCache = new(StringComparer.OrdinalIgnoreCase);
+
         private static readonly object WriteGate = new();
 
         public static void Write(string workspace, string kind, IEnumerable<ChatEntry> entries)
@@ -197,6 +224,7 @@ namespace OpenLoop.Service.Storage
                     {
                         File.WriteAllText(temp, JsonSerializer.Serialize(list, Json), new UTF8Encoding(false));
                         File.Move(temp, path, true);
+                        InvalidateReadCache(path);
                     }
                     finally
                     {

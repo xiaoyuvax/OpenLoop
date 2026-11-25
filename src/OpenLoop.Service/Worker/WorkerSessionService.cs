@@ -1,4 +1,4 @@
-using OpenLoop.Core.Agent;
+﻿using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.OpenCode;
 using OpenLoop.Core.Reasoning;
@@ -270,7 +270,8 @@ namespace OpenLoop.Service.Worker
                 result.FinalAnswer = ServerNotice.Stopped;
                 result.StoppedByUser = true;
                 trace.Message("assistant", result.FinalAnswer);
-                trace.Finish("stopped", result.FinalAnswer);
+                AppLog.Info($"Worker 轮被停止：{request.SessionId} 来源=external-cancel");
+                trace.Finish("stopped", result.FinalAnswer, stopSource: "external-cancel");
             }
             catch (Exception ex)
             {

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using OpenLoop.Service.Worker;
 
 namespace OpenLoop.App
@@ -221,6 +221,12 @@ namespace OpenLoop.App
                     : " · 结尾：" + Clip(string.IsNullOrWhiteSpace(last.AssistantText) ? last.ToolCallLines : last.AssistantText, 200);
             }
             return text;
+        }
+
+        /// <summary>会话标题（不含工作区前缀）：ReadSession 按标题找 Loop 会话时用。</summary>
+        internal static string PlainTitle(LoopView view)
+        {
+            try { return view.Title ?? ""; } catch { return ""; }
         }
 
         /// <summary>状态词：与 Worker 侧 CollabStatus.StateText 同一套说法。</summary>

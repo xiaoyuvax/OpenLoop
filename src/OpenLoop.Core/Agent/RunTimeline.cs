@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 namespace OpenLoop.Core.Agent
 {
@@ -18,6 +18,9 @@ namespace OpenLoop.Core.Agent
 
         private readonly List<Block> _blocks = [];
 
+        /// <summary>内容变更计数：宿主据此判断分段要不要重建（SyncPhases 的脏标记）。</summary>
+        public int Version { get; private set; }
+
         public bool IsEmpty => _blocks.Count == 0;
 
         /// <summary>追加思维流片段；与上一块连续时并入同一块，正文之后的思维另起一块。</summary>
@@ -26,6 +29,7 @@ namespace OpenLoop.Core.Agent
             if (string.IsNullOrEmpty(piece)) return;
             if (_blocks.Count == 0 || _blocks[^1].Tool || _blocks[^1].Answer)
                 _blocks.Add(new Block());
+            Version++;
             _blocks[^1].Text.Append(piece);
         }
 

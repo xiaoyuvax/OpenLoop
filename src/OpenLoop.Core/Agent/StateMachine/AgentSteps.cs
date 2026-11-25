@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using OpenLoop.Core.Messages;
@@ -135,7 +135,7 @@ namespace OpenLoop.Core.Agent
             {
                 // 服务端真实上限可能低于配置值：按报错压缩一次再重试，不要直接判任务失败。
                 // OpenCode 撞上限时不报错：它自己转去压上下文，然后长时间没有任何输出（见 OpenCodeStalledException），
-                // 所以「长时间无输出」也走这条压缩重试，而不是把一轮工作直接作废。
+                // 长时间无输出（OpenCodeStalledException）也走这里：上游压完的摘要直接回灌，不必重调模型。
                 state.ContextOverflows++;
                 context.OnRestart?.Invoke();
                 int tailTokens = AgentContext.TailTokenBudget(
@@ -150,7 +150,7 @@ namespace OpenLoop.Core.Agent
                     if (stalled.Summary.Length > 0)
                         compressed = AgentContext.FromCompaction(state.Messages, stalled.Summary,
                             context.Policy.CompressKeepMessages, tailTokens);
-                    if (compressed == null && before > AgentContext.DefaultContextLimit)
+                    if (compressed == null)
                         compressed = AgentContext.DropMiddle(state.Messages,
                             context.Policy.CompressKeepMessages, tailTokens);
                     if (compressed != null && AgentContext.EstimateTokens(compressed) >= before)

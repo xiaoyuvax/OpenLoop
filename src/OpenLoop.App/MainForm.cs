@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Runtime.InteropServices;
 using ChatFlow;
 using ChatMessage = ChatFlow.ChatMessage;
@@ -97,12 +97,20 @@ namespace OpenLoop.App
         /// <summary>按标题（再按 id 前缀）找会话；title 为空时列出打开的会话。</summary>
         internal string ReadSessions(string title, int offset, int count)
         {
-            if (string.IsNullOrWhiteSpace(title)) return SessionMemoryTool.Listing(_sessions);
+            var loops = OnUi(() => _loops.Values.Select(e => e.View).Where(v => v != null).ToList());
+            if (string.IsNullOrWhiteSpace(title))
+                return SessionMemoryTool.Listing(_sessions)
+                       + (loops.Count > 0 ? "\n\n" + LoopCollabHost.Listing(loops) : "");
             var session = FindByTitle(title)
                 ?? _sessions.FirstOrDefault(s => s.Id.StartsWith(title, StringComparison.OrdinalIgnoreCase));
-            return session == null
+            if (session != null) return SessionMemoryTool.Describe(session, offset, count);
+            var loop = loops.FirstOrDefault(v => string.Equals(v.SessionId, title, StringComparison.OrdinalIgnoreCase))
+                ?? loops.FirstOrDefault(v => v.SessionId.StartsWith(title, StringComparison.OrdinalIgnoreCase))
+                ?? loops.FirstOrDefault(v => string.Equals(LoopCollabHost.PlainTitle(v), title, StringComparison.OrdinalIgnoreCase));
+            return loop == null
                 ? $"没有找到会话：{title}\n" + SessionMemoryTool.Listing(_sessions)
-                : SessionMemoryTool.Describe(session, offset, count);
+                  + (loops.Count > 0 ? "\n\n" + LoopCollabHost.Listing(loops) : "")
+                : LoopCollabHost.Describe(loop, offset, count);
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -111,7 +119,7 @@ namespace OpenLoop.App
             get
             {
                 var session = Active;
-                return session == null ? "" : $"{session.Id}\t{session.State}\t{session.Title}";
+                return session == null ? "" : string.Join("\t", session.Id, session.State, session.Title);
             }
         }
 
@@ -758,6 +766,7 @@ namespace OpenLoop.App
                 .Select(e => e.View)
                 .Where(v => v != null && Paths.Same(v.Workspace, target))
                 .ToList());
+            view.Loops = () => OnUi(() => _loops.Values.Select(e => e.View).Where(v => v != null).ToList());
             view.Initialize(target, () => _settings, id);
             // 同 SessionView：transcript 延迟回读在后台预热，别让第一次 checkpoint 在 UI 线程踩回读
             if (view.Book.Turns.Count > 0)
