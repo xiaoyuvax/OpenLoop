@@ -1,4 +1,5 @@
 using OpenLoop.Service.Bus;
+using OpenLoop.Service.Logging;
 using OpenLoop.Service.Shell;
 
 namespace OpenLoop.App
@@ -11,6 +12,7 @@ namespace OpenLoop.App
         [STAThread]
         private static void Main(string[] args)
         {
+            LogRole.Use("shell");
             // 壳自更新 helper：新壳把自己这份覆盖到安装目录，成功/失败都不用脚本
             if (ShellUpdate.IsRequested(args))
             {

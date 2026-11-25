@@ -313,13 +313,23 @@ namespace OpenLoop.Service.Tests
 
             host.Send(session.Id, "task", "now", immediate: true);
             Assert.True(seen.ShouldStop());
+            // 谁打断的：宿主必须说得出（trace 的 stopSource 靠它，否则事后只剩 outcome=stopped）
+            Assert.Equal("queue-immediate", seen.StopSource());
 
             Assert.True(host.RemovePending(session.Id, 0));
             Assert.False(seen.ShouldStop());
+            Assert.Null(seen.StopSource());
 
             host.Interrupt(session.Id);
             Assert.True(seen.ShouldStop());
+            Assert.Equal("interrupt", seen.StopSource());
             host.Interrupt(session.Id, on: false);
+            Assert.False(seen.ShouldStop());
+
+            host.EnqueueAuto(session.Id, "peer", "collab");
+            Assert.True(seen.ShouldStop());
+            Assert.Equal("notice-immediate", seen.StopSource());
+            Assert.True(host.RemovePending(session.Id, 0));
             Assert.False(seen.ShouldStop());
 
             gate.SetResult(new WorkerRunResult { Outcome = "ok", FinalAnswer = "done" });

@@ -1,5 +1,6 @@
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Host;
+using OpenLoop.Service.Logging;
 using OpenLoop.Service.Runtime;
 using OpenLoop.Service.Source;
 using OpenLoop.Service.Web;
@@ -11,6 +12,7 @@ namespace OpenLoop.A
     {
         private static int Main(string[] args)
         {
+            LogRole.Use("a");
             if (EvalRun.Wants(args)) return EvalRun.Execute(args);
 
             using var loop = new LoopApiClient();

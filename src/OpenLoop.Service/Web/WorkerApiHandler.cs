@@ -84,7 +84,12 @@ namespace OpenLoop.Service.Web
             if (method == "GET" && parts.Length == 3)
             {
                 var snapshot = _host.Get(id);
-                return snapshot == null ? NotFound(req) : Json(req, snapshot);
+                if (snapshot == null) return NotFound(req);
+                // 版本没变时只回 304：壳每 250ms 轮询一次，整份轮次正文的序列化与传输都省掉（F-df36eed4）
+                if (snapshot.Revision > 0
+                    && long.TryParse(req.Queries?["since"], out long since) && since == snapshot.Revision)
+                    return Unchanged(req);
+                return Json(req, snapshot);
             }
 
             if (method == "DELETE" && parts.Length == 3)
@@ -215,6 +220,14 @@ namespace OpenLoop.Service.Web
         {
             req.Response.StatusCode = 404;
             req.Response.Buffer = Encoding.UTF8.GetBytes("not found");
+            return true;
+        }
+
+        /// <summary>304：客户端带上 ?since= 且版本没变，不必回正文（F-df36eed4）。</summary>
+        private static bool Unchanged(WebRequest req)
+        {
+            req.Response.StatusCode = 304;
+            req.Response.Buffer = [];
             return true;
         }
 

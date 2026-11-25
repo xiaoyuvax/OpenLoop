@@ -78,12 +78,39 @@ namespace OpenLoop.Core.OpenCode
             "line and sends you tool-result: {...} as the next message. Never emit native tool calls, never claim " +
             "that tools are unavailable, and never mention a rejected native call in your answer.\n" +
             "History may contain tool-call lines whose tool name starts with native:. They were already executed by the " +
-            "runtime that wraps you; use them as facts and never emit a native: call yourself.\n";
+            "runtime that wraps you; use them as facts and never emit a native: call yourself. " +
+            "In particular, the native `execute` tool is a sandboxed Code Mode with NO filesystem, shell or file access — " +
+            "its tool set (automation/browser/opencode session management) is not yours. If you need to read, write or " +
+            "search files or run commands, those tools exist only through the text protocol line above; do not conclude " +
+            "that tools are missing just because `execute` cannot see them.\n";
 
         // 只在上一轮完全没正文时追加在末尾（新开一次调用，不影响正常轮的前缀）。
         private const string RetryHint =
             "\n[system]\nYour previous reply contained no text. Send your tool call again as one line: " +
             "tool-call: {\"tool\":\"<name>\",\"args\":{...}}; otherwise answer in plain text.\n";
+
+        // F-48a2b91a：模型滑进 native:execute（Code Mode）死胡同后误判「宿主没有文件工具」而拒绝任务。
+        // 命中判定时追加这条纠正提示重发一次，把它从 Code Mode 拉回文本协议。
+        public const string CodeModeHint =
+            "\n[system]\nYour previous turn only used the native `execute` tool (sandboxed Code Mode). That sandbox " +
+            "has NO filesystem, shell or file access — its tool set (automation/browser/opencode session management) " +
+            "is not the host's tool set. The host's file/shell tools (read, write, list, grep, shell, ...) exist ONLY " +
+            "through the text protocol: print exactly one line `tool-call: {\"tool\":\"<name>\",\"args\":{...}}` and " +
+            "wait for tool-result. Do not report missing tools; continue the task via the text protocol.\n";
+
+        /// <summary>
+        /// F-48a2b91a：一轮里只调了 Code Mode 的 execute（没有任何正文协议调用、没有真实文件/命令类原生工具），
+        /// 判为「滑进 Code Mode 死胡同」。text 含 tool-call 协议行就不算——说明它已经在用文本协议。
+        /// </summary>
+        internal static bool LooksLikeCodeModeLoop(IReadOnlyList<OpenCodeNativeTool> native, string text)
+        {
+            if (native is not { Count: > 0 }) return false;
+            if (!string.IsNullOrEmpty(text) &&
+                text.Contains("tool-call:", StringComparison.OrdinalIgnoreCase)) return false;
+            bool anyRealTool = native.Any(t =>
+                !string.Equals(t.Name, "execute", StringComparison.OrdinalIgnoreCase));
+            return !anyRealTool;
+        }
 
         public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
             => RunAsync(messages, null, null, ct);
@@ -125,6 +152,10 @@ namespace OpenLoop.Core.OpenCode
             if (string.IsNullOrWhiteSpace(turn.Text) && string.IsNullOrWhiteSpace(turn.Reasoning)
                 && native.Count == 0 && ShouldStop?.Invoke() != true)
                 turn = await Call(prompt + RetryHint);
+            // F-48a2b91a：只调了 Code Mode 的 execute、没有文本协议调用——补纠正提示重发一次。
+            else if (_keepTools && ShouldStop?.Invoke() != true
+                && LooksLikeCodeModeLoop(native, turn.Text))
+                turn = await Call(prompt + CodeModeHint);
 
             async Task<OpenCodeTurn> Call(string text)
             {

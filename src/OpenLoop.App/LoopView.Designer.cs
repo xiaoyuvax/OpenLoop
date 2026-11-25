@@ -1,4 +1,4 @@
-namespace OpenLoop.App
+﻿namespace OpenLoop.App
 {
     partial class LoopView
     {
@@ -260,7 +260,11 @@ namespace OpenLoop.App
             _fileView.Dock = DockStyle.Fill;
             _fileView.Visible = false;
 
-            _lblDModel.AutoSize = true;
+            // 多行说明：AutoSize 只按单行量高度，长模型名/状态会被裁成一行（F-20ed0f28）；
+            // 高由 ApplyDetail 里的 FitWrapped 按换行重算
+            // System.Windows.Forms.Label：没有 TextMultiLine，多行由 AutoSize=false + 显式高度决定
+            _lblDModel.AutoSize = false;
+            _lblDModel.Width = 260;
             _lblDModel.MaximumSize = new Size(260, 0);
             _lblDModel.Text = Localization.T("Model") + ": —";
             _lblDModel.Font = new Font("Segoe UI", 9F);
@@ -285,7 +289,9 @@ namespace OpenLoop.App
             _lblDCost.ForeColor = UiStyle.Muted;
             _lblDCost.Margin = new Padding(0, 0, 0, 8);
 
-            _lblDStatus.AutoSize = true;
+            // System.Windows.Forms.Label：没有 TextMultiLine，多行由 AutoSize=false + 显式高度决定
+            _lblDStatus.AutoSize = false;
+            _lblDStatus.Width = 260;
             _lblDStatus.MaximumSize = new Size(260, 0);
             _lblDStatus.Text = Localization.T("Status") + ": —";
             _lblDStatus.Font = new Font("Segoe UI", 9F);

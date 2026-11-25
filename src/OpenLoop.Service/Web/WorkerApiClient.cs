@@ -86,6 +86,20 @@ namespace OpenLoop.Service.Web
             }
         }
 
+        /// <summary>
+        /// 带版本号的轮询：A 侧版本没变时回 304，这里返回 Changed=false，界面沿用上一帧，
+        /// 省掉整份轮次正文的序列化与传输（F-df36eed4）。404 按「会话没了」返回 Changed=true + null。
+        /// </summary>
+        public async Task<(bool Changed, WorkerSessionSnapshot Snapshot)> GetIfChangedAsync(
+            string id, long since, CancellationToken ct = default)
+        {
+            using var response = await _http.GetAsync(Path(id) + "?since=" + since, ct);
+            if (response.StatusCode == HttpStatusCode.NotModified) return (false, null);
+            if (response.StatusCode == HttpStatusCode.NotFound) return (true, null);
+            response.EnsureSuccessStatusCode();
+            return (true, await response.Content.ReadFromJsonAsync<WorkerSessionSnapshot>(BusProtocol.Json, ct));
+        }
+
         public async Task<WorkerSessionSnapshot> CreateAsync(string id, string workspace, string model,
             string effort, CancellationToken ct = default)
             => await PostAsync("/api/sessions",

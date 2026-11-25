@@ -40,6 +40,17 @@ namespace OpenLoop.Service.Tests
         }
 
         [Fact]
+        public void Chat_entry_round_trips_checkpoint_sha()
+        {
+            // 撤回快照随对话落盘：壳重启后旧轮仍能还原（F-d0622b16）
+            ChatHistory.Write(@"C:\work", "sess", [new ChatEntry { User = "u", Checkpoint = "abc123" }]);
+
+            var entry = Assert.Single(ChatHistory.Read(@"C:\work", "sess"));
+
+            Assert.Equal("abc123", entry.Checkpoint);
+        }
+
+        [Fact]
         public void Last_model_reads_the_newest_entry_that_has_one()
         {
             ChatHistory.Write(@"C:\work", "sess",

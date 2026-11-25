@@ -20,4 +20,15 @@ namespace OpenLoop.Service.Logging
             else Log.Error(message, exception);
         }
     }
+
+    /// <summary>
+    /// 按角色分日志目录：壳、A、I 同处安装根、都用 OpenLoop 这一个日志名，同一小时会抢同一个文件，
+    /// 后起的进程只能写内存（Wima 报 Console Mode only），事后查不到。必须在第一次用 AppLog 之前调用。
+    /// </summary>
+    public static class LogRole
+    {
+        public static void Use(string role)
+            => WimaLogger.LogRoot =
+                Path.Combine(Environment.CurrentDirectory, "logs", role) + Path.DirectorySeparatorChar;
+    }
 }

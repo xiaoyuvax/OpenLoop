@@ -799,6 +799,16 @@ namespace OpenLoop.Service.Worker
                 Approve = approval => Approve(session, approval, cts.Token),
                 ConfirmContinue = message => Ask(session, "continue", "", message, "", "", "", cts.Token) > 0,
                 ShouldStop = () => ShouldStopRun(session),
+                StopSource = () =>
+                {
+                    lock (_lock)
+                    {
+                        if (session.Interrupt) return "interrupt";
+                        var immediate = session.Pending.FirstOrDefault(p => p.Immediate);
+                        if (immediate == null) return null;
+                        return immediate.Auto ? "notice-immediate" : "queue-immediate";
+                    }
+                },
                 Started = ctx =>
                 {
                     lock (_lock)

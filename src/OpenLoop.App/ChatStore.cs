@@ -20,6 +20,13 @@ namespace OpenLoop.App
         /// </summary>
         private static readonly ConditionalWeakTable<ChatTurn, string> DeferredFiles = new();
 
+        /// <summary>每轮的撤回快照 sha（读回文件时由 <see cref="Turns"/> 挂上；新轮由 LoopView 写入落盘）。</summary>
+        private static readonly ConditionalWeakTable<ChatTurn, string> Checkpoints = new();
+
+        /// <summary>这一轮的撤回快照 sha；没有（旧会话/未拍快照）时为 null。</summary>
+        public static string Checkpoint(ChatTurn turn)
+            => turn != null && Checkpoints.TryGetValue(turn, out var sha) ? sha : null;
+
         /// <summary>
         /// 解析过但没对上号的轮次（弱引用持有，轮次被回收就一起消失）：不再重读该文件。
         /// UserText 对不上就该认——每次重试都是整份几十 MB 的 JSON 重新解析，UI 线程上就是卡顿。
@@ -181,6 +188,9 @@ namespace OpenLoop.App
                 if (entry.Phases is { Count: > 0 })
                     foreach (var phase in entry.Phases)
                         turn.Phases.Add((phase?.Thinking ?? "", phase?.Answer ?? ""));
+                // 撤回快照：随对话落盘，打开会话后仍能还原（F-d0622b16）
+                if (!string.IsNullOrWhiteSpace(entry.Checkpoint))
+                    Checkpoints.AddOrUpdate(turn, entry.Checkpoint);
                 // transcript 延迟加载：打开会话不把每轮完整消息全部载进内存（大头在 Messages），
                 // BuildHistory 第一次要某轮的上下文时才回读文件
                 if (entry.Messages is { Count: > 0 } && transcriptSource != null)
@@ -210,7 +220,7 @@ namespace OpenLoop.App
         /// </summary>
         public static List<ChatEntry> EntriesFromSnapshot(
             IReadOnlyList<(ChatTurn Turn, IReadOnlyList<LlmMessage> Transcript)> snapshot,
-            string model = null, string effort = null)
+            string model = null, string effort = null, Func<ChatTurn, string> checkpoint = null)
             => snapshot.Select(x => new ChatEntry
             {
                 User = x.Turn.UserText,
@@ -231,6 +241,8 @@ namespace OpenLoop.App
                 Effort = effort,
                 // 中途快照：这一轮还在跑，读回来要能认出来（Loop 的流式轮次靠它区分「跑到一半」与「空轮」）
                 Streaming = x.Turn.Streaming,
+                // 这一轮的撤回快照随对话落盘：壳重启后旧轮仍能还原（F-d0622b16）
+                Checkpoint = checkpoint?.Invoke(x.Turn),
                 Messages = x.Transcript?
                     .Select(m => new ChatMessageEntry { Role = m.Role, Content = m.Content }).ToList()
             }).ToList();

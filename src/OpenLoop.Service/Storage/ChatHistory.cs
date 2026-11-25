@@ -38,6 +38,12 @@ namespace OpenLoop.Service.Storage
         /// 正文为空时按 <see cref="ChatHistory.AssistantFor"/> 补一句可操作的说明。旧文件没有该字段。
         /// </summary>
         public bool Streaming { get; set; }
+
+        /// <summary>
+        /// 这一轮开始前的工作区快照（git tree sha），撤回时据此还原工作树；
+        /// 旧文件没有该字段（null = 该轮不可撤回，壳重启后仍如此）。
+        /// </summary>
+        public string Checkpoint { get; set; }
     }
 
     public sealed class ChatMessageEntry

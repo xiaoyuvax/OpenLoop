@@ -57,6 +57,38 @@ public sealed class SnapshotsTests : IDisposable
     }
 
     [Fact]
+    public void Restore_ReportsThePreRestoreBackupRefSoConcurrentEditsCanBeRecovered()
+    {
+        // 多会话共用工作树：快照之后别的会话写入的改动会被还原覆盖，
+        // 但还原前会把「当前」工作树存成 pre-restore ref，从它就能取回（F-4fd76382）。
+        if (!GitAvailable()) return;
+
+        string repo = Path.Combine(_root, "repo-backup");
+        Directory.CreateDirectory(repo);
+        Git(repo, "init", "-q");
+        Git(repo, "config", "user.email", "test@example.com");
+        Git(repo, "config", "user.name", "test");
+
+        string tracked = Path.Combine(repo, "a.txt");
+        File.WriteAllText(tracked, "mine");
+        Git(repo, "add", "-A");
+        Git(repo, "commit", "-qm", "init");
+
+        string snapshot = Snapshots.Create(repo, "test");
+        Assert.False(string.IsNullOrEmpty(snapshot));
+
+        // 另一个会话在快照之后写入
+        File.WriteAllText(tracked, "peer-change");
+
+        Assert.True(Snapshots.Restore(repo, snapshot, out string backupRef));
+        Assert.Equal("mine", File.ReadAllText(tracked));           // 已还原到快照
+        Assert.False(string.IsNullOrEmpty(backupRef));             // 但备份 ref 给出了
+        Assert.StartsWith("refs/openloop/pre-restore-", backupRef);
+        // 那个 ref 里确实是并发会话写的内容，能取回
+        Assert.Equal("peer-change", GitOutput(repo, "show", backupRef + ":a.txt").Trim());
+    }
+
+    [Fact]
     public void Tree_and_Pin_RecordTheBuiltWorktreeUnderACustomRef()
     {
         // 迭代用：构建前定格 tree，发布后把 refs/openloop/version/<角色>/<版本> 指回它

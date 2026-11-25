@@ -110,11 +110,27 @@ namespace OpenLoop.Core.Safety
         /// <summary>
         /// 把工作区还原到快照状态：恢复快照里的文件内容，并删掉快照之后新建的文件
         /// （未被 .gitignore 忽略的；忽略文件不动）。只写工作区，不碰真实索引。
+        /// 还原前先把「当前」工作树留一份 refs/openloop/pre-restore-&lt;时间&gt;：
+        /// 多会话共用工作树时，快照之后别人写入的改动至少可从这里取回（F-4fd76382）。
         /// </summary>
         public static bool Restore(string workspace, string snapshot)
+            => Restore(workspace, snapshot, out _);
+
+        /// <summary>
+        /// 同上，另给出还原前的备份 ref（backupRef）：多个会话共用工作树时，
+        /// 快照之后别人写入的改动会随还原消失，用户可从这个 ref 立刻取回
+        /// （git show REF:PATH，或 git diff REF），界面把它显示在「撤回完成」里，
+        /// 而不是静默丢掉（F-4fd76382）。backupRef 为 null 表示备份没建成
+        /// （不是 git 仓库 / git 不可用），此时还原仍按原逻辑进行。
+        /// </summary>
+        public static bool Restore(string workspace, string snapshot, out string backupRef)
         {
+            backupRef = null;
             if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(snapshot)) return false;
             if (!Directory.Exists(workspace)) return false;
+
+            string backupRefName = "refs/openloop/pre-restore-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            if (Create(workspace, "pre-restore", backupRefName) != null) backupRef = backupRefName;
 
             HashSet<string> keep = ListSnapshotFiles(workspace, snapshot);
             if (keep == null) return false;

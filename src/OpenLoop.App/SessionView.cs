@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -2045,8 +2045,18 @@ namespace OpenLoop.App
             while (snapshot.State == WorkerSessionHost.Running)
             {
                 await Task.Delay(250, ct);
-                snapshot = await client.GetAsync(Session.Id, ct);
-                if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
+                // 带版本号轮询：A 回 304 就沿用上一帧（整份轮次正文不序列化、不传输）
+                if (snapshot.Revision > 0)
+                {
+                    var (changed, next) = await client.GetIfChangedAsync(Session.Id, snapshot.Revision, ct);
+                    if (!changed) continue;
+                    snapshot = next ?? throw new InvalidOperationException("Worker 上找不到这个会话");
+                }
+                else
+                {
+                    snapshot = await client.GetAsync(Session.Id, ct);
+                    if (snapshot == null) throw new InvalidOperationException("Worker 上找不到这个会话");
+                }
                 snapshot = AnswerPromptsAsync(client, snapshot, ct);
                 ApplySnapshot(snapshot);
             }
@@ -3035,8 +3045,11 @@ namespace OpenLoop.App
             var errors = new List<string>();
             bool hasSnapshot = _turnCheckpoints.TryGetValue(selected, out string checkpoint)
                 && !string.IsNullOrEmpty(checkpoint);
-            bool restoreFailed = hasSnapshot && !Snapshots.Restore(Session.Workspace, checkpoint);
+            // 还原前会先把「当前」工作树存成 pre-restore ref：并发会话的未提交改动可从它取回（F-4fd76382）
+            string backupRef = null;
+            bool restoreFailed = hasSnapshot && !Snapshots.Restore(Session.Workspace, checkpoint, out backupRef);
             if (restoreFailed) errors.Add("git 快照恢复失败");
+            else if (backupRef != null) AppLog.Info("还原前工作树已备份到 " + backupRef);
 
             var remove = new HashSet<ChatTurn>(turns.Skip(index));
             Session.Book.RemoveTurns(remove);

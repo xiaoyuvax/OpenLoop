@@ -52,6 +52,9 @@ namespace OpenLoop.Service.Worker
         /// <summary>软停止信号：true 时当前轮在下一个 step 前收尾（进行中的工具不打断）。</summary>
         public Func<bool> ShouldStop { get; set; }
 
+        /// <summary>软停止的来源（interrupt / queue-immediate / notice-immediate）：只写进 trace，事后据此判断谁打断了这一轮。</summary>
+        public Func<string> StopSource { get; set; }
+
         /// <summary>设置完成、开始调用模型前触发一次；拿 undo/checkpoint/trace 路径。</summary>
         public Action<WorkerRunContext> Started { get; set; }
 
@@ -250,7 +253,8 @@ namespace OpenLoop.Service.Worker
                     : "ok";
 
                 trace.Message("assistant", answer);
-                trace.Finish(outcome, answer, run.ChatCost, run.Guards);
+                trace.Finish(outcome, answer, run.ChatCost, run.Guards,
+                    outcome == "stopped" ? StopSourceOf(request, run) : null);
 
                 result.Outcome = outcome;
                 result.Steps = run.Steps.Count;
@@ -316,5 +320,9 @@ namespace OpenLoop.Service.Worker
 
             return result;
         }
+
+        /// <summary>stopped 的来源：宿主给的软停止原因，其次守卫；都没有就记 soft-stop（避免事后只有 outcome=stopped）。</summary>
+        private static string StopSourceOf(WorkerRunRequest request, AgentRunResult run)
+            => request.StopSource?.Invoke() ?? (run.StoppedByGuard ? "guard" : "soft-stop");
     }
 }

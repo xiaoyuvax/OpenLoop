@@ -5,7 +5,7 @@
 ## 定位
 
 - OpenLoop 是一个自演进 agent 设施：**Worker（前台）** 面向用户干活，**Loop（后台）** 是 OpenLoop 自己的 Worker——开发与维护它的源码、编排二进制迭代，并观察 Worker 与用户判定来演进工作区 Harness 参数。
-- Worker 与 Loop 各自是独立进程（A / I，同一个壳拉起与收摊），活动周期不同：Worker 跟任务走，Loop 由事件驱动（可自主启动、跑到结束条件）。
+- Worker 与 Loop 各自是独立进程（A / I，同一个壳拉起与收摊），活动周期不同：Worker 跟任务走，Loop 由事件驱动（**演进**由 DrainSpool 攒够新证据后自动启动、跑到结束条件；**观察/开发轮**仍由人工发起——用户消息、/complain、转交或 Puppet，无人触发时 Loop 不自己开观察轮）。
 - Loop 是 OpenLoop 自己的 Worker：工区 = 部署态（安装根：`src/` 克隆、`backends/`、`versions/`）+ 开发态（源码仓库与同级组件），两种布局等效、路径由 `SourceSync` 解析；源码有完全管理权，二进制只读（只经迭代/换版流程改）。
 - **每次只迭代一个角色**：迭代 Worker 时 Loop 不变，反之亦然；两者二进制可以分别替换（`versions/<role>/`），但协议号必须对齐，替换只能走「登记 → 交接 → 重启 → 回滚」。
 - **Worker 与 Loop 的 harness（agent 中性的控制逻辑）及壳 UI 的基本功能始终保持一致对齐**：只有角色/功能区分造成的合理差异可以例外；改一侧时同步检查另一侧。

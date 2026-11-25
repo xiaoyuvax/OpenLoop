@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text;
 using ChatFlow;
 using OpenLoop.Core.Agent;
@@ -362,6 +362,7 @@ namespace OpenLoop.App
             // 历史加载只做轮次投影（不重复读文件）：Initialize 开头读的那份 entries 在这里消费掉；
             // transcript 延迟回读需要文件路径，一起传下去
             _book.ReplaceAll(ChatStore.Turns(_loadedEntries, ChatHistory.PathFor(_workspace, _sessionId)), null);
+            RestoreTurnCheckpoints();
             ChatStore.PruneCold(_workspace, _sessionId, _model, _book.Turns, _loadedEntries);
             _loadedEntries = null;   // 只在 Initialize 用这一次，别让它挂着几十 MB 不放
             if (_book.Turns.Count > 0)
@@ -732,6 +733,10 @@ namespace OpenLoop.App
             int steps = Math.Max(_book.Turns.LastOrDefault()?.ToolStepCount ?? 0,
                 _book.Turns.Count > 1 ? _book.Turns[^2].ToolStepCount : 0);
             string workspace = _workspace, sessionId = _sessionId, model = _model, effort = _effort;
+            // 撤回快照在 UI 线程拍成只读副本：_turnSnapshots 是界面字典，后台写盘线程不能碰（F-d0622b16）
+            var checkpoints = new Dictionary<ChatTurn, string>();
+            foreach (var t in turns)
+                checkpoints[t] = _turnSnapshots.TryGetValue(t, out var cp) ? cp.Checkpoint : ChatStore.Checkpoint(t);
             // 索引文件很小，留在 UI 线程写（它没有跨线程锁，别和界面的改名/删除抢读-改-写）
             LoopIndex.Touch(workspace, sessionId, steps);
             _chatWrite = _chatWrite.ContinueWith(_ =>
@@ -740,7 +745,8 @@ namespace OpenLoop.App
                 ChatStore.WarmTranscripts(turns);
                 var snapshot = turns.Select(t => (Turn: t, Transcript: ChatStore.Transcript(t))).ToList();
                 OpenLoop.Service.Storage.ChatHistory.Write(workspace, sessionId,
-                    ChatStore.EntriesFromSnapshot(snapshot, model, effort));
+                    ChatStore.EntriesFromSnapshot(snapshot, model, effort,
+                        t => checkpoints.TryGetValue(t, out var cp) ? cp : null));
             }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
             var saveMs = Environment.TickCount64 - saveWatch;
             if (saveMs > 1000) OpenLoop.Service.Logging.AppLog.Warn($"[UI 卡顿] SaveLoopChat 快照排队 {saveMs} ms（含 _chatWrite 等待）");
@@ -756,6 +762,21 @@ namespace OpenLoop.App
             if (_book.Turns.Count == 0) return;
             if (DateTime.UtcNow - _lastCheckpointUtc < _checkpointEvery) return;
             SaveLoopChat();
+        }
+
+        /// <summary>
+        /// 打开会话时把每轮的撤回快照 sha 装回内存：以前只在进程内字典里，壳重启后旧轮就撤不回了（F-d0622b16）。
+        /// 快照 sha 由 <see cref="ChatStore.Turns"/> 从落盘条目挂回轮次，这里只是搬进撤回用的字典。
+        /// </summary>
+        private void RestoreTurnCheckpoints()
+        {
+            string root = OpenLoop.Service.Source.LoopScope.SourceRoot;
+            if (string.IsNullOrWhiteSpace(root)) return;
+            foreach (var turn in _book.Turns)
+            {
+                string checkpoint = ChatStore.Checkpoint(turn);
+                if (!string.IsNullOrWhiteSpace(checkpoint)) _turnSnapshots[turn] = (root, checkpoint);
+            }
         }
 
         private void OnViewLoad(object sender, EventArgs e)
@@ -1622,6 +1643,22 @@ namespace OpenLoop.App
                 + " / " + contextLimit.ToString("N0");
             _lblDCost.Text = Localization.T("Cost") + ": " + _lastCost;
             _lblDStatus.Text = Localization.T("Status") + ": " + status;
+            // 模型名与状态行可能很长（提供商前缀 + 后缀）：按换行重算高度，别裁成一行
+            int detailWidth = Math.Max(Dip(120), _detailFlow.ClientSize.Width - Dip(28));
+            FitWrapped(_lblDModel, detailWidth);
+            FitWrapped(_lblDStatus, detailWidth);
+        }
+
+        /// <summary>多行说明标签按换行宽度重新量高度：AutoSize 只量单行，长句会被裁掉（F-20ed0f28）。</summary>
+        private static void FitWrapped(System.Windows.Forms.Label label, int width)
+        {
+            label.MaximumSize = new Size(width, 0);
+            label.Width = width;
+            label.Height = TextRenderer.MeasureText(
+                label.Text,
+                label.Font,
+                new Size(width, int.MaxValue),
+                TextFormatFlags.WordBreak).Height;
         }
 
         private void RunSideWork(string request)
@@ -2280,7 +2317,9 @@ namespace OpenLoop.App
                 return;
 
             bool hasSnapshot = _turnSnapshots.TryGetValue(selected, out var snapshot);
-            bool restoreFailed = hasSnapshot && !Snapshots.Restore(snapshot.Root, snapshot.Checkpoint);
+            // 还原前会先把「当前」工作树存成 pre-restore ref：并发会话的未提交改动可以从这里取回（F-4fd76382）
+            string backupRef = null;
+            bool restoreFailed = hasSnapshot && !Snapshots.Restore(snapshot.Root, snapshot.Checkpoint, out backupRef);
 
             var remove = new HashSet<ChatTurn>(turns.Skip(index));
             _book.RemoveTurns(remove);
@@ -2300,6 +2339,9 @@ namespace OpenLoop.App
 
             string note = restoreFailed ? Localization.T("RevertRestoreFailed")
                 : hasSnapshot ? Localization.T("，工作区已还原（.gitignore 除外）")
+                  + (backupRef != null
+                        ? "\n还原前的工作树已存为 " + backupRef + "（若期间别的会话改过同一文件，可从它取回）"
+                        : "")
                 : Localization.T("（该轮没有可用快照，未还原文件）");
             Notify(Localization.T("撤回完成"), string.Format(Localization.T("RevertedTurns"), remove.Count) + note, restoreFailed);
         }

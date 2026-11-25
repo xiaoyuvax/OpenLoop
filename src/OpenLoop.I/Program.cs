@@ -1,5 +1,6 @@
 using OpenLoop.Service.Bus;
 using OpenLoop.Service.Host;
+using OpenLoop.Service.Logging;
 using OpenLoop.Service.Loop;
 using OpenLoop.Service.Runtime;
 using OpenLoop.Service.Web;
@@ -10,6 +11,7 @@ namespace OpenLoop.I
     {
         private static int Main(string[] args)
         {
+            LogRole.Use("i");
             var loop = new LoopService();
             var iteration = new IterationService();
             loop.Iteration = iteration;

@@ -140,7 +140,12 @@ namespace OpenLoop.Core.Tests
             var rest = await read.ExecuteAsync(Args(("path", "many.txt"), ("offset", "401")), default);
             Assert.True(rest.Ok, rest.Error);
             Assert.Contains("line 401", rest.Data);
-            Assert.Contains("line 900", rest.Data);
+            // 默认 limit 400：401-800，续读 offset 必须接着给
+            Assert.Contains("offset=801", rest.Data);
+
+            var tail = await read.ExecuteAsync(Args(("path", "many.txt"), ("offset", "801")), default);
+            Assert.True(tail.Ok, tail.Error);
+            Assert.Contains("line 900", tail.Data);
         }
 
         [Fact]
