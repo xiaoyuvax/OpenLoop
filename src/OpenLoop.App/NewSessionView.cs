@@ -303,6 +303,11 @@ namespace OpenLoop.App
         /// <summary>与对话页一致：Enter 发送，Shift+Enter 换行，Ctrl+Enter 发送。</summary>
         private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
         {
+            if (e.KeyData == Keys.Up && ComposerKeys.MoveToFirstLineStart(_txtInput))
+            {
+                e.Result = false;
+                return;
+            }
             bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
             bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
             if (!shift && e.KeyData != Keys.Enter && !ctrl) return;

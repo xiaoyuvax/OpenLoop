@@ -1,5 +1,6 @@
 using System.Text;
 using OpenLoop.Core.Agent;
+using OpenLoop.Core.Safety;
 
 namespace OpenLoop.Core.Tools.Builtin
 {
@@ -54,13 +55,19 @@ namespace OpenLoop.Core.Tools.Builtin
 
             try
             {
-                _scope.Undo?.Record(full);
-                string dir = Path.GetDirectoryName(full);
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                //PowerShell 5.1 按 BOM 判编码：无 BOM 的 .ps1 里有中文会按 ANSI 读成乱码
-                var encoding = new UTF8Encoding(full.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase));
-                if (mode == "append") File.AppendAllText(full, content, encoding);
-                else File.WriteAllText(full, content, encoding);
+                //同进程多会话与跨进程都要串行，否则后写者静默覆盖先写者
+                if (!FileWriteGate.TryEnter(full, out var lease, out string gateError))
+                    return Task.FromResult(AgentToolResult.Failure(gateError));
+                using (lease)
+                {
+                    _scope.Undo?.Record(full);
+                    string dir = Path.GetDirectoryName(full);
+                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                    //PowerShell 5.1 按 BOM 判编码：无 BOM 的 .ps1 里有中文会按 ANSI 读成乱码
+                    var encoding = new UTF8Encoding(full.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase));
+                    if (mode == "append") File.AppendAllText(full, content, encoding);
+                    else File.WriteAllText(full, content, encoding);
+                }
             }
             catch (Exception ex)
             {

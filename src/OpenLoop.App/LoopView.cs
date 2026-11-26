@@ -2650,6 +2650,11 @@ namespace OpenLoop.App
                 else FindForm()?.SelectNextControl(_txtInput, !e.KeyData.HasFlag(Keys.Shift), true, true, true);
                 return;
             }
+            if (e.KeyData == Keys.Up && !_cmdPopup.IsOpen && ComposerKeys.MoveToFirstLineStart(_txtInput))
+            {
+                e.Result = false;
+                return;
+            }
             bool shift = e.KeyData == (Keys.Shift | Keys.Enter);
             bool ctrl = e.KeyData == (Keys.Control | Keys.Enter);
             if (!shift && e.KeyData != Keys.Enter && !ctrl) return;

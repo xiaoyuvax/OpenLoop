@@ -150,6 +150,25 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public async Task ConcurrentEditsOfDifferentRegionsBothApply()
+        {
+            var scope = new WorkspaceScope(_root);
+            string path = Path.Combine(_root, "shared.cs");
+            await File.WriteAllTextAsync(path, "int a = 1;\nint b = 1;\n");
+            var edit = new EditFileTool(scope);
+
+            // 两个会话同时改同一个文件的不同位置：不串行化时后写者会用旧内容整文件回写，吃掉前一个的改动
+            var first = Task.Run(() => edit.ExecuteAsync(
+                Args(("path", "shared.cs"), ("old", "int a = 1;"), ("new", "int a = 2;")), default));
+            var second = Task.Run(() => edit.ExecuteAsync(
+                Args(("path", "shared.cs"), ("old", "int b = 1;"), ("new", "int b = 2;")), default));
+            var results = await Task.WhenAll(first, second);
+
+            Assert.All(results, r => Assert.True(r.Ok, r.Error));
+            Assert.Equal("int a = 2;\nint b = 2;\n", await File.ReadAllTextAsync(path));
+        }
+
+        [Fact]
         public async Task WriteFileAddsBomForPowerShellScript()
         {
             var scope = new WorkspaceScope(_root);

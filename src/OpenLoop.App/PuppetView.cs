@@ -51,6 +51,7 @@ namespace OpenLoop.App
             _cmdPopup.Accepted += OnCommandAccepted;
             _txtInput.TextChanged += (_, _) => UpdateCommandPopup();
             _txtInput.KeyDown += OnInputKeyDown;
+            _txtInput.VerifyKeyboard += OnComposerKeyboard;
             _btnSend.Click += (_, _) => Submit();
             _timer.Tick += (_, _) => Refresh();
             _timer.Start();
@@ -190,6 +191,12 @@ namespace OpenLoop.App
             _txtInput.Text = command + " ";
             _txtInput.SelectionStart = _txtInput.Text.Length;
             _txtInput.Focus();
+        }
+
+        private void OnComposerKeyboard(object sender, AntdUI.InputVerifyKeyboardEventArgs e)
+        {
+            if (e.KeyData == Keys.Up && !_cmdPopup.IsOpen && ComposerKeys.MoveToFirstLineStart(_txtInput))
+                e.Result = false;
         }
 
         private void OnInputKeyDown(object sender, KeyEventArgs e)

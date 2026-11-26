@@ -1,5 +1,6 @@
 using System.Text;
 using OpenLoop.Core.Agent;
+using OpenLoop.Core.Safety;
 
 namespace OpenLoop.Core.Tools.Builtin
 {
@@ -45,12 +46,24 @@ namespace OpenLoop.Core.Tools.Builtin
             if (new FileInfo(full).Length > MaxBytes)
                 return Task.FromResult(AgentToolResult.Failure($"文件过大（上限 {MaxBytes} 字节）：{path}"));
 
+            //读-改-写整段持锁：并发写入下整文件回写会互相覆盖（TOCTOU）
+            if (!FileWriteGate.TryEnter(full, out var lease, out string gateError))
+                return Task.FromResult(AgentToolResult.Failure(gateError));
+            using (lease)
+                return Task.FromResult(ReplaceLocked(full, oldText, newText));
+        }
+
+        /// <summary>持锁内的读-改-写：文件在读取后被别的程序换过就不写，避免覆盖别人的改动。</summary>
+        private AgentToolResult ReplaceLocked(string full, string oldText, string newText)
+        {
             string text;
             Encoding encoding;
             bool crlf;
+            byte[] bytes;
             try
             {
-                (text, encoding) = Decode(File.ReadAllBytes(full));
+                bytes = File.ReadAllBytes(full);
+                (text, encoding) = Decode(bytes);
                 //ReadFile 是按行输出的、不带 \r，模型给的 old 多半用 \n；两边都归一后再匹配
                 //shortcut: 按「全文是否含 CRLF」统一写回行尾，混用行尾的文件会被整体归一；要保留混合行尾再细化
                 crlf = text.Contains("\r\n");
@@ -58,20 +71,20 @@ namespace OpenLoop.Core.Tools.Builtin
             }
             catch (Exception ex)
             {
-                return Task.FromResult(AgentToolResult.Failure($"读取失败：{ex.Message}"));
+                return AgentToolResult.Failure($"读取失败：{ex.Message}");
             }
 
             string anchor = oldText.Replace("\r\n", "\n");
             int at = text.IndexOf(anchor, StringComparison.Ordinal);
             if (at < 0)
-                return Task.FromResult(AgentToolResult.Failure(
-                    $"old 没在 {_scope.Relative(full)} 里找到（未改动）。先 ReadFile 核对原文，注意缩进与空格。"));
+                return AgentToolResult.Failure(
+                    $"old 没在 {_scope.Relative(full)} 里找到（未改动）。先 ReadFile 核对原文，注意缩进与空格。");
 
             int second = text.IndexOf(anchor, at + 1, StringComparison.Ordinal);
             if (second >= 0)
-                return Task.FromResult(AgentToolResult.Failure(
+                return AgentToolResult.Failure(
                     $"old 在 {_scope.Relative(full)} 里出现多次（第 {LineOf(text, at)} 行、第 {LineOf(text, second)} 行起，" +
-                    "未改动）；请在 old 里带上更多上下文让它唯一命中。"));
+                    "未改动）；请在 old 里带上更多上下文让它唯一命中。");
 
             string updated = text[..at] + newText.Replace("\r\n", "\n") + text[(at + anchor.Length)..];
             if (crlf) updated = updated.Replace("\n", "\r\n");
@@ -79,16 +92,20 @@ namespace OpenLoop.Core.Tools.Builtin
 
             try
             {
+                //Shell 命令与进程外编辑器不认上面的锁：内容变过就放弃，不覆盖别人的改动
+                if (!File.ReadAllBytes(full).AsSpan().SequenceEqual(bytes))
+                    return AgentToolResult.Failure(
+                        $"{_scope.Relative(full)} 在读取后被其他程序改写（未改动）。先 ReadFile 核对原文再改。");
                 _scope.Undo?.Record(full);
                 File.WriteAllBytes(full, Encode(updated, encoding));
             }
             catch (Exception ex)
             {
-                return Task.FromResult(AgentToolResult.Failure($"写入失败：{ex.Message}"));
+                return AgentToolResult.Failure($"写入失败：{ex.Message}");
             }
 
-            return Task.FromResult(AgentToolResult.Success(
-                $"已替换 第 {line} 行附近 {anchor.Length} 字符 → {newText.Length} 字符：{_scope.Relative(full)}"));
+            return AgentToolResult.Success(
+                $"已替换 第 {line} 行附近 {anchor.Length} 字符 → {newText.Length} 字符：{_scope.Relative(full)}");
         }
 
         private static int LineOf(string text, int index)
