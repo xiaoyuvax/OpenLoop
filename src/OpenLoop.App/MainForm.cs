@@ -720,10 +720,13 @@ namespace OpenLoop.App
 
         private void OnTargetEditRequested(LoopView source, string kind, string request)
             => OnTargetEditRequested(source?.SessionId, "loop", source?.Workspace, source?.Workspace,
-                kind, request, source?.Model, source?.Effort);
+                kind, request, source?.Model, source?.Effort,
+                // Loop 的 Prompt / AGENTS.md 在源码根，不在来源会话的项目工作区
+                targetWorkspace: global::OpenLoop.Service.Source.LoopScope.SourceRoot);
 
         private void OnTargetEditRequested(string sourceId, string sourceRole, string workspace,
-            string sourceWorkspace, string kind, string request, string model, string effort)
+            string sourceWorkspace, string kind, string request, string model, string effort,
+            string targetWorkspace = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(workspace))
             {
@@ -736,7 +739,7 @@ namespace OpenLoop.App
                 kind, model, effort);
             if (side == null) return;
             ShowSession(side);
-            side.View.OpenTarget(kind);
+            side.View.OpenTarget(kind, targetWorkspace);
             side.View.ComposerText = request;
             side.View.SendMode("task");
         }
@@ -2349,6 +2352,7 @@ namespace OpenLoop.App
             view.DetachHoverChanged += OnTiledDetachHover;
             view.Emptied += OnTiledEmptied;
             view.HostEnsureView = session => EnsureView(session);
+            view.HostDragRepaint = InvalidateTabHeader;
             var page = new AntdUI.TabPage
             {
                 Text = Localization.T("平铺视图"),
@@ -2382,7 +2386,15 @@ namespace OpenLoop.App
         {
             if (ReferenceEquals(_tabDropTarget, hover)) return;
             _tabDropTarget = hover;
-            _tabs.Invalidate();
+            InvalidateTabHeader();
+        }
+
+        /// <summary>只重绘页签头那一条（拖动中每步都刷，不重画下面的会话正文）。</summary>
+        private void InvalidateTabHeader()
+        {
+            int height = _tabs.SelectedTab?.Top ?? 0;
+            if (height <= 0) _tabs.Invalidate();
+            else _tabs.Invalidate(new Rectangle(0, 0, _tabs.ClientSize.Width, height));
         }
 
         /// <summary>方块拖出视图：落在标签页头才脱离（开回普通标签页），否则方块不动。</summary>
@@ -2401,6 +2413,15 @@ namespace OpenLoop.App
         internal static AntdUI.TabPage HoveredTabAt(Point screen)
         {
             return HoveredTabRequested?.Invoke(screen);
+        }
+
+        /// <summary>按页签矩形直接判悬停页：与绘制用的是同一份矩形，命中与高亮不会错位。</summary>
+        private AntdUI.TabPage TabAt(Point screen)
+        {
+            var client = _tabs.PointToClient(screen);
+            for (int i = 0; i < _tabs.Pages.Count; i++)
+                if (_tabs.Style?.GetTabRect(i).Rect.Contains(client) == true) return _tabs.Pages[i];
+            return null;
         }
 
         /// <summary>HoveredTabAt 的实现（主窗体构造时把自己的 _tabs 转出来）。</summary>
@@ -2551,6 +2572,7 @@ namespace OpenLoop.App
         /// 拖普通标签进平铺 = 高亮「平铺视图」页签头；平铺方块拖出 = 高亮悬停的页签头。
         /// 页签矩形走 _tabs.Style.GetTabRect（AntdUI 每次布局后保存的绘制矩形，
         /// 含滚动偏移，与 ContainsTabPage 同一坐标系）。
+        /// 方块拖出时按绘制那一刻的指针位置现算悬停页：不依赖 MouseMove 上报，也不怕事件丢。
         /// </summary>
         private void OnTabsPaintDropHint(object sender, AntdUI.DrawEventArgs e)
         {
@@ -2558,6 +2580,11 @@ namespace OpenLoop.App
             bool strong = false;
             if (_tabDragToTiled) { hint = _tiledPage; strong = true; }
             else if (_tabDragActive) { hint = _tiledPage; }   // 拖入全程：弱高亮提示落区
+            else if (_tiled != null && _tiled.Dragging)
+            {
+                hint = TabAt(Cursor.Position);
+                strong = true;
+            }
             else if (_tabDropTarget != null) { hint = _tabDropTarget; strong = true; }
             if (hint == null) return;
             int index = _tabs.Pages.IndexOf(hint);
@@ -2565,7 +2592,7 @@ namespace OpenLoop.App
             var rect = _tabs.Style?.GetTabRect(index).Rect ?? Rectangle.Empty;
             if (rect.Width <= 0) return;
             // 整块页签头铺半透明强调色：压在文字上也不挡字
-            using var brush = new SolidBrush(Color.FromArgb(strong ? 70 : 30, UiStyle.Accent));
+            using var brush = new SolidBrush(Color.FromArgb(strong ? 90 : 30, UiStyle.Accent));
             e.Canvas.Fill(brush, rect);
         }
 

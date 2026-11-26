@@ -2,6 +2,7 @@ using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.Safety;
 using OpenLoop.Core.Store;
+using OpenLoop.Core.Tools.Builtin;
 using OpenLoop.Service.Config;
 using OpenLoop.Service.Logging;
 using OpenLoop.Service.Media;
@@ -44,6 +45,10 @@ namespace OpenLoop.Service.Worker
 
         /// <summary>自动提示的来源：collab（协作）/ mention（私信）/ puppet（Puppet 动作），界面据此标折叠头。</summary>
         public string NoticeKind { get; set; } = string.Empty;
+
+        /// <summary>宿主拼在用户消息前面的说明块（技能展开 / TCF 启用提示）：Web 壳据此单独显示，
+        /// 用户气泡里只留用户自己写的那段；桌面壳自己按同一份 Split 切，不依赖这个字段。</summary>
+        public string HostPrefix => HostPrompt.Split(User).Host;
 
         /// <summary>被排队里的「立即」消息顶替（不是用户停止）：正文为空时不补占位说明，下一轮就是那条新消息。</summary>
         public bool Superseded { get; set; }
@@ -342,8 +347,10 @@ namespace OpenLoop.Service.Worker
         }
 
         /// <summary>空闲时立即开跑；运行中则排队，等当前轮结束按顺序执行。immediate=运行中插到队首并软打断本轮。</summary>
+        /// <param name="noticeKind">非空 = 宿主生成的提示（不是用户敲的）：界面折成一行、淡黄底。</param>
         public bool Send(string id, string tag, string text, bool immediate = false,
-            string imageModel = null, IReadOnlyList<string> attachments = null, string context = null)
+            string imageModel = null, IReadOnlyList<string> attachments = null, string context = null,
+            string noticeKind = null)
         {
             if (string.IsNullOrWhiteSpace(text) && (attachments == null || attachments.Count == 0)) return false;
 
@@ -366,19 +373,21 @@ namespace OpenLoop.Service.Worker
                         session.Pending.Insert(0, new PendingSend
                         {
                             Text = text, Tag = tag ?? "task", Immediate = true,
-                            ImageModel = imageModel, Attachments = attachments, Context = context
+                            ImageModel = imageModel, Attachments = attachments, Context = context,
+                            NoticeKind = noticeKind
                         });
                     }
                     else session.Pending.Add(new PendingSend
                     {
                         Text = text, Tag = tag ?? "task",
-                        ImageModel = imageModel, Attachments = attachments, Context = context
+                        ImageModel = imageModel, Attachments = attachments, Context = context,
+                        NoticeKind = noticeKind
                     });
                     session.Revision++;
                 }
                 else
                 {
-                    Start(session, tag ?? "task", text, imageModel, attachments, context);
+                    Start(session, tag ?? "task", text, imageModel, attachments, context, noticeKind);
                 }
             }
 
@@ -442,7 +451,7 @@ namespace OpenLoop.Service.Worker
                 if (session.State != Running)
                 {
                     var batch = TakeBatch(session.Pending);
-                    if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch), MergeContexts(batch), batch[0].Auto ? batch[0].Tag ?? "collab" : null);
+                    if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch), MergeContexts(batch), NoticeKindOf(batch[0]));
                 }
             }
 
@@ -612,7 +621,7 @@ namespace OpenLoop.Service.Worker
                 }
 
                 var batch = TakeBatch(session.Pending);
-                if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch), MergeContexts(batch), batch[0].Auto ? batch[0].Tag ?? "collab" : null);
+                if (batch.Count > 0) Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch), MergeContexts(batch), NoticeKindOf(batch[0]));
             }
 
             Changed?.Invoke(id);
@@ -930,6 +939,17 @@ namespace OpenLoop.Service.Worker
                 // 放在后台任务里是因为 Start 的调用方持有 _lock，写几十 MB 的文件不该压在里面。
                 Persist(session);
 
+                // 长命令（Shell / 技能脚本）在 A 进程里跑：壳那边的 SlowCommand 事件传不过来，
+                // 按会话接在这条异步流上，界面状态行才有「命令仍在执行…（已 N 秒）」。
+                ProcessRunner.Progress.Value = line =>
+                {
+                    lock (_lock)
+                    {
+                        turn.Status = line ?? "";
+                        session.Revision++;
+                    }
+                };
+
                 WorkerRunResult result;
                 try
                 {
@@ -958,6 +978,10 @@ namespace OpenLoop.Service.Worker
                 catch (Exception ex)
                 {
                     result = new WorkerRunResult { Outcome = "error", ErrorMessage = ex.Message, FinalAnswer = ex.Message };
+                }
+                finally
+                {
+                    ProcessRunner.Progress.Value = null;
                 }
 
                 if (_loop != null)
@@ -1013,7 +1037,7 @@ namespace OpenLoop.Service.Worker
                         if (batch.Count > 0)
                         {
                             startedNext = true;
-                            Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch), MergeContexts(batch), batch[0].Auto ? batch[0].Tag ?? "collab" : null);
+                            Start(session, batch[0].Tag, Merge(batch), batch[0].ImageModel, MergeAttachments(batch), MergeContexts(batch), NoticeKindOf(batch[0]));
                         }
                     }
                 }
@@ -1030,7 +1054,9 @@ namespace OpenLoop.Service.Worker
                     && ServerNotice.IsQuotaFailure(ServerNotice.FailedPrefix + result.ErrorMessage)
                     && FeatureCatalog.PolicyOf(session.Workspace).FreeLimitRecovery)
                 {
-                    FreeLimitRecovery.TryStart(id, failedModel, () => UserEpochOf(id), text => Send(id, "task", text));
+                    // 自愈发的「继续」是宿主生成的消息：界面上按宿主提示显示，不当成用户自己敲的
+                    FreeLimitRecovery.TryStart(id, failedModel, () => UserEpochOf(id),
+                        text => Send(id, "task", text, noticeKind: "host"));
                 }
             });
         }
@@ -1212,6 +1238,10 @@ namespace OpenLoop.Service.Worker
             return batch;
         }
 
+        /// <summary>合并批次的提示来源：agent 自动插入（Auto）与宿主显式标记（NoticeKind）都按协作提示样式显示。</summary>
+        private static string NoticeKindOf(PendingSend item)
+            => item.NoticeKind ?? (item.Auto ? item.Tag ?? "collab" : null);
+
         private static string Merge(List<PendingSend> batch) =>
             batch.Count == 1 ? batch[0].Text
                 : string.Join("\n\n", batch.Select((b, i) => $"{i + 1}. {b.Text}"));
@@ -1289,6 +1319,9 @@ namespace OpenLoop.Service.Worker
 
             /// <summary>agent 自动插入（协作监测汇报等），不是用户敲的。</summary>
             public bool Auto { get; init; }
+
+            /// <summary>宿主显式给的提示来源（如 host）：非空即按宿主提示显示，不是用户敲的。</summary>
+            public string NoticeKind { get; init; }
             public string ImageModel { get; init; }
             public IReadOnlyList<string> Attachments { get; init; }
         }

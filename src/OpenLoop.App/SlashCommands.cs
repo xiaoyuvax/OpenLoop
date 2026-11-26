@@ -47,7 +47,8 @@ namespace OpenLoop.App
             if (!known) return null;
 
             string request = end < 0 ? "" : text[(end + 1)..].Trim();
-            string lead = $"使用技能「{name}」：先调用 ReadSkill 读取该技能的做法全文，再按技能执行。";
+            string lead = OpenLoop.Core.Agent.HostPrompt.SkillLead
+                + $"{name}」：先调用 ReadSkill 读取该技能的做法全文，再按技能执行。";
             return request.Length == 0 ? lead : lead + "\n\n" + request;
         }
     }

@@ -172,11 +172,11 @@ namespace OpenLoop.Core.OpenCode
             IReadOnlyList<LlmMessage> messages, Action<string> onDelta, Action<string> onReasoning, CancellationToken ct,
             Action onRestart = null)
         {
-            OnProgress?.Invoke(new OpenAiCompatibleReasoner.ReasonerProgress("等待 OpenCode 响应", 0, TimeSpan.Zero));
+            OnProgress?.Invoke(new OpenAiCompatibleReasoner.ReasonerProgress("等待模型响应", 0, TimeSpan.Zero));
             if (_client == null)
             {
                 // 服务刚起/刚重启：等目录就绪再发请求，否则会被发到别的端点（模型名不认）而直接报错。
-                OnNotice?.Invoke("等待 OpenCode 服务就绪…");
+                OnNotice?.Invoke("等待模型服务就绪…");
                 var ready = await _resolve(ct);
                 _client = ready.Client;
                 _model = ready.Model;

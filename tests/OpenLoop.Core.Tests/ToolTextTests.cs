@@ -38,5 +38,21 @@ namespace OpenLoop.Core.Tests
             Assert.StartsWith(new string('中', 17066), clipped);
             Assert.DoesNotContain('\uFFFD', clipped);
         }
+
+        [Fact]
+        public void HeadTail_keeps_both_ends()
+        {
+            string text = "HEAD" + new string('x', 100) + "TAIL";
+            string kept = ToolText.HeadTail(text, 40);
+            Assert.StartsWith("HEAD", kept);
+            Assert.EndsWith("TAIL", kept);
+            Assert.Contains("省略", kept);
+        }
+
+        [Fact]
+        public void HeadTail_leaves_short_text_untouched()
+        {
+            Assert.Equal("abc", ToolText.HeadTail("abc", 10));
+        }
     }
 }

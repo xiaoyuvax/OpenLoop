@@ -11,6 +11,12 @@ namespace OpenLoop.Core.Tools.Builtin
         /// <summary>长命令进度通报（参数为状态文本，null = 清除）；宿主接到状态行。</summary>
         public static event Action<string> SlowCommand;
 
+        /// <summary>
+        /// 当前异步流上的长命令进度接收者（null = 清除）。Shell 事件只覆盖同进程的壳内会话；
+        /// Worker 在 A 进程里跑，宿主按会话在这里接线，才能把「已 N 秒」送到界面上。
+        /// </summary>
+        public static readonly AsyncLocal<Action<string>> Progress = new();
+
         public static async Task<AgentToolResult> RunAsync(
             IReadOnlyList<string> argv, string workingDirectory, int timeoutSeconds, CancellationToken ct,
             bool inheritEnvironment = false)
@@ -62,7 +68,9 @@ namespace OpenLoop.Core.Tools.Builtin
                 int waited = 5;
                 while (!linked.IsCancellationRequested)
                 {
-                    SlowCommand?.Invoke($"命令仍在执行…{waited} 秒（可点停止）");
+                    string note = $"命令仍在执行…（已 {waited} 秒）";
+                    SlowCommand?.Invoke(note);
+                    Progress.Value?.Invoke(note);
                     await Task.Delay(10000, linked.Token);
                     waited += 10;
                 }
@@ -78,11 +86,12 @@ namespace OpenLoop.Core.Tools.Builtin
                 if (ct.IsCancellationRequested) throw;
 
                 return AgentToolResult.Failure(
-                    $"命令超时（{timeoutSeconds}s），已终止进程树。\n{ToolText.Truncate(stdout.ToString(), 3000)}");
+                    $"命令超时（{timeoutSeconds}s），已终止进程树。\n{ToolText.HeadTail(stdout.ToString(), 3000)}");
             }
             finally
             {
                 SlowCommand?.Invoke(null);   // 命令结束/超时/取消：清掉「仍在执行」状态
+                Progress.Value?.Invoke(null);
                 try { await slow.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
             }
 
@@ -91,7 +100,7 @@ namespace OpenLoop.Core.Tools.Builtin
             if (stdout.Length > 0) sb.AppendLine("--- stdout ---").AppendLine(stdout.ToString().TrimEnd());
             if (stderr.Length > 0) sb.AppendLine("--- stderr ---").AppendLine(stderr.ToString().TrimEnd());
 
-            string output = ToolText.Truncate(sb.ToString(), 6000);
+            string output = ToolText.HeadTail(sb.ToString(), 6000);
             return process.ExitCode == 0
                 ? AgentToolResult.Success(output)
                 : AgentToolResult.Failure(output);

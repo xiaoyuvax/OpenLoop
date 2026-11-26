@@ -582,9 +582,9 @@ namespace OpenLoop.App
         /// 面板只读，用户通过聊天让 agent 改；文件一变面板立刻刷新，模板同时登记进账本。
         /// 以后加 svg / 网页等目标只是多一个 TargetSpec 与呈现控件。
         /// </summary>
-        internal void OpenTarget(string kind)
+        internal void OpenTarget(string kind, string targetWorkspace = null)
         {
-            string workspace = Session?.Workspace ?? "";
+            string workspace = targetWorkspace ?? Session?.Workspace ?? "";
             if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(workspace))
             {
                 Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
@@ -2234,6 +2234,9 @@ namespace OpenLoop.App
                     NoticeKind = remote.NoticeKind ?? "",
                     ThinkingExpanded = _settings().ThinkingExpandedByDefault
                 };
+                // 宿主拼在用户消息前面的说明块（技能展开 / TCF 启用提示）：界面上单独按宿主消息显示
+                if (added.User != null)
+                    added.HostPrefix = OpenLoop.Core.Agent.HostPrompt.Split(added.UserText).Host;
                 Session.Book.AddTurn(added);
                 local.Add(added);
                 if (!string.IsNullOrEmpty(remote.Checkpoint)) _turnCheckpoints[added] = remote.Checkpoint;

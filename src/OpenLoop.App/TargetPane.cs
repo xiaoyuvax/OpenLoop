@@ -496,7 +496,7 @@ namespace OpenLoop.App
             if (_spec == null) return "";
             string buffer = Buffer;
             var sb = new StringBuilder();
-            sb.Append("[目标编辑面] 用户正看着左栏「").Append(Title)
+            sb.Append(OpenLoop.Core.Agent.HostPrompt.TargetLead).Append("用户正看着左栏「").Append(Title)
               .Append("」面板，本会话的唯一编辑目标是这个文件：").AppendLine();
             sb.Append("路径：").AppendLine(Path);
             sb.Append("sessionId=").Append(_session).Append("；行号 1-based 闭区间；面板缓冲 ")

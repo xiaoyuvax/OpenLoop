@@ -14,6 +14,20 @@ namespace OpenLoop.Core.Tools
             return text.Length <= max ? text : text[..max] + $"…（截断，共 {text.Length} 字符）";
         }
 
+        /// <summary>
+        /// 超长时保留头尾两段、中间标出省略量：命令/测试输出的结论通常在尾部，只留开头会把结论丢掉。
+        /// </summary>
+        public static string HeadTail(string text, int maxChars)
+        {
+            if (string.IsNullOrEmpty(text) || maxChars <= 0) return "";
+            if (text.Length <= maxChars) return text;
+            int head = maxChars / 2;
+            int tail = maxChars - head;
+            if (head > 0 && char.IsHighSurrogate(text[head - 1])) head--;
+            if (tail > 0 && char.IsLowSurrogate(text[^tail])) tail++;
+            return text[..head] + $"…（省略 {text.Length - maxChars} 字符）…" + text[^tail..];
+        }
+
         /// <summary>按行数与 UTF-8 字节上限截断（先到先截），末尾标出原始尺寸。</summary>
         public static string Clip(string text, int maxBytes = ModelBytes, int maxLines = ModelLines)
         {

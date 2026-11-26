@@ -118,7 +118,7 @@ namespace OpenLoop.Service.Web
                         : Media.Attachments.Save(current.Workspace, id, body.Attachments, limit, out attachmentError);
                     if (saved == null) return Json(req, new { ok = false, error = attachmentError }, 400);
                     return _host.Send(id, body.Tag, body.Text, body.Immediate, body.ImageModel, saved,
-                            body.Context)
+                            body.Context, body.NoticeKind)
                         ? Json(req, _host.Get(id))
                         : NotFound(req);
                 }
@@ -277,6 +277,9 @@ namespace OpenLoop.Service.Web
 
             /// <summary>壳已复制进工作区的附件路径（本机壳走这条，省掉 base64 与请求体上限）。</summary>
             public List<string> Paths { get; set; }
+
+            /// <summary>非空 = 宿主生成的提示（如 /sysprompt 转给旁路的要求）：界面折成一行、淡黄底。</summary>
+            public string NoticeKind { get; set; }
         }
 
         private sealed class NoticeRequest

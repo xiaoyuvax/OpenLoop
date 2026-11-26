@@ -44,6 +44,12 @@ namespace OpenLoop.App
         /// <summary>宿主注入：按需建会话视图（平铺视图打开时页面被收走，队列管线可能还没建）。</summary>
         internal Func<Session, SessionView> HostEnsureView { get; set; }
 
+        /// <summary>拖动中每步重绘标签栏：落点高亮由宿主在绘制时按指针位置现算，不依赖悬停事件。</summary>
+        internal Action HostDragRepaint { get; set; }
+
+        /// <summary>正在拖方块（按下未松开）：宿主绘制落点高亮用。</summary>
+        internal bool Dragging => _dragItem != null;
+
         /// <summary>最后一个方块也没了：宿主关掉平铺视图页。</summary>
         internal event Action Emptied;
 
@@ -306,6 +312,7 @@ namespace OpenLoop.App
                     Cursor = Cursors.SizeAll;
                 }
                 UpdateDragTarget(Cursor.Position);
+                HostDragRepaint?.Invoke();
             }
 
             void Up(object sender, MouseEventArgs e)

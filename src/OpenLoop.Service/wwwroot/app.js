@@ -61,6 +61,7 @@ const EN = {
   "历史": "History",
   "会话私信": "Session DM",
   "Puppet 动作": "Puppet action",
+  "宿主提示": "Host note",
   "协作提示": "Collab notice",
   "输出中…": "Streaming…",
   "思考": "Reasoning",
@@ -518,20 +519,33 @@ function OverviewPage({ sessions, project, setProject, onOpen, onNew, onDelete, 
 function Turn({ turn, bodyRef }) {
   // 角色靠左右位置区分（用户靠右、宽度封顶一半；助手贴左占满），不再显示「你 / OpenLoop」标注。
   const hasAi = !!(turn.assistant || turn.reasoning || turn.timeline || turn.toolLines);
+  // 宿主拼在用户消息前面的说明块（技能展开 / TCF 启用提示）：与桌面壳同一口径，
+  // 单独一条淡黄底、默认收起，用户气泡里只留用户自己写的那段。
+  const host = turn.hostPrefix || '';
+  const user = turn.user || '';
+  const userBody = host && user.startsWith(host) ? user.slice(host.length).replace(/^[\r\n]+/, '') : user;
+  const noticeLabel = turn.noticeKind === 'mention' ? t('会话私信')
+    : turn.noticeKind === 'puppet' ? t('Puppet 动作')
+    : turn.noticeKind === 'host' ? t('宿主提示') : t('协作提示');
+  // 只有别的 agent 发来的协作提示才染答复轮思考区；宿主提示（host）与用户反馈（feedback）按普通轮次显示
+  const noticeTintsThinking = !!turn.notice && turn.noticeKind !== 'host' && turn.noticeKind !== 'feedback';
   return h('div', { className: 'ol-turn' },
     // 协作提示（agent 自动插入的仿用户消息）：折叠成一行标题 + 淡黄底，详情点开看
     turn.notice ? h('details', { className: 'ol-details ol-notice' },
-        h('summary', null, (turn.noticeKind === 'mention' ? t('会话私信') : turn.noticeKind === 'puppet' ? t('Puppet 动作') : t('协作提示'))
-          + ' · ' + (turn.user || '').split('\n')[0]),
-        h('pre', null, turn.user || '')) : (turn.user ? h('div', { className: 'ol-msg ol-msg-user' },
-      h('div', { className: 'ol-body' }, turn.user)) : null),
+        h('summary', null, noticeLabel + ' · ' + user.split('\n')[0]),
+        h('pre', null, user)) : null,
+    (!turn.notice && host) ? h('details', { className: 'ol-details ol-notice' },
+        h('summary', null, t('宿主提示') + ' · ' + host.split('\n')[0]),
+        h('pre', null, host)) : null,
+    (!turn.notice && userBody) ? h('div', { className: 'ol-msg ol-msg-user' },
+      h('div', { className: 'ol-body' }, userBody)) : null,
     // 空助手轮（被「立即」消息顶替、正文没产出）不画空泡泡：下一轮就是用户的新消息
     (hasAi || turn.streaming) ? h('div', { className: 'ol-msg ol-msg-ai' + (turn.user && !turn.notice ? ' ol-msg-next' : '') },
       turn.assistant ? h('div', { ref: bodyRef, className: 'ol-body' }, turn.assistant) : null,
-      turn.streaming ? h('div', { className: 'ol-streaming' }, t('输出中…')) : null,
+      turn.streaming ? h('div', { className: 'ol-streaming' }, turn.status || t('输出中…')) : null,
       // 协作提示的答复轮：思考区铺淡黄底（与提示同一格式、用户可整块跳过），正文保持默认底色
       turn.reasoning ? h('details', {
-        className: 'ol-details' + (turn.notice ? ' ol-notice-think' : '') + (turn.notice && !turn.assistant ? ' ol-notice-think-first' : '')
+        className: 'ol-details' + (noticeTintsThinking ? ' ol-notice-think' : '') + (noticeTintsThinking && !turn.assistant ? ' ol-notice-think-first' : '')
       },
         h('summary', null, t('思考')),
         h('pre', null, turn.reasoning)) : null,

@@ -875,6 +875,8 @@ namespace OpenLoop.App
                 Streaming = true,
                 ThinkingExpanded = _settings().ThinkingExpandedByDefault
             };
+            // 宿主拼在用户消息前面的说明块（技能展开 / TCF 启用提示）：界面上单独按宿主消息显示
+            turn.HostPrefix = OpenLoop.Core.Agent.HostPrompt.Split(text).Host;
             _book.AddTurn(turn);
             // 用户这条要立刻画出来：首个 delta/step 之前没人刷新正文，失败轮会几分钟看不到自己发的消息
             RefreshChat();
@@ -1720,7 +1722,9 @@ namespace OpenLoop.App
         /// </summary>
         internal void OpenTarget(string kind)
         {
-            string workspace = _workspace;
+            // Loop 的 Prompt / AGENTS.md 注入取自源码根（SendAsync 用 writeScope.Root），
+            // 不是 /complain 来源会话的项目工作区：那份 AGENTS.md 讲的是那个项目
+            string workspace = global::OpenLoop.Service.Source.LoopScope.SourceRoot;
             if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(workspace))
             {
                 Notify("请选择工作目录", "工作目录不存在：" + workspace, error: true);
@@ -1732,7 +1736,8 @@ namespace OpenLoop.App
             {
                 spec = kind == PromptCatalog.AgentsKind
                     ? TargetSpec.Agents(workspace)
-                    : TargetSpec.Prompt(workspace);
+                    // 「实际」页读最近一次注入的提示词：Loop 的 trace 落在会话工作区，不在源码根
+                    : TargetSpec.Prompt(workspace, actualWorkspace: _workspace);
             }
             catch (Exception ex)
             {

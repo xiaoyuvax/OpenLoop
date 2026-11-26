@@ -195,7 +195,13 @@ namespace OpenLoop.Core.OpenCode
             // 没有任何新输出」才判挂住；会话结束由事件流/状态轮询给出，服务断了则请求本身会抛。
             var idleLimit = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 5, 3600));
             long lastOutput = DateTime.UtcNow.Ticks;
-            void Touch() => Interlocked.Exchange(ref lastOutput, DateTime.UtcNow.Ticks);
+            // 有输出就立刻让「等待响应」状态行退场：它会盖住思维链闪现，而且与正在流动的输出自相矛盾。
+            int noticeShown = 0;
+            void Touch()
+            {
+                Interlocked.Exchange(ref lastOutput, DateTime.UtcNow.Ticks);
+                if (Interlocked.Exchange(ref noticeShown, 0) != 0) onNotice?.Invoke(null);
+            }
 
             using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             Task stream = Task.Run(
@@ -231,16 +237,17 @@ namespace OpenLoop.Core.OpenCode
                 string latestSummary = "";
                 string progress = "";
                 bool stopped = false;
-                // 静默期周期交代：免费模型排队/上游无输出时用户不能只看到一片空白。
-                // 有输出（onNotice 清空）就重新计时；超时判挂与等待语义不变（F-4da0e115）。
-                long lastNotice = DateTime.UtcNow.Ticks;
+                // 静默期交代：免费模型排队/上游无输出时用户不能只看到一片空白。
+                // 只按「真的没有任何输出」计时（思维链还在流就不算静默），出现任何输出由 Touch() 撤掉。
+                // 文案只说在等模型：不报秒数、不提停止——状态行不是倒计时，也不是操作入口。
+                var silenceTick = TimeSpan.FromSeconds(15);
                 void NoticeIfSilent()
                 {
-                    if (onNotice == null) return;
-                    var idle = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - Interlocked.Read(ref lastNotice));
-                    if (idle < TimeSpan.FromSeconds(15)) return;
-                    Interlocked.Exchange(ref lastNotice, DateTime.UtcNow.Ticks);
-                    onNotice($"等待 OpenCode 响应已 {idle.TotalSeconds:0} 秒（可点停止）");
+                    if (onNotice == null || noticeShown != 0) return;
+                    var idle = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - Interlocked.Read(ref lastOutput));
+                    if (idle < silenceTick) return;
+                    Interlocked.Exchange(ref noticeShown, 1);
+                    onNotice("等待模型响应…");
                 }
                 while (!completed.Task.IsCompleted)
                 {
@@ -272,8 +279,6 @@ namespace OpenLoop.Core.OpenCode
                         {
                             progress = now;
                             Touch();
-                            Interlocked.Exchange(ref lastNotice, DateTime.UtcNow.Ticks);
-                            onNotice?.Invoke(null);
                         }
                         // 上游压完上下文也算「还在动」：摘要是本轮历史，挂住重试时要把它带回去。
                         string compacted = LastCompaction(polled);

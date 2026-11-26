@@ -189,6 +189,8 @@ namespace OpenLoop.App
                     Notice = entry.Notice,
                     NoticeKind = entry.NoticeKind ?? ""
                 };
+                // 宿主拼在用户消息前面的说明块（技能展开 / TCF 启用提示）：界面上单独按宿主消息显示
+                if (turn.User != null) turn.HostPrefix = OpenLoop.Core.Agent.HostPrompt.Split(turn.UserText).Host;
                 if (entry.Phases is { Count: > 0 })
                     foreach (var phase in entry.Phases)
                         turn.Phases.Add((phase?.Thinking ?? "", phase?.Answer ?? ""));
