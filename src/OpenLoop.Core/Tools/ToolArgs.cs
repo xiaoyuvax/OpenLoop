@@ -26,6 +26,15 @@ namespace OpenLoop.Core.Tools
             return string.IsNullOrWhiteSpace(s) ? fallback : s;
         }
 
+        /// <summary>原样取值：不把空白或空串当缺省（old/new 这类参数允许为空）。</summary>
+        public string StrRaw(string key)
+        {
+            if (!_raw.TryGetValue(key, out var v) || v == null) return null;
+            return v is JsonElement je
+                ? (je.ValueKind == JsonValueKind.String ? je.GetString() : je.ToString())
+                : v.ToString();
+        }
+
         public IReadOnlyList<string> StrList(string key)
         {
             if (!_raw.TryGetValue(key, out var v) || v == null) return Array.Empty<string>();
@@ -76,6 +85,8 @@ namespace OpenLoop.Core.Tools
                 case bool b: return b;
                 case long l: return l != 0;
                 case double d: return d != 0;
+                case JsonElement je when je.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    return je.GetBoolean();
                 default:
                     string s = Convert.ToString(v, CultureInfo.InvariantCulture)?.Trim();
                     if (bool.TryParse(s, out bool parsed)) return parsed;

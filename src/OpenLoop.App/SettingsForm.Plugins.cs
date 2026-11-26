@@ -223,7 +223,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, Localization.T("AddFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AppNotify.error(this, Localization.T("AddFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
 
@@ -237,7 +237,7 @@ namespace OpenLoop.App
             if (row == null) return;
             if (row.Providers == 0)
             {
-                AntdUI.Notification.warn(this, Localization.T("NotEditable"),
+                AppNotify.warn(this, Localization.T("NotEditable"),
                     Localization.T("NotEditableBody"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
@@ -249,7 +249,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, Localization.T("CannotOpen"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AppNotify.error(this, Localization.T("CannotOpen"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
 
@@ -292,7 +292,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 AppLog.Warn("卸载插件失败：" + ex.Message);
-                AntdUI.Notification.error(this, Localization.T("UninstallFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AppNotify.error(this, Localization.T("UninstallFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
 
@@ -387,7 +387,7 @@ namespace OpenLoop.App
                 catch (Exception ex)
                 {
                     AppLog.Warn($"写回插件清单失败：{provider.PluginDirectory} {ex.Message}");
-                    AntdUI.Notification.error(this, Localization.T("PluginManifest"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                    AppNotify.error(this, Localization.T("PluginManifest"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 }
             }
         }

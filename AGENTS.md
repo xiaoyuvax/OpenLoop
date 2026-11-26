@@ -18,7 +18,9 @@
 - **Harness 是工作区级的五类对象**：**Prompt**（系统提示词模板 + `AGENTS.md`）、**Skill**、**Rule**、**Limit**、**Guard**；Limit/Guard 含自愈参数（连接重试、免费额度恢复、退化输出、参数修复）。同一二进制在不同工作区可以是不同形态。
 - **演进 = 非即时集中分析**：findings 与运行证据先攒着，到点集中分诊一次，判 `harness / source / unknown`；harness 类出激活集候选并过 Gate，source 类写 `loop/dispatch/<batch>.md` 派单，状态记 `loop/triage.jsonl`（追加式，按 id 取最后一条）。`/report` 只落账、不触发演进。
 - **findings 只记「尚未处置、且能分派到某个对象」的观察**（当场修好的写进回复/提交）；用户入口是 `/report [harness|prompt|skill|rule|limit|guard|code] <观察>`，WinForms 与 Web 共用 `FindingTriage.Report`。
-- **TargetCentricSession**：会话可绑定一个唯一编辑目标（系统提示词模板 `prompts/system.md` 与 `AGENTS.md`；以后可扩到 SVG/网页等）。实现是 `TargetPane` + `TargetSpec`（Kind/Title/Path/Actual），左栏呈现、文件 watcher 驱动刷新、可 undock 成独立窗体；用户用聊天让模型改、模型落盘，用户不直接改文本。加新目标类型 = 新 Kind + 呈现控件 + Bind，不改会话主流程。入口 `/sysprompt`、`/agentsmd`。系统提示词模板按内容哈希登记为账本 `kind=prompt` 特征，未登记的内容不采用。**Loop 侧这两个入口指运行期实际生效的那份**（源码根，`LoopScope.SourceRoot`）：Loop 从 `/complain` 起时会话工作区是别人的项目，部署态下安装根里也没有仓库那份约定文件——`LoopView.OpenTarget` 直配模式编辑源码根、评测模式编辑本工作区候选包（播种来源仍取源码根）。
+- **TargetCentricSession**：会话可绑定一个唯一编辑目标（系统提示词模板 `prompts/system.md` 与 `AGENTS.md`；以后可扩到 SVG/网页等）。实现是 `TargetPane` + `TargetSpec`（Kind/Title/Path/Actual），左栏呈现、文件 watcher 驱动刷新、可 undock 成独立窗体；用户用聊天让模型改、模型落盘，用户不直接改文本。加新目标类型 = 新 Kind + 呈现控件 + Bind，不改会话主流程。入口 `/sysprompt <要求>`、`/agentsmd <要求>`（`/agents` 同义），Worker 与 Loop 窗口同一套语义，**只改本会话工作区**的 `.openloop/prompts/system.md` 与 `AGENTS.md`（工作区 system 模板替换内置默认；工作区 AGENTS.md 追加在全局约定之后），不碰 OpenLoop 全局提示词/AGENTS.md。带要求时由壳新建或复用**本会话的旁路会话**执行：先把对应 TCF 编辑器打开，再把要求发给它；编辑只在内存，用户点保存才落盘，可多轮修订。同一源会话的修改请求始终复用同一条旁路会话（`SessionLineage.Find(sourceId, target-edit)`）。不带要求只在本会话打开编辑器。系统提示词模板按内容哈希登记为账本 `kind=prompt` 特征，未登记的内容不采用。
+
+- **会话衍生关系**：`/complain`、`/fork`、`/new`、转交、协作、目标编辑旁路创建的会话都经 `SessionLineage`（`%APPDATA%\OpenLoop\chats\lineage.json`）登记「衍生会话 → 源会话」一条边（Id / Role / Workspace / SourceId / SourceRole / SourceWorkspace / Purpose / Target），按衍生会话 id upsert；`Get`/`Find`/`Derived` 供回溯与复用。新增衍生关系只加 `Purpose` 常量，不改读写路径。
 - **TargetCentricFacility（TCF）**：左栏编辑器这类工具的统称——面向用户的文本多轮可视化编辑交互，对同一数据做多轮雕塑性修改。性质类似内建 Tool 但**不常设**：内建于壳、只有壳支持才启用、不进提示词与常设工具表——**未启用时 agent 不知道它存在**；agent 的认知来自宿主临时插入的消息（文件路径 + 属性/接口指南）。agent 经 Puppet A/B 面的专用属性（长度/行数/脏标志/保存路径等）与 Action（区段读写、替换、插入、删除、尾部追加、撤回、保存）操作编辑器本体；编辑只在壳内存、实时可见，用户确认前不落盘；关闭=隐藏（内容驻留内存），有未保存内容时通知 agent 询问用户保存或放弃。保存路径放 tooltip，保存状态用图标+色彩复用保存按钮，工具栏按钮一律图标化（省多语种文案）。一次性可视化交互建议走 openui 技能（LoopApp）；TCF 未启用时 LoopApp 也可承担多轮雕塑性任务，启用 TCF 后才由它接管。设计见 `docs/DESIGN-TCF.md`。
 - **Harness 两种生效方式**（`HarnessMode`，`loop/harness.json` 存 mode，Harness 页与 Web 同一颗切换按钮）：`direct` = 用户直配，Prompt / `AGENTS.md` 改了下个会话直接生效；`eval` = A/B 评测，改动先落候选包 `.openloop/eval/candidates/pending/`（编辑面换成候选文件，左栏标题带「（候选）」），演进时叠到候选激活集上过考核题，严格更好才 `CommitPending` 覆盖正式文件。候选未采纳前正式文件与当前激活集都不变。
 
@@ -93,13 +95,14 @@
 
 ## 连接失败重试
 
-- 轮内连接层失败（拒绝连接、DNS 失败、连接被重置；OpenCode 报的 `provider.transport`/`ECONNRESET` 文本也算，判据 `OpenCodeReasoner.IsConnectFailure`）不判这一轮失败：按 `RetryBackoff.Next`（前三次 5 秒，之后指数退避封顶 5 分钟）重试到连上为止，界面状态显示「连接失败，N 秒后重试」；`Stop`/软打断才收尾，HTTP 状态错误与上游报错照旧直接抛。
+- 轮内连接层失败（拒绝连接、DNS 失败、连接被重置；状态码 408/502/503（`OpenCodeHttpException`，503 即 opencode 自己重启的 `service_starting`）；OpenCode 报的 `provider.transport`/`ECONNRESET` 文本也算，判据 `OpenCodeReasoner.IsConnectFailure`）不判这一轮失败：按 `RetryBackoff.Next`（前三次 5 秒，之后指数退避封顶 5 分钟）重试到连上为止，界面状态显示「连接失败，N 秒后重试」；`Stop`/软打断才收尾。500/504（语义模糊，可能这一轮本身不行）只重试 2 次就报错（`IsLimitedRetry`）；其余 HTTP 状态错误、额度与上游报错照旧直接抛。
 
 ## UI 规则
 
 - Worker（`WorkerSessionHost`）与 Loop、旁路的会话展示保持一致：流式正文一律用 `AgentToolCallParser.CutToolCallText` 截掉协议片段（不只判「整段以 marker 开头」，否则协议原文会先闪现再被收尾清掉），不要各写一份判据。
 - 工具闪现区（`ChatFlow`）：没有正文、也没有正在执行的工具行时，按节拍把思维链**尾部半行**（`ChatFlowControl.TailHalfLine`，按真实排版宽度截到半行宽）刷进正文 FCTB，让用户看到模型还在动；正文出来或工具有行就立刻让位，回合结束清空。节拍取账本 `limit.flash_interval`（毫秒，300–5000，默认 500，`SessionView.FlashIntervalMs` 读、`ChatFlowControl.FlashInterval` 注入），Worker / Loop / 旁路三处绑定时都要设。
 - 仓库采用 AntdUI（2.4.15）；`AntdUI.xml` 是 API 事实来源，不猜属性。
+- `AntdUI.Tabs` 的 `DragOrder` 有库缺陷（2.4.15/2.4.16 同）：`MouseDown` 不重置私有拖动锚点 `oldXY`，第一次移动就必然越过 `TouchThreshold`，点页签/关闭按钮会被当成重排（关闭还会被吞）。`MainForm.OnTabTiledDragDown` 用反射把 `oldXY` 放回按下点；升级 AntdUI 后确认该字段仍在（取不到会静默退回原行为）。
 - 本机 250% DPI：
   - 设计器里的尺寸会自动缩放；**运行时算出来的像素必须 `DeviceDpi/96` 缩放**。
   - `AntdUI.Column.Width`（字符串数字）是 **DIP**，由控件自己再乘 DPI；不要再手动缩放。

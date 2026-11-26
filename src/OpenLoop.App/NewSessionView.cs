@@ -317,8 +317,8 @@ namespace OpenLoop.App
         {
             var form = FindForm();
             if (form == null) return;
-            if (state == AntdUI.TState.Warn) AntdUI.Notification.warn(form, Localization.T("新建会话"), text, AntdUI.TAlignFrom.TR, Font, 3);
-            else AntdUI.Notification.info(form, Localization.T("新建会话"), text, AntdUI.TAlignFrom.TR, Font, 3);
+            if (state == AntdUI.TState.Warn) AppNotify.warn(form, Localization.T("新建会话"), text, AntdUI.TAlignFrom.TR, Font, 3);
+            else AppNotify.info(form, Localization.T("新建会话"), text, AntdUI.TAlignFrom.TR, Font, 3);
         }
 
         private static string ProjectName(string path)

@@ -517,21 +517,26 @@ function OverviewPage({ sessions, project, setProject, onOpen, onNew, onDelete, 
 
 function Turn({ turn, bodyRef }) {
   // 角色靠左右位置区分（用户靠右、宽度封顶一半；助手贴左占满），不再显示「你 / OpenLoop」标注。
+  const hasAi = !!(turn.assistant || turn.reasoning || turn.timeline || turn.toolLines);
   return h('div', { className: 'ol-turn' },
     // 协作提示（agent 自动插入的仿用户消息）：折叠成一行标题 + 淡黄底，详情点开看
-    turn.notice ? h('div', { className: 'ol-turn' },
-      h('details', { className: 'ol-details ol-notice' },
+    turn.notice ? h('details', { className: 'ol-details ol-notice' },
         h('summary', null, (turn.noticeKind === 'mention' ? t('会话私信') : turn.noticeKind === 'puppet' ? t('Puppet 动作') : t('协作提示'))
           + ' · ' + (turn.user || '').split('\n')[0]),
-        h('pre', null, turn.user || ''))) : (turn.user ? h('div', { className: 'ol-msg ol-msg-user' },
+        h('pre', null, turn.user || '')) : (turn.user ? h('div', { className: 'ol-msg ol-msg-user' },
       h('div', { className: 'ol-body' }, turn.user)) : null),
-    h('div', { className: 'ol-msg ol-msg-ai' + (turn.user ? ' ol-msg-next' : '') },
-      h('div', { ref: bodyRef, className: 'ol-body' }, turn.assistant || ''),
+    // 空助手轮（被「立即」消息顶替、正文没产出）不画空泡泡：下一轮就是用户的新消息
+    (hasAi || turn.streaming) ? h('div', { className: 'ol-msg ol-msg-ai' + (turn.user && !turn.notice ? ' ol-msg-next' : '') },
+      turn.assistant ? h('div', { ref: bodyRef, className: 'ol-body' }, turn.assistant) : null,
       turn.streaming ? h('div', { className: 'ol-streaming' }, t('输出中…')) : null,
-      turn.reasoning ? h('details', { className: 'ol-details' },
+      // 协作提示的答复轮：思考区铺淡黄底（与提示同一格式、用户可整块跳过），正文保持默认底色
+      turn.reasoning ? h('details', {
+        className: 'ol-details' + (turn.notice ? ' ol-notice-think' : '') + (turn.notice && !turn.assistant ? ' ol-notice-think-first' : '')
+      },
         h('summary', null, t('思考')),
         h('pre', null, turn.reasoning)) : null,
-      (turn.timeline || turn.toolLines) ? h('pre', { className: 'ol-tools' }, turn.timeline || turn.toolLines) : null));
+      (turn.timeline || turn.toolLines) ? h('pre', { className: 'ol-tools' }, turn.timeline || turn.toolLines) : null)
+      : null);
 }
 
 function SessionPage({ snapshot, models, recent, images, activeId, shot, setShot, onModel, onDelete, reloadModels }) {
@@ -1086,6 +1091,15 @@ function LoopPage({ defaultWorkspace, shot, setShot }) {
     if (!evolve) return '—';
     const parts = [evolve.state, evolve.phase];
     if (evolve.taskCount) parts.push(tf('题目 {n}', { n: evolve.taskCount }));
+    if (evolve.state === 'running') {
+      if (evolve.progressTotal) parts.push(`${evolve.progressDone || 0}/${evolve.progressTotal}`);
+      if (evolve.progressTask) parts.push(evolve.progressTask);
+      const start = Date.parse(evolve.startedAt || '');
+      if (!Number.isNaN(start)) {
+        const secs = Math.max(0, Math.floor((Date.now() - start) / 1000));
+        parts.push(`${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`);
+      }
+    }
     if (evolve.state === 'done') parts.push(tf('候选 {cp}/{n}，基线 {bp}/{n}', { cp: evolve.candidatePassed, n: evolve.taskCount, bp: evolve.baselinePassed }));
     if (evolve.adopted) parts.push(t('已采纳 v') + evolve.candidateVersion);
     if (evolve.detail) parts.push(evolve.detail);

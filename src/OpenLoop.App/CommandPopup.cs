@@ -110,9 +110,11 @@ namespace OpenLoop.App
         }
 
         /// <summary>输入已经就是选中命令（和候选同名）：不用再补全，回车直接执行。只认 / 命令，@ 会话引用仍要先补全。</summary>
+        /// <remarks>/new 可以带首条消息：回车先补全成「/new 」，让用户接着写，或再敲一次回车开空会话。</remarks>
         internal bool IsExact(string input)
             => selected >= 0 && selected < items.Count
                 && items[selected].Command.StartsWith('/')
+                && !string.Equals(items[selected].Command, "/new", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(items[selected].Command, (input ?? "").Trim(), StringComparison.OrdinalIgnoreCase);
 
         internal void Accept()

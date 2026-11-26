@@ -64,7 +64,7 @@ namespace OpenLoop.App
         {
             if (!Directory.Exists(workspace))
             {
-                AntdUI.Notification.error(owner, Localization.T("PickWorkspace"),
+                AppNotify.error(owner, Localization.T("PickWorkspace"),
                     Localization.T("WorkspaceMissing") + workspace, AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }

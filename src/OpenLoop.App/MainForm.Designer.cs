@@ -81,6 +81,7 @@ namespace OpenLoop.App
             _btnMenu.SelectedValueChanged += OnMenuSelect;
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuNewSession")) { Tag = "new" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuSessionList")) { Tag = "list" });
+            _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuNotifications")) { Tag = "notifications" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuLoop")) { Tag = "loop" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuThemeLight")) { Tag = "theme-light" });
             _btnMenu.Items.Add(new AntdUI.SelectItem(Localization.T("MenuThemeDark")) { Tag = "theme-dark" });

@@ -330,7 +330,7 @@ public sealed class OpenCodeTests
             [new LlmMessage("system", "规则"), new LlmMessage("user", "干活")]);
 
         int system = text.IndexOf("[system]", StringComparison.Ordinal);
-        int protocol = text.IndexOf("Native tool calling is disabled", StringComparison.Ordinal);
+        int protocol = text.IndexOf("[protocol]", StringComparison.Ordinal);
         int user = text.IndexOf("[user]", StringComparison.Ordinal);
 
         Assert.True(system >= 0 && protocol > system && protocol < user);

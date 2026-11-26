@@ -38,6 +38,21 @@ namespace OpenLoop.Core.Tests
                     new SocketException((int)SocketError.ConnectionRefused))));
             Assert.True(OpenCodeReasoner.IsConnectFailure(new InvalidOperationException(
                 "provider.transport：ECONNRESET: The socket connection was closed unexpectedly.")));
+            // opencode 自己重启时返回 503 service_starting：与拒绝连接同类，等它起来重试。
+            Assert.True(OpenCodeReasoner.IsConnectFailure(new OpenCodeHttpException(
+                503, "OpenCode 返回 503：{\"code\":\"service_starting\"}")));
+            // 502 是它前面代理在重启窗口里拿不到有效响应，408 是临时超时：都还有连上的希望。
+            Assert.True(OpenCodeReasoner.IsConnectFailure(new OpenCodeHttpException(502, "OpenCode 返回 502：bad gateway")));
+            Assert.True(OpenCodeReasoner.IsConnectFailure(new OpenCodeHttpException(408, "OpenCode 返回 408：timeout")));
+            // 504 多半是这一轮本身太大，500 可能是 opencode 自己崩：都只重试两次，不按连接层一直等。
+            Assert.False(OpenCodeReasoner.IsConnectFailure(new OpenCodeHttpException(504, "OpenCode 返回 504：gateway timeout")));
+            Assert.False(OpenCodeReasoner.IsConnectFailure(new OpenCodeHttpException(500, "OpenCode 返回 500：{}")));
+            Assert.True(OpenCodeReasoner.IsLimitedRetry(new OpenCodeHttpException(504, "OpenCode 返回 504：gateway timeout")));
+            Assert.True(OpenCodeReasoner.IsLimitedRetry(new OpenCodeHttpException(500, "OpenCode 返回 500：{}")));
+            Assert.False(OpenCodeReasoner.IsLimitedRetry(new OpenCodeHttpException(503, "OpenCode 返回 503：{}")));
+            // 404 是目标不存在（重启后会话被清），重试无用。
+            Assert.False(OpenCodeReasoner.IsConnectFailure(new OpenCodeHttpException(404, "OpenCode 返回 404：{}")));
+            Assert.False(OpenCodeReasoner.IsLimitedRetry(new OpenCodeHttpException(404, "OpenCode 返回 404：{}")));
             Assert.False(OpenCodeReasoner.IsConnectFailure(
                 new HttpRequestException("Response status code does not indicate success: 429")));
             Assert.False(OpenCodeReasoner.IsConnectFailure(new InvalidOperationException("provider.free-limit")));

@@ -57,6 +57,17 @@ namespace OpenLoop.Core.OpenCode
         public string Summary { get; }
     }
 
+    /// <summary>
+    /// OpenCode 返回非 2xx。带上状态码，宿主才能区分「对方还没就绪（可重试）」与「这条请求本身不行」，
+    /// 不必去匹配错误文案。继承 InvalidOperationException，原有按类型捕获的地方行为不变。
+    /// </summary>
+    public sealed class OpenCodeHttpException : InvalidOperationException
+    {
+        public OpenCodeHttpException(int status, string message) : base(message) => Status = status;
+
+        public int Status { get; }
+    }
+
     /// <summary>模型在下拉/设置里的稳定标识：opencode/&lt;modelID&gt;@&lt;providerID&gt;。</summary>
     public static class OpenCodeModelId
     {
@@ -868,7 +879,7 @@ namespace OpenLoop.Core.OpenCode
             {
                 string text = await response.Content.ReadAsStringAsync(ct);
                 if (!response.IsSuccessStatusCode)
-                    throw new InvalidOperationException($"OpenCode 返回 {(int)response.StatusCode}：{Brief(text)}");
+                    throw new OpenCodeHttpException((int)response.StatusCode, $"OpenCode 返回 {(int)response.StatusCode}：{Brief(text)}");
                 return JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "{}" : text);
             }
         }

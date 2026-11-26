@@ -47,6 +47,16 @@ namespace OpenLoop.Service.Worker
                 string model = string.IsNullOrWhiteSpace(task.Model) ? initiator.Model : task.Model;
                 CreateCollab(id, workspace, model, initiator.Effort, settings, reuse ? initiatorId : null);
                 lock (_lock) _collabParent[id] = initiatorId;
+                SessionLineage.Link(new SessionLink
+                {
+                    Id = id,
+                    Role = "worker",
+                    Workspace = workspace,
+                    SourceId = initiatorId,
+                    SourceRole = "worker",
+                    SourceWorkspace = workspace,
+                    Purpose = SessionLineage.Collab
+                });
                 ChatHistory.Touch(workspace, id, string.IsNullOrWhiteSpace(task.Title) ? null : task.Title, 0);
 
                 string prompt = string.IsNullOrWhiteSpace(task.Context)

@@ -299,7 +299,9 @@ namespace OpenLoop.App
                         _lblStatus.Text = Localization.T("Status") + Localization.T("StatusStopped");
                         break;
                     default:
-                        _lblStatus.Text = Localization.T("Status") + ": " + Localization.T("StatusEvolveFailed");
+                        // 失败原因留在界面上：通知一消失，用户就没处看为什么失败
+                        _lblStatus.Text = Localization.T("Status") + ": " + Localization.T("StatusEvolveFailed")
+                                          + (string.IsNullOrWhiteSpace(state.Error) ? "" : "\n" + state.Error);
                         Notify(Localization.T("EvolveFailed"), state.Error ?? score, error: true);
                         break;
                 }
@@ -326,12 +328,30 @@ namespace OpenLoop.App
             }
         }
 
-        private static string PhaseText(LoopEvolveState state) => state.Phase switch
+        /// <summary>阶段 + 评测进度 + 已用时长：长跑里用户至少能看到它还在动。</summary>
+        private static string PhaseText(LoopEvolveState state)
         {
-            "evaluating" => string.Format(Localization.T("StatusReviewing"), state.TaskCount, state.TaskCount * 2),
-            "proposing" => Localization.T("StatusProposingPhase"),
-            _ => Localization.T("StatusPreparingPhase")
-        };
+            int total = state.ProgressTotal > 0 ? state.ProgressTotal : state.TaskCount * 2;
+            string text = state.Phase switch
+            {
+                "evaluating" => string.Format(Localization.T("StatusReviewing"), state.TaskCount, total),
+                "proposing" => Localization.T("StatusProposingPhase"),
+                _ => Localization.T("StatusPreparingPhase")
+            };
+            if (state.ProgressTotal > 0) text += " " + state.ProgressDone + "/" + state.ProgressTotal;
+            if (!string.IsNullOrWhiteSpace(state.ProgressTask)) text += " · " + state.ProgressTask;
+            string elapsed = Elapsed(state.StartedAt);
+            return elapsed.Length == 0 ? text : text + " · " + elapsed;
+        }
+
+        private static string Elapsed(string startedAt)
+        {
+            if (!DateTimeOffset.TryParse(startedAt, out var start)) return "";
+            var span = DateTimeOffset.Now - start;
+            return span.TotalHours >= 1
+                ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
+                : $"{span.Minutes:00}:{span.Seconds:00}";
+        }
 
         private async void OnRollback(object sender, EventArgs e)
         {

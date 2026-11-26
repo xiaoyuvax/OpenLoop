@@ -105,6 +105,10 @@ namespace OpenLoop.Service.Tests
             Assert.Contains("只有你与它可见", notice);
             Assert.Contains("请先别动 ChatFlowControl.cs", notice);
             Assert.Contains("to=\"I-ccc\"", notice);
+            // 收到私信的行为约定：不需要回复就不回，正文只写相关告知、不复述上下文
+            Assert.Contains("不需要回复", notice);
+            Assert.Contains("不要重复总结", notice);
+            Assert.Contains("不要输出正文", notice);
 
             // 首行当折叠头（界面按协作提示折成一行），正文另起一段
             var lines = notice.Replace("\r\n", "\n").Split('\n');

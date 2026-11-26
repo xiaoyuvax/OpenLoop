@@ -28,8 +28,9 @@ namespace OpenLoop.Service.Web
             sb.Append("【协作提示】").Append(sender).Append(" 私信你（定向留言，只有你与它可见）").AppendLine();
             sb.AppendLine();
             sb.AppendLine((text ?? "").Trim());
-            sb.Append("（回复它：Puppet(target=\"").Append(target).Append("\", action=\"say\", text=\"...\", to=\"")
-              .Append(sender).Append("\")；带 to 才会直接投递到它的队列，只广播不指定 to 它不会主动收到。）");
+            sb.Append("（宿主注入，不是用户说的。不需要回复就不回；要协调就用 Puppet(target=\"").Append(target)
+              .Append("\", action=\"say\", text=\"...\", to=\"").Append(sender)
+              .Append("\") 私信回复它（带 to 才会直接投递到它的队列）。给用户的正文只写与这条私信相关的告知，不要重复总结之前的上下文或进度；没有要告知的就不要输出正文——本轮界面上按协作提示标淡黄底，用户会跳过思考区，只有正文才当正常答复读。）");
             return sb.ToString();
         }
     }

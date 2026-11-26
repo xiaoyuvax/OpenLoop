@@ -20,6 +20,12 @@ namespace OpenLoop.Service.Storage
         public int Steps { get; set; }
         public long Ms { get; set; }
 
+        /// <summary>
+        /// 这一轮被排队里的「立即」消息顶替（不是用户停止）：正文为空时不再补占位说明，
+        /// 下一轮紧跟着就是那条新消息。旧文件没有该字段。
+        /// </summary>
+        public bool Superseded { get; set; }
+
         /// <summary>协作提示（agent 自动插入的仿用户消息）：界面折叠成一行、淡黄底；旧文件没有该字段。</summary>
         public bool Notice { get; set; }
 

@@ -290,6 +290,76 @@ public sealed class GateTests : IDisposable
     }
 
     [Fact]
+    public void Validator_treats_unwritten_params_as_defaults()
+    {
+        var ledger = NewLedger();
+        var features = Map(ledger);
+
+        // guard.promise 账本里只有 enabled：候选不写 max 就按默认值，不该判不合法
+        var promise = new ActivationRecord
+        {
+            Features =
+            [
+                new FeatureRef
+                {
+                    Id = FeatureCatalog.Promise,
+                    Params = new() { ["enabled"] = JsonSerializer.SerializeToElement(true) }
+                }
+            ]
+        };
+        Assert.Empty(CandidateValidator.Validate(promise, features));
+
+        // 一旦写了就必须是数字，不能静默忽略
+        var bad = new ActivationRecord
+        {
+            Features =
+            [
+                new FeatureRef
+                {
+                    Id = FeatureCatalog.Promise,
+                    Params = new() { ["max"] = JsonSerializer.SerializeToElement("很多") }
+                }
+            ]
+        };
+        Assert.Contains(CandidateValidator.Validate(bad, features), p => p.Contains("不是数字"));
+    }
+
+    [Fact]
+    public void Packet_offers_params_only_for_guard_and_limit_features()
+    {
+        var ledger = NewLedger();
+        ledger.AppendFeature(new FeatureRecord
+        {
+            Id = "skill.demo",
+            Kind = "skill",
+            Problem = "演示技能",
+            Payload = JsonSerializer.SerializeToElement(new { path = "skills/demo" }),
+            CreatedAt = DateTimeOffset.UtcNow.ToString("O")
+        });
+
+        var packet = new LoopAgent(new ThrowingReasoner("packet only")).BuildPacket(ledger);
+
+        Assert.Matches("- skill\\.demo[^\n]*\n  不带 params", packet);
+        Assert.Matches("- guard\\.promise[^\n]*\n  参数：[^\n]*max", packet);
+    }
+
+    [Fact]
+    public async Task Gate_reports_progress_for_every_run()
+    {
+        var ledger = NewLedger();
+        var tasks = AddTasks("a", "b");
+        var runner = new FakeRunner((_, _) => true);
+        var gate = new Gate(ledger, tasks, Map(ledger), runner);
+        var calls = new List<(int Done, int Total, string Task)>();
+
+        await gate.EvaluateAsync(ledger.Current, Narrow(ledger.Current), progress: (done, total, task) =>
+            calls.Add((done, total, task)));
+
+        Assert.Equal(4, calls.Count);
+        Assert.Equal((4, 4, "b"), calls[^1]);
+    }
+
+    [Fact]
     public void TaskSet_fingerprint_tracks_seed_content()
     {
         string dir = Path.Combine(_root, ".openloop", "eval", "tasks");

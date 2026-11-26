@@ -756,6 +756,9 @@ Iterate with the local code anyway?</value>
   <data name="MenuNewSession" xml:space="preserve">
     <value>New session…</value>
   </data>
+  <data name="MenuNotifications" xml:space="preserve">
+    <value>Notifications</value>
+  </data>
   <data name="MenuSessionList" xml:space="preserve">
     <value>Sessions</value>
   </data>
@@ -857,6 +860,21 @@ Iterate with the local code anyway?</value>
   </data>
   <data name="NotEditableBody" xml:space="preserve">
     <value>This manifest has no provider contribution; use "Open folder" to edit it.</value>
+  </data>
+  <data name="NotificationClear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="NotificationEmpty" xml:space="preserve">
+    <value>No notifications yet.</value>
+  </data>
+  <data name="NotificationLevelError" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="NotificationLevelInfo" xml:space="preserve">
+    <value>Info</value>
+  </data>
+  <data name="NotificationLogTitle" xml:space="preserve">
+    <value>Notification history</value>
   </data>
   <data name="OnlyGlobalNoWorkspace" xml:space="preserve">
     <value> (no workspace open; global only)</value>
@@ -1831,6 +1849,12 @@ Click Unlock above to use it yourself</value>
   <data name="AttachmentCount" xml:space="preserve">
     <value>{0}/{1}</value>
   </data>
+  <data name="已添加附件" xml:space="preserve">
+    <value>Attachment added</value>
+  </data>
+  <data name="查看记录" xml:space="preserve">
+    <value>View history</value>
+  </data>
   <data name="添加附件…" xml:space="preserve">
     <value>Add attachment…</value>
   </data>
@@ -2312,8 +2336,8 @@ Restore failed</value>
   <data name="把较早的对话压缩成摘要，省下上下文" xml:space="preserve">
     <value>Compact earlier turns into a summary to save context</value>
   </data>
-  <data name="复制当前上下文开一个新会话（可继续对话）并跳转" xml:space="preserve">
-    <value>Fork the current context into a new session (keeps chatting) and jump to it</value>
+  <data name="选到哪一轮（含）后复制上下文开一个新会话（可继续对话）并跳转" xml:space="preserve">
+    <value>Pick a turn (inclusive), fork its context into a new session (keeps chatting) and jump to it</value>
   </data>
   <data name="打开右侧 Puppet Action 清单；/puppet &lt;action&gt; &lt;参数&gt; 直接执行" xml:space="preserve">
     <value>Open the Puppet action list in the right panel; /puppet &lt;action&gt; &lt;params&gt; runs one directly</value>
@@ -2324,8 +2348,8 @@ Restore failed</value>
   <data name="把对 Loop 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）" xml:space="preserve">
     <value>Send a complaint about the Loop's own behavior (no context attached; it reads the source session as needed)</value>
   </data>
-  <data name="复制当前上下文开一个新的 Loop 会话（可继续对话）并跳转" xml:space="preserve">
-    <value>Fork the current context into a new Loop session (keeps chatting) and jump to it</value>
+  <data name="选到哪一轮（含）后复制上下文开一个新的 Loop 会话（可继续对话）并跳转" xml:space="preserve">
+    <value>Pick a turn (inclusive), fork its context into a new Loop session (keeps chatting) and jump to it</value>
   </data>
   <data name="盘点来源会话的避坑经验与各组件优化点，新开 Loop 会话等确认后实施" xml:space="preserve">
     <value>Inventory the source session's pitfalls and each component's improvements in a new Loop session, and act after confirmation</value>

@@ -77,9 +77,10 @@ namespace OpenLoop.Core.Loop
             _buildCheck = buildCheck;
         }
 
+        /// <param name="progress">每次考核运行结束回调（已完成次数、总次数、题目 id），给界面报进度。</param>
         public async Task<GateReport> EvaluateAsync(
             ActivationRecord baseline, ActivationRecord candidate, CancellationToken ct = default,
-            IReadOnlyList<string> extraEvidence = null)
+            IReadOnlyList<string> extraEvidence = null, Action<int, int, string> progress = null)
         {
             var report = new GateReport { BaselineVersion = baseline.Version };
 
@@ -104,10 +105,14 @@ namespace OpenLoop.Core.Loop
             var evidence = new List<string>();
             evidence.AddRange(extraEvidence?.Where(e => !string.IsNullOrWhiteSpace(e)) ?? []);
 
+            int totalRuns = _tasks.Tasks.Count * 2;
+            int doneRuns = 0;
             foreach (var task in _tasks.Tasks)
             {
                 var baselineRun = await _runner.RunAsync(task, baseline, ct);
+                progress?.Invoke(++doneRuns, totalRuns, task.Id);
                 var candidateRun = await _runner.RunAsync(task, candidate, ct);
+                progress?.Invoke(++doneRuns, totalRuns, task.Id);
                 cost += (baselineRun.Cost ?? 0) + (candidateRun.Cost ?? 0);
                 evidence.Add(baselineRun.EvidenceDir);
                 evidence.Add(candidateRun.EvidenceDir);

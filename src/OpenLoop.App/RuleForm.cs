@@ -20,7 +20,7 @@ namespace OpenLoop.App
             if (_optimize == null) return;
             if (RuleText.Length == 0)
             {
-                AntdUI.Notification.warn(this, Localization.T("RuleEmpty"), Localization.T("RuleEmptyOptimizeBody"),
+                AppNotify.warn(this, Localization.T("RuleEmpty"), Localization.T("RuleEmptyOptimizeBody"),
                     AntdUI.TAlignFrom.TR, null, 4);
                 _txtRule.Focus();
                 return;
@@ -59,7 +59,7 @@ namespace OpenLoop.App
         {
             if (RuleText.Length == 0)
             {
-                AntdUI.Notification.warn(this, Localization.T("RuleEmpty"), Localization.T("RuleEmptySaveBody"),
+                AppNotify.warn(this, Localization.T("RuleEmpty"), Localization.T("RuleEmptySaveBody"),
                     AntdUI.TAlignFrom.TR, null, 4);
                 _txtRule.Focus();
                 return;

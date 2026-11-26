@@ -347,7 +347,8 @@ namespace OpenLoop.App
                     session.View.SendMode("task", immediate: true);
                     break;
                 case LoopView loop:
-                    loop.Send(text, immediate: true);
+                    // 与输入框同一套分流：/命令照常生效（要展开左右侧栏时由宿主把方块提升成普通标签页）
+                    loop.SubmitText(text, immediate: true);
                     break;
             }
             tile.Input.Clear();

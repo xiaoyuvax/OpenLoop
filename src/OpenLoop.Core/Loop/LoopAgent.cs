@@ -56,8 +56,11 @@ namespace OpenLoop.Core.Loop
             foreach (var feature in features)
             {
                 sb.Append("- ").Append(feature.Id).Append(" · ").AppendLine(feature.Problem);
-                if (feature.Kind != "rule")
+                // 只有 guard/limit 收参数；技能、提示词、规则一旦带 params 会被校验整轮打回
+                if (feature.Kind is "guard" or "limit")
                     sb.Append("  参数：").AppendLine(string.Join("、", CandidateValidator.AllowedKeys(feature.Id)));
+                else
+                    sb.AppendLine("  不带 params");
                 if (feature.Kind == "rule" && feature.Payload.ValueKind == JsonValueKind.String)
                     sb.Append("  规则正文：").AppendLine(Trim(feature.Payload.GetString(), 400));
             }
@@ -108,7 +111,7 @@ namespace OpenLoop.Core.Loop
             sb.AppendLine("# 输出格式");
             sb.AppendLine("只输出一个 JSON 对象，不要解释：");
             sb.AppendLine("{\"note\":\"一句话说明这轮想改善什么\",\"features\":[{\"id\":\"...\",\"params\":{\"enabled\":true}}]}");
-            sb.AppendLine("参数只认特征目录里列出的键（limit 特征不一定叫 value）；规则不带 params。");
+            sb.AppendLine("参数只认 guard / limit 特征目录里列出的键（limit 特征不一定叫 value）；技能、提示词、规则一律不带 params，带了整轮判不合法。");
             sb.AppendLine("features 是**完整快照**：要启用的全部列出；没列出的即停用。");
             sb.AppendLine("一个都不改就等于没有候选，这轮什么也不会发生。");
             return sb.ToString();

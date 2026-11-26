@@ -83,6 +83,7 @@ namespace OpenLoop.Core.Tools
         {
             yield return new Builtin.ReadFileTool(read);
             yield return new Builtin.WriteFileTool(write);
+            yield return new Builtin.EditFileTool(write);
             yield return new Builtin.ListDirTool(read);
             yield return new Builtin.GrepTool(read);
             yield return new Builtin.ShellTool(write, approve, fullAccess);

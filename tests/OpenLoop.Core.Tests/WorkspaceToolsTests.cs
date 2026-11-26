@@ -1,3 +1,4 @@
+using System.Text;
 using OpenLoop.Core.Tools;
 using OpenLoop.Core.Tools.Builtin;
 using Xunit;
@@ -98,6 +99,90 @@ namespace OpenLoop.Core.Tests
 
             Assert.False(result.Ok);
             Assert.Contains("mode", result.Error);
+        }
+
+        [Fact]
+        public async Task EditFileReplacesUniqueAnchorAndKeepsRest()
+        {
+            var scope = new WorkspaceScope(_root);
+            Directory.CreateDirectory(Path.Combine(_root, "src"));
+            string path = Path.Combine(_root, "src/a.cs");
+            await File.WriteAllTextAsync(path, "class A\r\n{\r\n    int x = 1;\r\n}\r\n");
+
+            var result = await new EditFileTool(scope).ExecuteAsync(
+                Args(("path", "src/a.cs"), ("old", "    int x = 1;\n"), ("new", "    int x = 2;\n")), default);
+
+            Assert.True(result.Ok, result.Error);
+            Assert.Contains("第 3 行", result.Data);
+            Assert.Equal("class A\r\n{\r\n    int x = 2;\r\n}\r\n", await File.ReadAllTextAsync(path));
+        }
+
+        [Fact]
+        public async Task EditFileRefusesAmbiguousAnchorWithoutWriting()
+        {
+            var scope = new WorkspaceScope(_root);
+            string path = Path.Combine(_root, "dup.txt");
+            await File.WriteAllTextAsync(path, "x = 1;\nx = 1;\n");
+
+            var result = await new EditFileTool(scope).ExecuteAsync(
+                Args(("path", "dup.txt"), ("old", "x = 1;"), ("new", "x = 2;")), default);
+
+            Assert.False(result.Ok);
+            Assert.Contains("出现多次", result.Error);
+            Assert.Equal("x = 1;\nx = 1;\n", await File.ReadAllTextAsync(path));
+        }
+
+        [Fact]
+        public async Task EditFileKeepsUtf8BomAndCrlf()
+        {
+            var scope = new WorkspaceScope(_root);
+            string path = Path.Combine(_root, "bom.cs");
+            await File.WriteAllBytesAsync(path,
+                [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes("// 中文\r\nint a = 1;\r\n")]);
+
+            var result = await new EditFileTool(scope).ExecuteAsync(
+                Args(("path", "bom.cs"), ("old", "int a = 1;"), ("new", "int a = 2;")), default);
+
+            Assert.True(result.Ok, result.Error);
+            byte[] bytes = await File.ReadAllBytesAsync(path);
+            Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF }, bytes.Take(3).ToArray());
+            Assert.Equal("// 中文\r\nint a = 2;\r\n", Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3));
+        }
+
+        [Fact]
+        public async Task WriteFileAddsBomForPowerShellScript()
+        {
+            var scope = new WorkspaceScope(_root);
+
+            var result = await new WriteFileTool(scope).ExecuteAsync(
+                Args(("path", "t.ps1"), ("content", "Write-Output '中文'")), default);
+
+            Assert.True(result.Ok, result.Error);
+            byte[] bytes = await File.ReadAllBytesAsync(Path.Combine(_root, "t.ps1"));
+            Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF }, bytes.Take(3).ToArray());
+        }
+
+        [Fact]
+        public async Task WriteFileRefusesSuspiciousShrinkUnlessForced()
+        {
+            var scope = new WorkspaceScope(_root);
+            string path = Path.Combine(_root, "big.cs");
+            await File.WriteAllTextAsync(path, new string('a', 8000));
+
+            var blocked = await new WriteFileTool(scope).ExecuteAsync(
+                Args(("path", "big.cs"), ("content", "placeholder")), default);
+
+            Assert.False(blocked.Ok);
+            Assert.Contains("EditFile", blocked.Error);
+            Assert.Equal(8000, new FileInfo(path).Length);
+
+            // 走真实的协议参数形态（布尔是 JsonElement）
+            using var json = System.Text.Json.JsonDocument.Parse("true");
+            var forced = await new WriteFileTool(scope).ExecuteAsync(
+                Args(("path", "big.cs"), ("content", "placeholder"), ("force", json.RootElement.Clone())), default);
+
+            Assert.True(forced.Ok, forced.Error);
+            Assert.Equal("placeholder", await File.ReadAllTextAsync(path));
         }
 
         [Fact]

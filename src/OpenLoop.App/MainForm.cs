@@ -51,6 +51,14 @@ namespace OpenLoop.App
         /// <summary>拖出进行中：平铺视图报上来的悬停页签，画成可落点高亮（null = 不画）。</summary>
         private AntdUI.TabPage _tabDropTarget;
 
+        /// <summary>
+        /// AntdUI 2.4.15/2.4.16 的 Tabs 只在 MouseMove 里更新拖动锚点 oldXY，MouseDown 不重置，
+        /// 于是按下的第一次移动就必然越过 TouchThreshold（20 DIP），点页签或关闭按钮都会变成重排。
+        /// 这里按它的本意把锚点放回按下点；字段名变了就取不到，退回原行为（不会崩）。
+        /// </summary>
+        private static readonly System.Reflection.FieldInfo TabDragAnchor =
+            typeof(AntdUI.Tabs).GetField("oldXY", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
         /// <summary>3 秒一次的同步和打开会话都复用它：每次 new 一个客户端等于每次新建 HttpClient。</summary>
         private WorkerApiClient _workerClient;
 
@@ -687,13 +695,109 @@ namespace OpenLoop.App
             var (model, effort) = session.View != null
                 ? (session.View.Model, session.View.Effort)
                 : ChatHistory.LastModel(session.Workspace, session.Id);
-            PostComplaint(session.Workspace, text, model, effort);
+            PostComplaint(session.Workspace, text, model, effort, session.Id, "worker", session.Workspace);
         }
 
-        private void PostComplaint(string workspace, string text, string model = null, string effort = null)
-            => EnsureLoop(workspace, select: false, sessionId: "",
+        private void PostComplaint(string workspace, string text, string model = null, string effort = null,
+            string sourceId = null, string sourceRole = null, string sourceWorkspace = null)
+        {
+            var view = EnsureLoop(workspace, select: false, sessionId: "",
                 title: Localization.T("反馈 ") + DateTime.Now.ToString("HH:mm"), model: model, effort: effort,
-                seedTitle: true)?.Post(text, "feedback");
+                seedTitle: true);
+            if (view == null) return;
+            LinkSession(view.SessionId, "loop", view.Workspace,
+                sourceId, sourceRole, sourceWorkspace, SessionLineage.Complain);
+            view.Post(text, "feedback");
+        }
+
+        /// <summary>
+        /// /sysprompt、/agentsmd 带要求：由本会话的旁路会话执行修改（同一条源会话复用同一条旁路会话）。
+        /// 先打开对应的 TCF 编辑工具再发要求；写盘仍只由用户点保存触发。
+        /// </summary>
+        private void OnTargetEditRequested(Session source, string kind, string request)
+            => OnTargetEditRequested(source?.Id, "worker", source?.Workspace, source?.Workspace,
+                kind, request, source?.View?.Model, source?.View?.Effort);
+
+        private void OnTargetEditRequested(LoopView source, string kind, string request)
+            => OnTargetEditRequested(source?.SessionId, "loop", source?.Workspace, source?.Workspace,
+                kind, request, source?.Model, source?.Effort);
+
+        private void OnTargetEditRequested(string sourceId, string sourceRole, string workspace,
+            string sourceWorkspace, string kind, string request, string model, string effort)
+        {
+            if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(workspace))
+            {
+                AppNotify.warn(this, "Loop", Localization.T("工作目录不存在：") + workspace,
+                    AntdUI.TAlignFrom.TR, null, 3);
+                return;
+            }
+
+            var side = EnsureTargetSideSession(sourceId, sourceRole, workspace, sourceWorkspace,
+                kind, model, effort);
+            if (side == null) return;
+            ShowSession(side);
+            side.View.OpenTarget(kind);
+            side.View.ComposerText = request;
+            side.View.SendMode("task");
+        }
+
+        /// <summary>取（必要时新建）某个源会话的旁路会话：Worker 会话，用来跑目标编辑面。</summary>
+        private Session EnsureTargetSideSession(string sourceId, string sourceRole, string workspace,
+            string sourceWorkspace, string kind, string model, string effort)
+        {
+            sourceId ??= "";
+            // 已经在旁路会话里：就地改，不再派生新的旁路会话
+            if (string.Equals(sourceRole, "worker", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(SessionLineage.Get(sourceId)?.Purpose, SessionLineage.TargetEdit,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                var self = _sessions.FirstOrDefault(s =>
+                    string.Equals(s.Id, sourceId, StringComparison.OrdinalIgnoreCase));
+                if (self != null) return self;
+            }
+
+            if (sourceId.Length > 0)
+            {
+                var link = SessionLineage.Find(sourceId, SessionLineage.TargetEdit);
+                if (link != null && Paths.Same(link.Workspace, workspace))
+                {
+                    var existing = _sessions.FirstOrDefault(s =>
+                        string.Equals(s.Id, link.Id, StringComparison.OrdinalIgnoreCase));
+                    if (existing != null) return existing;
+                }
+            }
+
+            string title = Localization.T("旁路") + " · "
+                + (kind == TargetSpec.AgentsKind ? "AGENTS.md" : Localization.T("系统提示词"));
+            var session = CreateSession(workspace, title: title, titleManual: true);
+            var view = EnsureView(session);
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                view.SetModel(model);
+                view.SetEffort(effort);
+            }
+            LinkSession(session.Id, "worker", session.Workspace,
+                sourceId, sourceRole, sourceWorkspace, SessionLineage.TargetEdit, kind);
+            return session;
+        }
+
+        /// <summary>登记衍生会话的源会话（回溯用）；没有源会话（如 Puppet 页）就不记。</summary>
+        private static void LinkSession(string id, string role, string workspace,
+            string sourceId, string sourceRole, string sourceWorkspace, string purpose, string target = null)
+        {
+            if (string.IsNullOrWhiteSpace(sourceId)) return;
+            SessionLineage.Link(new SessionLink
+            {
+                Id = id,
+                Role = role,
+                Workspace = workspace,
+                SourceId = sourceId,
+                SourceRole = sourceRole ?? "",
+                SourceWorkspace = sourceWorkspace ?? "",
+                Purpose = purpose,
+                Target = target ?? ""
+            });
+        }
 
         /// <summary>
         /// 取（必要时创建）某个项目的 Loop 会话。历史按「项目 + 会话 id」分开存，
@@ -709,7 +813,7 @@ namespace OpenLoop.App
             if (string.IsNullOrWhiteSpace(target)) target = _settings.Projects.FirstOrDefault();
             if (string.IsNullOrWhiteSpace(target) || !Directory.Exists(target))
             {
-                AntdUI.Notification.warn(this, "Loop", Localization.T("请先打开一个会话，Loop 需要工作区。"), AntdUI.TAlignFrom.TR, null, 3);
+                AppNotify.warn(this, "Loop", Localization.T("请先打开一个会话，Loop 需要工作区。"), AntdUI.TAlignFrom.TR, null, 3);
                 return null;
             }
 
@@ -744,10 +848,14 @@ namespace OpenLoop.App
             view.Sessions = () => _sessions;
             view.Iterate = () => ShowIterationAsync(target);
             view.HarnessAssistRequested += page => OpenHarnessAssistant(target, page);
-            view.TransferToWorker = turns => TransferToWorker(target, turns, view.Model, view.Effort);
+            view.TransferToWorker = turns => TransferToWorker(target, turns, view.Model, view.Effort, view.SessionId);
             view.ForkRequested += ForkLoop;
             view.NewSessionRequested += NewLoopSession;
-            view.ComplaintRequested += text => PostComplaint(target, text, view.Model, view.Effort);
+            view.ComplaintRequested += text => PostComplaint(target, text, view.Model, view.Effort,
+                view.SessionId, "loop", target);
+            view.TargetEditRequested += (source, kind, request) => OnTargetEditRequested(source, kind, request);
+            // 平铺方块放不下左右侧栏：要展开侧栏时先摘出平铺视图（延后一轮，别在方块输入框的按键事件里拆方块）
+            view.NeedsFullView += () => BeginInvoke(new Action(() => PromoteFromTiled(view)));
             // 协作：协作会话是同工作区、平级的其他 Loop 会话（不是子 agent）。
             // 这两条委托会在 agent 的工具线程上被调用（CollabStart/CollabMonitor 都在后台轮里跑），
             // 建会话、列举会话都要回到界面线程，否则会跨线程碰控件与会话表。
@@ -759,8 +867,12 @@ namespace OpenLoop.App
                 if (_settings.CollabReuseContext)
                     ChatStore.Save(target, view.Turns.Where(t => !t.Streaming), id, view.Model,
                         view.Effort);
-                return EnsureLoop(target, select: false, sessionId: id, title: task.Title,
+                var created = EnsureLoop(target, select: false, sessionId: id, title: task.Title,
                     model: view.Model, effort: view.Effort);
+                if (created != null)
+                    LinkSession(created.SessionId, "loop", created.Workspace,
+                        view.SessionId, "loop", target, SessionLineage.Collab);
+                return created;
             });
             view.CollabPeers = () => OnUi(() => _loops.Values
                 .Select(e => e.View)
@@ -986,7 +1098,7 @@ namespace OpenLoop.App
             {
                 _autoIterateHead = head;
                 _autoIterateCountdown = DateTime.Now.AddSeconds(AutoIterateCountdownSeconds);
-                AntdUI.Notification.info(this, Localization.T("准备自动更新"),
+                AppNotify.info(this, Localization.T("准备自动更新"),
                     $"源码已累积 {state.Commits} 次提交，{AutoIterateCountdownSeconds} 秒后自动更新 A/I" +
                     (BusySessions().Length > 0 ? Localization.T("（有会话在跑，到时会先问你）") : "。"),
                     AntdUI.TAlignFrom.TR, null, 8);
@@ -1015,14 +1127,14 @@ namespace OpenLoop.App
             _autoIterateBusy = true;
             try
             {
-                AntdUI.Notification.info(this, Localization.T("自动更新"), Localization.T("开始构建并换版 A/I，期间别关界面。"),
+                AppNotify.info(this, Localization.T("自动更新"), Localization.T("开始构建并换版 A/I，期间别关界面。"),
                     AntdUI.TAlignFrom.TR, null, 6);
                 string detail = await RunIterationAsync();
                 AppLog.Info("自动迭代：" + detail);
                 if (detail.StartsWith("迭代完成", StringComparison.Ordinal))
-                    AntdUI.Notification.success(this, Localization.T("自动更新完成"), detail, AntdUI.TAlignFrom.TR, null, 6);
+                    AppNotify.success(this, Localization.T("自动更新完成"), detail, AntdUI.TAlignFrom.TR, null, 6);
                 else
-                    AntdUI.Notification.warn(this, Localization.T("自动更新未完成"), detail, AntdUI.TAlignFrom.TR, null, 8);
+                    AppNotify.warn(this, Localization.T("自动更新未完成"), detail, AntdUI.TAlignFrom.TR, null, 8);
             }
             finally
             {
@@ -1042,18 +1154,18 @@ namespace OpenLoop.App
                 AppLog.Info("源码同步：" + check);
 
                 if (check.State == global::OpenLoop.Service.Source.SourceState.NoGit)
-                    AntdUI.Notification.warn(this, Localization.T("未找到 git"),
+                    AppNotify.warn(this, Localization.T("未找到 git"),
                         Localization.T("撤回对话、迭代与版本溯源都依赖 git，请安装并加入 PATH 后重启。"),
                         AntdUI.TAlignFrom.TR, null, 8);
                 else if (check.UpstreamNewer)
-                    AntdUI.Notification.warn(this, Localization.T("上游有更新"), check.Detail,
+                    AppNotify.warn(this, Localization.T("上游有更新"), check.Detail,
                         AntdUI.TAlignFrom.TR, null, 6);
                 else if (check.State == global::OpenLoop.Service.Source.SourceState.Newer)
-                    AntdUI.Notification.info(this, Localization.T("源码有更新"),
+                    AppNotify.info(this, Localization.T("源码有更新"),
                         $"源码 {check.SourceVersion} 高于运行版本 {check.RunningVersion}，可以迭代。",
                         AntdUI.TAlignFrom.TR, null, 5);
                 else if (check.State == global::OpenLoop.Service.Source.SourceState.Older)
-                    AntdUI.Notification.warn(this, Localization.T("源码过旧"),
+                    AppNotify.warn(this, Localization.T("源码过旧"),
                         $"源码 {check.SourceVersion} 低于运行版本 {check.RunningVersion}：" +
                         Localization.T("更新源码、放弃迭代，或用 Puppet 自愈。"),
                         AntdUI.TAlignFrom.TR, null, 6);
@@ -1062,10 +1174,10 @@ namespace OpenLoop.App
                 {
                     AppLog.Info(spec.Label + " 同步：" + sync);
                     if (sync.State == global::OpenLoop.Service.Source.SourceState.Failed)
-                        AntdUI.Notification.warn(this, spec.Label + Localization.T(" 同步失败"), sync.Detail,
+                        AppNotify.warn(this, spec.Label + Localization.T(" 同步失败"), sync.Detail,
                             AntdUI.TAlignFrom.TR, null, 8);
                     else if (sync.Forked)
-                        AntdUI.Notification.info(this, spec.Label + Localization.T(" 已换 fork"), sync.Detail,
+                        AppNotify.info(this, spec.Label + Localization.T(" 已换 fork"), sync.Detail,
                             AntdUI.TAlignFrom.TR, null, 8);
                 }
             }
@@ -1633,13 +1745,16 @@ namespace OpenLoop.App
                 .ToList());
             view.StateChanged += OnSessionStateChanged;
             view.ComplaintRequested += OnComplaint;
+            view.TargetEditRequested += (source, kind, request) => OnTargetEditRequested(source, kind, request);
             view.ForkRequested += ForkSession;
             view.NewSessionRequested += NewSessionFrom;
             view.TransferToLoop = turns => TransferToLoop(session.Workspace, turns,
-                view.Model, view.Effort);
+                view.Model, view.Effort, session.Id);
             view.TitleChanged += OnSessionTitleChanged;
             view.SideWorkEvicted += OnSideWorkEvicted;
             view.HarnessAssistRequested += page => OpenHarnessAssistant(session.Workspace, page);
+            // 平铺方块放不下左右侧栏：要展开侧栏时先摘出平铺视图（延后一轮，别在方块输入框的按键事件里拆方块）
+            view.NeedsFullView += () => BeginInvoke(new Action(() => PromoteFromTiled(session)));
             // 会话通知上的「打开会话」：页签关掉了就重新挂上再选中
             view.ActivatePage = () =>
             {
@@ -1955,38 +2070,52 @@ namespace OpenLoop.App
             _ = SyncSessionAsync(session);
         }
 
-        /// <summary>/fork：复制当前会话的上下文开一个新会话，并把新请求发出去。</summary>
-        private void ForkSession(Session source, string request)
+        /// <summary>/fork：把所选轮（含）之前的上下文复制进新会话，并把新请求发出去。</summary>
+        private void ForkSession(Session source, string request, ChatTurn upTo)
         {
             if (source == null || string.IsNullOrWhiteSpace(request)) return;
             var session = CreateSession(source.Workspace);
             //克隆可见历史：新会话既是「带着上下文」起步，后续追问也仍带上下文
-            session.Book.ReplaceAll(source.Book.Turns.Select(CloneTurn), null);
+            session.Book.ReplaceAll(ForkTurns(source.Book.Turns, upTo).Select(CloneTurn), null);
             // 分叉沿用源会话的模型与强度：写进历史，重开这个会话也还是它
             ChatStore.Save(session.Workspace, session.Book.Turns, session.Id,
                 source.View?.Model, source.View?.Effort);
+            LinkSession(session.Id, "worker", session.Workspace,
+                source.Id, "worker", source.Workspace, SessionLineage.Fork);
             ShowSession(session);
             session.View.ComposerText = request;
             session.View.SendMode("task");
         }
 
-        /// <summary>Loop 的 /fork：复制当前 Loop 对话开一个新 Loop 会话，并把新请求发出去。</summary>
-        private void ForkLoop(LoopView source, string request)
+        /// <summary>Loop 的 /fork：复制所选轮（含）之前的上下文开一个新 Loop 会话，并把新请求发出去。</summary>
+        private void ForkLoop(LoopView source, string request, ChatTurn upTo)
         {
             if (source == null || string.IsNullOrWhiteSpace(request)) return;
             string workspace = source.Workspace;
             if (string.IsNullOrWhiteSpace(workspace) || source.Turns.Count == 0)
             {
-                AntdUI.Notification.warn(this, "Loop", Localization.T("没有可复制的对话。"), AntdUI.TAlignFrom.TR, null, 3);
+                AppNotify.warn(this, "Loop", Localization.T("没有可复制的对话。"), AntdUI.TAlignFrom.TR, null, 3);
                 return;
             }
 
             string id = "loop-" + Guid.NewGuid().ToString("N")[..8];
             // 分叉沿用源 Loop 会话的模型与强度
-            ChatStore.Save(workspace, source.Turns.Select(CloneTurn).ToList(), id, source.Model, source.Effort);
+            ChatStore.Save(workspace, ForkTurns(source.Turns, upTo).Select(CloneTurn).ToList(), id, source.Model, source.Effort);
             ChatStore.Touch(workspace, id, Localization.T("分叉 ") + DateTime.Now.ToString("HH:mm"));
-            EnsureLoop(workspace, select: true, sessionId: id, model: source.Model, effort: source.Effort)
-                ?.Send(request);
+            var forked = EnsureLoop(workspace, select: true, sessionId: id, model: source.Model, effort: source.Effort);
+            if (forked == null) return;
+            LinkSession(forked.SessionId, "loop", forked.Workspace,
+                source.SessionId, "loop", source.Workspace, SessionLineage.Fork);
+            forked.Send(request);
+        }
+
+        /// <summary>分叉取到所选轮（含）为止；所选轮已被删掉就取全部。</summary>
+        private static List<ChatTurn> ForkTurns(IReadOnlyList<ChatTurn> turns, ChatTurn upTo)
+        {
+            if (upTo != null)
+                for (int i = 0; i < turns.Count; i++)
+                    if (ReferenceEquals(turns[i], upTo)) return turns.Take(i + 1).ToList();
+            return turns.ToList();
         }
 
         /// <summary>/new：开一个空会话，沿用来源会话的模型与强度；带请求就顺手发出去。</summary>
@@ -1997,6 +2126,8 @@ namespace OpenLoop.App
             var view = EnsureView(session);
             view.SetModel(source.View?.Model);
             view.SetEffort(source.View?.Effort);
+            LinkSession(session.Id, "worker", session.Workspace,
+                source.Id, "worker", source.Workspace, SessionLineage.New);
             ShowSession(session);
             if (string.IsNullOrWhiteSpace(request)) return;
             session.View.ComposerText = request;
@@ -2009,6 +2140,8 @@ namespace OpenLoop.App
             if (source == null || string.IsNullOrWhiteSpace(source.Workspace)) return;
             var view = EnsureLoop(source.Workspace, select: true, sessionId: "");
             if (view == null) return;
+            LinkSession(view.SessionId, "loop", view.Workspace,
+                source.SessionId, "loop", source.Workspace, SessionLineage.New);
             view.SetModel(source.Model);
             view.SetEffort(source.Effort);
             if (!string.IsNullOrWhiteSpace(request)) view.Send(request);
@@ -2019,7 +2152,7 @@ namespace OpenLoop.App
         /// Worker 首次 Create 时会读这份历史当初始上下文；再开这个会话让用户接着追问。
         /// </summary>
         private bool TransferToWorker(string workspace, IReadOnlyList<ChatTurn> turns,
-            string model = null, string effort = null)
+            string model = null, string effort = null, string sourceId = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return false;
             workspace = Paths.Normalize(workspace);
@@ -2029,7 +2162,10 @@ namespace OpenLoop.App
             // 沿用来源 Loop 会话的模型与强度：Worker 打开时按这份记录恢复
             ChatStore.Save(workspace, cloned, id, model, effort);
             ChatStore.Touch(workspace, id, title);
-            ShowSession(CreateSession(workspace, id, title));
+            var session = CreateSession(workspace, id, title);
+            LinkSession(session.Id, "worker", session.Workspace,
+                sourceId, "loop", workspace, SessionLineage.Transfer);
+            ShowSession(session);
             return true;
         }
 
@@ -2038,7 +2174,7 @@ namespace OpenLoop.App
         /// Loop 页打开时会读这份历史当初始上下文。
         /// </summary>
         private bool TransferToLoop(string workspace, IReadOnlyList<ChatTurn> turns,
-            string model = null, string effort = null)
+            string model = null, string effort = null, string sourceId = null)
         {
             if (string.IsNullOrWhiteSpace(workspace) || turns == null || turns.Count == 0) return false;
             workspace = Paths.Normalize(workspace);
@@ -2048,7 +2184,11 @@ namespace OpenLoop.App
             ChatStore.Save(workspace, turns.Select(CloneTurn).ToList(), id, model, effort);
             // Loop 会话只登记在 loops.json：写 chats/index.json 会让它被当成 Worker 会话恢复出来
             LoopIndex.Rename(workspace, id, title, seed: true);
-            return EnsureLoop(workspace, true, id, model: model, effort: effort) != null;
+            var view = EnsureLoop(workspace, true, id, model: model, effort: effort);
+            if (view == null) return false;
+            LinkSession(view.SessionId, "loop", view.Workspace,
+                sourceId, "worker", workspace, SessionLineage.Transfer);
+            return true;
         }
 
         private static ChatTurn CloneTurn(ChatTurn t)
@@ -2274,6 +2414,17 @@ namespace OpenLoop.App
             return page != null && screen.Y < page.PointToScreen(Point.Empty).Y;
         }
 
+        /// <summary>方块里的会话要展开侧栏：摘出平铺视图、挂回普通标签页（ShowSession/EnsureLoop 自己会摘）。</summary>
+        private void PromoteFromTiled(object owner)
+        {
+            if (_tiled == null || _tiled.Items.All(i => !ReferenceEquals(i.Owner, owner))) return;
+            switch (owner)
+            {
+                case Session session: ShowSession(session); break;
+                case LoopView loop: EnsureLoop(loop.Workspace, select: true, sessionId: loop.SessionId); break;
+            }
+        }
+
         /// <summary>某个会话又被当成普通标签打开：先从平铺视图里摘掉，免得同一个会话出现两次。</summary>
         private void DetachFromTiled(object owner)
         {
@@ -2351,6 +2502,8 @@ namespace OpenLoop.App
         /// </summary>
         private void OnTabTiledDragDown(object sender, MouseEventArgs e)
         {
+            if (e.Button == MouseButtons.Left)
+                TabDragAnchor?.SetValue(_tabs, e.X);   // 页签栏固定顶部：锚点取横坐标
             _tabDragDown = e.Button == MouseButtons.Left ? _tabs.ContainsTabPage(e.X, e.Y) : null;
             _tabDragFrom = e.Location;
             _tabDragToTiled = false;
@@ -2411,16 +2564,9 @@ namespace OpenLoop.App
             if (index < 0) return;
             var rect = _tabs.Style?.GetTabRect(index).Rect ?? Rectangle.Empty;
             if (rect.Width <= 0) return;
-            if (strong)
-            {
-                using var pen = new Pen(UiStyle.Accent, 2);
-                e.Canvas.Draw(pen, rect);
-            }
-            else
-            {
-                using var soft = new Pen(Color.FromArgb(120, UiStyle.Accent), 1);
-                e.Canvas.Draw(soft, rect);
-            }
+            // 整块页签头铺半透明强调色：压在文字上也不挡字
+            using var brush = new SolidBrush(Color.FromArgb(strong ? 70 : 30, UiStyle.Accent));
+            e.Canvas.Fill(brush, rect);
         }
 
         private void OnTabTiledDragUp(object sender, MouseEventArgs e)
@@ -2614,7 +2760,7 @@ namespace OpenLoop.App
 
         /// <summary>旁路被新旁路挤走：旧结果落成一个普通会话，之后可从会话历史恢复继续聊。</summary>
         private void OnSideWorkEvicted(string workspace, IReadOnlyList<ChatTurn> turns,
-            string model = null, string effort = null)
+            string model = null, string effort = null, string sourceId = null)
         {
             if (turns == null || turns.Count == 0) return;
             int steps = turns[^1].ToolStepCount;
@@ -2624,6 +2770,8 @@ namespace OpenLoop.App
                 string id = Guid.NewGuid().ToString("N")[..8];
                 ChatStore.Save(workspace, turns, id, model, effort);
                 ChatStore.Touch(workspace, id, null, steps);
+                LinkSession(id, "worker", workspace,
+                    sourceId, "worker", workspace, SessionLineage.Btw);
                 return;
             }
             var session = CreateSession(workspace, steps: steps);
@@ -2631,6 +2779,8 @@ namespace OpenLoop.App
             // 旁路用的模型/强度跟着落盘：转成普通会话后重开也还是它
             ChatStore.Save(workspace, turns, session.Id, model, effort);
             ChatStore.Touch(workspace, session.Id, null, steps);
+            LinkSession(session.Id, "worker", session.Workspace,
+                sourceId, "worker", workspace, SessionLineage.Btw);
             EnsureView(session).RequestTitle();
             RefreshOverview();
         }
@@ -2745,6 +2895,7 @@ namespace OpenLoop.App
                 {
                     case "new": OpenNewSessionTab(""); break;
                     case "list": ShowOverview(); break;
+                    case "notifications": NotificationsForm.ShowLog(this); break;
                     case "loop": OpenLoop(); break;
                     case "theme-light": ApplyTheme("light"); break;
                     case "theme-dark": ApplyTheme("dark"); break;
@@ -2790,14 +2941,14 @@ namespace OpenLoop.App
         {
             _settings.Language = language;
             try { _settings.Save(); } catch (Exception ex) { AppLog.Warn("保存语言失败：" + ex.Message); }
-            AntdUI.Notification.info(this, "Language", Localization.T("LanguageChanged"), AntdUI.TAlignFrom.TR, null, 3);
+            AppNotify.info(this, "Language", Localization.T("LanguageChanged"), AntdUI.TAlignFrom.TR, null, 3);
         }
 
         private void ApplyTheme(string theme)
         {
             _settings.Theme = theme;
             try { _settings.Save(); } catch (Exception ex) { AppLog.Warn("保存主题失败：" + ex.Message); }
-            AntdUI.Notification.info(this, Localization.T("主题"), Localization.T("已保存，重启 OpenLoop 后生效。"), AntdUI.TAlignFrom.TR, null, 3);
+            AppNotify.info(this, Localization.T("主题"), Localization.T("已保存，重启 OpenLoop 后生效。"), AntdUI.TAlignFrom.TR, null, 3);
         }
 
         private void OpenSettings()
@@ -2810,7 +2961,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 AppLog.Error("打开设置失败", ex);
-                AntdUI.Notification.error(this, Localization.T("设置失败"), ex.Message, AntdUI.TAlignFrom.TR, null, 6);
+                AppNotify.error(this, Localization.T("设置失败"), ex.Message, AntdUI.TAlignFrom.TR, null, 6);
                 return;
             }
 
@@ -2829,13 +2980,13 @@ namespace OpenLoop.App
                 {
                     _settings.Save();
                     ModelCatalog.Set(ModelCatalog.All.ToList());
-                    AntdUI.Notification.success(this, Localization.T("设置已保存"), Localization.T("配置写入本地。"),
+                    AppNotify.success(this, Localization.T("设置已保存"), Localization.T("配置写入本地。"),
                         AntdUI.TAlignFrom.TR, null, 2);
                 }
                 catch (Exception ex)
                 {
                     AppLog.Error("保存设置失败", ex);
-                    AntdUI.Notification.error(this, Localization.T("保存失败"), ex.Message, AntdUI.TAlignFrom.TR, null, 4);
+                    AppNotify.error(this, Localization.T("保存失败"), ex.Message, AntdUI.TAlignFrom.TR, null, 4);
                 }
             }
         }
@@ -2852,7 +3003,7 @@ namespace OpenLoop.App
                 ?? global::OpenLoop.Service.Runtime.AppPaths.DataRoot;
             var view = EnsureLoop(workspace, select: true, sessionId: "",
                 title: Localization.T("配置 ") + DateTime.Now.ToString("HH:mm"), seedTitle: true);
-            view?.Post(SettingsPrompt(page));
+            view?.Post(SettingsPrompt(page), "host");
         }
 
         /// <summary>
@@ -2869,7 +3020,7 @@ namespace OpenLoop.App
             var view = EnsureLoop(target, select: true, sessionId: "",
                 title: Localization.T("HarnessConfigPrompt") + " " + DateTime.Now.ToString("HH:mm"),
                 seedTitle: true);
-            view?.Post(HarnessPrompt(page, target));
+            view?.Post(HarnessPrompt(page, target), "host");
         }
 
         private static string HarnessPrompt(string page, string workspace) => $"""

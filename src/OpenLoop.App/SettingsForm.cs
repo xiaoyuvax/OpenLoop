@@ -226,7 +226,7 @@ namespace OpenLoop.App
             if (provider == null) return;
             if (provider.IsPlugin)
             {
-                AntdUI.Notification.warn(this, Localization.T("PluginProviderTitle"),
+                AppNotify.warn(this, Localization.T("PluginProviderTitle"),
                     Localization.T("PluginProviderBody"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
@@ -280,7 +280,7 @@ namespace OpenLoop.App
             {
                 _lblStatus.Text = Localization.T("FetchFailed");
                 AppLog.Error("拉取模型失败", ex);
-                AntdUI.Notification.error(this, Localization.T("FetchFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AppNotify.error(this, Localization.T("FetchFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
             }
             finally
             {
@@ -392,7 +392,7 @@ namespace OpenLoop.App
             if (provider == null || string.IsNullOrWhiteSpace(id))
             {
                 if (ReferenceEquals(sender, _btnModelProps))
-                    AntdUI.Notification.warn(this, Localization.T("PickModelFirst"), Localization.T("PickModelFirstBody"),
+                    AppNotify.warn(this, Localization.T("PickModelFirst"), Localization.T("PickModelFirstBody"),
                         AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
@@ -408,7 +408,7 @@ namespace OpenLoop.App
             {
                 if (provider.Models.Contains(newId, StringComparer.OrdinalIgnoreCase))
                 {
-                    AntdUI.Notification.warn(this, Localization.T("ModelExists"), string.Format(Localization.T("ModelExistsBody"), newId),
+                    AppNotify.warn(this, Localization.T("ModelExists"), string.Format(Localization.T("ModelExistsBody"), newId),
                         AntdUI.TAlignFrom.TR, null, 4);
                     return;
                 }
@@ -452,7 +452,7 @@ namespace OpenLoop.App
             string model = _lstModels.SelectedItem as string ?? provider.Models.FirstOrDefault();
             if (string.IsNullOrWhiteSpace(provider.BaseUrl) || string.IsNullOrWhiteSpace(model))
             {
-                AntdUI.Notification.warn(this, Localization.T("MissingConfig"), Localization.T("MissingConfigBody"),
+                AppNotify.warn(this, Localization.T("MissingConfig"), Localization.T("MissingConfigBody"),
                     AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
@@ -465,14 +465,14 @@ namespace OpenLoop.App
                     provider.BaseUrl.Trim(), model, AppSettings.ResolveKey(provider));
                 var reply = await reasoner.CompleteAsync([new LlmMessage("user", "只回复两个字母：ok")]);
                 _lblStatus.Text = Localization.T("ConnectionOk");
-                AntdUI.Notification.success(this, Localization.T("ConnectionOk"),
+                AppNotify.success(this, Localization.T("ConnectionOk"),
                     $"{model} → {reply.Content?.Trim()}", AntdUI.TAlignFrom.TR, null, 4);
             }
             catch (Exception ex)
             {
                 _lblStatus.Text = Localization.T("ConnectionFailed");
                 AppLog.Error("测试连接失败", ex);
-                AntdUI.Notification.error(this, Localization.T("ConnectionFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 6);
+                AppNotify.error(this, Localization.T("ConnectionFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 6);
             }
             finally
             {
@@ -604,7 +604,7 @@ namespace OpenLoop.App
             catch (Exception ex)
             {
                 AppLog.Error("切换技能失败", ex);
-                AntdUI.Notification.error(this, Localization.T("TabSkills"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AppNotify.error(this, Localization.T("TabSkills"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
             await LoadSkillsAsync();
@@ -626,7 +626,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, Localization.T("InstallSkill"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AppNotify.error(this, Localization.T("InstallSkill"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
             await LoadSkillsAsync();
@@ -640,7 +640,7 @@ namespace OpenLoop.App
             if (rows.Count == 0) return;
             if (rows.Count > 1)
             {
-                AntdUI.Notification.warn(this, Localization.T("UninstallSkill"), Localization.T("UninstallOneOnly"), AntdUI.TAlignFrom.TR, null, 4);
+                AppNotify.warn(this, Localization.T("UninstallSkill"), Localization.T("UninstallOneOnly"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
             var row = rows[0];
@@ -648,13 +648,13 @@ namespace OpenLoop.App
             //项目页同名的全局技能只是被项目那份盖住，卸载得回全局页做
             if (!GlobalSkillScope && row.Skill.Global)
             {
-                AntdUI.Notification.warn(this, Localization.T("UninstallSkill"), Localization.T("UninstallGlobalFirst"), AntdUI.TAlignFrom.TR, null, 4);
+                AppNotify.warn(this, Localization.T("UninstallSkill"), Localization.T("UninstallGlobalFirst"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
             //.opencode 下的是 opencode agent 装的：不归 OpenLoop 管，也不在技能库根目录下
             if (!GlobalSkillScope && (row.Skill.Source ?? "").StartsWith(".opencode/", StringComparison.Ordinal))
             {
-                AntdUI.Notification.warn(this, Localization.T("UninstallSkill"),
+                AppNotify.warn(this, Localization.T("UninstallSkill"),
                     Localization.T("UninstallOpencodeOwned"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
@@ -677,7 +677,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, Localization.T("UninstallSkill"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AppNotify.error(this, Localization.T("UninstallSkill"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
             await LoadSkillsAsync();

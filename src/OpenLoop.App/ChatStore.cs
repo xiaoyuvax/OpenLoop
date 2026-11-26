@@ -172,9 +172,13 @@ namespace OpenLoop.App
                     User = string.IsNullOrEmpty(entry.User) ? null : new ChatMessage("user", entry.User),
                     // 空白正文（中途崩掉的轮次）读回来补一句可操作的说明，与 Worker 侧同一口径；
                     // 一律按「已结束」显示，不能把崩溃的轮次恢复成「还在跑」。
-                    Assistant = new ChatMessage("assistant",
-                        OpenLoop.Service.Storage.ChatHistory.AssistantFor(entry.Assistant, entry.Steps,
+                    // 被「立即」消息顶替的轮次本来就没有待办，补说明反而误导；
+                    // 协作提示轮允许没有正文（用户只看思考区），同样不补。
+                    Assistant = new ChatMessage("assistant", entry.Superseded || entry.Notice
+                        ? entry.Assistant ?? ""
+                        : OpenLoop.Service.Storage.ChatHistory.AssistantFor(entry.Assistant, entry.Steps,
                             entry.Streaming)),
+                    Superseded = entry.Superseded,
                     ReasoningText = entry.Reasoning ?? "",
                     ToolCallLines = entry.ToolLines ?? "",
                     ToolTraceText = entry.ToolLines ?? "",
@@ -225,10 +229,12 @@ namespace OpenLoop.App
             {
                 User = x.Turn.UserText,
                 // 已结束的轮次不许落盘成空白：重新打开会变成一条「静默中断」。补法在 ChatHistory.AssistantFor
-                // 里，与 Worker（A 的 Persist）同一口径，别在这里再写一份。
-                Assistant = x.Turn.Streaming
+                // 里，与 Worker（A 的 Persist）同一口径，别在这里再写一份。被「立即」消息顶替的轮次与
+                // 协作提示轮除外：前者下一轮就是用户的新消息，后者用户只看思考区，都不需要说明。
+                Assistant = x.Turn.Streaming || x.Turn.Superseded || x.Turn.Notice
                     ? x.Turn.AssistantText
                     : OpenLoop.Service.Storage.ChatHistory.AssistantFor(x.Turn.AssistantText, x.Turn.ToolStepCount),
+                Superseded = x.Turn.Superseded,
                 Reasoning = x.Turn.ReasoningText,
                 ToolLines = x.Turn.ToolCallLines,
                 Timeline = x.Turn.TimelineText,

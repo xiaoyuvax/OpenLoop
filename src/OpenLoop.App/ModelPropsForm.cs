@@ -52,7 +52,7 @@ namespace OpenLoop.App
         {
             if (ModelId.Length == 0)
             {
-                AntdUI.Notification.warn(this, Localization.T("MissingModelId"), Localization.T("MissingModelIdBody"), AntdUI.TAlignFrom.TR, null, 4);
+                AppNotify.warn(this, Localization.T("MissingModelId"), Localization.T("MissingModelIdBody"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
             DialogResult = DialogResult.OK;

@@ -504,16 +504,8 @@ namespace OpenLoop.App
             title = Localization.Translate(title);
             text = Localization.Translate(text);
             // 与所属会话同一口径：留久一点，并给一键回到该会话的入口
-            var config = new AntdUI.Notification.Config(form, title, text,
-                error ? AntdUI.TType.Error : AntdUI.TType.Info, AntdUI.TAlignFrom.TR,
-                null, error ? 12 : 10);
-            if (ActivatePage != null)
-                config.Link = new AntdUI.Notification.ConfigLink(Localization.T("打开会话"), () =>
-                {
-                    ActivatePage();
-                    return false;
-                });
-            AntdUI.Notification.open(config);
+            AppNotify.Show(form, title, text, error, ActivatePage,
+                error ? AntdUI.TType.Error : AntdUI.TType.Info);
         }
     }
 }

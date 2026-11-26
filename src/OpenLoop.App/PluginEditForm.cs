@@ -46,7 +46,7 @@ namespace OpenLoop.App
         {
             if (string.IsNullOrWhiteSpace(_txtId.Text))
             {
-                AntdUI.Notification.warn(this, Localization.T("MissingPluginId"), Localization.T("MissingPluginIdBody"), AntdUI.TAlignFrom.TR, null, 4);
+                AppNotify.warn(this, Localization.T("MissingPluginId"), Localization.T("MissingPluginIdBody"), AntdUI.TAlignFrom.TR, null, 4);
                 return;
             }
 
@@ -63,7 +63,7 @@ namespace OpenLoop.App
             }
             catch (Exception ex)
             {
-                AntdUI.Notification.error(this, Localization.T("SaveFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
+                AppNotify.error(this, Localization.T("SaveFailed"), ex.Message, AntdUI.TAlignFrom.TR, null, 5);
                 return;
             }
 

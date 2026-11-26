@@ -158,6 +158,8 @@ namespace OpenLoop.Core.Loop
             List<string> problems, FeatureRef reference, FeatureRecord feature,
             string name, double min, double max)
         {
+            // 参数可省：候选与账本都没写时由默认策略兜底（如 guard.promise 默认就没带 max）
+            if (!Has(reference, feature, name)) return;
             if (!TryNumber(reference, feature, name, out double value))
             {
                 problems.Add($"{reference.Id} 的 {name} 不是数字");
@@ -167,12 +169,21 @@ namespace OpenLoop.Core.Loop
                 problems.Add($"{reference.Id} 的 {name}={value} 超出允许范围 [{min}, {max}]");
         }
 
+        /// <summary>参数写没写：候选或账本任一给了就算（值为非数字时仍要报错）。</summary>
+        private static bool Has(FeatureRef reference, FeatureRecord feature, string name)
+            => reference.Params?.ContainsKey(name) == true
+               || (feature.Payload.ValueKind == JsonValueKind.Object
+                   && feature.Payload.TryGetProperty(name, out _));
+
         private static bool TryNumber(
             FeatureRef reference, FeatureRecord feature, string name, out double value)
         {
-            if (reference.Params != null && reference.Params.TryGetValue(name, out var own)
-                && own.ValueKind == JsonValueKind.Number && own.TryGetDouble(out value))
-                return true;
+            // 候选写了就只认它：写错类型不能悄悄回落到账本里的旧值
+            if (reference.Params != null && reference.Params.TryGetValue(name, out var own))
+            {
+                value = 0;
+                return own.ValueKind == JsonValueKind.Number && own.TryGetDouble(out value);
+            }
             if (feature.Payload.ValueKind == JsonValueKind.Object
                 && feature.Payload.TryGetProperty(name, out var fallback)
                 && fallback.ValueKind == JsonValueKind.Number && fallback.TryGetDouble(out value))

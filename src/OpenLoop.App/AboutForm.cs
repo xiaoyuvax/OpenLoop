@@ -166,7 +166,7 @@ namespace OpenLoop.App
             {
                 AppLog.Error("退回失败", ex);
                 _lblStatus.Text = Localization.T("状态: 退回失败");
-                AntdUI.Notification.error(this, Localization.T("退回失败"), ex.Message,
+                AppNotify.error(this, Localization.T("退回失败"), ex.Message,
                     AntdUI.TAlignFrom.TR, null, 4);
             }
             finally

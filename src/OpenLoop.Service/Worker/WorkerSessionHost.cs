@@ -45,6 +45,9 @@ namespace OpenLoop.Service.Worker
         /// <summary>自动提示的来源：collab（协作）/ mention（私信）/ puppet（Puppet 动作），界面据此标折叠头。</summary>
         public string NoticeKind { get; set; } = string.Empty;
 
+        /// <summary>被排队里的「立即」消息顶替（不是用户停止）：正文为空时不补占位说明，下一轮就是那条新消息。</summary>
+        public bool Superseded { get; set; }
+
         /// <summary>这一轮结束时的完整消息（含工具调用/结果），用于下一轮的上下文。</summary>
         public List<LlmMessage> Transcript { get; set; }
     }
@@ -211,7 +214,12 @@ namespace OpenLoop.Service.Worker
                     User = entry.User ?? "",
                     // 中途崩掉的轮次（落盘时还在跑、正文为空）读回来补一句可操作的说明：
                     // 补法在 ChatHistory.AssistantFor，与壳侧（ChatStore.Load）同一口径。
-                    Assistant = ChatHistory.AssistantFor(entry.Assistant ?? "", entry.Steps, entry.Streaming),
+                    // 被「立即」消息顶替的轮次不补：下一轮本来就是用户的新消息；
+                    // 协作提示轮允许没有正文（用户只看思考区），也不补。
+                    Assistant = entry.Superseded || entry.Notice
+                        ? entry.Assistant ?? ""
+                        : ChatHistory.AssistantFor(entry.Assistant ?? "", entry.Steps, entry.Streaming),
+                    Superseded = entry.Superseded,
                     Reasoning = entry.Reasoning ?? "",
                     ToolLines = entry.ToolLines ?? "",
                     Timeline = entry.Timeline ?? "",
@@ -971,12 +979,16 @@ namespace OpenLoop.Service.Worker
                     turn.Streaming = false;
                     turn.Status = "";
                     turn.Steps = result.Steps > turn.Steps ? result.Steps : turn.Steps;
+                    // 软打断（「立即」插队）不像用户停止：下一轮紧跟着就是那条消息，空正文不补「（已停止）」
+                    turn.Superseded = session.Interrupt || session.Pending.Exists(p => p.Immediate);
                     turn.Assistant = result.Outcome switch
                     {
                         "error" => FailedText(result.ErrorMessage),
                         // 被打断的轮次保留已经流出来的正文，否则用户前面看到的输出会凭空消失
                         "stopped" when string.IsNullOrWhiteSpace(result.FinalAnswer) || ServerNotice.IsNotice(result.FinalAnswer)
-                            => string.IsNullOrWhiteSpace(turn.Assistant) ? ServerNotice.Stopped : turn.Assistant,
+                            => string.IsNullOrWhiteSpace(turn.Assistant)
+                                ? (turn.Superseded ? "" : ServerNotice.Stopped)
+                                : turn.Assistant,
                         _ => result.FinalAnswer ?? turn.Assistant
                     };
                     turn.Failed = result.Outcome == "error";
@@ -1103,6 +1115,7 @@ namespace OpenLoop.Service.Worker
                         .Select(p => new ChatPhaseEntry { Thinking = p.Thinking, Answer = p.Answer }).ToList(),
                     Steps = t.Steps,
                     Ms = t.Ms,
+                    Superseded = t.Superseded,
                     Notice = t.Notice,
                     NoticeKind = t.NoticeKind,
                     Model = session.Model,
@@ -1232,8 +1245,10 @@ namespace OpenLoop.Service.Worker
             Turns = session.Turns.Select(t => new WorkerTurn
             {
                 User = t.User,
-                // 与壳侧（ChatStore.Save）同一口径：空白正文补一句可操作的说明，正在跑的轮次留原样
-                Assistant = t.Streaming ? t.Assistant : ChatHistory.AssistantFor(t.Assistant, t.Steps),
+                // 与壳侧（ChatStore.Save）同一口径：空白正文补一句可操作的说明，正在跑的轮次留原样；
+                // 被「立即」消息顶替的轮次与协作提示轮留空（用户只看思考区），不补说明。
+                Assistant = t.Streaming || t.Superseded || t.Notice ? t.Assistant : ChatHistory.AssistantFor(t.Assistant, t.Steps),
+                Superseded = t.Superseded,
                 Reasoning = t.Reasoning,
                 ToolLines = t.ToolLines,
                 Timeline = t.TimelineRun?.Render() ?? t.Timeline,

@@ -33,6 +33,15 @@ namespace OpenLoop.Service.Loop
         public string Phase { get; set; } = "";
 
         public int TaskCount { get; set; }
+
+        /// <summary>本轮开始时刻（ISO）；界面上没有别的活动信号时靠它算已用时长。</summary>
+        public string StartedAt { get; set; }
+
+        /// <summary>评测进度：已完成运行数 / 总运行数（题目数 × 2），以及正在跑的题目。</summary>
+        public int ProgressDone { get; set; }
+        public int ProgressTotal { get; set; }
+        public string ProgressTask { get; set; }
+
         public int BaselinePassed { get; set; }
         public int CandidatePassed { get; set; }
         public int? CandidateVersion { get; set; }
@@ -107,7 +116,16 @@ namespace OpenLoop.Service.Loop
                 if (_jobs.TryGetValue(key, out var existing) && existing.State.State == "running")
                     return Clone(existing.State);
 
-                job = new Job { State = new LoopEvolveState { Workspace = workspace, State = "running", Phase = "preparing" } };
+                job = new Job
+                {
+                    State = new LoopEvolveState
+                    {
+                        Workspace = workspace,
+                        State = "running",
+                        Phase = "preparing",
+                        StartedAt = DateTimeOffset.Now.ToString("O")
+                    }
+                };
                 _jobs[key] = job;
             }
 
@@ -319,6 +337,9 @@ namespace OpenLoop.Service.Loop
                     if (pending.Count == 0)
                     {
                         string problems = proposal.Problems.Count == 0 ? "" : "：" + string.Join("；", proposal.Problems);
+                        // 模型原始输出不落盘，失败后只能靠日志复盘它到底提了什么
+                        AppLog.Warn("演进候选被拒：" + proposal.Error + problems
+                                    + "；原始输出：" + TrimLog(proposal.Raw));
                         Finish(job, s =>
                         {
                             s.State = "error";
@@ -341,10 +362,21 @@ namespace OpenLoop.Service.Loop
                 }
                 candidate = PromptCatalog.OverlayPending(ledger, workspace, candidate, features);
 
-                Update(job, s => s.Phase = "evaluating");
+                Update(job, s =>
+                {
+                    s.Phase = "evaluating";
+                    s.ProgressDone = 0;
+                    s.ProgressTotal = tasks.Tasks.Count * 2;
+                });
                 var runner = TaskRunner(settings, workspace, ledger, features, model, effort);
                 var report = await new Gate(ledger, tasks, features, runner).EvaluateAsync(
-                    baseline, candidate, ct, harnessFindings.Select(f => f.Id).ToList());
+                    baseline, candidate, ct, harnessFindings.Select(f => f.Id).ToList(),
+                    (done, total, task) => Update(job, s =>
+                    {
+                        s.ProgressDone = done;
+                        s.ProgressTotal = total;
+                        s.ProgressTask = task;
+                    }));
                 if (report.Adopted && pending.Count > 0)
                     PromptCatalog.CommitPending(workspace);
                 TriageAfterGate(workspace, batch, openFindings, report);
@@ -481,6 +513,10 @@ namespace OpenLoop.Service.Loop
                 State = state.State,
                 Phase = state.Phase,
                 TaskCount = state.TaskCount,
+                StartedAt = state.StartedAt,
+                ProgressDone = state.ProgressDone,
+                ProgressTotal = state.ProgressTotal,
+                ProgressTask = state.ProgressTask,
                 BaselinePassed = state.BaselinePassed,
                 CandidatePassed = state.CandidatePassed,
                 CandidateVersion = state.CandidateVersion,
@@ -491,6 +527,9 @@ namespace OpenLoop.Service.Loop
         }
 
         private static string Normalize(string workspace) => (workspace ?? "").Trim().ToLowerInvariant();
+
+        private static string TrimLog(string text)
+            => string.IsNullOrEmpty(text) ? "（空）" : text.Length <= 2000 ? text : text[..2000] + "…";
 
         private sealed class Job
         {

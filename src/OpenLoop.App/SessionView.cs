@@ -220,10 +220,16 @@ namespace OpenLoop.App
 
         internal event Action<Session> StateChanged;
         internal event Action<Session, string> ComplaintRequested;
-        internal event Action<Session, string> ForkRequested;
+
+        /// <summary>带要求的 /sysprompt、/agentsmd：交给宿主创建或复用旁路会话执行修改。</summary>
+        internal event Action<Session, string, string> TargetEditRequested;
+        internal event Action<Session, string, ChatTurn> ForkRequested;
         internal event Action<Session, string> NewSessionRequested;
         internal event Action<Session> TitleChanged;
-        internal event Action<string, IReadOnlyList<ChatTurn>, string, string> SideWorkEvicted;
+        internal event Action<string, IReadOnlyList<ChatTurn>, string, string, string> SideWorkEvicted;
+
+        /// <summary>要展开左栏（目标编辑）或右侧栏：平铺方块放不下侧栏，宿主据此挂回普通标签页。</summary>
+        internal event Action NeedsFullView;
 
         /// <summary>壳内存里打开的会话（由宿主注入）：@ 引用同工作区其他会话的数据源。</summary>
         internal Func<IReadOnlyList<Session>> Sessions { get; set; }
@@ -599,6 +605,7 @@ namespace OpenLoop.App
             // 启用提示的动作清单从 manifest 生成（不硬编码）；缓存没热就先用兜底句
             _ = PuppetActions.LoadAsync();
             if (!_targetPane.Bind(spec, Session?.Id ?? "", _ => SyncTarget(kind, workspace))) return;
+            NeedsFullView?.Invoke();
             _targetSplit.Panel1Collapsed = false;
             ApplyTargetLayout();
         }
@@ -716,6 +723,7 @@ namespace OpenLoop.App
             bool opening = _upperSplit.Panel2Collapsed;
             if (opening)
             {
+                NeedsFullView?.Invoke();
                 // 侧栏本体先长到目标宽度：展开瞬间 Panel2 就接近最终尺寸，SplitterDistance 只需微调，
                 // resize 的重画面积最小（折叠态下 Panel2 是一个没有内容的 Dock=Fill 容器，改宽不闪）。
                 if (_side.Width < Dip(360)) _side.Width = Dip(360);
@@ -839,7 +847,7 @@ namespace OpenLoop.App
                 {
                     e.Result = false;
                     if (overflow) Notify(Localization.T("附件太多"), string.Format(Localization.T("TooManyAttachmentsBody"), pasteLimit), error: true);
-                    UpdateAttachments();
+                    UpdateAttachments(announce: true);
                     return;
                 }
             }
@@ -875,10 +883,10 @@ namespace OpenLoop.App
             ("/btw", Localization.T("在右侧栏用当前上下文跑一个只读旁路任务")),
             ("/complain", Localization.T("把对 Worker 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）")),
             ("/report", Localization.T("把一条值得改进的观察记入 findings（不立即处理，演进时分诊）")),
-            ("/sysprompt", Localization.T("打开目标会话：左栏显示系统提示词模板，用聊天让 agent 改")),
-            ("/agentsmd", Localization.T("打开目标会话：左栏显示 AGENTS.md，用聊天让 agent 改")),
+            ("/sysprompt", Localization.T("/sysprompt <要求>：由本会话的旁路会话改系统提示词模板（不带要求=打开编辑器）")),
+            ("/agentsmd", Localization.T("/agentsmd <要求>：由本会话的旁路会话改 AGENTS.md（不带要求=打开编辑器）")),
             ("/compact", Localization.T("把较早的对话压缩成摘要，省下上下文")),
-            ("/fork", Localization.T("复制当前上下文开一个新会话（可继续对话）并跳转")),
+            ("/fork", Localization.T("选到哪一轮（含）后复制上下文开一个新会话（可继续对话）并跳转")),
             ("/puppet", Localization.T("打开右侧 Puppet Action 清单；/puppet <action> <参数> 直接执行")),
             ("/new", Localization.T("开一个新会话，沿用当前的模型与强度"))
         };
@@ -1003,7 +1011,7 @@ namespace OpenLoop.App
             var previous = _sideBtw.Snapshot();
             if (previous.Count > 0)
             {
-                SideWorkEvicted?.Invoke(Session.Workspace, previous, _sideBtw.Model, _sideBtw.Effort);
+                SideWorkEvicted?.Invoke(Session.Workspace, previous, _sideBtw.Model, _sideBtw.Effort, Session.Id);
                 _sideBtw.Reset();
             }
             _sideBtw.Run(request, BuildHistory());
@@ -1019,7 +1027,7 @@ namespace OpenLoop.App
         {
             var turns = _sideBtw.Snapshot();
             if (turns.Count == 0) return;
-            SideWorkEvicted?.Invoke(Session.Workspace, turns, _sideBtw.Model, _sideBtw.Effort);
+            SideWorkEvicted?.Invoke(Session.Workspace, turns, _sideBtw.Model, _sideBtw.Effort, Session.Id);
             _sideBtw.Reset();
         }
 
@@ -1313,15 +1321,19 @@ namespace OpenLoop.App
                 return true;
             }
 
-            if (IsCommand(text, "/sysprompt"))
+            if (IsCommand(text, "/sysprompt") || IsCommand(text, "/agentsmd") || IsCommand(text, "/agents"))
             {
-                OpenTarget(TargetSpec.PromptKind);
-                return true;
-            }
-
-            if (IsCommand(text, "/agentsmd"))
-            {
-                OpenTarget(TargetSpec.AgentsKind);
+                bool agents = !IsCommand(text, "/sysprompt");
+                string command = IsCommand(text, "/agentsmd") ? "/agentsmd"
+                    : IsCommand(text, "/agents") ? "/agents" : "/sysprompt";
+                string request = text[command.Length..].Trim();
+                // 不带要求 = 只在当前会话打开编辑器；带要求 = 由本会话的旁路会话执行修改
+                if (request.Length == 0)
+                {
+                    OpenTarget(agents ? TargetSpec.AgentsKind : TargetSpec.PromptKind);
+                    return true;
+                }
+                TargetEditRequested?.Invoke(Session, agents ? TargetSpec.AgentsKind : TargetSpec.PromptKind, request);
                 return true;
             }
 
@@ -1358,7 +1370,7 @@ namespace OpenLoop.App
                     Notify(Localization.T("缺少请求"), Localization.T("/fork 后面要写具体请求，例如：/fork 继续把第二项改完。"), error: true);
                     return false;
                 }
-                ForkRequested?.Invoke(Session, request);
+                ShowForkPicker(request);
                 return true;
             }
 
@@ -1369,6 +1381,21 @@ namespace OpenLoop.App
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// /fork 的第一步：先弹轮次选择框（与「跳到末尾」的轮次菜单同一套清单，以用户输入为准），
+        /// 选中哪一轮就复制到那一轮（含）的上下文再分叉；选择框收起前不发请求。
+        /// </summary>
+        private void ShowForkPicker(string request)
+        {
+            if (Session?.Book?.Turns.Any(t => t.User != null) != true)
+            {
+                Notify(Localization.T("分叉 "), Localization.T("没有可复制的对话。"), error: true);
+                return;
+            }
+            NeedsFullView?.Invoke();   // 选择框画在正文上：平铺方块里要先挂回普通标签页
+            _chat.ShowTurnPicker(turn => ForkRequested?.Invoke(Session, request, turn));
         }
 
         internal static bool IsCommand(string text, string command)
@@ -1664,7 +1691,7 @@ namespace OpenLoop.App
             _attachments.Clear();
             _attachments.AddRange(picked);
             if (overflow) Notify(Localization.T("附件太多"), string.Format(Localization.T("TooManyAttachmentsBody"), limit), error: true);
-            UpdateAttachments();
+            UpdateAttachments(announce: true);
         }
 
         /// <summary>拖放到输入区的文件追加成附件（和附件按钮同一套上限与去重）。</summary>
@@ -1673,7 +1700,7 @@ namespace OpenLoop.App
             int limit = MediaModels.AttachmentLimit(_model);
             if (AttachmentsUi.Add(_attachments, paths, limit))
                 Notify(Localization.T("附件太多"), string.Format(Localization.T("TooManyAttachmentsBody"), limit), error: true);
-            UpdateAttachments();
+            UpdateAttachments(announce: true);
         }
 
         private void OnAttachMenu(object sender, AntdUI.ObjectNEventArgs e)
@@ -1686,7 +1713,7 @@ namespace OpenLoop.App
             UpdateAttachments();
         }
 
-        private void UpdateAttachments()
+        private void UpdateAttachments(bool announce = false)
         {
             int limit = MediaModels.AttachmentLimit(_model);
             AttachmentsUi.FillMenu(_btnAttach, _attachments);
@@ -1694,6 +1721,8 @@ namespace OpenLoop.App
             _lblAttach.Visible = _attachments.Count > 0;
             if (_attachments.Count > 0) _tips.SetToolTip(_lblAttach, string.Join("\n", _attachments));
             UpdateSendButton();
+            if (announce && _attachments.Count > 0)
+                Notify(Localization.T("已添加附件"), AttachmentsUi.Label(_attachments, limit));
         }
 
         private void OnEffortChanged(object sender, AntdUI.ObjectNEventArgs e)
@@ -2097,7 +2126,10 @@ namespace OpenLoop.App
                 string raw = remoteTurn?.Assistant ?? turn.AssistantText;
                 turn.AssistantText = outcome == "error" && raw.Trim().Length == 0
                     ? FailurePrefix + (failure ?? "执行失败")
-                    : CleanAnswer(raw, remoteTurn?.FinishReason);
+                    // 协作提示轮允许没有正文（用户只看思考区）：不补「没有产出正文」占位
+                    : turn.Notice && raw.Trim().Length == 0
+                        ? turn.AssistantText
+                        : CleanAnswer(raw, remoteTurn?.FinishReason);
             }
 
             _lblStatus.Text = Localization.T("Status") + outcome switch
@@ -2329,17 +2361,8 @@ namespace OpenLoop.App
             var form = FindForm();
             if (form == null) return;
             // 会话相关通知留久一点（默认 6 秒），点「打开会话」跳到本会话并随手关掉通知
-            // （Call 返回 false = 不吞掉这次点击，让它继续走 ClickClose 关闭）
-            var config = new AntdUI.Notification.Config(form, title, text,
-                error ? AntdUI.TType.Error : AntdUI.TType.Success, AntdUI.TAlignFrom.TR,
-                null, error ? 12 : 10);
-            if (ActivatePage != null)
-                config.Link = new AntdUI.Notification.ConfigLink("打开会话", () =>
-                {
-                    ActivatePage();
-                    return false;
-                });
-            AntdUI.Notification.open(config);
+            AppNotify.Show(form, title, text, error, ActivatePage,
+                error ? AntdUI.TType.Error : AntdUI.TType.Success);
         }
 
         private int _ledgerVersion;

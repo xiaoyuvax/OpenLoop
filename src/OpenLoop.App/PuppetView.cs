@@ -150,7 +150,7 @@ namespace OpenLoop.App
         private void WarnMissing(string message)
         {
             if (FindForm() is { } form)
-                AntdUI.Notification.warn(form, Localization.T("PuppetMissingTitle"), message, AntdUI.TAlignFrom.TR, null, 3);
+                AppNotify.warn(form, Localization.T("PuppetMissingTitle"), message, AntdUI.TAlignFrom.TR, null, 3);
         }
 
         /// <summary>/complain 只带一句与读板入口；上下文由 Loop 按需读留言板。</summary>

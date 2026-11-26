@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using OpenLoop.Core.Agent;
 using OpenLoop.Core.Messages;
 using OpenLoop.Core.Reasoning;
@@ -25,6 +26,8 @@ namespace OpenLoop.Core.OpenCode
         private readonly Func<bool> _keepToolsNow;
         /// <summary>连续多久没有新输出就判挂住；同模型挂过一次后按学到的更短上限起步。</summary>
         private int _idleSeconds = 600;
+        /// <summary>连续多少步只发了空转探针（reasoner 每轮建一次，跨步有效）。</summary>
+        private int _probeSteps;
 
         public OpenCodeReasoner(OpenCodeClient client, OpenCodeModelRef model, string workspace = null,
             ApprovalHandler approve = null, bool keepTools = false)
@@ -72,11 +75,17 @@ namespace OpenLoop.Core.OpenCode
             => _client?.SweepStaleSessionsAsync(CancellationToken.None) ?? Task.CompletedTask;
 
         // 协议块紧跟 system，保证每轮 prompt 前缀逐字一致（上游前缀缓存靠这个），也避免在尾部每次追加。
+        // 免费模型保留原生工具表时原生工具是真能跑的（read/grep/shell），旧文案「native tool calling is disabled」
+        // 与事实相反：模型据此反复用 echo/原生调用试探工具面，迟迟发不出只在文本协议里的工具（F-... 见 findings）。
         private const string Protocol =
-            "[protocol]\nNative tool calling is disabled in this session; the calling application provides the tools. " +
-            "To use a tool, print one line: tool-call: {\"tool\":\"<name>\",\"args\":{...}} — the application executes that " +
-            "line and sends you tool-result: {...} as the next message. Never emit native tool calls, never claim " +
+            "[protocol]\nThe host's tools are reached only through the text protocol: print one line " +
+            "tool-call: {\"tool\":\"<name>\",\"args\":{...}} and the application executes it and sends you " +
+            "tool-result: {...} as the next message. Native tool calls, where this session has them, are a narrower " +
+            "runtime surface (file read/search/shell) and never reach the host's own tools — ProposeTask, " +
+            "RecordFinding, ReadEvidence, AskUser and the rest exist only as text-protocol lines. Never claim " +
             "that tools are unavailable, and never mention a rejected native call in your answer.\n" +
+            "If you catch yourself sending probe calls (echo, no-op reads) instead of the call you meant to make, " +
+            "stop probing: print that tool-call line as your whole reply, or give the final answer.\n" +
             "History may contain tool-call lines whose tool name starts with native:. They were already executed by the " +
             "runtime that wraps you; use them as facts and never emit a native: call yourself. " +
             "In particular, the native `execute` tool is a sandboxed Code Mode with NO filesystem, shell or file access — " +
@@ -98,6 +107,13 @@ namespace OpenLoop.Core.OpenCode
             "through the text protocol: print exactly one line `tool-call: {\"tool\":\"<name>\",\"args\":{...}}` and " +
             "wait for tool-result. Do not report missing tools; continue the task via the text protocol.\n";
 
+        /// <summary>空转探针（echo/return）烧掉整轮时的纠正提示：把模型从「试探工具面」拉回要发的那一条调用。</summary>
+        public const string ProbeHint =
+            "\n[system]\nYour last turn spent its steps on no-op probe calls (echo/return) instead of the call you " +
+            "meant to make. Host tools are reached only by printing one line `tool-call: {\"tool\":\"<name>\",\"args\":{...}}` " +
+            "and waiting for tool-result; native calls never reach them. Stop probing: send that line as your whole " +
+            "reply, or give the final answer.\n";
+
         /// <summary>
         /// F-48a2b91a：一轮里只调了 Code Mode 的 execute（没有任何正文协议调用、没有真实文件/命令类原生工具），
         /// 判为「滑进 Code Mode 死胡同」。text 含 tool-call 协议行就不算——说明它已经在用文本协议。
@@ -111,6 +127,38 @@ namespace OpenLoop.Core.OpenCode
                 !string.Equals(t.Name, "execute", StringComparison.OrdinalIgnoreCase));
             return !anyRealTool;
         }
+
+        // 免费模型保留原生工具表时会用 echo / return 之类空转调用「试探工具在不在」，
+        // 一轮能烧掉几十步（分诊会话实测 38 步），真正想发的文本协议调用始终没发出来。
+        private static readonly Regex ProbeCallRegex = new(
+            "\"(command|code)\"\\s*:\\s*\"\\s*(echo|true|:|return)\\b",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        internal const int ProbeLoopLimit = 3;
+
+        /// <summary>原生 shell/code 调用只是在 echo/return：试探工具面，不是任务本身需要的动作。</summary>
+        internal static bool IsProbeCall(OpenCodeNativeTool tool)
+            => tool != null && ProbeCallRegex.IsMatch(tool.Input ?? "");
+
+        /// <summary>这一步只发了空转探针、没有任何文本协议调用。</summary>
+        internal static bool IsProbeStep(IReadOnlyList<OpenCodeNativeTool> native, string text)
+        {
+            if (native is not { Count: > 0 }) return false;
+            if (!string.IsNullOrEmpty(text) &&
+                text.Contains("tool-call:", StringComparison.OrdinalIgnoreCase)) return false;
+            return native.Any(IsProbeCall);
+        }
+
+        /// <summary>空转探针：原生 shell/code 调用只是在 echo/return，单步三次以上判为退化循环。</summary>
+        internal static bool LooksLikeProbeLoop(IReadOnlyList<OpenCodeNativeTool> native, string text)
+            => IsProbeStep(native, text) && native.Count(IsProbeCall) >= ProbeLoopLimit;
+
+        /// <summary>
+        /// 每步只发一个 echo 探针时单步阈值永远不触发（分诊会话实测 38 步每步一个 echo）：
+        /// 跨步累计到第三步纠正一次，之后每三步再提醒，避免每步都多打一次模型。
+        /// </summary>
+        internal static bool ShouldNudgeProbeSteps(int streak)
+            => streak >= ProbeLoopLimit && streak % ProbeLoopLimit == 0;
 
         public Task<CompletionResult> CompleteAsync(IReadOnlyList<LlmMessage> messages, CancellationToken ct = default)
             => RunAsync(messages, null, null, ct);
@@ -142,12 +190,19 @@ namespace OpenLoop.Core.OpenCode
             // 免费模型保留工具表只为过上游门禁；原生工具按宿主审批执行，调用与结果实时上报。
             var decide = _decide;
             var native = new List<OpenCodeNativeTool>();
+            // 空转探针攒到 3 次就在本轮内收尾：等整轮回来再补提示，38 步已经烧完、额度也可能耗尽。
+            int probes = 0;
+            bool probeStop = false;
             Action<OpenCodeNativeTool> nativeSink = tool =>
             {
                 native.Add(tool);
+                if (IsProbeCall(tool) && ++probes >= ProbeLoopLimit) probeStop = true;
                 OnNativeTool?.Invoke(new NativeToolCall(tool.Name, tool.Input, tool.Ok, tool.Output, tool.Status, tool.DurationMs));
             };
+            bool HostStopped() => ShouldStop?.Invoke() == true || probeStop;
             var turn = await Call(prompt);
+            // 跨步累计：这一步只发了探针就记一笔，出现文本协议调用或真实动作即清零。
+            _probeSteps = _keepTools && IsProbeStep(native, turn.Text) ? _probeSteps + 1 : 0;
             // 只调了原生工具、没有正文是免费模型的常态：有原生结果就不要再整轮重发一次。
             if (string.IsNullOrWhiteSpace(turn.Text) && string.IsNullOrWhiteSpace(turn.Reasoning)
                 && native.Count == 0 && ShouldStop?.Invoke() != true)
@@ -156,15 +211,21 @@ namespace OpenLoop.Core.OpenCode
             else if (_keepTools && ShouldStop?.Invoke() != true
                 && LooksLikeCodeModeLoop(native, turn.Text))
                 turn = await Call(prompt + CodeModeHint);
+            // 同类退化的另一种形态：用 echo/return 空转试探工具面，真正要发的调用一直没发出。
+            else if (_keepTools && ShouldStop?.Invoke() != true
+                && (LooksLikeProbeLoop(native, turn.Text) || ShouldNudgeProbeSteps(_probeSteps)))
+                turn = await Call(prompt + ProbeHint);
 
             async Task<OpenCodeTurn> Call(string text)
             {
+                probes = 0;
+                probeStop = false;
                 try
                 {
                     return await RetryConnectAsync(
                         () => _client.RunTurnAsync(text, _model, _workspace, onDelta, onReasoning,
                             timeoutSeconds: _idleSeconds, decide: decide, keepTools: _keepTools, attachments: attachments,
-                            onNativeTool: nativeSink, ct: ct, onNotice: OnNotice, shouldStop: ShouldStop),
+                            onNativeTool: nativeSink, ct: ct, onNotice: OnNotice, shouldStop: HostStopped),
                         ct, onRestart);
                 }
                 catch (OpenCodeStalledException)
@@ -195,13 +256,15 @@ namespace OpenLoop.Core.OpenCode
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
 
         /// <summary>
-        /// 连接层的失败（本地 opencode/代理没起来、DNS 没通、上游连接被重置）不算这一轮失败：退避重试到连上为止。
-        /// 用户停止（ct）或软打断就按「已停止」收尾；HTTP 状态错误、额度与模型报错照旧直接抛。
+        /// 连接层的失败（本地 opencode/代理没起来、DNS 没通、上游连接被重置、对方未就绪的 408/502/503）
+        /// 不算这一轮失败：退避重试到连上为止。500/504 只重试两次。用户停止（ct）或软打断就按「已停止」收尾；
+        /// 其余 HTTP 状态错误、额度与模型报错照旧直接抛。
         /// </summary>
         private async Task<OpenCodeTurn> RetryConnectAsync(Func<Task<OpenCodeTurn>> call, CancellationToken ct, Action onRestart)
         {
             var policy = FeatureCatalog.PolicyOf(_workspace);
             bool retried = false;
+            int limitedRetries = 0;
             for (int attempt = 0; ; attempt++)
             {
                 try
@@ -210,9 +273,12 @@ namespace OpenLoop.Core.OpenCode
                     if (retried) OnNotice?.Invoke(null);
                     return turn;
                 }
-                catch (Exception ex) when (IsConnectFailure(ex))
+                catch (Exception ex) when (IsConnectFailure(ex) || IsLimitedRetry(ex))
                 {
+                    bool limited = !IsConnectFailure(ex);
                     if (!policy.ConnectRetry) throw;
+                    // 500/504 可能是这一轮本身不行，只重试两次就交回宿主报错，不占用「一直等到连上」的额度。
+                    if (limited && ++limitedRetries > LimitedRetryLimit) throw;
                     if (ct.IsCancellationRequested || ShouldStop?.Invoke() == true)
                         throw new OperationCanceledException(ct);
 
@@ -221,7 +287,9 @@ namespace OpenLoop.Core.OpenCode
                     onRestart?.Invoke();
                     TimeSpan delay = RetryBackoff.Next(
                         attempt, policy.ConnectRetryBaseSeconds, policy.ConnectRetryMaxSeconds);
-                    OnNotice?.Invoke($"连接失败，{delay.TotalSeconds:0} 秒后重试（第 {attempt + 1} 次）");
+                    OnNotice?.Invoke(limited
+                        ? $"网关/服务端错误，{delay.TotalSeconds:0} 秒后重试（第 {attempt + 1} 次，最多 {LimitedRetryLimit} 次）"
+                        : $"连接失败，{delay.TotalSeconds:0} 秒后重试（第 {attempt + 1} 次）");
                     var deadline = DateTime.UtcNow + delay;
                     while (DateTime.UtcNow < deadline)
                     {
@@ -241,12 +309,28 @@ namespace OpenLoop.Core.OpenCode
             "socket connection was closed", "socket hang up", "UND_ERR_SOCKET", "fetch failed"
         ];
 
-        /// <summary>连接层面的失败（拒绝连接、DNS 解析失败、连接被重置）才重试；能连上但对方报错的不算。</summary>
+        // 对方没就绪/临时抖动的状态码：503 是 opencode 自己重启（body 如 {"code":"service_starting"}），
+        // 502 是它前面的代理在重启窗口里拿不到有效响应，408 是临时超时——都还有连上的希望，退避重试到连上为止。
+        // 500/504 语义模糊（可能是它自己崩，也可能是这一轮本身太大），见 LimitedRetryStatuses。
+        private static readonly int[] RetryStatuses = [408, 502, 503];
+
+        // 可能是「这一轮不行」而不是「对方没就绪」的 5xx：重试有希望，但也可能每轮都撞同一堵墙，
+        // 只重试两次就放弃，避免把一次坏请求拖成无限空转。
+        private static readonly int[] LimitedRetryStatuses = [500, 504];
+
+        internal const int LimitedRetryLimit = 2;
+
+        /// <summary>连接层面的失败（拒绝连接、DNS 解析失败、连接被重置、对方未就绪）才重试；能连上但对方报错的不算。</summary>
         internal static bool IsConnectFailure(Exception ex) =>
             ex is HttpRequestException { HttpRequestError: HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError }
             || ex is HttpRequestException { InnerException: SocketException }
+            || ex is OpenCodeHttpException http && RetryStatuses.Contains(http.Status)
             || ex is InvalidOperationException
                && ConnectSignals.Any(signal => ex.Message.Contains(signal, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>500/504：重试次数有上限的那一类，不是连接层失败。</summary>
+        internal static bool IsLimitedRetry(Exception ex) =>
+            ex is OpenCodeHttpException http && LimitedRetryStatuses.Contains(http.Status);
 
         /// <summary>
         /// 把一次调用里的原生工具与中间正文还原成历史消息：每次原生调用补一行 tool-call 和一行
