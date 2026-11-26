@@ -444,6 +444,10 @@ namespace OpenLoop.Core.Tests
             Assert.Equal("结论：不需要改动。", AgentToolCallParser.CutToolCallText("结论：不需要改动。\n\n[final]"));
             Assert.Equal("结论：不需要改动。", AgentToolCallParser.CutToolCallText("结论：不需要改动。\n\n[fina"));
             Assert.Equal("", AgentToolCallParser.CutToolCallText("[final]"));
+            Assert.Equal("结论：不需要改动。", AgentToolCallParser.CutToolCallText("[final]结论：不需要改动。"));
+            Assert.Equal("结论：不需要改动。", AgentToolCallParser.CutToolCallText("[final]\n\n结论：不需要改动。"));
+            Assert.Equal("结论：不需要改动。\n补充一句。",
+                AgentToolCallParser.CutToolCallText("结论：不需要改动。\n[final]\n补充一句。"));
             Assert.Equal("正文里提到 [final] 这个词，但不是收尾标记。",
                 AgentToolCallParser.CutToolCallText("正文里提到 [final] 这个词，但不是收尾标记。"));
         }

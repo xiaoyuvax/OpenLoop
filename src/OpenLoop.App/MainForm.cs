@@ -52,6 +52,17 @@ namespace OpenLoop.App
         private AntdUI.TabPage _tabDropTarget;
 
         /// <summary>
+        /// 左键按下后指针下的页签：拖动高亮只看指针，不看是哪个控件持有 Capture。
+        /// 平铺方块的拖动挂在方块标题上（Capture 在方块里），Tabs 自己收不到 MouseMove，
+        /// 所以用消息过滤器直接看鼠标消息，谁也挡不住。
+        /// </summary>
+        private AntdUI.TabPage _tabHover;
+        private bool _tabHoverDown;
+        private bool _tabHoverMoved;
+        private Point _tabHoverFrom;
+        private TabHoverFilter _tabHoverFilter;
+
+        /// <summary>
         /// AntdUI 2.4.15/2.4.16 的 Tabs 只在 MouseMove 里更新拖动锚点 oldXY，MouseDown 不重置，
         /// 于是按下的第一次移动就必然越过 TouchThreshold（20 DIP），点页签或关闭按钮都会变成重排。
         /// 这里按它的本意把锚点放回按下点；字段名变了就取不到，退回原行为（不会崩）。
@@ -74,6 +85,9 @@ namespace OpenLoop.App
             // 异常退出前的兜底：Loop 的正文只有壳自己写（A 的 Persist 只管 Worker 会话）
             Program.EmergencySave = EmergencySave;
             _tabPulse.Tick += OnTabPulseTick;
+            _tabHoverFilter = new TabHoverFilter(this);
+            Application.AddMessageFilter(_tabHoverFilter);
+            FormClosed += (_, _) => Application.RemoveMessageFilter(_tabHoverFilter);
             HoveredTabRequested = screen =>
             {
                 if (!_tabs.RectangleToScreen(_tabs.ClientRectangle).Contains(screen)) return null;
@@ -2352,7 +2366,6 @@ namespace OpenLoop.App
             view.DetachHoverChanged += OnTiledDetachHover;
             view.Emptied += OnTiledEmptied;
             view.HostEnsureView = session => EnsureView(session);
-            view.HostDragRepaint = InvalidateTabHeader;
             var page = new AntdUI.TabPage
             {
                 Text = Localization.T("平铺视图"),
@@ -2419,9 +2432,82 @@ namespace OpenLoop.App
         private AntdUI.TabPage TabAt(Point screen)
         {
             var client = _tabs.PointToClient(screen);
+            // 先用 AntdUI 自己的命中（点页签走的就是这套），再退回逐页矩形
+            var hit = _tabs.ContainsTabPage(client.X, client.Y);
+            if (hit != null) return hit;
             for (int i = 0; i < _tabs.Pages.Count; i++)
                 if (_tabs.Style?.GetTabRect(i).Rect.Contains(client) == true) return _tabs.Pages[i];
             return null;
+        }
+
+        /// <summary>
+        /// 拖动落点高亮只看鼠标消息，不看 Capture 落在哪个控件上：
+        /// 平铺方块拖出时 Capture 在方块标题里，Tabs 收不到 MouseMove，
+        /// 之前挂在 TiledView.MouseMove 上的通知一旦不触发就没有任何反馈。
+        /// </summary>
+        private sealed class TabHoverFilter : IMessageFilter
+        {
+            private const int WM_MOUSEMOVE = 0x0200;
+            private const int WM_LBUTTONDOWN = 0x0201;
+            private const int WM_LBUTTONUP = 0x0202;
+
+            private readonly MainForm _owner;
+
+            public TabHoverFilter(MainForm owner) => _owner = owner;
+
+            public bool PreFilterMessage(ref Message m)
+            {
+                switch (m.Msg)
+                {
+                    case WM_LBUTTONDOWN:
+                        _owner.BeginTabHover(Cursor.Position);
+                        break;
+                    case WM_MOUSEMOVE:
+                        _owner.MoveTabHover(Cursor.Position);
+                        break;
+                    case WM_LBUTTONUP:
+                        _owner.EndTabHover();
+                        break;
+                }
+                return false;   // 只观察，不改消息
+            }
+        }
+
+        /// <summary>左键按下：记住起点，移动超过 4px 才算拖动（普通点页签不亮）。</summary>
+        private void BeginTabHover(Point screen)
+        {
+            _tabHoverDown = true;
+            _tabHoverMoved = false;
+            _tabHoverFrom = screen;
+        }
+
+        private void MoveTabHover(Point screen)
+        {
+            if (!_tabHoverDown)
+            {
+                if (Control.MouseButtons == MouseButtons.None) EndTabHover();
+                return;
+            }
+            if (!_tabHoverMoved)
+            {
+                if (Math.Abs(screen.X - _tabHoverFrom.X) < 4 && Math.Abs(screen.Y - _tabHoverFrom.Y) < 4) return;
+                _tabHoverMoved = true;
+            }
+            SetTabHover(TabAt(screen));
+        }
+
+        private void EndTabHover()
+        {
+            _tabHoverDown = false;
+            _tabHoverMoved = false;
+            SetTabHover(null);
+        }
+
+        private void SetTabHover(AntdUI.TabPage page)
+        {
+            if (ReferenceEquals(page, _tabHover)) return;
+            _tabHover = page;
+            InvalidateTabHeader();
         }
 
         /// <summary>HoveredTabAt 的实现（主窗体构造时把自己的 _tabs 转出来）。</summary>
@@ -2578,13 +2664,9 @@ namespace OpenLoop.App
         {
             AntdUI.TabPage hint = null;
             bool strong = false;
-            if (_tabDragToTiled) { hint = _tiledPage; strong = true; }
+            if (_tabHover != null) { hint = _tabHover; strong = true; }        // 指针现算（拖动中最可靠）
+            else if (_tabDragToTiled) { hint = _tiledPage; strong = true; }
             else if (_tabDragActive) { hint = _tiledPage; }   // 拖入全程：弱高亮提示落区
-            else if (_tiled != null && _tiled.Dragging)
-            {
-                hint = TabAt(Cursor.Position);
-                strong = true;
-            }
             else if (_tabDropTarget != null) { hint = _tabDropTarget; strong = true; }
             if (hint == null) return;
             int index = _tabs.Pages.IndexOf(hint);

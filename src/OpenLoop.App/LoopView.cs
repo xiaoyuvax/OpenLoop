@@ -377,6 +377,7 @@ namespace OpenLoop.App
             _chat.UndoRequested += OnChatUndo;
             _chat.CopyRequested += OnChatCopy;
             _chat.LinkClicked += OnChatLinkClicked;
+            _chat.TableAppClicked += OnChatTableAppClicked;
             // 工具栏「操作」下拉与右键菜单的「操作」子菜单共用同一组动作
             _chat.SelectionActions = [new ChatSelectionAction("copy", Localization.T("复制")), new ChatSelectionAction("worker", Localization.T("转给 worker")), new ChatSelectionAction("delete", Localization.T("删除"))];
             _chat.SelectionActionRequested += (_, e) => RunSelectionAction(e.Key);
@@ -398,6 +399,7 @@ namespace OpenLoop.App
 
             _lblStatus.TextChanged += (_, _) => ApplyDetail();
             _sideBtw.Initialize(_workspace, settings);
+            _sideBtw.HostTitle = _lblTitle.Text;   // 旁路审批弹框标注来源会话
             // Harness 页：与 Worker 同一套入口，演进/回滚走 I 的 /api/loop/*
             _harness.Initialize(() => _workspace, settings, () => _model, () => _effort, Notify);
             _harness.SetBusy(_running);
@@ -1606,6 +1608,18 @@ namespace OpenLoop.App
             }
         }
 
+        /// <summary>点击 markdown 表格标签：提取该表格原文，走 /loopapp 流程生成 html 表格给用户查阅。</summary>
+        private void OnChatTableAppClicked(object sender, ChatTableAppClickedEventArgs e)
+        {
+            string table = ChatFlow.ChatMarkdown.ExtractFirstTable(e?.Text);
+            if (string.IsNullOrWhiteSpace(table))
+            {
+                Notify(Localization.T("未找到表格"), Localization.T("这一条里没有可展示的 markdown 表格。"), error: true);
+                return;
+            }
+            RunLoopApp(SessionView.LoopAppTableRequest(table));
+        }
+
         /// <summary>聊天区里点链接：网址进右侧「网页」页，本地路径进「文件」页（文件夹直接用资源管理器打开）。</summary>
         private void OnChatLinkClicked(object sender, ChatLinkClickedEventArgs e)
         {
@@ -1874,6 +1888,20 @@ namespace OpenLoop.App
             _puppetView.Reload();
         }
 
+        /// <summary>/loopapp：把生成指示作为宿主提示插进本会话队列，由 Loop 用 LoopApp 工具执行。</summary>
+        private void RunLoopApp(string request)
+        {
+            try
+            {
+                EnqueueAuto(SessionView.LoopAppInstruction(request), "loopapp");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("执行 /loopapp 失败", ex);
+                Notify(Localization.T("未执行"), ex.Message, error: true);
+            }
+        }
+
         /// <summary>
         /// /puppet &lt;action&gt; &lt;参数…&gt;：作为「协作提示」插进本 Loop 会话队列（淡黄底），
         /// 由本会话的 agent 用 Puppet 工具执行并回报结果；Loop 会话就在壳进程里，target=self。
@@ -2003,6 +2031,18 @@ namespace OpenLoop.App
             if (SessionView.IsCommand(text, "/new"))
             {
                 NewSessionRequested?.Invoke(this, text[4..].Trim());
+                return true;
+            }
+
+            if (SessionView.IsCommand(text, "/loopapp"))
+            {
+                string request = text[8..].Trim();
+                if (request.Length == 0)
+                {
+                    Notify(Localization.T("缺少请求"), Localization.T("/loopapp 后面要描述需要的界面，例如：/loopapp 一个展示本会话工具调用耗时的表格。"), error: true);
+                    return false;
+                }
+                _ = Task.Run(() => RunLoopApp(request));
                 return true;
             }
 
@@ -2166,6 +2206,7 @@ namespace OpenLoop.App
             ("/compact", Localization.T("把较早的对话压缩成摘要，省下上下文")),
             ("/fork", Localization.T("选到哪一轮（含）后复制上下文开一个新的 Loop 会话（可继续对话）并跳转")),
             ("/puppet", Localization.T("打开右侧 Puppet Action 清单；/puppet <action> <参数> 直接执行")),
+            ("/loopapp", Localization.T("/loopapp <描述>：由本会话生成一个 LoopApp 单页界面（表格/表单/图表等）")),
             ("/review", Localization.T("盘点来源会话的避坑经验与各组件优化点，新开 Loop 会话等确认后实施")),
             ("/optimize", Localization.T("盘点同上并直接实施（不切会话）")),
             ("/new", Localization.T("开一个新的 Loop 会话，沿用当前的模型与强度"))
@@ -2814,7 +2855,11 @@ namespace OpenLoop.App
 
         /// <summary>分级审批：越界访问与风险操作才问用户，可「后续都许可」。</summary>
         private OpenLoop.Core.Safety.ApprovalDecision AskApproval(OpenLoop.Core.Safety.ApprovalRequest request)
-            => ApprovalGate.Ask(this, _settings, request);
+        {
+            // 多个 Loop 会话并发跑时弹框必须能看出是谁在问（2026-11-26 用户反馈）
+            request.Source = _lblTitle.Text;
+            return ApprovalGate.Ask(this, _settings, request);
+        }
 
         private void Notify(string title, string text, bool error = false)
         {

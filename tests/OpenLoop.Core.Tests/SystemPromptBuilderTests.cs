@@ -32,6 +32,17 @@ namespace OpenLoop.Core.Tests
         }
 
         [Fact]
+        public void Native_tool_channel_drops_the_final_marker()
+        {
+            string native = SystemPromptBuilder.Build([new NamedTool("ReadFile")], 10, nativeTools: true);
+            Assert.DoesNotContain("[final]", native);
+            Assert.Contains("不调用工具的那一条回复就是最终回答", native);
+
+            string text = SystemPromptBuilder.Build([new NamedTool("ReadFile")], 10);
+            Assert.Contains("在最后一行单独输出 [final]", text);
+        }
+
+        [Fact]
         public void Windows_environment_note_only_on_windows()
         {
             string prompt = SystemPromptBuilder.Build([new NamedTool("ReadFile")], 10, workspace: ".");

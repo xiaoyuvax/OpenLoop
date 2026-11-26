@@ -29,11 +29,11 @@ namespace OpenLoop.App
         private LoopAppView _loopAppView;
         private BrowserView _browser;
         private AntdUI.Button _btnOpenWorkspace;
-        private System.Windows.Forms.Label _lblDModel;
+        private AntdUI.Label _lblDModel;
         private AntdUI.Label _lblDEffort;
         private AntdUI.Label _lblDCtx;
         private AntdUI.Label _lblDCost;
-        private System.Windows.Forms.Label _lblDStatus;
+        private AntdUI.Label _lblDStatus;
         private AntdUI.Label _lblDef;
         private AntdUI.Label _lblTasks;
         private AntdUI.Label _lblTrace;
@@ -105,11 +105,11 @@ namespace OpenLoop.App
             _btnPendingSurveys = new AntdUI.Button();
             _detailFlow = new FlowLayoutPanel();
             _btnOpenWorkspace = new AntdUI.Button();
-            _lblDModel = new System.Windows.Forms.Label();
+            _lblDModel = new AntdUI.Label();
             _lblDEffort = new AntdUI.Label();
             _lblDCtx = new AntdUI.Label();
             _lblDCost = new AntdUI.Label();
-            _lblDStatus = new System.Windows.Forms.Label();
+            _lblDStatus = new AntdUI.Label();
             _lblDef = new AntdUI.Label();
             _lblTasks = new AntdUI.Label();
             _lblTrace = new AntdUI.Label();

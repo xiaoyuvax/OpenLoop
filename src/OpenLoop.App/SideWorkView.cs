@@ -52,6 +52,10 @@ namespace OpenLoop.App
         /// <summary>宿主注入：点通知回到旁路所属的会话页面（Worker/Loop 各自由自己的视图接上）。</summary>
         internal Func<bool> ActivatePage { get; set; }
 
+        /// <summary>宿主注入：旁路所属会话的标题，审批弹框标注来源用。</summary>
+        internal string HostTitle { get; set; }
+        private string _hostTitle => HostTitle ?? "";
+
         /// <summary>侧栏切到别的页时暂停渲染（旁路照常跑，数据照常写；切回来按最新数据重建）。
         /// 与 SessionView / LoopView 的 SetActive 同一口径。</summary>
         internal void SetActive(bool active) => _chat.SuspendRendering = !active;
@@ -495,7 +499,11 @@ namespace OpenLoop.App
 
         /// <summary>分级审批：越界访问与风险操作才问用户，可「后续都许可」。</summary>
         private OpenLoop.Core.Safety.ApprovalDecision AskApproval(OpenLoop.Core.Safety.ApprovalRequest request)
-            => ApprovalGate.Ask(this, _settings, request);
+        {
+            // 旁路挂在某个会话页下：弹框带上该会话标题，多会话并发时可辨认
+            request.Source = _hostTitle;
+            return ApprovalGate.Ask(this, _settings, request);
+        }
 
         private void Notify(string title, string text, bool error = false)
         {

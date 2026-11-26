@@ -626,16 +626,38 @@ namespace OpenLoop.Core.Tests
         public void Does_Not_Flag_Final_Answers(string text)
             => Assert.False(AgentLoop.LooksLikeActionPromise(text));
 
+        [Fact]
+        public void Native_tool_channel_prompt_has_no_final_marker()
+        {
+            var direct = new OpenAiCompatibleReasoner("http://127.0.0.1:1/v1", "test-model", "key");
+            Assert.DoesNotContain("[final]", Loops.Build(new FakeTool(), direct).BuildSystemPrompt());
+
+            string text = Loops.Build(new FakeTool(), new ScriptedReasoner("x")).BuildSystemPrompt();
+            Assert.Contains("在最后一行单独输出 [final]", text);
+        }
+
         [Theory]
         [InlineData("结论：不需要改动。\n[final]", true)]
         [InlineData("结论：不需要改动。 [FINAL]", true)]
+        [InlineData("[final]结论：不需要改动。", true)]
+        [InlineData("[final]\n\n结论：不需要改动。", true)]
+        [InlineData("结论：不需要改动。\n[final]\n补充一句。", true)]
         [InlineData("正文里提到 [final] 这个词，但不是收尾标记。", false)]
-        public void Final_Marker_Is_Only_Recognized_At_The_End(string text, bool expected)
+        public void Final_Marker_Is_Recognized_At_Start_Or_End(string text, bool expected)
             => Assert.Equal(expected, AgentLoop.HasFinalMarker(text));
 
         [Fact]
         public void Final_Marker_Is_Stripped_From_The_Answer()
-            => Assert.Equal("结论：不需要改动。", AgentLoop.StripFinalMarker("结论：不需要改动。\n\n[final]"));
+        {
+            Assert.Equal("结论：不需要改动。", AgentLoop.StripFinalMarker("结论：不需要改动。\n\n[final]"));
+            Assert.Equal("结论：不需要改动。", AgentLoop.StripFinalMarker("[final]结论：不需要改动。"));
+            Assert.Equal("结论：不需要改动。", AgentLoop.StripFinalMarker("[final]\n\n结论：不需要改动。"));
+            Assert.Equal("结论：不需要改动。\n补充一句。",
+                AgentLoop.StripFinalMarker("结论：不需要改动。\n[final]\n补充一句。"));
+            Assert.Equal("", AgentLoop.StripFinalMarker("[final]"));
+            Assert.Equal("正文里提到 [final] 这个词，但不是收尾标记。",
+                AgentLoop.StripFinalMarker("正文里提到 [final] 这个词，但不是收尾标记。"));
+        }
 
         [Theory]
         [InlineData("结论如下。\n[failed]")]

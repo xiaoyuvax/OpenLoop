@@ -48,10 +48,10 @@ namespace OpenLoop.Service.Web
             string instance = args.Str("instance")?.Trim();
             string path = args.Str("path")?.Trim();
 
-            var query = new List<string>();
+            var query = new Dictionary<string, string>();
             void Add(string name, string value)
             {
-                if (!string.IsNullOrEmpty(value)) query.Add(name + "=" + Uri.EscapeDataString(value));
+                if (!string.IsNullOrEmpty(value)) query[name] = value;
             }
 
             string route;
@@ -105,7 +105,7 @@ namespace OpenLoop.Service.Web
                     {
                         if (string.IsNullOrWhiteSpace(self))
                             return AgentToolResult.Failure("当前会话没有留言板身份，不能发言");
-                        saidText = args.Str("text") ?? args.Str("message");
+                        saidText = args.Str("text") ?? args.Str("message") ?? args.Str("say");
                         if (string.IsNullOrWhiteSpace(saidText)) return AgentToolResult.Failure("say 需要 text");
                         // 定向：to 显式给，或在正文里 @ 了同工作区会话（@A-xxxx / @I-xxxx / @前缀）；
                         // 两者都没有就是广播（要对方自己来读板）。
@@ -123,7 +123,11 @@ namespace OpenLoop.Service.Web
             if ((action is "chat" or "say" or "book") && !string.IsNullOrWhiteSpace(self))
                 target = AgentIdentity.BoardTarget;
 
-            string urlPath = query.Count == 0 ? route : route + "?" + string.Join("&", query);
+            // HTTP 走 querystring；进程内 Hub 按完整 path 精确匹配路由，path 里不能带 "?..."，
+            // query 必须经 Hub 的 query 参数传（否则 /agent/book?x 落到 unknown-route）。
+            string urlPath = route;
+            string httpQuery = query.Count == 0 ? null : string.Join("&",
+                query.Select(kv => kv.Key + "=" + Uri.EscapeDataString(kv.Value)));
             bool post = action is "invoke" or "say";
             bool board = action is "chat" or "say" or "book";
 
@@ -141,10 +145,9 @@ namespace OpenLoop.Service.Web
                 {
                     try
                     {
-                        using var doc = JsonDocument.Parse(post ? body ?? "[]" : "[]");
                         var response = post
-                            ? await hub.PostAsync(urlPath, body: doc.RootElement)
-                            : await hub.GetAsync(urlPath);
+                            ? await hub.PostAsync(urlPath, query: query.Count > 0 ? query : null, body: JsonBody(body))
+                            : await hub.GetAsync(urlPath, query: query.Count > 0 ? query : null);
                         return await FinishAsync(response.Status, response.Body, action, recipient, self, saidText, ct);
                     }
                     catch (Exception ex)
@@ -171,7 +174,7 @@ namespace OpenLoop.Service.Web
                 {
                     using var request = new HttpRequestMessage(
                         post ? HttpMethod.Post : HttpMethod.Get,
-                        (endpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? endpoint : "http://" + endpoint) + urlPath);
+                        (endpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? endpoint : "http://" + endpoint) + urlPath + (httpQuery == null ? "" : "?" + httpQuery));
                     request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + key);
                     if (post)
                         request.Content = new StringContent(body ?? "[]", Encoding.UTF8, "application/json");
@@ -271,6 +274,14 @@ namespace OpenLoop.Service.Web
                 string text => string.IsNullOrWhiteSpace(text) ? "[]" : text,
                 _ => JsonSerializer.Serialize(value)
             };
+        }
+
+        /// <summary>进程内 Hub 的 POST body：用工具已序列化的 body（say），invoke 走 args 原文。</summary>
+        private static object JsonBody(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body)) return new object[0];
+            try { return System.Text.Json.Nodes.JsonNode.Parse(body); }
+            catch { return new object[0]; }
         }
     }
 

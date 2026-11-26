@@ -12,13 +12,14 @@ namespace OpenLoop.Core.Agent
     /// </summary>
     public static class SystemPromptBuilder
     {
+        /// <param name="nativeTools">直连通道走原生工具调用（JSON）：收尾靠上游 finish_reason，不要 [final] 标记。</param>
         public static string Build(
             IReadOnlyList<ITool> tools, int maxSteps, string role = null,
             IEnumerable<string> rules = null, string instructions = null,
             IReadOnlyList<SkillInfo> skills = null, string workspace = null, string access = null,
-            string template = null)
+            string template = null, bool nativeTools = false)
         {
-            var sections = Sections(tools, maxSteps, role, rules, instructions, skills, workspace, access);
+            var sections = Sections(tools, maxSteps, role, rules, instructions, skills, workspace, access, nativeTools);
             return PromptTemplate.Render(PromptTemplate.Complete(template), sections);
         }
 
@@ -26,7 +27,8 @@ namespace OpenLoop.Core.Agent
         public static IReadOnlyDictionary<string, string> Sections(
             IReadOnlyList<ITool> tools, int maxSteps, string role = null,
             IEnumerable<string> rules = null, string instructions = null,
-            IReadOnlyList<SkillInfo> skills = null, string workspace = null, string access = null)
+            IReadOnlyList<SkillInfo> skills = null, string workspace = null, string access = null,
+            bool nativeTools = false)
         {
             tools ??= [];
             bool hasWebFetch = tools.Any(t => string.Equals(t.Name, "WebFetch", StringComparison.OrdinalIgnoreCase));
@@ -43,7 +45,7 @@ namespace OpenLoop.Core.Agent
                 ["rules"] = Rules(rules),
                 ["tools"] = Tools(tools),
                 ["skills"] = Skills(skills),
-                ["protocol"] = Protocol(),
+                ["protocol"] = Protocol(nativeTools),
                 ["safety"] = Safety(maxSteps, hasWebFetch),
                 ["instructions"] = Instructions(instructions),
                 ["max_parallel"] = AgentPolicy.MaxParallelCalls.ToString()
@@ -165,7 +167,7 @@ namespace OpenLoop.Core.Agent
             return sb.ToString();
         }
 
-        private static string Protocol()
+        private static string Protocol(bool nativeTools)
         {
             var sb = new StringBuilder();
             sb.AppendLine("# 工具调用协议");
@@ -183,7 +185,10 @@ namespace OpenLoop.Core.Agent
             sb.AppendLine("下一轮你会收到 tool-result: 开头的 JSON（多个调用时按顺序回填多行）：");
             sb.AppendLine("成功为 {\"ok\":true,\"data\":...}，失败为 {\"ok\":false,\"error\":...}。");
             sb.AppendLine("任务完成或无需工具时，直接输出面向用户的最终回答（语言与用户最近一条消息一致，不要输出 tool-call 行）。");
-            sb.AppendLine("给出最终回答时，在最后一行单独输出 [final]；系统据此确认你已经收尾，并会把这行从回答里去掉。输出 tool-call 的轮次不要写。[final] 是唯一的收尾标记：不要自造 [failed]/[done] 这类变体，收尾标记只表示「已收尾」、不表示成败——任务失败就在正文里说明原因，然后照常输出 [final]。");
+            sb.AppendLine(nativeTools
+                // 原生工具通道由上游 finish_reason 区分「要调用工具」与「收尾」，不再要求模型写标记。
+                ? "不调用工具的那一条回复就是最终回答，不要输出方括号标记；任务失败也直接在正文里说明原因。"
+                : "给出最终回答时，在最后一行单独输出 [final]；系统据此确认你已经收尾，并会把这行从回答里去掉。输出 tool-call 的轮次不要写。[final] 是唯一的收尾标记：不要自造 [failed]/[done] 这类变体，收尾标记只表示「已收尾」、不表示成败——任务失败就在正文里说明原因，然后照常输出 [final]。");
             sb.AppendLine();
             return sb.ToString();
         }

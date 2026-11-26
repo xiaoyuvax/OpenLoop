@@ -20,12 +20,13 @@ namespace OpenLoop.Core.Safety
     /// <summary>一次审批请求。Text 是给用户看的完整说明。</summary>
     public sealed class ApprovalRequest
     {
-        public ApprovalRequest(ApprovalKind kind, string tool, string detail, string reason)
+        public ApprovalRequest(ApprovalKind kind, string tool, string detail, string reason, string source = null)
         {
             Kind = kind;
             Tool = tool ?? "";
             Detail = detail ?? "";
             Reason = reason ?? "";
+            Source = source;
         }
 
         public ApprovalKind Kind { get; }
@@ -38,10 +39,20 @@ namespace OpenLoop.Core.Safety
 
         public string Reason { get; }
 
-        /// <summary>展示文本（含类别说明）。</summary>
-        public string Text => Kind == ApprovalKind.OutsideWorkspace
-            ? $"访问工作目录之外的路径：\n{Detail}"
-            : $"风险操作（{Reason}）：\n{Detail}";
+        /// <summary>发起这次审批的会话标题（可空）：多个会话同时跑时，弹框必须能看出是谁在问。</summary>
+        public string Source { get; set; }
+
+        /// <summary>展示文本（含类别说明与会话来源）。</summary>
+        public string Text
+        {
+            get
+            {
+                string body = Kind == ApprovalKind.OutsideWorkspace
+                    ? $"访问工作目录之外的路径：\n{Detail}"
+                    : $"风险操作（{Reason}）：\n{Detail}";
+                return string.IsNullOrEmpty(Source) ? body : $"会话「{Source}」：\n{body}";
+            }
+        }
     }
 
     /// <summary>审批回调。返回 Deny 表示拒绝执行。</summary>

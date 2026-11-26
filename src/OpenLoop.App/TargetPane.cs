@@ -538,7 +538,7 @@ namespace OpenLoop.App
                 case Dirty:
                     _btnSave.IconSvg = UiIcons.Of(UiIcons.Edit,
                         _diskChanged ? UiStyle.Error : UiStyle.Accent);
-                    tip = _diskChanged ? "有未保存的改动；磁盘已被外部改动，保存会被拒绝，先重读" : "有未保存的改动";
+                    tip = _diskChanged ? "有未保存的改动；磁盘已被外部改动，点击会被拒绝，先重读" : "有未保存的改动；点击立即保存到磁盘";
                     break;
                 default:
                     _btnSave.IconSvg = UiIcons.Of(UiIcons.Save, UiStyle.Muted);

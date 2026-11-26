@@ -139,6 +139,7 @@ namespace OpenLoop.App
             _chat.UndoRequested += OnChatUndo;
             _chat.CopyRequested += OnChatCopy;
             _chat.LinkClicked += OnChatLinkClicked;
+            _chat.TableAppClicked += OnChatTableAppClicked;
             // 与 Loop 页一致：ChatFlow 右键「操作」与右上角工具栏共用这三个动作
             _chat.SelectionActions =
             [
@@ -193,6 +194,7 @@ namespace OpenLoop.App
             _tips.SetToolTip(_lblTasks, Localization.T("点击查看考核题"));
             _sideBtw.Initialize(session.Workspace, settings);
             _sideBtw.ActivatePage = () => ActivatePage?.Invoke() ?? false;
+            _sideBtw.HostTitle = Session.Title;
             // Puppet Action 清单页：双击一行把「/puppet <action> 」填回输入框
             _puppetView.CommandRequested += command =>
             {
@@ -456,6 +458,22 @@ namespace OpenLoop.App
             }
             if (index == 0) ApplyDetail();
         }
+
+        /// <summary>点击 markdown 表格标签：提取该表格原文，走 /loopapp 流程生成 html 表格给用户查阅。</summary>
+        private void OnChatTableAppClicked(object sender, ChatTableAppClickedEventArgs e)
+        {
+            string table = ChatFlow.ChatMarkdown.ExtractFirstTable(e?.Text);
+            if (string.IsNullOrWhiteSpace(table))
+            {
+                Notify(Localization.T("未找到表格"), Localization.T("这一条里没有可展示的 markdown 表格。"), error: true);
+                return;
+            }
+            _ = RunLoopAppAsync(LoopAppTableRequest(table));
+        }
+
+        /// <summary>表格展示的 LoopApp 需求描述：贴原文，让 agent 原样渲染，不要改数据。</summary>
+        internal static string LoopAppTableRequest(string table)
+            => "把下面这段 markdown 表格渲染成一个 LoopApp 页面（html 表格）供用户查阅：列名与数据必须与原文完全一致，不要增删行、不要改数值；列多时横向滚动，数据量大使单元格可换行；app.json 用 window:\"float\" 让它开独立窗口。\n\n" + table;
 
         /// <summary>聊天区里点链接：网址进右侧「网页」页，本地路径进「文件」页（文件夹直接用资源管理器打开）。</summary>
         private void OnChatLinkClicked(object sender, ChatLinkClickedEventArgs e)
@@ -893,6 +911,7 @@ namespace OpenLoop.App
             ("/compact", Localization.T("把较早的对话压缩成摘要，省下上下文")),
             ("/fork", Localization.T("选到哪一轮（含）后复制上下文开一个新会话（可继续对话）并跳转")),
             ("/puppet", Localization.T("打开右侧 Puppet Action 清单；/puppet <action> <参数> 直接执行")),
+            ("/loopapp", Localization.T("/loopapp <描述>：由本会话生成一个 LoopApp 单页界面（表格/表单/图表等）")),
             ("/new", Localization.T("开一个新会话，沿用当前的模型与强度"))
         };
 
@@ -1385,7 +1404,52 @@ namespace OpenLoop.App
                 return true;
             }
 
+            if (IsCommand(text, "/loopapp"))
+            {
+                string request = text[8..].Trim();
+                if (request.Length == 0)
+                {
+                    Notify(Localization.T("缺少请求"), Localization.T("/loopapp 后面要描述需要的界面，例如：/loopapp 一个展示本会话工具调用耗时的表格。"), error: true);
+                    return false;
+                }
+                _ = RunLoopAppAsync(request);
+                return true;
+            }
+
             return false;
+        }
+
+        /// <summary>/loopapp 的生成指示：告诉会话里的 agent 用 LoopApp 五步把需求做成单页界面。</summary>
+        internal static string LoopAppInstruction(string request)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("[LoopApp 生成] 请用 LoopApp 工具生成一个界面：");
+            sb.AppendLine("需求：" + request);
+            sb.AppendLine("按以下步骤执行：");
+            sb.AppendLine("1. LoopApp(create, \"<应用名>\") 建目录并复制运行时；");
+            sb.AppendLine("2. WriteFile 写 index.html 与 app.js：index.html 引用 ./runtime/openui.css 与 ./runtime/openui.js，app.js 用 ui.mount 渲染，无构建、无网络依赖；");
+            sb.AppendLine("3. LoopApp(open, \"<应用名>\") 打开给用户看；");
+            sb.AppendLine("4. 需要调整时改文件后 LoopApp(eval, \"location.reload()\") 刷新；");
+            sb.AppendLine("5. 页面有 ui.submit、本轮收尾后壳会自动收起，不要在用户可能还在看时调 LoopApp(close)。");
+            sb.AppendLine("要求：中文文案；视觉遵循 openui 运行时既有样式（page/card/btn/table 等），不要自造一套皮肤。");
+            return sb.ToString().TrimEnd();
+        }
+
+        /// <summary>/loopapp：把生成指示作为宿主提示（协作提示样式）投进本会话队列，由 agent 用 LoopApp 工具执行。</summary>
+        private async Task RunLoopAppAsync(string request)
+        {
+            try
+            {
+                string notice = LoopAppInstruction(request);
+                var result = await Client.NoticeAsync(Session.Id, notice, "loopapp");
+                if (result == null) Notify(Localization.T("未执行"), Localization.T("Worker 不认识这个会话。"), error: true);
+                else Notify(Localization.T("已交给会话执行"), request);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("执行 /loopapp 失败", ex);
+                Notify(Localization.T("未执行"), ex.Message, error: true);
+            }
         }
 
         /// <summary>
@@ -2353,8 +2417,9 @@ namespace OpenLoop.App
 
                 var kind = prompt.Category == "outside" ? ApprovalKind.OutsideWorkspace : ApprovalKind.SensitiveAction;
                 var decision = new TaskCompletionSource<ApprovalDecision>();
+                // 多个会话并发跑时弹框必须能看出是谁在问（2026-11-26 用户反馈）
                 ApprovalGate.AskNonBlocking(this, _settings,
-                    new ApprovalRequest(kind, prompt.Tool, prompt.Detail, prompt.Reason),
+                    new ApprovalRequest(kind, prompt.Tool, prompt.Detail, prompt.Reason, Session.Title),
                     d => decision.TrySetResult(d));
                 await client.ApproveAsync(Session.Id, prompt.Id, (int)await decision.Task, ct);
             }

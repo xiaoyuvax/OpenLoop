@@ -695,7 +695,10 @@ namespace OpenLoop.Core.Agent
                 state.MarkerNudges++;
                 state.Result.Guards.MarkerNudges++;
                 return Task.FromResult(AgentStepResult.Continue(new AppendMessageEffect("user",
-                    "（系统提示）你在回答末尾输出了自造的方括号标记（如 [failed]/[done]）。收尾标记只有 [final]：它只表示「已收尾」，不表示成败；本轮失败就直接在正文里说明失败原因，不要发明标记。请重写最终回答，末尾单独一行输出 [final]。")));
+                    context.Reasoner is OpenAiCompatibleReasoner
+                        // 原生工具通道不要求收尾标记：别把 [final] 的写法从这里又塞回去。
+                        ? "（系统提示）你在回答末尾输出了方括号标记（如 [failed]/[done]）。这条通道不要求收尾标记：请重写最终回答，末尾不要带任何方括号标记；本轮失败就直接在正文里说明原因。"
+                        : "（系统提示）你在回答末尾输出了自造的方括号标记（如 [failed]/[done]）。收尾标记只有 [final]：它只表示「已收尾」，不表示成败；本轮失败就直接在正文里说明失败原因，不要发明标记。请重写最终回答，末尾单独一行输出 [final]。")));
             }
 
             if (context.Policy.PromiseGuard

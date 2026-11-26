@@ -90,6 +90,9 @@ namespace OpenLoop.Core.Tools.Builtin
             }
             finally
             {
+                // 命令结束就停掉播报：不取消的话它会继续按 10 秒节拍报「仍在执行」，
+                // 把早已结束的命令状态留在界面/会话上（正常退出时 timeout 也不会触发）。
+                linked.Cancel();
                 SlowCommand?.Invoke(null);   // 命令结束/超时/取消：清掉「仍在执行」状态
                 Progress.Value?.Invoke(null);
                 try { await slow.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }

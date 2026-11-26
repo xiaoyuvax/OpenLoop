@@ -75,14 +75,14 @@ body ::-webkit-scrollbar-track { background: transparent; }
   border: 1px solid #f0e6b0; border-radius: 8px;
 }
 .ol-turn .ol-notice > summary { color: #614a00; }
-.ol-turn .ol-notice pre { background: rgba(255, 255, 255, .6); color: #614a00; }
+.ol-turn .ol-notice pre { background: transparent; color: #614a00; }
 /* 协作提示的答复轮：只有思考区铺淡黄底（与提示同一格式、用户可整块跳过），正文保持默认底色 */
 .ol-turn .ol-notice-think {
   margin-top: 8px; padding: 6px 10px; background: #ffffe0;
   border: 1px solid #f0e6b0; border-radius: 8px;
 }
 .ol-turn .ol-notice-think > summary { color: #614a00; }
-.ol-turn .ol-notice-think pre { background: rgba(255, 255, 255, .6); color: #614a00; }
+.ol-turn .ol-notice-think pre { color: #614a00; }
 .ol-turn .ol-notice-think-first { margin-top: 0; }
 
 /* 审批与排队 */

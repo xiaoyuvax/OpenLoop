@@ -163,21 +163,13 @@ namespace OpenLoop.App
                 : OperationResult.Failure(error);
         }
 
-        /// <summary>截当前页面；PNG 落到临时目录并回路径（agent 可直接引用）。</summary>
-        [PuppetAction(Desc = "截取本会话 LoopApp 的当前画面，返回 PNG 路径")]
+        /// <summary>截当前页面；PNG 经 Puppet asset 通道返回（agent 可直接下载，不落临时文件路径）。</summary>
+        [PuppetAction(Desc = "截取本会话 LoopApp 的当前画面，PNG 作为可下载产物返回")]
         public OperationResult LoopAppShot()
         {
             if (!Screenshot(out string png, out string error)) return OperationResult.Failure(error);
-            try
-            {
-                string file = Path.Combine(Path.GetTempPath(), "openloop-loopapp-" + LoopAppPaths.Slug(_owner) + ".png");
-                File.WriteAllBytes(file, Convert.FromBase64String(png));
-                return OperationResult.Success("已截图", file);
-            }
-            catch (Exception ex)
-            {
-                return OperationResult.Failure("写截图失败：" + ex.Message);
-            }
+            return OperationResult.Success("已截图",
+                new PuppetArtifact("loopapp-" + LoopAppPaths.Slug(_owner) + ".png", "image/png", Convert.FromBase64String(png)));
         }
 
         /// <summary>浏览器状态：锁定/浮动/地址。</summary>

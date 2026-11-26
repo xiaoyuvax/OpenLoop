@@ -46,7 +46,11 @@ namespace OpenLoop.Core.Agent
         public string BuildSystemPrompt(string role = null, IReadOnlyList<string> rules = null, string instructions = null, string workspace = null, string access = null, string template = null)
             => SystemPromptBuilder.Build(
                 _tools.Tools, _policy.MaxSteps, role, rules, instructions, _skills, workspace, access,
-                template ?? Store.PromptCatalog.ActiveTemplate(workspace));
+                template ?? Store.PromptCatalog.ActiveTemplate(workspace),
+                nativeTools: UsesNativeTools);
+
+        /// <summary>直连通道（OpenAI 兼容 JSON）走原生工具调用；其余通道（opencode、dsh、外部进程）仍是文本协议。</summary>
+        internal bool UsesNativeTools => _reasoner is OpenAiCompatibleReasoner;
 
         public AgentStateMachine CreateMachine() => new(AgentPipeline.Create());
 
@@ -156,14 +160,31 @@ namespace OpenLoop.Core.Agent
         /// <summary>最终回答的结束标记：模型显式声明已收尾，判定不再依赖正文措辞。</summary>
         internal const string FinalMarker = "[final]";
 
+        /// <summary>单独一行的收尾标记（模型会把它放在开头、末尾或两处都放）。</summary>
+        internal static readonly System.Text.RegularExpressions.Regex FinalMarkerLineRegex =
+            new(@"^[ \t]*\[final\][ \t]*\r?\n?", System.Text.RegularExpressions.RegexOptions.Compiled
+                | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                | System.Text.RegularExpressions.RegexOptions.Multiline);
+
         internal static bool HasFinalMarker(string content)
             => !string.IsNullOrEmpty(content)
-               && content.TrimEnd().EndsWith(FinalMarker, StringComparison.OrdinalIgnoreCase);
+               && (content.TrimStart().StartsWith(FinalMarker, StringComparison.OrdinalIgnoreCase)
+                   || content.TrimEnd().EndsWith(FinalMarker, StringComparison.OrdinalIgnoreCase)
+                   || FinalMarkerLineRegex.IsMatch(content));
 
+        /// <summary>去掉收尾标记：紧贴正文开头、单独一行、以及末尾的写法都算协议。</summary>
         internal static string StripFinalMarker(string content)
-            => HasFinalMarker(content)
-                ? content.TrimEnd()[..^FinalMarker.Length].TrimEnd()
-                : content;
+        {
+            if (string.IsNullOrEmpty(content)) return content;
+            string text = content.TrimStart();
+            if (text.StartsWith(FinalMarker, StringComparison.OrdinalIgnoreCase))
+                text = text[FinalMarker.Length..].TrimStart();
+            text = FinalMarkerLineRegex.Replace(text, "");
+            string trimmed = text.TrimEnd();
+            if (trimmed.EndsWith(FinalMarker, StringComparison.OrdinalIgnoreCase))
+                trimmed = trimmed[..^FinalMarker.Length];
+            return trimmed.Trim();
+        }
 
         /// <summary>模型把收尾标记写成自造变体（如 [failed]/[done]）：结尾是单个方括号词但不是 [final]。</summary>
         internal static readonly System.Text.RegularExpressions.Regex FinalMarkerImpostorRegex =

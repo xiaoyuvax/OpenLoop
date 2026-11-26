@@ -475,7 +475,20 @@ namespace OpenLoop.Core.Agent
             if (string.IsNullOrWhiteSpace(modelOutput)) return "";
             var match = ProtocolFragmentRegex.Match(MaskCodeSpans(modelOutput));
             string text = match.Success ? modelOutput[..match.Index].TrimEnd() : modelOutput;
-            return CutProtocolPrefix(CutFinalMarkerTail(text));
+            return CutProtocolPrefix(CutFinalMarker(text));
+        }
+
+        /// <summary>
+        /// 收尾标记的位置不定：末尾（含模型正在吐的半截前缀）、紧贴正文开头（[final]正文）、单独一行。
+        /// 正文中间提到 [final] 不算协议，保持原样。
+        /// </summary>
+        private static string CutFinalMarker(string text)
+        {
+            string body = CutFinalMarkerTail(text);
+            string lead = body.TrimStart();
+            if (lead.StartsWith(AgentLoop.FinalMarker, StringComparison.OrdinalIgnoreCase))
+                body = lead[AgentLoop.FinalMarker.Length..].TrimStart();
+            return AgentLoop.FinalMarkerLineRegex.Replace(body, "").TrimEnd();
         }
 
         /// <summary>把行内代码与围栏代码块换成等长占位符（索引不变）：判定协议片段时跳过代码里的引用。</summary>
