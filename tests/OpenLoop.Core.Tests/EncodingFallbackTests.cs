@@ -57,6 +57,22 @@ namespace OpenLoop.Core.Tests
             Assert.Equal(utf16, TextCodec.Encode("中", TextCodec.Decode(utf16).Encoding));
         }
 
+        /// <summary>
+        /// 关键回归：ANSI 编码必须真的取到。静态字段初始化器先于静态构造函数执行，
+        /// 把 ResolveAnsi() 直接写在字段里会在 RegisterProvider 之前跑、异常被吞成 null，
+        /// 于是 GBK 文件全按 UTF-8 读成乱码。
+        /// 已用一次性探针确认：本测试进程里 TextCodec 是第一个触达 CodePages provider 的（字段版实测为 null），
+        /// 所以这条断言在回归时会真的红，不会假绿。
+        /// </summary>
+        [Fact]
+        public void System_ansi_is_resolved_after_the_codepage_provider_is_registered()
+        {
+            if (System.Globalization.CultureInfo.CurrentCulture.TextInfo.ANSICodePage != 936) return;
+
+            Assert.NotNull(TextCodec.SystemAnsi);
+            Assert.Equal(936, TextCodec.SystemAnsi.CodePage);
+        }
+
         /// <summary>关键回归：GBK 不是合法 UTF-8，按 UTF-8 硬读会整篇乱码；必须走 ANSI 回退并原样写回。</summary>
         [Fact]
         public void Gbk_falls_back_to_ansi_and_writes_back_in_the_same_codepage()

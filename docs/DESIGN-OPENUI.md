@@ -145,7 +145,7 @@ public interface ILoopAppHost { Open; Eval; Shot; State; Close; Undock; Dock; In
 
 只提供三样，不提供抽象层：
 
-1. `openui.css`：令牌（深色优先、单一强调色、4px 栅格、系统字体）+ ~20 个工具类 + 12 个组件类（card / btn / input / table / tabs / badge / modal / toast / grid / stack / sidebar / empty）。
+1. `openui.css`：令牌（浅色优先、深色跟随系统、单一强调色、4px 栅格、系统字体）+ ~20 个工具类 + 12 个组件类（card / btn / input / table / tabs / badge / modal / toast / grid / stack / sidebar / empty）。
 2. `openui.js`：`mount / state / on / call / submit / $ / fmt / toast / modal / copy / persist` + `chart.spark` / `chart.bars`（内联 SVG，~60 行，替掉 200KB 的 Chart.js）。
 3. `icons.svg`：sprite，`ui.icon("name")`。
 

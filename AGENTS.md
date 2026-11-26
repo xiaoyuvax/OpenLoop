@@ -108,6 +108,7 @@
 - 新控件的颜色统一从 `UiStyle` 取，不写死 `Color.X`；自绘控件跟随主题。
 - 聊天区消息对齐（ChatFlow，Worker 与 Loop、WinForms 与 Web 同一套）：用户消息靠右、正文块宽度封顶行宽一半（文字在块内左对齐），助手消息贴左占满整行；行内不显示「用户 / AI」角色标注，靠左右位置区分。
 - 聊天区链接分流（`ChatPathActions` + 各视图 `OnChatLinkClicked`，Worker 与 Loop 一致）：网址 → 右侧「网页」内置浏览器；目录 → 直接用资源管理器打开；文本 → 右侧「文件」页（同一个页换内容，不叠 tab）；其余文件（二进制/过大/解码失败）→ 问一句再用系统默认程序打开。
+- 平铺视图（`TiledView`）：方块输入框与主输入框同一套命令语义——`/` 唤出命令联想浮层（`CommandPopup`，复用 `SessionView.Commands` / `LoopView.Commands` 与启用中的技能）、Tab/回车确认、上下键选择、Esc 关闭；方块放不下左右侧栏，任何要展开侧栏或开新标签页的动作（`ShowSidePage`/`ShowBrowser`/`ShowPuppetActions`/目标编辑/旁路/聊天区链接与表格、会开侧栏的 `/` 命令）一律先把该会话摘出平铺视图、挂回普通标签页并激活，再执行原逻辑（`NeedsFullView` → `PromoteFromTiled`，延后到消息循环下一轮，别在方块的按键/点击派发里拆方块）。
 - **附件与生图**：Worker/Loop 输入框都可挂附件（WinForms + Web 同一契约），落 `.openloop/tmp/attachments/<会话>/`，路径以「附件」段拼进用户消息；上限按模型类别给通用值（文本 8 / 生图 4，`MediaModels.AttachmentLimit`）。存在生图模型时工具栏显示「生图模型」，会话工具表注入 `image_generate`/`image_edit`（同系列按 id 前缀互指，有编辑变体就用它），结果存 `.openloop/tmp/images` 并写 EXIF（提示词 + 模型）。
 
 ## 工程规则

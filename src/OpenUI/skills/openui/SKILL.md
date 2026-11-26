@@ -139,7 +139,8 @@ CSS 里有：`page / row / stack / grid.c2..c4 / card / stat / btn(.primary .gho
 
 ## 视觉规范（跟着做就好看）
 
-- 深色优先，颜色**只用 CSS 变量**：`--ui-bg / --ui-surface / --ui-text / --ui-muted / --ui-accent / --ui-ok / --ui-warn / --ui-err`。不要写 `#333` 这类硬编码色，浅色主题会崩。
+- 浅色优先（默认浅色、深色自动跟随系统 `prefers-color-scheme`，默认即 elev-tuning 风格），颜色**只用 CSS 变量**：`--ui-bg / --ui-surface / --ui-text / --ui-muted / --ui-accent / --ui-ok / --ui-warn / --ui-err`。不要写 `#333` 这类硬编码色，深色主题会崩。
+- 页头横幅用 `.hero`（渐变底 + 白字），章节标题用 `h2.accent-bar`（竖条装饰）。
 - 间距用 4 的倍数；一屏内区块间距 `12px`，区块内 `6px`。
 - 一页一个 `<h1>`；数字用 `.num`（等宽对齐）。
 - 主操作只放一个 `.btn.primary`；破坏性操作用 `.danger` 并配 `ui.confirm`。

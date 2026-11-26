@@ -44,6 +44,18 @@ namespace OpenLoop.App
         /// <summary>宿主注入：按需建会话视图（平铺视图打开时页面被收走，队列管线可能还没建）。</summary>
         internal Func<Session, SessionView> HostEnsureView { get; set; }
 
+        /// <summary>
+        /// 宿主注入：方块放不下左右侧栏——把会话移出平铺视图、挂回普通标签页并激活；
+        /// 返回是否挂好（方块输入的命令随即在那边执行）。
+        /// </summary>
+        internal Func<object, bool> HostPromote { get; set; }
+
+        /// <summary>启用中的技能命令（按工作区缓存 30 秒，与主输入框同一份来源）。</summary>
+        private static readonly Dictionary<string, (DateTime At, IReadOnlyList<(string Command, string Description)> Items)>
+            SkillCache = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>SkillCache 既在界面线程读、也在后台取回来后写：一把锁兜住。</summary>
+        private static readonly object SkillLock = new();
+
         /// <summary>最后一个方块也没了：宿主关掉平铺视图页。</summary>
         internal event Action Emptied;
 
@@ -210,9 +222,15 @@ namespace OpenLoop.App
             chat.ChatFont = new Font("Microsoft YaHei UI", 9F);
             chat.FlashInterval = SessionView.FlashIntervalMs(WorkspaceOf(item));
             chat.Bind(tile.Mirror);
+            // 方块正文里的链接/表格都要在侧栏里展示：方块放不下侧栏，先挂回普通标签页再交给原视图处理
+            // （延后一轮：别在方块自己的事件派发里把方块拆了）
+            chat.LinkClicked += (_, e) => FromTile(item, v => v.OpenLinkFromTile(e), l => l.OpenLinkFromTile(e));
+            chat.TableAppClicked += (_, e) => FromTile(item, v => v.OpenTableFromTile(e), l => l.OpenTableFromTile(e));
 
             // 队列栏（进入队列时弹出的「上拉框」）+ 单行输入框，都贴底
             var popup = new PendingQueueView { Dock = DockStyle.Bottom };
+            // 命令联想（「上拉提示」）：与主输入框同一套浮层，列表来自本角色的命令表 + 启用中的技能
+            var cmds = new CommandPopup { Visible = false, Font = new Font("Microsoft YaHei UI", 9.5F) };
             var input = new AntdUI.Input
             {
                 Dock = DockStyle.Bottom,
@@ -232,14 +250,35 @@ namespace OpenLoop.App
             tile.Controls.Add(popup);
             tile.Controls.Add(input);
             tile.Controls.Add(bar);
+            tile.Controls.Add(cmds);         // 命令联想浮层：自己摆位置，盖在正文上方
+            cmds.BringToFront();
             tile.Controls.Add(tile.Overlay);   // 置顶：高亮画在最上层，Enabled=false 不吃命中
             tile.Overlay.BringToFront();
             tile.Title = title;
             tile.Input = input;
             tile.Chat = chat;
+            tile.Commands = cmds;
 
             BindQueue(tile, popup);
             WireQueueActions(tile, popup);
+
+            // 方块输入框也支持命令：敲 / 弹命令联想（上拉提示），Tab/回车确认，上下键选择，Esc 关闭
+            input.TextChanged += (_, _) => UpdateCommands(tile);
+            input.KeyDown += (_, e) =>
+            {
+                if (!cmds.IsOpen) return;
+                if (e.KeyCode == Keys.Down) { cmds.MoveSelection(1); e.SuppressKeyPress = true; return; }
+                if (e.KeyCode == Keys.Up) { cmds.MoveSelection(-1); e.SuppressKeyPress = true; return; }
+                if (e.KeyCode == Keys.Escape) { cmds.Close(); e.SuppressKeyPress = true; }
+            };
+            cmds.Accepted += command =>
+            {
+                // 选中后把命令名补进输入框（TextChanged 会自己收起浮层），焦点留在输入框
+                input.Text = command + " ";
+                input.SelectionStart = input.Text.Length;
+                input.Focus();
+            };
+            tile.Resize += (_, _) => PlaceCommands(tile);
 
             close.Click += (_, _) => BeginInvoke(new Action(() => Remove(item)));
             // 边框用画的不占布局：header/正文/输入框都是 Dock，塞不进额外的线
@@ -274,10 +313,20 @@ namespace OpenLoop.App
 
             // AntdUI 的 Enter 在 WM_KEYDOWN 里先被消化成换行（早于 KeyDown）：只能在这里拦。
             // 单行输入框：Enter（运行中=插队）与 Ctrl+Enter（等本轮）都发送，Shift+Enter 让它换行去。
+            // Tab 与回车一样确认联想（/ 命令）；联想没开时照旧把焦点交给下一个控件。
             input.VerifyKeyboard += (_, e) =>
             {
+                if ((e.KeyData & Keys.KeyCode) == Keys.Tab)
+                {
+                    if (!cmds.IsOpen) return;
+                    e.Result = false;
+                    cmds.Accept();
+                    return;
+                }
                 if (e.KeyData != Keys.Enter && e.KeyData != (Keys.Control | Keys.Enter)) return;
                 e.Result = false;
+                // 联想浮层开着且还没敲全命令：这一下只补全，不发送（与主输入框一致）
+                if (cmds.IsOpen && !cmds.IsExact(input.Text)) { cmds.Accept(); return; }
                 SendFromTile(tile);
             };
 
@@ -337,7 +386,43 @@ namespace OpenLoop.App
         {
             string text = tile.Input.Text.Trim();
             if (text.Length == 0) return;
-            switch (tile.Item.Owner)
+            tile.Commands?.Close();
+            // 输入框现在就清干净：下面要摘方块时控件可能被 Dispose，清空只会比延后更安全
+            tile.Input.Clear();
+
+            var owner = tile.Item.Owner;
+            // 这条命令要展开左右侧栏：方块放不下，先挂回普通标签页再执行。
+            // 「先挂回」会把方块拆掉（连同触发这次按键的控件），所以整段延后到消息循环下一轮。
+            if (SessionView.CommandNeedsFullView(text))
+            {
+                InvokeOnHost(() => { Promote(owner); SendTo(owner, text); });
+                return;
+            }
+            SendTo(owner, text);
+        }
+
+        /// <summary>
+        /// 延后到消息循环下一轮执行（别在方块的按键/点击派发里把方块拆了）。
+        /// 不走本控件的 BeginInvoke：最后一个方块被摘掉时平铺视图本身会被关掉，
+        /// 排在自己身上的动作就再也发不出来了；改挂在宿主窗体上。
+        /// </summary>
+        private void InvokeOnHost(Action action)
+        {
+            var form = FindForm();
+            try
+            {
+                if (form != null && !form.IsDisposed) form.BeginInvoke(action);
+                else if (!IsDisposed) BeginInvoke(action);
+                else action();
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+        }
+
+        /// <summary>把一段输入交给会话/Loop 自己的发送管线（/命令、排队、软打断都在那一侧处理）。</summary>
+        private void SendTo(object owner, string text)
+        {
+            switch (owner)
             {
                 case Session session:
                     // 队列与发送管线都在 SessionView 上：平铺视图打开时页面被收走，可能还没建视图
@@ -347,11 +432,111 @@ namespace OpenLoop.App
                     session.View.SendMode("task", immediate: true);
                     break;
                 case LoopView loop:
-                    // 与输入框同一套分流：/命令照常生效（要展开左右侧栏时由宿主把方块提升成普通标签页）
                     loop.SubmitText(text, immediate: true);
                     break;
             }
-            tile.Input.Clear();
+        }
+
+        /// <summary>把方块里的会话移出平铺视图、挂回普通标签页并激活（宿主实现）。</summary>
+        private bool Promote(object owner) => HostPromote?.Invoke(owner) ?? false;
+
+        /// <summary>
+        /// 方块里触发的、结果要摆进左右侧栏的动作（聊天区链接、markdown 表格开界面）：
+        /// 方块放不下侧栏，先挂回普通标签页并激活，再交给真实视图按原逻辑处理。
+        /// 延后到消息循环下一轮：别在方块自己的事件派发里把方块拆了。
+        /// </summary>
+        private void FromTile(TiledItem item, Action<SessionView> onSession, Action<LoopView> onLoop)
+        {
+            InvokeOnHost(() =>
+            {
+                var owner = item.Owner;
+                Promote(owner);
+                switch (owner)
+                {
+                    case Session session:
+                        if (session.View == null && HostEnsureView != null) HostEnsureView(session);
+                        if (session.View != null) onSession(session.View);
+                        break;
+                    case LoopView loop:
+                        onLoop(loop);
+                        break;
+                }
+            });
+        }
+
+        /// <summary>
+        /// 方块输入框的命令联想：以 / 开头且还没写参数时列本角色的命令表 + 启用中的技能。
+        /// 列的是提示，不拦发送；确认后把命令名补进输入框（与主输入框同一套语义）。
+        /// </summary>
+        private void UpdateCommands(TileBox tile)
+        {
+            var popup = tile.Commands;
+            if (popup == null || popup.IsDisposed) return;
+            string text = tile.Input.Text ?? "";
+            bool want = text.StartsWith('/') && !text.Contains(' ') && !text.Contains('\n');
+            if (!want)
+            {
+                popup.Close();
+                return;
+            }
+
+            var table = CommandsOf(tile.Item.Owner);
+            var matches = new List<(string Command, string Description)>();
+            foreach (var command in table)
+                if (command.Command.StartsWith(text, StringComparison.OrdinalIgnoreCase))
+                    matches.Add(command);
+            foreach (var command in SkillCommandsOf(WorkspaceOf(tile.Item)))
+                if (!table.Any(c => string.Equals(c.Command, command.Command, StringComparison.OrdinalIgnoreCase))
+                    && command.Command.StartsWith(text, StringComparison.OrdinalIgnoreCase))
+                    matches.Add(command);
+
+            if (matches.Count == 0)
+            {
+                popup.Close();
+                return;
+            }
+            popup.Open(matches);
+            PlaceCommands(tile);
+        }
+
+        /// <summary>联想浮层贴着输入框上沿摆：队列栏摆着时再往上让一格，别和排队项叠在一起。</summary>
+        private static void PlaceCommands(TileBox tile)
+        {
+            var popup = tile.Commands;
+            if (popup == null || !popup.IsOpen) return;
+            popup.PlaceAbove(tile.Popup is { Visible: true } queue ? queue : tile.Input);
+        }
+
+        /// <summary>本角色的命令表：Worker 与 Loop 各用自己那一份（与主输入框同源）。</summary>
+        private static (string Command, string Description)[] CommandsOf(object owner) => owner switch
+        {
+            LoopView => LoopView.Commands,
+            _ => SessionView.Commands
+        };
+
+        /// <summary>
+        /// 启用中的技能也进「/」列表：每工作区 30 秒一次，避免方块里每敲一个字都去问 I。
+        /// 取不到就先用空表（命令表本身照常提示）。
+        /// </summary>
+        private IReadOnlyList<(string Command, string Description)> SkillCommandsOf(string workspace)
+        {
+            if (string.IsNullOrWhiteSpace(workspace)) return [];
+            IReadOnlyList<(string Command, string Description)> items;
+            lock (SkillLock)
+            {
+                SkillCache.TryGetValue(workspace, out var cached);
+                if (cached.Items != null && DateTime.UtcNow - cached.At < TimeSpan.FromSeconds(30))
+                    return cached.Items;
+                items = cached.Items ?? [];
+                SkillCache[workspace] = (DateTime.UtcNow, items);   // 先占位，30 秒内不重复发起
+            }
+            _ = Task.Run(async () =>
+            {
+                using var loop = new OpenLoop.Service.Web.LoopApiClient();
+                var loaded = await SlashCommands.SkillsAsync(loop, workspace);
+                lock (SkillLock) SkillCache[workspace] = (DateTime.UtcNow, loaded);
+            });
+            return items;
         }
 
         /// <summary>把会话/Loop 的排队队列绑进方块：有排队项时队列栏自动出现在输入框上方。</summary>
@@ -540,6 +725,8 @@ namespace OpenLoop.App
             }
             public AntdUI.Label Title { get; set; }
             public AntdUI.Input Input { get; set; }
+            /// <summary>输入框上方的命令联想浮层（「上拉提示」）。</summary>
+            public CommandPopup Commands { get; set; }
             public ChatFlowControl Chat { get; set; }
             /// <summary>只装最新一轮的镜像簿：ChatFlow 的数据源，轮次对象与真实簿共享。</summary>
             public ChatTurnBook Mirror { get; } = new();

@@ -134,6 +134,8 @@ namespace OpenLoop.App
 
         public void ShowSidePage(int index)
         {
+            // 平铺方块里根本看不到侧栏：摆任何侧栏页前先让宿主把会话挂回普通标签页（不在平铺里时宿主直接返回）
+            NeedsFullView?.Invoke();
             _sideTabs.SelectIndex = index;
             UpdateSideVisibility(index);
         }
@@ -141,6 +143,12 @@ namespace OpenLoop.App
         /// <summary>只有选中的标签页持续渲染：切走暂停（Loop 轮照常写数据，切回滚到底再按最新数据重建）。
         /// 与 Worker 的 SessionView.SetActive 同一口径。</summary>
         internal void SetActive(bool active) => _chat.SuspendRendering = !active;
+
+        /// <summary>平铺方块里点了聊天区的链接：方块放不下侧栏，宿主先把会话挂回普通标签页再走同一套分流。</summary>
+        internal void OpenLinkFromTile(ChatLinkClickedEventArgs e) => OnChatLinkClicked(_chat, e);
+
+        /// <summary>平铺方块里点了 markdown 表格标签：同上，挂回普通标签页后照常走 /loopapp 流程。</summary>
+        internal void OpenTableFromTile(ChatTableAppClickedEventArgs e) => OnChatTableAppClicked(_chat, e);
 
         private const int BrowserPage = 5;
 
@@ -348,6 +356,8 @@ namespace OpenLoop.App
             _tips.SetToolTip(_btnCommit, Localization.T("提交托管仓库里的改动（工作树干净时不可用）"));
             _tips.SetToolTip(_btnPush, Localization.T("提交并推送到远端（工作树干净时不可用）"));
             _tips.SetToolTip(_btnRollback, Localization.T("把 A/I 退回上一版本，壳保持当前版本（没有上一版本时不可用）"));
+            _tips.SetToolTip(_switchDOutside, Localization.T("OutsideWriteHint"));
+            _tips.SetToolTip(_switchDSensitive, Localization.T("SensitiveHint"));
             SyncRepoButtons();
             _pending.Bind(_queue);
             _pending.EditRequested += BeginEdit;
@@ -2219,7 +2229,8 @@ namespace OpenLoop.App
             }
         }
 
-        private static readonly (string Command, string Description)[] Commands =
+        /// <summary>「/」命令表：本视图与平铺方块共用同一份（方块输入框也要提示命令）。</summary>
+        internal static readonly (string Command, string Description)[] Commands =
         {
             ("/btw", Localization.T("在右侧栏用当前上下文跑一个只读旁路任务")),
             ("/complain", Localization.T("把对 Loop 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）")),

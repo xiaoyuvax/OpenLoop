@@ -32,9 +32,13 @@
         private AntdUI.Label _lblDCost;
         private System.Windows.Forms.Label _lblDStatus;
         private AntdUI.Label _lblDPath;
-    private AntdUI.Label _lblDPerm;
-    private AntdUI.Switch _switchDOutside;
-    private AntdUI.Switch _switchDSensitive;
+        private AntdUI.Label _lblDOutside;
+        private AntdUI.Switch _switchDOutside;
+        private AntdUI.Label _lblDSensitive;
+        private AntdUI.Switch _switchDSensitive;
+        private FlowLayoutPanel _permBox;
+        private TableLayoutPanel _permRowOutside;
+        private TableLayoutPanel _permRowSensitive;
         private TableLayoutPanel _inputArea;
         private CommandPopup _cmdPopup;
         private AntdUI.Input _txtInput;
@@ -97,9 +101,13 @@
             _lblDCost = new AntdUI.Label();
             _lblDStatus = new System.Windows.Forms.Label();
             _lblDPath = new AntdUI.Label();
-            _lblDPerm = new AntdUI.Label();
+            _lblDOutside = new AntdUI.Label();
             _switchDOutside = new AntdUI.Switch();
+            _lblDSensitive = new AntdUI.Label();
             _switchDSensitive = new AntdUI.Switch();
+            _permBox = new FlowLayoutPanel();
+            _permRowOutside = new TableLayoutPanel();
+            _permRowSensitive = new TableLayoutPanel();
             _inputArea = new TableLayoutPanel();
             _cmdPopup = new CommandPopup();
             _txtInput = new AntdUI.Input();
@@ -316,20 +324,22 @@
             _lblDPath.IconGap = 6;
             _lblDPath.Margin = new Padding(0, 0, 0, 8);
 
-            _lblDPerm.AutoSize = true;
-            _lblDPerm.Text = Localization.T("OutsideWrite") + " / " + Localization.T("Sensitive");
-            _lblDPerm.Font = new Font("Segoe UI", 9F);
-            _lblDPerm.ForeColor = UiStyle.Muted;
-            _lblDPerm.Margin = new Padding(0, 4, 0, 4);
-
-            _switchDOutside.Width = 44;
-            _switchDOutside.Height = 22;
-            _switchDOutside.Margin = new Padding(0, 0, 8, 0);
             _switchDOutside.CheckedChanged += OnDetailPermChanged;
-
-            _switchDSensitive.Width = 44;
-            _switchDSensitive.Height = 22;
             _switchDSensitive.CheckedChanged += OnDetailPermChanged;
+
+            PermissionRows.ConfigureLabel(_lblDOutside, "OutsideWrite");
+            PermissionRows.ConfigureSwitch(_switchDOutside);
+            PermissionRows.ConfigureLabel(_lblDSensitive, "Sensitive");
+            PermissionRows.ConfigureSwitch(_switchDSensitive);
+            PermissionRows.ConfigureBox(_permBox);
+            PermissionRows.ConfigureRow(_permRowOutside);
+            _permRowOutside.Controls.Add(_lblDOutside, 0, 0);
+            _permRowOutside.Controls.Add(_switchDOutside, 1, 0);
+            PermissionRows.ConfigureRow(_permRowSensitive);
+            _permRowSensitive.Controls.Add(_lblDSensitive, 0, 0);
+            _permRowSensitive.Controls.Add(_switchDSensitive, 1, 0);
+            _permBox.Controls.Add(_permRowOutside);
+            _permBox.Controls.Add(_permRowSensitive);
 
             _detailFlow.Controls.Add(_lblDModel);
             _detailFlow.Controls.Add(_lblDEffort);
@@ -337,21 +347,13 @@
             _detailFlow.Controls.Add(_lblDCost);
             _detailFlow.Controls.Add(_lblDStatus);
             _detailFlow.Controls.Add(_lblDPath);
-            _detailFlow.Controls.Add(_lblDPerm);
-            var permRow = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                WrapContents = false,
-                Margin = new Padding(0, 0, 0, 8)
-            };
-            permRow.Controls.Add(_switchDOutside);
-            permRow.Controls.Add(_switchDSensitive);
-            _detailFlow.Controls.Add(permRow);
             _detailFlow.Controls.Add(_btnIterate);
             _detailFlow.Controls.Add(_btnCommit);
             _detailFlow.Controls.Add(_btnPush);
             _detailFlow.Controls.Add(_btnRollback);
             _detailFlow.Controls.Add(_btnOpenWorkspace);
+            // 审批豁免是全局设置、不是动作按钮：放在按钮组下方，单独一组
+            _detailFlow.Controls.Add(_permBox);
 
             _sideHost.Controls.Add(_detailFlow);
             _sideHost.Controls.Add(_harness);

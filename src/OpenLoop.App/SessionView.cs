@@ -192,6 +192,8 @@ namespace OpenLoop.App
             };
             _tips.SetToolTip(_lblDef, Localization.T("点击查看特征与规则"));
             _tips.SetToolTip(_lblTasks, Localization.T("点击查看考核题"));
+            _tips.SetToolTip(_switchDOutside, Localization.T("OutsideWriteHint"));
+            _tips.SetToolTip(_switchDSensitive, Localization.T("SensitiveHint"));
             _sideBtw.Initialize(session.Workspace, settings);
             _sideBtw.ActivatePage = () => ActivatePage?.Invoke() ?? false;
             _sideBtw.HostTitle = Session.Title;
@@ -369,12 +371,20 @@ namespace OpenLoop.App
 
         public void ShowSidePage(int index)
         {
+            // 平铺方块里根本看不到侧栏：摆任何侧栏页前先让宿主把会话挂回普通标签页（不在平铺里时宿主直接返回）
+            NeedsFullView?.Invoke();
             _sideTabs.SelectIndex = index;
             UpdateSideVisibility(index);
         }
 
         /// <summary>只有选中的会话页持续渲染：切走暂停（A 的快照照常并进数据），切回滚到底再按最新数据重建。</summary>
         internal void SetActive(bool active) => _chat.SuspendRendering = !active;
+
+        /// <summary>平铺方块里点了聊天区的链接：方块放不下侧栏，宿主先把会话挂回普通标签页再走同一套分流。</summary>
+        internal void OpenLinkFromTile(ChatLinkClickedEventArgs e) => OnChatLinkClicked(_chat, e);
+
+        /// <summary>平铺方块里点了 markdown 表格标签：同上，挂回普通标签页后照常走 /loopapp 流程。</summary>
+        internal void OpenTableFromTile(ChatTableAppClickedEventArgs e) => OnChatTableAppClicked(_chat, e);
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public BrowserView Browser => _browser;
@@ -926,7 +936,8 @@ namespace OpenLoop.App
             UpdateCommandPopup();
         }
 
-        private static readonly (string Command, string Description)[] Commands =
+        /// <summary>「/」命令表：本视图与平铺方块共用同一份（方块输入框也要提示命令）。</summary>
+        internal static readonly (string Command, string Description)[] Commands =
         {
             ("/btw", Localization.T("在右侧栏用当前上下文跑一个只读旁路任务")),
             ("/complain", Localization.T("把对 Worker 表现的不满发给 Loop（不附上下文，Loop 按需读源会话）")),
@@ -939,6 +950,25 @@ namespace OpenLoop.App
             ("/loopapp", Localization.T("/loopapp <描述>：由本会话生成一个 LoopApp 单页界面（表格/表单/图表等）")),
             ("/new", Localization.T("开一个新会话，沿用当前的模型与强度"))
         };
+
+        /// <summary>执行时会展开左/右侧栏、或要在正文上弹选择框的命令（其余命令留在方块里执行）。</summary>
+        private static readonly HashSet<string> FullViewCommands = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "/btw", "/sysprompt", "/agents", "/agentsmd", "/puppet", "/fork"
+        };
+
+        /// <summary>
+        /// 这条输入是会打开左右侧栏（或新标签页）的命令：平铺方块放不下侧栏，
+        /// 宿主据此先把会话挂回普通标签页再执行。Worker 与 Loop 共用同一套判据。
+        /// </summary>
+        internal static bool CommandNeedsFullView(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text[0] != '/') return false;
+            int end = text.IndexOfAny([' ', '\t', '\n'], 1);
+            string name = (end < 0 ? text[1..] : text[1..end]).Trim();
+            if (name.Length == 0) return false;
+            return FullViewCommands.Contains("/" + name);
+        }
 
         private readonly List<(string Command, string Description)> _cmdMatches = [];
         private IReadOnlyList<(string Command, string Description)> _skillCommands = [];

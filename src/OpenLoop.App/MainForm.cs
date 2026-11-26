@@ -872,7 +872,7 @@ namespace OpenLoop.App
                 view.SessionId, "loop", target);
             view.TargetEditRequested += (source, kind, request) => OnTargetEditRequested(source, kind, request);
             // 平铺方块放不下左右侧栏：要展开侧栏时先摘出平铺视图（延后一轮，别在方块输入框的按键事件里拆方块）
-            view.NeedsFullView += () => BeginInvoke(new Action(() => PromoteFromTiled(view)));
+            view.NeedsFullView += () => PromoteFromTiledLater(view);
             // 协作：协作会话是同工作区、平级的其他 Loop 会话（不是子 agent）。
             // 这两条委托会在 agent 的工具线程上被调用（CollabStart/CollabMonitor 都在后台轮里跑），
             // 建会话、列举会话都要回到界面线程，否则会跨线程碰控件与会话表。
@@ -1771,7 +1771,7 @@ namespace OpenLoop.App
             view.SideWorkEvicted += OnSideWorkEvicted;
             view.HarnessAssistRequested += page => OpenHarnessAssistant(session.Workspace, page);
             // 平铺方块放不下左右侧栏：要展开侧栏时先摘出平铺视图（延后一轮，别在方块输入框的按键事件里拆方块）
-            view.NeedsFullView += () => BeginInvoke(new Action(() => PromoteFromTiled(session)));
+            view.NeedsFullView += () => PromoteFromTiledLater(session);
             // 会话通知上的「打开会话」：页签关掉了就重新挂上再选中
             view.ActivatePage = () =>
             {
@@ -2366,6 +2366,8 @@ namespace OpenLoop.App
             view.DetachHoverChanged += OnTiledDetachHover;
             view.Emptied += OnTiledEmptied;
             view.HostEnsureView = session => EnsureView(session);
+            // 方块输入的命令要展开左右侧栏时：先把会话摘出平铺视图、挂回普通标签页并激活
+            view.HostPromote = PromoteOwner;
             var page = new AntdUI.TabPage
             {
                 Text = Localization.T("平铺视图"),
@@ -2522,14 +2524,29 @@ namespace OpenLoop.App
         }
 
         /// <summary>方块里的会话要展开侧栏：摘出平铺视图、挂回普通标签页（ShowSession/EnsureLoop 自己会摘）。</summary>
-        private void PromoteFromTiled(object owner)
+        private void PromoteFromTiled(object owner) => _ = PromoteOwner(owner);
+
+        /// <summary>同上，延后到消息循环下一轮：别在方块自己的事件派发里把方块拆了。</summary>
+        private void PromoteFromTiledLater(object owner)
         {
+            // 不在平铺视图里（普通标签页切侧栏页）什么都不用做，别白排一次回到消息循环
             if (_tiled == null || _tiled.Items.All(i => !ReferenceEquals(i.Owner, owner))) return;
+            BeginInvoke(new Action(() => PromoteFromTiled(owner)));
+        }
+
+        /// <summary>同上，返回是否已经挂回普通标签页（方块输入的命令要接着在那边执行）。</summary>
+        private bool PromoteOwner(object owner)
+        {
+            if (_tiled == null || _tiled.Items.All(i => !ReferenceEquals(i.Owner, owner))) return false;
             switch (owner)
             {
-                case Session session: ShowSession(session); break;
-                case LoopView loop: EnsureLoop(loop.Workspace, select: true, sessionId: loop.SessionId); break;
+                case Session session:
+                    ShowSession(session);
+                    return true;
+                case LoopView loop:
+                    return EnsureLoop(loop.Workspace, select: true, sessionId: loop.SessionId) != null;
             }
+            return false;
         }
 
         /// <summary>某个会话又被当成普通标签打开：先从平铺视图里摘掉，免得同一个会话出现两次。</summary>

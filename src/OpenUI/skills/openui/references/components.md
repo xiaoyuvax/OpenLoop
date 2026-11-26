@@ -211,7 +211,7 @@ ui.persist(...) is not a function。它不返回函数，返回 {get,set,on}。
 
 ## 主题
 
-`body.ui` 即可。浅色主题自动跟随系统；要强制深色：
+`body.ui` 即可。默认浅色（elev-tuning 风格），深色自动跟随系统；要强制深色：
 
 ```html
 <body class="ui" style="color-scheme: dark">

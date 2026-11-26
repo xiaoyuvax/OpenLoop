@@ -180,7 +180,7 @@
     <value>版本</value>
   </data>
   <data name="TileInputHint" xml:space="preserve">
-    <value>发送到本会话（Enter=运行中插队，其余排入队列）</value>
+    <value>发送到本会话（Enter=发送或插队，/ 唤出命令）</value>
   </data>
   <data name="ComposerHint" xml:space="preserve">
     <value>描述任务（Enter=本步后发送，Ctrl+Enter=本轮后发送，Shift+Enter=软换行）</value>

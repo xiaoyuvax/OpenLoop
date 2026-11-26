@@ -13,7 +13,12 @@ namespace OpenLoop.Core.Tools
     {
         private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
         private static readonly Encoding Utf8Strict = new UTF8Encoding(false, throwOnInvalidBytes: true);
-        private static readonly Encoding Ansi = ResolveAnsi();
+
+        //静态字段初始化器先于静态构造函数执行：直接在字段里调 ResolveAnsi 会在 RegisterProvider 之前跑，
+        //GetEncoding(936) 抛异常被吞掉、Ansi 永远是 null（测试进程里别的代码先注册过才碰巧通过）。
+        //所以这里用 Lazy 推迟到第一次真正取用，注册一定已经发生。
+        private static readonly Lazy<Encoding> AnsiLazy =
+            new(ResolveAnsi, LazyThreadSafetyMode.ExecutionAndPublication);
 
         static TextCodec()
         {
@@ -41,7 +46,7 @@ namespace OpenLoop.Core.Tools
         }
 
         /// <summary>无 BOM 且不是合法 UTF-8 时按它解码（也用于把「编码未知」的子进程输出兜下来）。</summary>
-        public static Encoding SystemAnsi => Ansi;
+        public static Encoding SystemAnsi => AnsiLazy.Value;
 
         public static Decoded Decode(byte[] bytes)
         {
@@ -62,8 +67,9 @@ namespace OpenLoop.Core.Tools
             if (TryStrictUtf8(bytes, out string utf8))
                 return new Decoded(utf8, Utf8NoBom, "UTF-8");
 
-            if (Ansi != null)
-                return new Decoded(Ansi.GetString(bytes), Ansi, $"{Ansi.WebName}/{Ansi.CodePage}");
+            Encoding ansi = SystemAnsi;
+            if (ansi != null)
+                return new Decoded(ansi.GetString(bytes), ansi, $"{ansi.WebName}/{ansi.CodePage}");
 
             // 连 ANSI 都取不到（极少数平台）：退回替换字符，至少不抛
             return new Decoded(Utf8NoBom.GetString(bytes), Utf8NoBom, "UTF-8");

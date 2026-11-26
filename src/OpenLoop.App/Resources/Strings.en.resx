@@ -180,7 +180,7 @@ Allow?</value>
     <value>Version</value>
   </data>
   <data name="TileInputHint" xml:space="preserve">
-    <value>Send to this session (Enter = jump the queue while running, otherwise enqueue)</value>
+    <value>Send to this session (Enter = send or jump the queue; / for commands)</value>
   </data>
   <data name="ComposerHint" xml:space="preserve">
     <value>Describe a task (Enter=send after this step, Ctrl+Enter=send after this turn, Shift+Enter=soft newline)</value>
