@@ -841,6 +841,31 @@ namespace OpenLoop.App
             _lblDEffort.Text = Localization.T("Effort") + ": " + effort;
             _lblDCost.Text = Localization.T("Cost") + ": " + _lblCost.Text.Replace(Localization.T("Cost") + ": ", "");
             _lblDStatus.Text = Localization.T("Status") + ": " + _lblStatus.Text.Replace(Localization.T("Status") + ": ", "");
+            RefreshDetailPerm();
+        }
+
+        /// <summary>详情页的审批开关：反映全局设置（AllowOutsideWorkspace / AllowSensitiveActions）。</summary>
+        private void RefreshDetailPerm()
+        {
+            var settings = _settings();
+            if (settings == null) return;
+            _suspendPermEvents = true;
+            _switchDOutside.Checked = settings.AllowOutsideWorkspace;
+            _switchDSensitive.Checked = settings.AllowSensitiveActions;
+            _suspendPermEvents = false;
+        }
+
+        private bool _suspendPermEvents;
+
+        private void OnDetailPermChanged(object sender, EventArgs e)
+        {
+            if (_suspendPermEvents || _settings == null) return;
+            var settings = _settings();
+            if (settings == null) return;
+            settings.AllowOutsideWorkspace = _switchDOutside.Checked;
+            settings.AllowSensitiveActions = _switchDSensitive.Checked;
+            try { settings.Save(); }
+            catch (Exception ex) { AppLog.Warn("保存审批设置失败：" + ex.Message); }
         }
 
         private void OnInputKeyDown(object sender, KeyEventArgs e)
@@ -2188,11 +2213,12 @@ namespace OpenLoop.App
                 : snapshot?.Outcome ?? "error";
             var turn = Session.Book.Turns.Count > 0 ? Session.Book.Turns[^1] : null;
             var remoteTurn = snapshot?.Turns.Count == Session.Book.Turns.Count ? snapshot.Turns[^1] : null;
+            // 失败发生在 A 侧时壳侧 failure 为空：实际原因在远端轮次正文里（FailurePrefix 开头），取来当通知文案
+            string raw = remoteTurn?.Assistant ?? turn?.AssistantText;
             if (turn != null)
             {
                 turn.Streaming = false;
                 turn.ToolStatusText = null;
-                string raw = remoteTurn?.Assistant ?? turn.AssistantText;
                 turn.AssistantText = outcome == "error" && raw.Trim().Length == 0
                     ? FailurePrefix + (failure ?? "执行失败")
                     // 协作提示轮允许没有正文（用户只看思考区）：不补「没有产出正文」占位
@@ -2221,7 +2247,13 @@ namespace OpenLoop.App
             else if (outcome == "budget")
                 Notify(Localization.T("预算用尽"), Localization.T("本次执行到达步数上限。"), error: true);
             else if (outcome == "error")
-                Notify(Localization.T("执行失败"), failure ?? Localization.T("执行失败"), error: true);
+            {
+                // 优先用轮次正文里的具体原因（A 侧失败时 failure 为空，正文里有「执行失败：…」）
+                string detail = failure;
+                if (string.IsNullOrWhiteSpace(detail) && turn?.AssistantText is string at && at.StartsWith(ServerNotice.FailedPrefix, StringComparison.Ordinal))
+                    detail = at.Substring(ServerNotice.FailedPrefix.Length);
+                Notify(Localization.T("执行失败"), detail ?? Localization.T("执行失败"), error: true);
+            }
 
             SetRunning(false);
             Session.Steps = remoteTurn?.Steps ?? Session.Steps;

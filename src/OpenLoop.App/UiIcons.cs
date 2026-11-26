@@ -71,6 +71,14 @@ namespace OpenLoop.App
         public const string Trash =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M9 3h6l1 2h4v2H4V5h4zM6 8h12l-1 12a1 1 0 01-1 1H8a1 1 0 01-1-1zm3 2v9h2v-9zm4 0v9h2v-9z'/></svg>";
 
+        /// <summary>查看密钥（按住显示明文）。</summary>
+        public const string Eye =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 5C6.9 5 3.1 9.3 2 12c1.1 2.7 4.9 7 10 7s8.9-4.3 10-7c-1.1-2.7-4.9-7-10-7zm0 2c3.7 0 6.7 2.7 8.3 5-1.6 2.3-4.6 5-8.3 5s-6.7-2.7-8.3-5C5.3 9.7 8.3 7 12 7zm0 2a3 3 0 100 6 3 3 0 000-6zm0 2a1 1 0 110 2 1 1 0 010-2z'/></svg>";
+
+        /// <summary>通知记录入口。</summary>
+        public const string Bell =
+            "<svg viewBox='0 0 24 24'><path fill='{0}' d='M12 2a6 6 0 016 6v3.5l1.8 3.6a1 1 0 01-.9 1.4H5.1a1 1 0 01-.9-1.4L6 11.5V8a6 6 0 016-6zm-3 16h6a3 3 0 01-6 0z'/></svg>";
+
         /// <summary>立即插入下一步。</summary>
         public const string Bolt =
             "<svg viewBox='0 0 24 24'><path fill='{0}' d='M13 2L4 14h6l-1 8 9-12h-6z'/></svg>";

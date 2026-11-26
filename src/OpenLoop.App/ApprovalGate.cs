@@ -10,6 +10,10 @@ namespace OpenLoop.App
     /// </summary>
     internal static class ApprovalGate
     {
+        /// <summary>「后续都许可」只记在本进程内：写进 settings.json 会放开所有会话与工作区
+        /// （F-0cc9bb23），用户不知情时等于关闭审批；重启壳后恢复默认，重新询问。</summary>
+        private static readonly HashSet<ApprovalKind> Remembered_ = new();
+
         /// <summary>可跨线程调用：内部会转到 owner 的 UI 线程弹框。</summary>
         public static ApprovalDecision Ask(Control owner, Func<AppSettings> settings, ApprovalRequest request)
         {
@@ -22,12 +26,7 @@ namespace OpenLoop.App
             return Prompt(owner, settings, request);
         }
 
-        private static bool Remembered(AppSettings settings, ApprovalKind kind) => kind switch
-        {
-            ApprovalKind.OutsideWorkspace => settings.AllowOutsideWorkspace,
-            ApprovalKind.SensitiveAction => settings.AllowSensitiveActions,
-            _ => false
-        };
+        private static bool Remembered(AppSettings settings, ApprovalKind kind) => Remembered_.Contains(kind);
 
         private static ApprovalDecision Prompt(Control owner, Func<AppSettings> settings, ApprovalRequest request)
         {
@@ -163,11 +162,8 @@ namespace OpenLoop.App
 
         private static ApprovalDecision AllowAlways(Func<AppSettings> settings, ApprovalRequest request)
         {
-            var target = settings();
-            if (request.Kind == ApprovalKind.OutsideWorkspace) target.AllowOutsideWorkspace = true;
-            else target.AllowSensitiveActions = true;
-            try { target.Save(); }
-            catch (Exception ex) { AppLog.Warn("保存审批设置失败：" + ex.Message); }
+            // 只记在内存：本进程内同类操作不再弹框；重启壳后恢复默认（重新询问）
+            Remembered_.Add(request.Kind);
             return ApprovalDecision.AllowAlways;
         }
 
@@ -192,7 +188,7 @@ namespace OpenLoop.App
             {
                 AutoSize = true,
                 MaximumSize = new Size(deviceWidth, 0),
-                Text = Localization.T("（可在设置 →「普通」里关闭）"),
+                Text = Localization.T("（本次会话内同类操作不再询问）"),
                 ForeColor = UiStyle.Muted,
                 Margin = new Padding(2, 2, 0, 0)
             };

@@ -305,6 +305,18 @@ Allow?</value>
   <data name="FetchingModels" xml:space="preserve">
     <value>Fetching models…</value>
   </data>
+  <data name="FetchUnsupported" xml:space="preserve">
+    <value>This provider does not support fetching models</value>
+  </data>
+  <data name="FetchUnsupportedBody" xml:space="preserve">
+    <value>The endpoint did not return a usable /models list; add model ids manually. Reason: </value>
+  </data>
+  <data name="HideKey" xml:space="preserve">
+    <value>Hide</value>
+  </data>
+  <data name="ShowKey" xml:space="preserve">
+    <value>Show</value>
+  </data>
   <data name="FetchModels" xml:space="preserve">
     <value>Fetch models</value>
   </data>
@@ -899,6 +911,18 @@ Iterate with the local code anyway?</value>
   </data>
   <data name="OpenWorkspace" xml:space="preserve">
     <value>Open workspace</value>
+  </data>
+  <data name="OutsideWrite" xml:space="preserve">
+    <value>Outside-workspace writes</value>
+  </data>
+  <data name="OutsideWriteHint" xml:space="preserve">
+    <value>When on, writes outside the workspace are approved silently, for all sessions</value>
+  </data>
+  <data name="Sensitive" xml:space="preserve">
+    <value>Risky actions</value>
+  </data>
+  <data name="SensitiveHint" xml:space="preserve">
+    <value>When on, dangerous commands and similar risky actions are approved silently</value>
   </data>
   <data name="PickDraft" xml:space="preserve">
     <value>Pick a draft on the left.</value>
@@ -1680,8 +1704,8 @@ The whole folder will be deleted and cannot be restored:
   <data name="后续同类操作都许可" xml:space="preserve">
     <value>Allow all similar operations from now on</value>
   </data>
-  <data name="（可在设置 →「普通」里关闭）" xml:space="preserve">
-    <value>(can be turned off in Settings → General)</value>
+  <data name="（本次会话内同类操作不再询问）" xml:space="preserve">
+    <value>(no more prompts for similar actions this session; resets on restart)</value>
   </data>
   <data name="打开文件夹" xml:space="preserve">
     <value>Open folder</value>

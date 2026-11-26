@@ -12,6 +12,7 @@ namespace OpenLoop.App
         private AntdUI.Label _lblSub;
         private FlowLayoutPanel _rightFlow;
         private AntdUI.Button _btnSettings;
+        private AntdUI.Button _btnNotifications;
         private AntdUI.Button _btnMin;
         private AntdUI.Button _btnMax;
         private AntdUI.Button _btnClose;
@@ -38,6 +39,7 @@ namespace OpenLoop.App
             _lblSub = new AntdUI.Label();
             _rightFlow = new FlowLayoutPanel();
             _btnSettings = new AntdUI.Button();
+        _btnNotifications = new AntdUI.Button();
             _btnMin = new AntdUI.Button();
             _btnMax = new AntdUI.Button();
             _btnClose = new AntdUI.Button();
@@ -127,6 +129,15 @@ namespace OpenLoop.App
             _btnSettings.Margin = new Padding(0, 10, 4, 10);
             _btnSettings.Click += OnSettings;
 
+            _btnNotifications.Name = "btnNotifications";
+            _btnNotifications.Width = 38;
+            _btnNotifications.Height = 34;
+            _btnNotifications.Ghost = true;
+            _btnNotifications.Radius = 8;
+            _btnNotifications.IconSvg = UiIcons.Of(UiIcons.Bell, UiStyle.Text);
+            _btnNotifications.Margin = new Padding(0, 10, 4, 10);
+            _btnNotifications.Click += OnNotifications;
+
             _btnMin.Name = "btnMin";
             _btnMin.Width = 38;
             _btnMin.Height = 34;
@@ -154,11 +165,12 @@ namespace OpenLoop.App
             _btnClose.Margin = new Padding(2, 10, 0, 10);
             _btnClose.Click += OnCloseWindow;
 
-            // 右到左：关闭在最右，其次最大化/最小化/设置
+            // 右到左：关闭在最右，其次最大化/最小化/设置/通知
             _rightFlow.Controls.Add(_btnClose);
             _rightFlow.Controls.Add(_btnMax);
             _rightFlow.Controls.Add(_btnMin);
             _rightFlow.Controls.Add(_btnSettings);
+            _rightFlow.Controls.Add(_btnNotifications);
 
             _topBar.Controls.Add(_btnMenu, 0, 0);
             _topBar.Controls.Add(_titleFlow, 1, 0);

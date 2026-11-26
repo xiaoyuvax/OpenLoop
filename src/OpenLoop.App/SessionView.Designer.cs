@@ -34,6 +34,9 @@ namespace OpenLoop.App
         private AntdUI.Label _lblDCtx;
         private AntdUI.Label _lblDCost;
         private AntdUI.Label _lblDStatus;
+    private AntdUI.Label _lblDPerm;
+    private AntdUI.Switch _switchDOutside;
+    private AntdUI.Switch _switchDSensitive;
         private AntdUI.Label _lblDef;
         private AntdUI.Label _lblTasks;
         private AntdUI.Label _lblTrace;
@@ -110,6 +113,9 @@ namespace OpenLoop.App
             _lblDCtx = new AntdUI.Label();
             _lblDCost = new AntdUI.Label();
             _lblDStatus = new AntdUI.Label();
+            _lblDPerm = new AntdUI.Label();
+            _switchDOutside = new AntdUI.Switch();
+            _switchDSensitive = new AntdUI.Switch();
             _lblDef = new AntdUI.Label();
             _lblTasks = new AntdUI.Label();
             _lblTrace = new AntdUI.Label();
@@ -496,6 +502,22 @@ namespace OpenLoop.App
             _lblDStatus.MaximumSize = new Size(260, 0);
             _lblDStatus.Margin = new Padding(0, 0, 0, 8);
 
+            _lblDPerm.AutoSize = true;
+            _lblDPerm.Text = Localization.T("OutsideWrite") + " / " + Localization.T("Sensitive");
+            _lblDPerm.Font = new Font("Segoe UI", 9F);
+            _lblDPerm.ForeColor = UiStyle.Muted;
+            _lblDPerm.Margin = new Padding(0, 4, 0, 8);
+
+            _switchDOutside.Width = 44;
+            _switchDOutside.Height = 22;
+            _switchDOutside.Margin = new Padding(0, 0, 8, 0);
+            _switchDOutside.CheckedChanged += OnDetailPermChanged;
+
+            _switchDSensitive.Width = 44;
+            _switchDSensitive.Height = 22;
+            _switchDSensitive.Margin = new Padding(0, 0, 0, 0);
+            _switchDSensitive.CheckedChanged += OnDetailPermChanged;
+
             _btnPendingSurveys.Text = Localization.T("待答 0");
             _btnPendingSurveys.Type = AntdUI.TTypeMini.Primary;
             _btnPendingSurveys.Ghost = true;
@@ -539,6 +561,16 @@ namespace OpenLoop.App
             _detailFlow.Controls.Add(_lblDCtx);
             _detailFlow.Controls.Add(_lblDCost);
             _detailFlow.Controls.Add(_lblDStatus);
+            var permRow = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                WrapContents = false,
+                Margin = new Padding(0)
+            };
+            permRow.Controls.Add(_switchDOutside);
+            permRow.Controls.Add(_switchDSensitive);
+            _detailFlow.Controls.Add(_lblDPerm);
+            _detailFlow.Controls.Add(permRow);
             _detailFlow.Controls.Add(_btnOpenWorkspace);
 
             _sideHost.Controls.Add(_loopFlow);

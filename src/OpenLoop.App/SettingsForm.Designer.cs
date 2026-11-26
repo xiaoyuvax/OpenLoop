@@ -8,7 +8,6 @@ namespace OpenLoop.App
         private AntdUI.Tabs _tabs;
         private AntdUI.TabPage _pageGeneral;
         private AntdUI.TabPage _pageModels;
-        private AntdUI.TabPage _pageOpenCode;
         private TableLayoutPanel _tools;
         private AntdUI.Label _lblWebFetch;
         private AntdUI.Select _cboWebFetch;
@@ -45,12 +44,6 @@ namespace OpenLoop.App
         private FlowLayoutPanel _autoApproveFlow;
         private AntdUI.Switch _switchAutoApprove;
         private AntdUI.Label _lblAutoApproveHint;
-        private AntdUI.Label _lblOpenCode;
-        private FlowLayoutPanel _openCodeFlow;
-        private AntdUI.Switch _switchOpenCode;
-        private AntdUI.Label _lblOpenCodeHint;
-        private AntdUI.Label _lblOpenCodeNote;
-        private TableLayoutPanel _openCode;
         private AntdUI.Label _lblAgents;
         private FlowLayoutPanel _agentsFlow;
         private AntdUI.Switch _switchAgents;
@@ -68,6 +61,14 @@ namespace OpenLoop.App
         private AntdUI.Switch _switchAutoIterate;
         private AntdUI.Label _lblAutoIterateHint;
         private AntdUI.Label _lblGeneralNote;
+    private AntdUI.Label _lblOutsideWrite;
+    private FlowLayoutPanel _outsideWriteFlow;
+    private AntdUI.Switch _switchOutsideWrite;
+    private AntdUI.Label _lblOutsideWriteHint;
+    private AntdUI.Label _lblSensitive;
+    private FlowLayoutPanel _sensitiveFlow;
+    private AntdUI.Switch _switchSensitive;
+    private AntdUI.Label _lblSensitiveHint;
 
         private TableLayoutPanel _models;
         private AntdUI.Label _lblProvider;
@@ -85,6 +86,7 @@ namespace OpenLoop.App
         private FlowLayoutPanel _providerActions;
         private AntdUI.Button _btnFetch;
         private AntdUI.Button _btnTest;
+        private AntdUI.Button _btnShowKey;
         private AntdUI.Label _lblStatus;
         private AntdUI.Label _lblModels;
         private FlowLayoutPanel _modelAdd;
@@ -132,7 +134,6 @@ namespace OpenLoop.App
             _tabs = new AntdUI.Tabs();
             _pageGeneral = new AntdUI.TabPage();
             _pageModels = new AntdUI.TabPage();
-            _pageOpenCode = new AntdUI.TabPage();
             _pageTools = new AntdUI.TabPage();
             _pageSkills = new AntdUI.TabPage();
             _pagePlugins = new AntdUI.TabPage();
@@ -166,12 +167,6 @@ namespace OpenLoop.App
             _autoApproveFlow = new FlowLayoutPanel();
             _switchAutoApprove = new AntdUI.Switch();
             _lblAutoApproveHint = new AntdUI.Label();
-            _lblOpenCode = new AntdUI.Label();
-            _openCodeFlow = new FlowLayoutPanel();
-            _switchOpenCode = new AntdUI.Switch();
-            _lblOpenCodeHint = new AntdUI.Label();
-            _lblOpenCodeNote = new AntdUI.Label();
-            _openCode = new TableLayoutPanel();
             _tools = new TableLayoutPanel();
             _lblWebFetch = new AntdUI.Label();
             _cboWebFetch = new AntdUI.Select();
@@ -194,6 +189,14 @@ namespace OpenLoop.App
             _switchAutoIterate = new AntdUI.Switch();
             _lblAutoIterateHint = new AntdUI.Label();
             _lblGeneralNote = new AntdUI.Label();
+            _lblOutsideWrite = new AntdUI.Label();
+            _outsideWriteFlow = new FlowLayoutPanel();
+            _switchOutsideWrite = new AntdUI.Switch();
+            _lblOutsideWriteHint = new AntdUI.Label();
+            _lblSensitive = new AntdUI.Label();
+            _sensitiveFlow = new FlowLayoutPanel();
+            _switchSensitive = new AntdUI.Switch();
+            _lblSensitiveHint = new AntdUI.Label();
 
             _collab = new TableLayoutPanel();
             _lblEnableCollab = new AntdUI.Label();
@@ -224,6 +227,7 @@ namespace OpenLoop.App
             _providerActions = new FlowLayoutPanel();
             _btnFetch = new AntdUI.Button();
             _btnTest = new AntdUI.Button();
+            _btnShowKey = new AntdUI.Button();
             _lblStatus = new AntdUI.Label();
             _lblModels = new AntdUI.Label();
             _modelAdd = new FlowLayoutPanel();
@@ -264,10 +268,6 @@ namespace OpenLoop.App
             _pageModels.ReadOnly = true;
             _pageModels.Dock = DockStyle.Fill;
 
-            _pageOpenCode.Text = "OpenCode";
-            _pageOpenCode.ReadOnly = true;
-            _pageOpenCode.Dock = DockStyle.Fill;
-
             _pageTools.Text = Localization.T("TabTools");
             _pageTools.ReadOnly = true;
             _pageTools.Dock = DockStyle.Fill;
@@ -287,9 +287,11 @@ namespace OpenLoop.App
             // 普通
             _general.Dock = DockStyle.Fill;
             _general.ColumnCount = 2;
-            _general.RowCount = 9;
+            _general.RowCount = 11;
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
             _general.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
             _general.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
@@ -305,11 +307,12 @@ namespace OpenLoop.App
             ConfigureLabel(_lblTheme, Localization.T("ThemeAccent"));
             ConfigureLabel(_lblFullAccess, Localization.T("FullAccess"));
             ConfigureLabel(_lblAutoApprove, Localization.T("AutoApprove"));
-            ConfigureLabel(_lblOpenCode, Localization.T("OpenCodeApproval"));
             ConfigureLabel(_lblAgents, "AGENTS.md");
             ConfigureLabel(_lblThinking, Localization.T("Thinking"));
             ConfigureLabel(_lblAutoEvolve, Localization.T("AutoEvolve"));
             ConfigureLabel(_lblAutoIterate, Localization.T("AutoIterate"));
+            ConfigureLabel(_lblOutsideWrite, Localization.T("OutsideWrite"));
+            ConfigureLabel(_lblSensitive, Localization.T("Sensitive"));
 
             _cboLanguage.Dock = DockStyle.Fill;
             _cboLanguage.Radius = 8;
@@ -360,24 +363,6 @@ namespace OpenLoop.App
 
             _autoApproveFlow.Controls.Add(_switchAutoApprove);
             _autoApproveFlow.Controls.Add(_lblAutoApproveHint);
-
-            _openCodeFlow.Dock = DockStyle.Fill;
-            _openCodeFlow.FlowDirection = FlowDirection.LeftToRight;
-            _openCodeFlow.WrapContents = false;
-            _openCodeFlow.Margin = new Padding(0);
-
-            _switchOpenCode.Width = 44;
-            _switchOpenCode.Height = 22;
-            _switchOpenCode.Margin = new Padding(0, 9, 8, 0);
-
-            _lblOpenCodeHint.AutoSize = true;
-            _lblOpenCodeHint.Text = Localization.T("OpenCodeHint");
-            _lblOpenCodeHint.Font = new Font("Segoe UI", 8.5F);
-            _lblOpenCodeHint.ForeColor = UiStyle.Muted;
-            _lblOpenCodeHint.Margin = new Padding(0, 11, 0, 0);
-
-            _openCodeFlow.Controls.Add(_switchOpenCode);
-            _openCodeFlow.Controls.Add(_lblOpenCodeHint);
 
             _agentsFlow.Dock = DockStyle.Fill;
             _agentsFlow.FlowDirection = FlowDirection.LeftToRight;
@@ -460,6 +445,42 @@ namespace OpenLoop.App
             _lblGeneralNote.TextAlign = ContentAlignment.TopLeft;
             _lblGeneralNote.Margin = new Padding(0, 10, 0, 0);
 
+            _outsideWriteFlow.Dock = DockStyle.Fill;
+            _outsideWriteFlow.FlowDirection = FlowDirection.LeftToRight;
+            _outsideWriteFlow.WrapContents = false;
+            _outsideWriteFlow.Margin = new Padding(0);
+
+            _switchOutsideWrite.Width = 44;
+            _switchOutsideWrite.Height = 22;
+            _switchOutsideWrite.Margin = new Padding(0, 9, 8, 0);
+
+            _lblOutsideWriteHint.AutoSize = true;
+            _lblOutsideWriteHint.Text = Localization.T("OutsideWriteHint");
+            _lblOutsideWriteHint.Font = new Font("Segoe UI", 8.5F);
+            _lblOutsideWriteHint.ForeColor = UiStyle.Error;
+            _lblOutsideWriteHint.Margin = new Padding(0, 11, 0, 0);
+
+            _outsideWriteFlow.Controls.Add(_switchOutsideWrite);
+            _outsideWriteFlow.Controls.Add(_lblOutsideWriteHint);
+
+            _sensitiveFlow.Dock = DockStyle.Fill;
+            _sensitiveFlow.FlowDirection = FlowDirection.LeftToRight;
+            _sensitiveFlow.WrapContents = false;
+            _sensitiveFlow.Margin = new Padding(0);
+
+            _switchSensitive.Width = 44;
+            _switchSensitive.Height = 22;
+            _switchSensitive.Margin = new Padding(0, 9, 8, 0);
+
+            _lblSensitiveHint.AutoSize = true;
+            _lblSensitiveHint.Text = Localization.T("SensitiveHint");
+            _lblSensitiveHint.Font = new Font("Segoe UI", 8.5F);
+            _lblSensitiveHint.ForeColor = UiStyle.Muted;
+            _lblSensitiveHint.Margin = new Padding(0, 11, 0, 0);
+
+            _sensitiveFlow.Controls.Add(_switchSensitive);
+            _sensitiveFlow.Controls.Add(_lblSensitiveHint);
+
             _general.Controls.Add(_lblLanguage, 0, 0);
             _general.Controls.Add(_cboLanguage, 1, 0);
             _general.Controls.Add(_lblTheme, 0, 1);
@@ -476,34 +497,13 @@ namespace OpenLoop.App
             _general.Controls.Add(_autoEvolveFlow, 1, 6);
             _general.Controls.Add(_lblAutoIterate, 0, 7);
             _general.Controls.Add(_autoIterateFlow, 1, 7);
-            _general.Controls.Add(_lblGeneralNote, 0, 8);
+            _general.Controls.Add(_lblOutsideWrite, 0, 8);
+            _general.Controls.Add(_outsideWriteFlow, 1, 8);
+            _general.Controls.Add(_lblSensitive, 0, 9);
+            _general.Controls.Add(_sensitiveFlow, 1, 9);
+            _general.Controls.Add(_lblGeneralNote, 0, 10);
             _general.SetColumnSpan(_lblGeneralNote, 2);
             _pageGeneral.Controls.Add(_general);
-
-            // OpenCode
-            _openCode.Dock = DockStyle.Fill;
-            _openCode.ColumnCount = 2;
-            _openCode.RowCount = 3;
-            _openCode.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
-            _openCode.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            _openCode.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
-            _openCode.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
-            _openCode.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            _openCode.Padding = new Padding(8, 16, 8, 8);
-
-            _lblOpenCodeNote.AutoSize = false;
-            _lblOpenCodeNote.Dock = DockStyle.Fill;
-            _lblOpenCodeNote.Text = Localization.T("OpenCodeNote");
-            _lblOpenCodeNote.Font = new Font("Segoe UI", 8.5F);
-            _lblOpenCodeNote.ForeColor = UiStyle.Muted;
-            _lblOpenCodeNote.TextAlign = ContentAlignment.TopLeft;
-            _lblOpenCodeNote.Margin = new Padding(0, 10, 0, 0);
-
-            _openCode.Controls.Add(_lblOpenCode, 0, 0);
-            _openCode.Controls.Add(_openCodeFlow, 1, 0);
-            _openCode.Controls.Add(_lblOpenCodeNote, 0, 1);
-            _openCode.SetColumnSpan(_lblOpenCodeNote, 2);
-            _pageOpenCode.Controls.Add(_openCode);
 
             // 工具
             _tools.Dock = DockStyle.Fill;
@@ -606,6 +606,16 @@ namespace OpenLoop.App
             _txtKey.Radius = 8;
             _txtKey.UseSystemPasswordChar = true;
             _txtKey.Margin = new Padding(0, 4, 8, 4);
+
+            _btnShowKey.Text = Localization.T("ShowKey");
+            _btnShowKey.Ghost = true;
+            _btnShowKey.Radius = 8;
+            _btnShowKey.Size = new Size(84, 30);
+            _btnShowKey.IconSvg = UiIcons.Of(UiIcons.Eye, UiStyle.Text);
+            _btnShowKey.Margin = new Padding(0, 4, 0, 4);
+            _btnShowKey.MouseDown += OnShowKeyMouseDown;
+            _btnShowKey.MouseUp += OnShowKeyEnd;
+            _btnShowKey.MouseLeave += OnShowKeyEnd;
 
             _lblHint.AutoSize = false;
             _lblHint.Dock = DockStyle.Fill;
@@ -711,7 +721,7 @@ namespace OpenLoop.App
             _models.SetColumnSpan(_txtUrl, 2);
             _models.Controls.Add(_lblKey, 0, 3);
             _models.Controls.Add(_txtKey, 1, 3);
-            _models.SetColumnSpan(_txtKey, 2);
+            _models.Controls.Add(_btnShowKey, 2, 3);
             _models.Controls.Add(_lblHint, 0, 4);
             _models.SetColumnSpan(_lblHint, 3);
             _models.Controls.Add(_providerActions, 0, 5);
@@ -900,7 +910,6 @@ namespace OpenLoop.App
             _pageCollab.Controls.Add(_collab);
 
             _tabs.Pages.Add(_pageGeneral);
-            _tabs.Pages.Add(_pageOpenCode);
             _tabs.Pages.Add(_pageTools);
             _tabs.Pages.Add(_pageModels);
             _tabs.Pages.Add(_pageSkills);

@@ -25,14 +25,14 @@ OpenLoop 把「干活」与「改进自己」拆成两个角色：**Worker（A�
 ### 能做什么
 
 - **Worker**：多会话（关标签不停止）、流式正文与思考区、排队/立即插入、`/btw` 只读旁路、`/fork` 复制上下文、`/new` 新会话、模型与推理强度选择、上下文占比、成本与步数、完整 trace、调查卡（AskUser）。
-- **工具**：`ReadFile`、`WriteFile`、`ListDir`、`Grep`、`Shell` 等内置工具；`ReadEvidence`、`RecordFinding`、`ProposeTask` 走证据通道；技能（内置 + 项目级）；外部 `OpenCodeTask` / `DshTask`；`WebFetch` 只读抓取；Puppet 探测对端进程与界面。
+- **工具**：`ReadFile`、`WriteFile`、`ListDir`、`Grep`、`Shell` 等内置工具；`ReadEvidence`、`RecordFinding`、`ProposeTask` 走证据通道；技能（内置 + 项目级）；`WebFetch` 只读抓取；Puppet 探测对端进程与界面。
 - **Loop**：OpenLoop 自己的 Worker——读写源码、跑构建与测试、出迭代计划并执行；每个项目一段 Loop 会话，读账本/trace/findings，把结论写成发现或考核题草稿，并演进工作区 Harness 参数。
 - **findings**：只记「尚未处置、且能分派到 Prompt/Skill/Rule/Limit/Guard/源码之一」的观察（当场修好的写进回复或提交）。Loop 用 `RecordFinding` 记，用户用 `/report [harness|prompt|skill|rule|limit|guard|code] <观察>` 记；`/report` 只落账，不启动会话、不触发演进。处置状态追加在 `loop/triage.jsonl`。
 - **Harness 页**：Worker 与 Loop 会话的右侧栏都有这一页，管理本工作区的五类可演进对象——**Prompt**（系统提示词模板 + `AGENTS.md`）、**Skill**、**Rule**、**Limit**、**Guard**（Limit/Guard 含连接重试、免费额度恢复、退化输出等自愈参数）；另有考核题与报告入口，可触发演进/回滚与迭代。
 - **目标中心会话**：`/sysprompt`、`/agentsmd` 让会话绑定一个唯一编辑目标，左栏只读呈现原文（可 undock 成独立窗口），用户用聊天告诉模型怎么改、模型落盘，文件一变左栏立刻刷新；用户不直接改文本。加新目标类型只需新 Kind + 呈现控件，不改会话主流程。
 - **模型与外部 agent**：
-  - **opencode**：本机 OpenCode v2 服务通过 `~/.local/state/opencode/service.json` 自动发现，就绪后作为 OpenCode 提供商出现；模型 id 形如 `opencode/<模型>@<提供商>`，可直接当会话模型，也可用 `OpenCodeTask` 把整件事交给它的 agent（工具、会话、上下文都在对方那边，权限仍转给你审批）。免费模型有标记。
-  - **dsh**：装了 dsh 就作为一个提供商出现，模型 id 形如 `dsh/<提供商>/<模型>`；`DshTask` 把任务交给 dsh 的 agent，用它是因为 dsh 的插件生态（如 `our-free-model` 的免费模型）或 dsh 特有工具。模型清单在后台探测，界面隔一拍重开下拉即可。
+  - **opencode**：本机 OpenCode v2 服务通过 `~/.local/state/opencode/service.json` 自动发现，就绪后作为 OpenCode 提供商出现；模型 id 形如 `opencode/<模型>@<提供商>`，可直接当会话模型。免费模型有标记。
+  - **dsh**：装了 dsh 就作为一个提供商出现，模型 id 形如 `dsh/<提供商>/<模型>`，用它是因为 dsh 的插件生态（如 `our-free-model` 的免费模型）或 dsh 特有工具。模型清单在后台探测，界面隔一拍重开下拉即可。
   - **其它**：任何 OpenAI 兼容端点（`baseUrl` + `model`，默认 OpenRouter）。
 - **护栏**：重复调用检测、探索预算、参数自愈、畸形调用重试、上下文压缩、敏感操作审批；连接层失败一直重试到连上、免费额度耗尽自动换节点、退化输出丢弃后重试——这些自愈参数的开关与阈值都在工作区账本里，可演进。
 - **Puppet**：A/I/壳各自带 Puppet 服务，agent 可探测状态、调用操作面（B 面具名 Action）；界面调试不靠 UI 自动化。

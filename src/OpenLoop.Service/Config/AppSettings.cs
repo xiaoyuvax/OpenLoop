@@ -179,9 +179,6 @@ namespace OpenLoop.Service.Config
         /// <summary>自动审批：一切工具调用都不再询问（路径/环境隔离仍按设置生效）。</summary>
         public bool AutoApprove { get; set; }
 
-        /// <summary>OpenCodeTask 的每个动作都经本应用审批；关闭则沿用 OpenCode 自己的权限配置。</summary>
-        public bool OpenCodeAskPermissions { get; set; } = true;
-
         /// <summary>WebFetch 的联网策略：off（不提供）/ ask（每次审批）/ allow（直接抓取，默认）。</summary>
         public string WebFetchMode { get; set; } = "allow";
 

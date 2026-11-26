@@ -333,8 +333,8 @@ namespace OpenLoop.Core.Tests
         public void UnwrapsNestedToolCallWrapper()
         {
             Assert.True(AgentToolCallParser.TryParse(
-                "tool-call: {\"tool\":\"Tool_call\",\"args\":{\"tool\":\"OpenCodeTask\",\"args\":{\"task\":\"x\"}}}", out var call));
-            Assert.Equal("OpenCodeTask", call.Tool);
+                "tool-call: {\"tool\":\"Tool_call\",\"args\":{\"tool\":\"Some_Tool\",\"args\":{\"task\":\"x\"}}}", out var call));
+            Assert.Equal("Some_Tool", call.Tool);
             Assert.Equal("x", call.Args["task"]);
         }
 

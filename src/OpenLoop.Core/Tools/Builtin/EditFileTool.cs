@@ -63,7 +63,9 @@ namespace OpenLoop.Core.Tools.Builtin
             try
             {
                 bytes = File.ReadAllBytes(full);
-                (text, encoding) = Decode(bytes);
+                var decoded = TextCodec.Decode(bytes);
+                text = decoded.Text;
+                encoding = decoded.Encoding;
                 //ReadFile 是按行输出的、不带 \r，模型给的 old 多半用 \n；两边都归一后再匹配
                 //shortcut: 按「全文是否含 CRLF」统一写回行尾，混用行尾的文件会被整体归一；要保留混合行尾再细化
                 crlf = text.Contains("\r\n");
@@ -116,27 +118,8 @@ namespace OpenLoop.Core.Tools.Builtin
             return line;
         }
 
-        /// <summary>按原文件 BOM 判定编码，写回时用同一个（UTF-8 / UTF-16 LE / UTF-16 BE）。</summary>
-        private static (string Text, Encoding Encoding) Decode(byte[] bytes)
-        {
-            if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-                return (Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3), new UTF8Encoding(true));
-            if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-                return (Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2), new UnicodeEncoding(false, true));
-            if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
-                return (Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2), new UnicodeEncoding(true, true));
-            return (Encoding.UTF8.GetString(bytes), new UTF8Encoding(false));
-        }
-
-        private static byte[] Encode(string text, Encoding encoding)
-        {
-            byte[] body = encoding.GetBytes(text);
-            byte[] head = encoding.GetPreamble();
-            if (head.Length == 0) return body;
-            byte[] all = new byte[head.Length + body.Length];
-            head.CopyTo(all, 0);
-            body.CopyTo(all, head.Length);
-            return all;
-        }
+        /// <summary>编码判定与写回共用 <see cref="TextCodec"/>：只认 BOM 会把 GBK 文件当 UTF-8 读成乱码，
+        /// 改完再按 UTF-8 写回等于把整个文件改坏。</summary>
+        private static byte[] Encode(string text, Encoding encoding) => TextCodec.Encode(text, encoding);
     }
 }

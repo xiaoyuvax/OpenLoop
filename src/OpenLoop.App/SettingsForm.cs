@@ -56,7 +56,6 @@ namespace OpenLoop.App
             _cboTheme.SelectedValue = string.IsNullOrWhiteSpace(_source.Theme) ? "light" : _source.Theme;
             _switchFullAccess.Checked = _source.FullAccess;
             _switchAutoApprove.Checked = _source.AutoApprove;
-            _switchOpenCode.Checked = _source.OpenCodeAskPermissions;
             _cboWebFetch.SelectedValue = string.IsNullOrWhiteSpace(_source.WebFetchMode) ? "allow" : _source.WebFetchMode;
             _switchAgents.Checked = _source.UseAgentsMd;
             _switchThinking.Checked = _source.ThinkingExpandedByDefault;
@@ -65,6 +64,8 @@ namespace OpenLoop.App
             _switchEnableCollab.Checked = _source.EnableCollab;
             _cboCollabPoll.SelectedValue = PollChoice(_source.CollabPollSeconds);
             _switchCollabReuse.Checked = _source.CollabReuseContext;
+            _switchOutsideWrite.Checked = _source.AllowOutsideWorkspace;
+            _switchSensitive.Checked = _source.AllowSensitiveActions;
             _filling = false;
 
             RefreshProviderCombo(_providers.FirstOrDefault());
@@ -147,13 +148,17 @@ namespace OpenLoop.App
                 _txtName.Text = has ? provider.Name : "";
                 _txtUrl.Text = plugin ? provider.PluginRawBaseUrl ?? provider.BaseUrl : has ? provider.BaseUrl : "";
                 _txtKey.Text = plugin || !has ? "" : AppSettings.Unprotect(provider.KeyProtected);
+                _txtKey.UseSystemPasswordChar = true;
+                _btnShowKey.Text = Localization.T("ShowKey");
                 _txtModelId.Text = "";
                 ReloadModelList(provider);
 
                 _txtName.Enabled = has && !plugin;
                 _txtUrl.Enabled = has && !plugin;
                 _txtKey.Enabled = has && !plugin;
-                _btnFetch.Visible = has && !plugin && provider.AutoModels;
+                _btnFetch.Visible = has && !plugin;
+                _btnShowKey.Enabled = has && !plugin;
+                _btnShowKey.Visible = has && !plugin;
                 _lblHint.Text = !has
                     ? Localization.T("ProviderNone")
                     : plugin
@@ -252,7 +257,20 @@ namespace OpenLoop.App
             _lblStatus.Text = Localization.T("FetchingModels");
             try
             {
-                var ids = await ProviderCatalog.FetchModelsAsync(provider);
+                List<string> ids;
+                try
+                {
+                    ids = await ProviderCatalog.FetchModelsAsync(provider);
+                }
+                catch (Exception ex) when (!provider.AutoModels)
+                {
+                    // 自定义提供商不保证有 /models：报给用户知晓，不算程序错误
+                    _lblStatus.Text = Localization.T("FetchUnsupported");
+                    AppNotify.warn(this, Localization.T("FetchFailed"),
+                        Localization.T("FetchUnsupportedBody") + " " + ex.Message,
+                        AntdUI.TAlignFrom.TR, null, 6);
+                    return;
+                }
                 foreach (string id in ids)
                     if (!provider.Models.Contains(id, StringComparer.OrdinalIgnoreCase))
                         provider.Models.Add(id);
@@ -288,8 +306,21 @@ namespace OpenLoop.App
             }
         }
 
-        private void ReloadModelList(ProviderConfig provider)
+        /// <summary>按住「查看密钥」临时显示明文；松开或移出立即恢复掩码。</summary>
+        private void OnShowKeyMouseDown(object sender, MouseEventArgs e)
         {
+            if (e.Button != MouseButtons.Left) return;
+            _txtKey.UseSystemPasswordChar = false;
+            _btnShowKey.Text = Localization.T("HideKey");
+        }
+
+        private void OnShowKeyEnd(object sender, EventArgs e)
+        {
+            _txtKey.UseSystemPasswordChar = true;
+            _btnShowKey.Text = Localization.T("ShowKey");
+        }
+
+        private void ReloadModelList(ProviderConfig provider)        {
             string filter = _txtModelId.Text.Trim();
             _listing = true;
             _lstModels.BeginUpdate();
@@ -720,11 +751,10 @@ namespace OpenLoop.App
                 OnlyFreeModels = _source.OnlyFreeModels,
                 FullAccess = _switchFullAccess.Checked,
                 AutoApprove = _switchAutoApprove.Checked,
-                OpenCodeAskPermissions = _switchOpenCode.Checked,
                 WebFetchMode = _cboWebFetch.SelectedValue as string ?? _source.WebFetchMode,
-                //记住的「后续都许可」由审批弹框写入，设置页不重置
-                AllowOutsideWorkspace = _source.AllowOutsideWorkspace,
-                AllowSensitiveActions = _source.AllowSensitiveActions,
+                //审批弹框的「后续都许可」只记进程内，不再写这两项；这里由用户显式开关控制
+                AllowOutsideWorkspace = _switchOutsideWrite.Checked,
+                AllowSensitiveActions = _switchSensitive.Checked,
                 UseAgentsMd = _switchAgents.Checked,
                 ThinkingExpandedByDefault = _switchThinking.Checked,
                 MarkdownMaxChars = _source.MarkdownMaxChars,

@@ -196,6 +196,10 @@ const EN = {
   "正在拉取模型…": "Fetching models…",
   "拉取失败": "Fetch failed",
   "拉取失败：": "Fetch failed: ",
+  "该提供商不支持拉取模型": "This provider does not support fetching models",
+  "这个地址没有返回可用的 /models 模型列表，请手动添加模型 id。原因：": "The endpoint did not return a usable /models list; add model ids manually. Reason: ",
+  "通知记录": "Notifications",
+  "还没有通知": "No notifications yet",
   "先拉取或添加一个模型": "Fetch or add a model first",
   "正在测试连接…": "Testing connection…",
   "连接正常：": "Connected: ",
@@ -396,7 +400,7 @@ const PuppetRow = ({ shot, setShot }) => h('div', { style: { display: 'flex', al
 
 // ---------------- 顶栏 ----------------
 
-function TopBar({ menu, onSettings }) {
+function TopBar({ menu, onSettings, onNotifications }) {
   return h('div', {
     style: {
       height: 54, flex: 'none', display: 'flex', alignItems: 'center', gap: 10,
@@ -409,9 +413,23 @@ function TopBar({ menu, onSettings }) {
       h('span', { style: { fontSize: 17, fontWeight: 700 } }, 'OpenLoop'),
       h('span', { style: { fontSize: 12, color: '#8c8c8c' } }, t('一个可自我迭代的开放式Agent'))),
     h('div', { style: { flex: 1 } }),
+    h(Tooltip, { title: t('通知记录') },
+      h(Button, { type: 'text', style: { width: 38, height: 34, borderRadius: 8 }, onClick: onNotifications }, '🔔')),
     h(Tooltip, { title: t('设置') },
       h(Button, { type: 'text', style: { width: 38, height: 34, borderRadius: 8 }, onClick: onSettings }, '⚙')));
 }
+
+// 通知记录：包一层 antd message，弹过的通知留档，顶栏铃铛随时回看
+const notifyLog = [];
+['info', 'success', 'warning', 'error'].forEach(kind => {
+  const orig = message[kind].bind(message);
+  message[kind] = args => {
+    const text = typeof args === 'string' ? args : args?.content ?? '';
+    notifyLog.push({ at: new Date(), kind, text: String(text) });
+    if (notifyLog.length > 500) notifyLog.splice(0, notifyLog.length - 500);
+    return orig(args);
+  };
+});
 
 // ---------------- 会话列表（Tab0） ----------------
 
@@ -1627,15 +1645,6 @@ function SettingsPanel({ caps, onClose, onLanguage }) {
       + t('全部会话结束或不可恢复地中止后自动停止。暂不支持跨工作区协作。'))
   ];
 
-  const openCode = [
-    h(SwitchRow, {
-      key: 'ask', label: t('权限审批'), checked: draft.openCodeAskPermissions,
-      onChange: v => patch({ openCodeAskPermissions: v }),
-      hint: t('委派给 OpenCode 时，每个动作都经本应用审批')
-    }),
-    h(SettingHint, { key: 'note' }, t('服务通过 ~/.local/state/opencode/service.json 自动发现；未就绪时不会出现在模型列表里。'))
-  ];
-
   const tools = [
     h(SettingRow, { key: 'webfetch', label: 'WebFetch' },
       h(Select, {
@@ -1820,7 +1829,6 @@ function SettingsPanel({ caps, onClose, onLanguage }) {
       size: 'small', activeKey: tab, onChange: setTab,
       items: [
         { key: 'general', label: t('普通'), children: h('div', { style: { paddingTop: 12 } }, general) },
-        { key: 'opencode', label: 'OpenCode', children: h('div', { style: { paddingTop: 12 } }, openCode) },
         { key: 'tools', label: t('工具'), children: h('div', { style: { paddingTop: 12 } }, tools) },
         { key: 'models', label: t('模型'), children: h('div', { style: { paddingTop: 12 } }, models) },
         { key: 'skills', label: t('技能'), children: h('div', { style: { paddingTop: 12 } }, skillsPage) },
@@ -1901,6 +1909,7 @@ function App() {
   const [newOpen, setNewOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [newWorkspace, setNewWorkspace] = useState('');
   const [newModel, setNewModel] = useState('');
   const [status, setStatus] = useState('');
@@ -2168,7 +2177,7 @@ function App() {
     button: { autoInsertSpace: false }
   },
     h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#f5f6f7' } },
-      h(TopBar, { menu, onSettings: () => setSettingsOpen(true) }),
+      h(TopBar, { menu, onSettings: () => setSettingsOpen(true), onNotifications: () => setNotifOpen(true) }),
       h('div', { style: { flex: 'none', background: '#fff', padding: '0 12px' } },
         h(Tabs, {
           type: 'editable-card', size: 'small', hideAdd: true,
@@ -2195,6 +2204,19 @@ function App() {
         onCancel: () => setSettingsOpen(false), destroyOnClose: true
       },
         h(SettingsPanel, { caps, onClose: () => setSettingsOpen(false), onLanguage: pickLanguage })),
+      h(Modal, {
+        open: notifOpen, title: t('通知记录'), width: 640, footer: null,
+        onCancel: () => setNotifOpen(false)
+      },
+        h('div', { style: { maxHeight: 480, overflowY: 'auto', display: 'grid', gap: 6 } },
+          notifyLog.length === 0
+            ? h(Muted, null, t('还没有通知'))
+            : [...notifyLog].reverse().map((n, i) => h('div', {
+              key: notifyLog.length - i, style: { borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }
+            },
+              h('div', { style: { fontSize: 12, color: '#8c8c8c' } },
+                n.at.toLocaleString() + ' · ' + n.kind),
+              h('div', { style: { fontSize: 13 } }, n.text))))),
       h(Modal, {
         open: aboutOpen, title: t('关于'), footer: null, onCancel: () => setAboutOpen(false)
       },

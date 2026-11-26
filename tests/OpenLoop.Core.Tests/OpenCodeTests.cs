@@ -602,43 +602,6 @@ public sealed class OpenCodeTests
     }
 
     [Fact]
-    public async Task Task_tool_returns_session_text_and_evidence()
-    {
-        string createBody = null;
-        var handler = new StubHandler(request => request.RequestUri.AbsolutePath switch
-        {
-            "/api/session" => Create(request, body => createBody = body, "ses_1"),
-            "/api/session/ses_1/prompt" => Json("{}"),
-            "/api/session/ses_1/permission" => Json("""{"data":[]}"""),
-            "/api/session/ses_1" => Json(
-                """{"data":{"id":"ses_1","time":{"created":1,"idle":2},"cost":0.5,"tokens":{"input":10,"output":3},"outcome":"succeeded"}}"""),
-            "/api/session/ses_1/message" => Json("""
-            {"data":[{"type":"assistant","content":[
-              {"type":"text","text":"done"},
-              {"type":"tool","name":"bash","state":{},"time":{"created":1}}
-            ]}]}
-            """),
-            "/api/session/ses_1/diff" => Json("""
-            {"data":[{"file":"src/a.cs","patch":"","additions":3,"deletions":1,"status":"modified"}]}
-            """),
-            _ => Json("{}", 404)
-        });
-        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
-        var tool = new OpenCodeTaskTool(() => client, Path.GetTempPath());
-
-        var result = await tool.ExecuteAsync(
-            new ToolArgs(new Dictionary<string, object> { ["task"] = "do it" }), default);
-
-        Assert.True(result.Ok);
-        Assert.StartsWith("done", result.Data);
-        Assert.Contains("ses_1", result.Data);
-        Assert.Contains("bash", result.Data);
-        Assert.Contains("0.5", result.Data);
-        Assert.Contains("src/a.cs(+3/-1)", result.Data);
-        Assert.Contains("\"effect\":\"ask\"", createBody);
-    }
-
-    [Fact]
     public async Task Sweep_deletes_only_sessions_whose_owner_process_is_gone()
     {
         var deleted = new List<string>();
@@ -691,77 +654,10 @@ public sealed class OpenCodeTests
         Assert.DoesNotContain("permissions", body);
     }
 
-    [Fact]
-    public async Task Task_tool_fails_fast_when_permission_is_pending_without_approver()
+    private static HttpResponseMessage Create(HttpRequestMessage request, Action<string> capture, string sessionID)
     {
-        var handler = new StubHandler(request => request.RequestUri.AbsolutePath switch
-        {
-            "/api/session" => Json("""{"data":{"id":"ses_2"}}"""),
-            "/api/session/ses_2/prompt" => Json("{}"),
-            "/api/session/ses_2/permission" => Json("""{"data":[{"id":"perm_1","action":"edit","resources":["a.cs"]}]}"""),
-            _ => Json("{}")
-        });
-        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
-        var tool = new OpenCodeTaskTool(() => client, Path.GetTempPath());
-
-        var result = await tool.ExecuteAsync(
-            new ToolArgs(new Dictionary<string, object> { ["task"] = "do it" }), default);
-
-        Assert.False(result.Ok);
-        Assert.Contains("审批", result.Error);
-    }
-
-    [Fact]
-    public async Task Task_tool_bridges_approval_to_once()
-    {
-        int polls = 0;
-        string reply = null;
-        var handler = new StubHandler(request => request.RequestUri.AbsolutePath switch
-        {
-            "/api/session" => Json("""{"data":{"id":"ses_3"}}"""),
-            "/api/session/ses_3/prompt" => Json("{}"),
-            "/api/session/ses_3/permission" => ++polls == 1
-                ? Json("""{"data":[{"id":"perm_1","action":"edit","resources":["a.cs"]}]}""")
-                : Json("""{"data":[]}"""),
-            "/api/session/ses_3/permission/perm_1/reply" => Capture(request, body => reply = body),
-            "/api/session/ses_3" => Json(
-                """{"data":{"id":"ses_3","time":{"created":1,"idle":2},"outcome":"succeeded"}}"""),
-            "/api/session/ses_3/message" => Json("""{"data":[{"type":"assistant","content":[{"type":"text","text":"done"}]}]}"""),
-            _ => Json("{}")
-        });
-        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
-        var tool = new OpenCodeTaskTool(
-            () => client, Path.GetTempPath(), approve: _ => ApprovalDecision.AllowOnce);
-
-        var result = await tool.ExecuteAsync(
-            new ToolArgs(new Dictionary<string, object> { ["task"] = "do it" }), default);
-
-        Assert.True(result.Ok);
-        Assert.Contains("\"decision\":\"once\"", reply);
-    }
-
-    [Fact]
-    public async Task Task_tool_rejects_when_user_denies()
-    {
-        string reply = null;
-        var handler = new StubHandler(request => request.RequestUri.AbsolutePath switch
-        {
-            "/api/session" => Json("""{"data":{"id":"ses_4"}}"""),
-            "/api/session/ses_4/prompt" => Json("{}"),
-            "/api/session/ses_4/permission" => Json("""{"data":[{"id":"perm_1","action":"bash","resources":["rm -rf x"]}]}"""),
-            "/api/session/ses_4/permission/perm_1/reply" => Capture(request, body => reply = body),
-            _ => Json("{}")
-        });
-        using var client = new OpenCodeClient("http://127.0.0.1:1234", "", handler);
-        var tool = new OpenCodeTaskTool(
-            () => client, Path.GetTempPath(), approve: _ => ApprovalDecision.Deny);
-
-        var result = await tool.ExecuteAsync(
-            new ToolArgs(new Dictionary<string, object> { ["task"] = "do it" }), default);
-
-        Assert.False(result.Ok);
-        Assert.Contains("拒绝", result.Error);
-        Assert.Contains("\"decision\":\"reject\"", reply);
+        capture(request.Content?.ReadAsStringAsync().GetAwaiter().GetResult());
+        return Json("{\"data\":{\"id\":\"" + sessionID + "\"}}");
     }
 
     private static HttpClient Http(Func<HttpRequestMessage, HttpResponseMessage> handle)
@@ -777,12 +673,6 @@ public sealed class OpenCodeTests
     {
         capture(request.Content?.ReadAsStringAsync().GetAwaiter().GetResult());
         return Json("{}");
-    }
-
-    private static HttpResponseMessage Create(HttpRequestMessage request, Action<string> capture, string sessionID)
-    {
-        capture(request.Content?.ReadAsStringAsync().GetAwaiter().GetResult());
-        return Json("{\"data\":{\"id\":\"" + sessionID + "\"}}");
     }
 
     private sealed class StubHandler : HttpMessageHandler

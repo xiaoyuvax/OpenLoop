@@ -937,10 +937,8 @@ namespace OpenLoop.App
                     var (readScope, writeScope) = OpenLoop.Service.Source.LoopScope.Create(
                         approve, sessionWorkspace: _workspace);
                     var loopTools = ToolRegistry.Loop(readScope, writeScope, _workspace, approve, activeSkills,
-                        OpenCodeTools.For(writeScope.Root, approve, settings.OpenCodeAskPermissions)
-                            .Concat(DshTools.For(settings, writeScope.Root, approve))
-                            .Concat(OpenLoop.Service.Web.PuppetTools.For(
-                                FeatureCatalog.PolicyOf(_workspace).PuppetResultLimit))
+                        OpenLoop.Service.Web.PuppetTools.For(
+                            FeatureCatalog.PolicyOf(_workspace).PuppetResultLimit)
                             .Concat(ImageTools.For(_workspace, settings, _imageModel, saved))
                             // 内存会话优先：文件里的对话记录可能几十 MB，按轮读内存不受上限影响
                             .Concat([new SessionMemoryTool((title, offset, count) =>
@@ -1681,6 +1679,7 @@ namespace OpenLoop.App
                 + " / " + contextLimit.ToString("N0");
             _lblDCost.Text = Localization.T("Cost") + ": " + _lastCost;
             _lblDStatus.Text = Localization.T("Status") + ": " + status;
+            RefreshDetailPerm();
             // 模型名与状态行可能很长（提供商前缀 + 后缀）：按换行重算高度，别裁成一行
             int detailWidth = Math.Max(Dip(120), _detailFlow.ClientSize.Width - Dip(28));
             FitWrapped(_lblDModel, detailWidth);
@@ -1697,6 +1696,30 @@ namespace OpenLoop.App
                 label.Font,
                 new Size(width, int.MaxValue),
                 TextFormatFlags.WordBreak).Height;
+        }
+
+        /// <summary>详情页的审批开关：反映全局设置（AllowOutsideWorkspace / AllowSensitiveActions）。</summary>
+        private void RefreshDetailPerm()
+        {
+            var settings = _settings();
+            if (settings == null) return;
+            _suspendPermEvents = true;
+            _switchDOutside.Checked = settings.AllowOutsideWorkspace;
+            _switchDSensitive.Checked = settings.AllowSensitiveActions;
+            _suspendPermEvents = false;
+        }
+
+        private bool _suspendPermEvents;
+
+        private void OnDetailPermChanged(object sender, EventArgs e)
+        {
+            if (_suspendPermEvents || _settings == null) return;
+            var settings = _settings();
+            if (settings == null) return;
+            settings.AllowOutsideWorkspace = _switchDOutside.Checked;
+            settings.AllowSensitiveActions = _switchDSensitive.Checked;
+            try { settings.Save(); }
+            catch (Exception ex) { AppLog.Warn("保存审批设置失败：" + ex.Message); }
         }
 
         private void RunSideWork(string request)

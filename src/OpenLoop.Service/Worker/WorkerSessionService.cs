@@ -164,9 +164,7 @@ namespace OpenLoop.Service.Worker
             scope.Approve = approve;
             var tools = ToolRegistry.Workspace(
                 scope, approve, skills, fullAccess,
-                OpenCodeTools.For(workspace, approve, settings.OpenCodeAskPermissions)
-                    .Concat(DshTools.For(settings, workspace, approve))
-                    .Concat(plugins.Tools())
+                plugins.Tools()
                     .Concat(OpenLoop.Service.Web.PuppetTools.For(
                         FeatureCatalog.PolicyOf(workspace).PuppetResultLimit))
                     .Concat(CollabTools.For(request.Collab, request.SessionId))
@@ -280,7 +278,6 @@ namespace OpenLoop.Service.Worker
             catch (Exception ex)
             {
                 AppLog.Error("任务执行失败", ex);
-                QuotaGate.NoteFor(request.Model, ex.Message);
                 result.Outcome = "error";
                 result.ErrorMessage = ex.Message;
                 result.FinalAnswer = ex.Message;

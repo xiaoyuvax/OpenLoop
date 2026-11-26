@@ -22,7 +22,6 @@ namespace OpenLoop.Core.Acp
         private readonly Dictionary<string, string> _sessionIds = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Dictionary<string, AcpModel>> _models = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _appliedModel = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, Func<AcpPermissionRequest, bool>> _permissionBySession = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Run> _runs = new(StringComparer.OrdinalIgnoreCase);
         private bool _disposed;
         private volatile bool _initialized;
@@ -54,15 +53,8 @@ namespace OpenLoop.Core.Acp
             _client.Notification += OnNotification;
         }
 
-        /// <summary>权限按会话分流：任务工具那段用「逐次问用户」，模型那路仍是 FullAccess 策略。</summary>
         private bool DecidePermission(AcpPermissionRequest request)
         {
-            if (!string.IsNullOrEmpty(request.SessionId))
-            {
-                Func<AcpPermissionRequest, bool> decide;
-                lock (_gate) _permissionBySession.TryGetValue(request.SessionId, out decide);
-                if (decide != null) return decide(request);
-            }
             return _allow();
         }
 
@@ -127,80 +119,6 @@ namespace OpenLoop.Core.Acp
                 Reasoning = run.Reasoning.Length == 0 ? null : run.Reasoning.ToString(),
                 FinishReason = "stop"
             };
-        }
-
-        /// <summary>
-        /// 一件任务交给 dsh：新开一个会话（不污染模型那条缓存会话），跑完关掉。
-        /// <paramref name="decide"/> 是这次任务的权限策略（逐次问用户），返回 false 即拒绝。
-        /// </summary>
-        public async Task<CompletionResult> RunTaskAsync(
-            string workspace, string modelId, string task,
-            Func<AcpPermissionRequest, bool> decide, CancellationToken ct)
-        {
-            await InitializeAsync(ct).ConfigureAwait(false);
-
-            var created = await _client.RequestAsync("session/new",
-                new { cwd = workspace, mcpServers = Array.Empty<object>() }, ct).ConfigureAwait(false);
-
-            string sessionId = created.TryGetProperty("sessionId", out var id) ? id.GetString() ?? "" : "";
-            if (sessionId.Length == 0) throw new InvalidOperationException("ACP 没有给 sessionId");
-
-            lock (_gate)
-            {
-                _models[sessionId] = ParseModels(created);
-                if (decide != null) _permissionBySession[sessionId] = decide;
-            }
-
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(modelId))
-                {
-                    string value = ValueOf(modelId);
-                    if (value != null)
-                    {
-                        await _client.RequestAsync("session/set_config_option",
-                            new { sessionId, configId = "model", value }, ct).ConfigureAwait(false);
-                        lock (_gate) _appliedModel[sessionId] = value;
-                    }
-                }
-
-                var run = new Run(null, null);
-                lock (_gate) _runs[sessionId] = run;
-                using var cancel = ct.Register(() =>
-                    _ = _client.NotifyAsync("session/cancel", new { sessionId }, CancellationToken.None));
-
-                try
-                {
-                    await _client.RequestAsync("session/prompt",
-                        new { sessionId, prompt = new[] { new { type = "text", text = task } } }, ct)
-                        .ConfigureAwait(false);
-                }
-                finally
-                {
-                    lock (_gate) _runs.Remove(sessionId);
-                }
-
-                return new CompletionResult
-                {
-                    Content = run.Text.ToString(),
-                    Reasoning = run.Reasoning.Length == 0 ? null : run.Reasoning.ToString(),
-                    FinishReason = "stop"
-                };
-            }
-            finally
-            {
-                lock (_gate) _permissionBySession.Remove(sessionId);
-                using var closeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                try
-                {
-                    await _client.RequestAsync("session/close", new { sessionId }, closeCts.Token)
-                        .ConfigureAwait(false);
-                }
-                catch
-                {
-                    // 有的代理不支持 close：进程随宿主退出，不影响正确性
-                }
-            }
         }
 
         private async Task<string> EnsureSessionAsync(string workspace, CancellationToken ct)

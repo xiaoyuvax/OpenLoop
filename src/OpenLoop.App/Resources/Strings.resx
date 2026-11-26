@@ -305,6 +305,18 @@
   <data name="FetchingModels" xml:space="preserve">
     <value>正在拉取模型…</value>
   </data>
+  <data name="FetchUnsupported" xml:space="preserve">
+    <value>该提供商不支持拉取模型</value>
+  </data>
+  <data name="FetchUnsupportedBody" xml:space="preserve">
+    <value>这个地址没有返回可用的 /models 模型列表，请手动添加模型 id。原因：</value>
+  </data>
+  <data name="HideKey" xml:space="preserve">
+    <value>隐藏</value>
+  </data>
+  <data name="ShowKey" xml:space="preserve">
+    <value>查看</value>
+  </data>
   <data name="FetchModels" xml:space="preserve">
     <value>拉取模型</value>
   </data>
@@ -899,6 +911,18 @@
   </data>
   <data name="OpenWorkspace" xml:space="preserve">
     <value>打开工作区</value>
+  </data>
+  <data name="OutsideWrite" xml:space="preserve">
+    <value>工作区外写入</value>
+  </data>
+  <data name="OutsideWriteHint" xml:space="preserve">
+    <value>打开后工作区外的写入不再弹审批，对所有会话生效</value>
+  </data>
+  <data name="Sensitive" xml:space="preserve">
+    <value>风险操作</value>
+  </data>
+  <data name="SensitiveHint" xml:space="preserve">
+    <value>打开后危险命令等风险操作不再弹审批</value>
   </data>
   <data name="PickDraft" xml:space="preserve">
     <value>从左侧选择一条草稿。</value>
@@ -1680,8 +1704,8 @@
   <data name="后续同类操作都许可" xml:space="preserve">
     <value>后续同类操作都许可</value>
   </data>
-  <data name="（可在设置 →「普通」里关闭）" xml:space="preserve">
-    <value>（可在设置 →「普通」里关闭）</value>
+  <data name="（本次会话内同类操作不再询问）" xml:space="preserve">
+    <value>（本次会话内同类操作不再询问，重启后恢复）</value>
   </data>
   <data name="打开文件夹" xml:space="preserve">
     <value>打开文件夹</value>

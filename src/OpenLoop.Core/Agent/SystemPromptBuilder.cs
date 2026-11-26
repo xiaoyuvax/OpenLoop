@@ -62,8 +62,10 @@ namespace OpenLoop.Core.Agent
                 $"- 今天日期：{DateTime.Now:yyyy-MM-dd}。"));
             if (OperatingSystem.IsWindows())
             {
-                // PowerShell 5.1 把无 BOM 文件按 ANSI 读，含中文的脚本编辑常把全文搞乱（AGENTS.md 写了也防不住，须进系统提示词）。
-                sb.AppendLine("- Windows：PowerShell 5.1 会把无 BOM 的文本按 ANSI 读，含中文的文件用它的脚本按行读写会整段变乱码或挤行；优先用文件工具（ReadFile/WriteFile/EditFile，改局部用 EditFile）读写文本，必须走 Shell 时显式指定 UTF-8（如 [IO.File]::ReadAllText(p,[Text.Encoding]::UTF8)），改完先 ReadFile 核对再继续。");
+                // 编码坑由工具兜住：ReadFile 按 BOM→严格 UTF-8→系统 ANSI 判定并标出非 UTF-8，EditFile/WriteFile 按原编码写回，
+                // 子进程输出也按同一份判定解码。剩下无法代劳的只有「PowerShell 脚本内部读写文件」——它在脚本里就把内容读坏了，
+                // 工具拿到的是已经坏掉的字节，所以这一句必须留在提示词里。
+                sb.AppendLine("- Windows：别用 PowerShell 脚本批量改写文本文件（脚本里 Get-Content/Out-File 会按系统码页读无 BOM 的中文，读坏再写回去）；改文件一律用 ReadFile/WriteFile/EditFile，它们按原编码读写、遇到非 UTF-8 会在结果里标明编码。");
             }
             return sb.ToString() + "\n";
         }

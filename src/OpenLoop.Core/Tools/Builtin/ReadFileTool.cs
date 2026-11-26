@@ -36,9 +36,19 @@ namespace OpenLoop.Core.Tools.Builtin
                     $"文件过大（{info.Length} 字节，上限 {MaxBytes}）：{path}"));
 
             string[] lines;
+            string encodingNote = null;
             try
             {
-                lines = File.ReadAllLines(full);
+                byte[] bytes = File.ReadAllBytes(full);
+                if (TextCodec.IsBinary(bytes))
+                    return Task.FromResult(AgentToolResult.Failure(
+                        $"{path} 看起来是二进制文件（含 NUL 字节），不是文本，未读取。"));
+
+                //按 BOM → 严格 UTF-8 → 系统 ANSI 判定：GBK 文件按 UTF-8 硬读会整篇乱码，模型会把它当文件内容
+                var decoded = TextCodec.Decode(bytes);
+                if (!decoded.IsUtf8) encodingNote = $"；编码 {decoded.Name}（非 UTF-8，EditFile 按原编码写回，别整文件转存）";
+                lines = decoded.Text.Replace("\r\n", "\n").Split('\n');
+                if (lines.Length > 0 && lines[^1].Length == 0) lines = lines[..^1];
             }
             catch (Exception ex)
             {
@@ -56,28 +66,29 @@ namespace OpenLoop.Core.Tools.Builtin
 
             string relative = _scope.Relative(full);
             string text = sb.ToString();
+            string enc = encodingNote ?? "";
 
             // limit 用完但文件还有剩余：明确给出续读 offset，别让模型自己试探
             if (end < lines.Length && text.Length <= MaxChars)
                 return Task.FromResult(AgentToolResult.Success(
-                    $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行；limit 到顶，" +
+                    $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行{enc}；limit 到顶，" +
                     $"第 {end + 1}-{lines.Length} 行未显示，继续读请设 offset={end + 1}）\n" + text));
 
             if (text.Length <= MaxChars)
                 return Task.FromResult(AgentToolResult.Success(
-                    $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行）\n" + text));
+                    $"{relative}（第 {start + 1}-{end} 行，共 {lines.Length} 行{enc}）\n" + text));
 
             int cut = text.LastIndexOf('\n', MaxChars);
             if (cut <= 0)
                 return Task.FromResult(AgentToolResult.Success(
-                    $"{relative}（第 {start + 1} 行，共 {lines.Length} 行；单行超过 {MaxChars} 字符，已截断）\n"
+                    $"{relative}（第 {start + 1} 行，共 {lines.Length} 行{enc}；单行超过 {MaxChars} 字符，已截断）\n"
                     + ToolText.Truncate(text, MaxChars)));
 
             string shown = text[..(cut + 1)];
             int shownLines = shown.Count(c => c == '\n');
             int shownEnd = start + shownLines;
             return Task.FromResult(AgentToolResult.Success(
-                $"{relative}（第 {start + 1}-{shownEnd} 行，共 {lines.Length} 行；输出上限 {MaxChars} 字符，" +
+                $"{relative}（第 {start + 1}-{shownEnd} 行，共 {lines.Length} 行{enc}；输出上限 {MaxChars} 字符，" +
                 $"第 {shownEnd + 1}-{end} 行未显示，继续读请设 offset={shownEnd + 1}）\n" + shown));
         }
     }

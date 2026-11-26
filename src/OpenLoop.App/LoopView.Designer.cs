@@ -32,6 +32,9 @@
         private AntdUI.Label _lblDCost;
         private System.Windows.Forms.Label _lblDStatus;
         private AntdUI.Label _lblDPath;
+    private AntdUI.Label _lblDPerm;
+    private AntdUI.Switch _switchDOutside;
+    private AntdUI.Switch _switchDSensitive;
         private TableLayoutPanel _inputArea;
         private CommandPopup _cmdPopup;
         private AntdUI.Input _txtInput;
@@ -94,6 +97,9 @@
             _lblDCost = new AntdUI.Label();
             _lblDStatus = new System.Windows.Forms.Label();
             _lblDPath = new AntdUI.Label();
+            _lblDPerm = new AntdUI.Label();
+            _switchDOutside = new AntdUI.Switch();
+            _switchDSensitive = new AntdUI.Switch();
             _inputArea = new TableLayoutPanel();
             _cmdPopup = new CommandPopup();
             _txtInput = new AntdUI.Input();
@@ -310,12 +316,37 @@
             _lblDPath.IconGap = 6;
             _lblDPath.Margin = new Padding(0, 0, 0, 8);
 
+            _lblDPerm.AutoSize = true;
+            _lblDPerm.Text = Localization.T("OutsideWrite") + " / " + Localization.T("Sensitive");
+            _lblDPerm.Font = new Font("Segoe UI", 9F);
+            _lblDPerm.ForeColor = UiStyle.Muted;
+            _lblDPerm.Margin = new Padding(0, 4, 0, 4);
+
+            _switchDOutside.Width = 44;
+            _switchDOutside.Height = 22;
+            _switchDOutside.Margin = new Padding(0, 0, 8, 0);
+            _switchDOutside.CheckedChanged += OnDetailPermChanged;
+
+            _switchDSensitive.Width = 44;
+            _switchDSensitive.Height = 22;
+            _switchDSensitive.CheckedChanged += OnDetailPermChanged;
+
             _detailFlow.Controls.Add(_lblDModel);
             _detailFlow.Controls.Add(_lblDEffort);
             _detailFlow.Controls.Add(_lblDCtx);
             _detailFlow.Controls.Add(_lblDCost);
             _detailFlow.Controls.Add(_lblDStatus);
             _detailFlow.Controls.Add(_lblDPath);
+            _detailFlow.Controls.Add(_lblDPerm);
+            var permRow = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                WrapContents = false,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+            permRow.Controls.Add(_switchDOutside);
+            permRow.Controls.Add(_switchDSensitive);
+            _detailFlow.Controls.Add(permRow);
             _detailFlow.Controls.Add(_btnIterate);
             _detailFlow.Controls.Add(_btnCommit);
             _detailFlow.Controls.Add(_btnPush);

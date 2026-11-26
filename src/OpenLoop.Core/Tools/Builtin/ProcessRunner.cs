@@ -40,17 +40,17 @@ namespace OpenLoop.Core.Tools.Builtin
             ChildEnvironment.Apply(psi, inheritEnvironment);
 
             using var process = new Process { StartInfo = psi };
-            var stdout = new StringBuilder();
-            var stderr = new StringBuilder();
-
-            process.OutputDataReceived += (_, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
-            process.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
+            var stdout = new MemoryStream();
+            var stderr = new MemoryStream();
+            Task outTask = Task.CompletedTask, errTask = Task.CompletedTask;
 
             try
             {
                 process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
+                //收字节不收字符：子进程可能按系统码页（936）输出，也可能被 agent 自己设成 UTF-8，
+                //在这里固定一种解码必然把另一种弄成乱码；退出后再按 BOM → 严格 UTF-8 → ANSI 判定。
+                outTask = process.StandardOutput.BaseStream.CopyToAsync(stdout);
+                errTask = process.StandardError.BaseStream.CopyToAsync(stderr);
             }
             catch (Exception ex)
             {
@@ -79,6 +79,8 @@ namespace OpenLoop.Core.Tools.Builtin
             try
             {
                 await process.WaitForExitAsync(linked.Token);
+                //WaitForExit 只保证进程退出，管道里可能还有没读完的字节
+                try { await Task.WhenAll(outTask, errTask).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
             }
             catch (OperationCanceledException)
             {
@@ -86,7 +88,7 @@ namespace OpenLoop.Core.Tools.Builtin
                 if (ct.IsCancellationRequested) throw;
 
                 return AgentToolResult.Failure(
-                    $"命令超时（{timeoutSeconds}s），已终止进程树。\n{ToolText.HeadTail(stdout.ToString(), 3000)}");
+                    $"命令超时（{timeoutSeconds}s），已终止进程树。\n{ToolText.HeadTail(Decode(stdout), 3000)}");
             }
             finally
             {
@@ -98,15 +100,21 @@ namespace OpenLoop.Core.Tools.Builtin
                 try { await slow.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
             }
 
+            string outText = Decode(stdout);
+            string errText = Decode(stderr);
             var sb = new StringBuilder();
             sb.Append("exit=").AppendLine(process.ExitCode.ToString());
-            if (stdout.Length > 0) sb.AppendLine("--- stdout ---").AppendLine(stdout.ToString().TrimEnd());
-            if (stderr.Length > 0) sb.AppendLine("--- stderr ---").AppendLine(stderr.ToString().TrimEnd());
+            if (outText.Length > 0) sb.AppendLine("--- stdout ---").AppendLine(outText.TrimEnd());
+            if (errText.Length > 0) sb.AppendLine("--- stderr ---").AppendLine(errText.TrimEnd());
 
             string output = ToolText.HeadTail(sb.ToString(), 6000);
             return process.ExitCode == 0
                 ? AgentToolResult.Success(output)
                 : AgentToolResult.Failure(output);
         }
+
+        /// <summary>子进程原始字节 → 文本：BOM / 严格 UTF-8 / 系统 ANSI 依次判定。</summary>
+        private static string Decode(MemoryStream stream)
+            => stream == null || stream.Length == 0 ? "" : TextCodec.Decode(stream.ToArray()).Text;
     }
 }

@@ -70,7 +70,6 @@ namespace OpenLoop.Service.Web
                 theme = settings.Theme,
                 fullAccess = settings.FullAccess,
                 autoApprove = settings.AutoApprove,
-                openCodeAskPermissions = settings.OpenCodeAskPermissions,
                 webFetchMode = settings.WebFetchMode,
                 useAgentsMd = settings.UseAgentsMd,
                 thinkingExpandedByDefault = settings.ThinkingExpandedByDefault,
@@ -148,8 +147,6 @@ namespace OpenLoop.Service.Web
             if (body.WebFetchMode != null) settings.WebFetchMode = NormalizeWebFetch(body.WebFetchMode);
             if (body.FullAccess.HasValue) settings.FullAccess = body.FullAccess.Value;
             if (body.AutoApprove.HasValue) settings.AutoApprove = body.AutoApprove.Value;
-            if (body.OpenCodeAskPermissions.HasValue)
-                settings.OpenCodeAskPermissions = body.OpenCodeAskPermissions.Value;
             if (body.UseAgentsMd.HasValue) settings.UseAgentsMd = body.UseAgentsMd.Value;
             if (body.ThinkingExpandedByDefault.HasValue)
                 settings.ThinkingExpandedByDefault = body.ThinkingExpandedByDefault.Value;
@@ -585,7 +582,6 @@ namespace OpenLoop.Service.Web
             public string WebFetchMode { get; set; }
             public bool? FullAccess { get; set; }
             public bool? AutoApprove { get; set; }
-            public bool? OpenCodeAskPermissions { get; set; }
             public bool? UseAgentsMd { get; set; }
             public bool? ThinkingExpandedByDefault { get; set; }
             public bool? AutoEvolve { get; set; }

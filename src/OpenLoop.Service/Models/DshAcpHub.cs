@@ -82,15 +82,6 @@ namespace OpenLoop.Service.Models
             return new DshAcpReasoner(host, model, cwd);
         }
 
-        /// <summary>把一件任务交给 dsh（ACP 新会话）；model 为空就用 dsh 自己配置的模型。</summary>
-        public static Task<CompletionResult> RunTask(
-            AppSettings settings, string workspace, string model, string task,
-            Func<AcpPermissionRequest, bool> decide, CancellationToken ct)
-        {
-            string cwd = string.IsNullOrWhiteSpace(workspace) ? settings.Workspace : workspace;
-            return Host(settings).RunTaskAsync(cwd, model, task, decide, ct);
-        }
-
         /// <summary>模型清单（同一 profile 缓存 5 分钟）；拉不到就返回空，不抛。</summary>
         public static IReadOnlyList<string> Models(AppSettings settings)
         {

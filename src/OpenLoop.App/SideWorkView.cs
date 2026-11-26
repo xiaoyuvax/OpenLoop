@@ -188,8 +188,7 @@ namespace OpenLoop.App
                 fullAccess ? _ => OpenLoop.Core.Safety.ApprovalDecision.AllowOnce : AskApproval;
             scope.Approve = approve;
             var tools = ToolRegistry.Workspace(scope, approve, skills, fullAccess,
-                OpenCodeTools.For(_workspace, approve, settings.OpenCodeAskPermissions)
-                    .Concat(DshTools.For(settings, _workspace, approve)),
+                null,
                 settings.WebFetchMode, FeatureCatalog.WebFetchesOf(_workspace));
             TraceWriter trace;
             try

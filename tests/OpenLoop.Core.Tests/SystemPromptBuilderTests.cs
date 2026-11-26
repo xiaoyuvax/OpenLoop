@@ -46,10 +46,16 @@ namespace OpenLoop.Core.Tests
         public void Windows_environment_note_only_on_windows()
         {
             string prompt = SystemPromptBuilder.Build([new NamedTool("ReadFile")], 10, workspace: ".");
+            //这条提醒的前提是工具按原编码读写、非 UTF-8 会标明编码；两件事必须一起在，否则提示词就成了空话
             if (OperatingSystem.IsWindows())
-                Assert.Contains("PowerShell 5.1", prompt);
+            {
+                Assert.Contains("PowerShell 脚本", prompt);
+                Assert.Contains("按原编码读写", prompt);
+            }
             else
-                Assert.DoesNotContain("PowerShell 5.1", prompt);
+            {
+                Assert.DoesNotContain("PowerShell 脚本", prompt);
+            }
         }
 
         [Fact]

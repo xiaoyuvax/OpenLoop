@@ -3025,6 +3025,9 @@ namespace OpenLoop.App
 
         private void OnSettings(object sender, EventArgs e) => OpenSettings();
 
+        /// <summary>顶栏铃铛：随时打开通知记录。</summary>
+        private void OnNotifications(object sender, EventArgs e) => NotificationsForm.ShowLog(this);
+
         /// <summary>Puppet 用：与「关于」窗口同一份版本数据（壳 / Worker / Loop）。</summary>
         public string Versions => string.Join(" | ", AboutForm.VersionLines());
 
@@ -3281,7 +3284,6 @@ namespace OpenLoop.App
                     "Theme=" + (_settings.Theme ?? ""),
                     "FullAccess=" + _settings.FullAccess,
                     "AutoApprove=" + _settings.AutoApprove,
-                    "OpenCodeAskPermissions=" + _settings.OpenCodeAskPermissions,
                     "WebFetchMode=" + (_settings.WebFetchMode ?? ""),
                     "UseAgentsMd=" + _settings.UseAgentsMd,
                     "ThinkingExpandedByDefault=" + _settings.ThinkingExpandedByDefault,
@@ -3319,14 +3321,13 @@ namespace OpenLoop.App
                     break;
                 case "FullAccess": _settings.FullAccess = flag; break;
                 case "AutoApprove": _settings.AutoApprove = flag; break;
-                case "OpenCodeAskPermissions": _settings.OpenCodeAskPermissions = flag; break;
                 case "UseAgentsMd": _settings.UseAgentsMd = flag; break;
                 case "ThinkingExpandedByDefault": _settings.ThinkingExpandedByDefault = flag; break;
                 case "AutoEvolve": _settings.AutoEvolve = flag; break;
                 case "AutoIterate": _settings.AutoIterate = flag; break;
                 default:
                     return OperationResult.Failure($"不支持的设置项：{k}（可用 Language/Theme/FullAccess/AutoApprove/" +
-                        "OpenCodeAskPermissions/WebFetchMode/UseAgentsMd/ThinkingExpandedByDefault/AutoEvolve/AutoIterate）");
+                        "WebFetchMode/UseAgentsMd/ThinkingExpandedByDefault/AutoEvolve/AutoIterate）");
             }
             return SaveSettings("已保存 " + k + "=" + value);
         }
